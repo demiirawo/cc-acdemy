@@ -33,7 +33,7 @@ export function WhiteboardPage() {
   ];
 
   useEffect(() => {
-    if (!canvasRef.current) return;
+    if (!canvasRef.current || fabricCanvas) return;
 
     const canvas = new FabricCanvas(canvasRef.current, {
       width: 1200,
@@ -48,9 +48,12 @@ export function WhiteboardPage() {
     setFabricCanvas(canvas);
 
     return () => {
-      canvas.dispose();
+      if (canvas) {
+        canvas.dispose();
+        setFabricCanvas(null);
+      }
     };
-  }, []);
+  }, [canvasRef.current]);
 
   useEffect(() => {
     if (!fabricCanvas) return;

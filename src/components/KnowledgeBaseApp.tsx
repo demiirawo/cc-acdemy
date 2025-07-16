@@ -308,7 +308,6 @@ export function KnowledgeBaseApp() {
         onCreateFolder={handleCreateFolder}
         onCreatePageInEditor={handleCreatePageInEditor}
       />
-      
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Header with user info */}
         <div className="border-b border-border p-4 bg-background/95 backdrop-blur-sm">
