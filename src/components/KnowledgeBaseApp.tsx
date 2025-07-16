@@ -7,6 +7,7 @@ import { PeoplePage } from "./PeoplePage";
 import { EnhancedContentEditor } from "./EnhancedContentEditor";
 import { CreatePageDialog } from "./CreatePageDialog";
 import { PagePermissionsDialog } from "./PagePermissionsDialog";
+import { SettingsPage } from "./SettingsPage";
 import { AuthForm } from "./AuthForm";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -14,7 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { LogOut, Settings as SettingsIcon, Shield } from "lucide-react";
 
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'people';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'people' | 'settings';
 
 interface SidebarItem {
   id: string;
@@ -74,6 +75,9 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
     } else if (item.id === 'people') {
       setCurrentView('people');
+      setCurrentPage(null);
+    } else if (item.id === 'settings') {
+      setCurrentView('settings');
       setCurrentPage(null);
     } else if (item.type === 'page') {
       try {
@@ -235,6 +239,7 @@ export function KnowledgeBaseApp() {
                currentView === 'recent' ? 'Recently Updated' :
                currentView === 'tags' ? 'Tags' :
                currentView === 'people' ? 'People' :
+               currentView === 'settings' ? 'Settings' :
                currentPage?.title || 'Page'}
             </h2>
             <div className="flex items-center gap-2">
@@ -265,6 +270,10 @@ export function KnowledgeBaseApp() {
 
         {currentView === 'people' && (
           <PeoplePage onPageSelect={handlePageSelect} />
+        )}
+
+        {currentView === 'settings' && (
+          <SettingsPage onClose={() => setCurrentView('dashboard')} />
         )}
         
         {currentView === 'editor' && currentPage && (

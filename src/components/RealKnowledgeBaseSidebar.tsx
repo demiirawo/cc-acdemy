@@ -258,7 +258,7 @@ export function RealKnowledgeBaseSidebar({
 
   const handleItemSelect = (item: SidebarItem) => {
     // Only call onItemSelect for navigation items or real database items with valid UUIDs
-    if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people') {
+    if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people' || item.id === 'settings') {
       onItemSelect(item);
     } else if (item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
       // Valid UUID - safe to pass to database
@@ -388,6 +388,7 @@ export function RealKnowledgeBaseSidebar({
         <Button
           variant="ghost"
           className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+          onClick={() => handleItemSelect({ id: 'settings', title: 'Settings', type: 'page' })}
         >
           <Settings className="h-4 w-4 mr-2" />
           Settings
