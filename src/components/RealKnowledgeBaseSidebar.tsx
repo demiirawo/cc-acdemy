@@ -1,4 +1,23 @@
 import { useState, useEffect } from "react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import {
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { 
   Search, 
   Plus, 
@@ -21,7 +40,8 @@ import {
   Star,
   Archive,
   Trash2,
-  Move
+  Move,
+  GripVertical
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -85,9 +105,10 @@ interface SidebarTreeItemProps {
   onDuplicatePage?: (pageId: string) => void;
   onArchivePage?: (pageId: string) => void;
   onCopyLink?: (pageId: string) => void;
+  onMovePage?: (pageId: string, newParentId: string | null) => void;
 }
 
-function SidebarTreeItem({ 
+function DraggablePageItem({ 
   item, 
   level, 
   onSelect, 
@@ -96,28 +117,82 @@ function SidebarTreeItem({
   onCreatePageInEditor,
   onDuplicatePage,
   onArchivePage,
-  onCopyLink
+  onCopyLink,
+  onMovePage
 }: SidebarTreeItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
   const [isExpanded, setIsExpanded] = useState(level < 2);
   const [isHovered, setIsHovered] = useState(false);
+  const [isDropTarget, setIsDropTarget] = useState(false);
   const hasChildren = item.children && item.children.length > 0;
   const isSelected = selectedId === item.id;
   const Icon = item.icon || BookOpen;
 
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDropTarget(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDropTarget(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDropTarget(false);
+    const draggedPageId = e.dataTransfer.getData('text/plain');
+    if (draggedPageId && draggedPageId !== item.id && onMovePage) {
+      onMovePage(draggedPageId, item.id);
+    }
+  };
+
   return (
-    <div>
+    <div ref={setNodeRef} style={style}>
       <div
         className={cn(
           "flex items-center gap-2 px-2 py-1.5 text-sm rounded-md cursor-pointer transition-all duration-200 group",
           "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
           isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
+          isDropTarget && "bg-primary/20 border border-primary/40",
           level > 0 && "ml-2"
         )}
         style={{ paddingLeft: `${level * 12 + 8}px` }}
         onClick={() => onSelect(item)}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
+        {/* Drag Handle */}
+        {item.type === 'page' && (
+          <div
+            {...attributes}
+            {...listeners}
+            className="opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing"
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData('text/plain', item.id);
+            }}
+          >
+            <GripVertical className="h-3 w-3 text-sidebar-foreground/40" />
+          </div>
+        )}
+
         {hasChildren && (
           <Button
             variant="ghost"
@@ -235,7 +310,7 @@ function SidebarTreeItem({
       {hasChildren && isExpanded && (
         <div className="ml-2">
           {item.children?.map((child) => (
-            <SidebarTreeItem
+            <DraggablePageItem
               key={child.id}
               item={child}
               level={level + 1}
@@ -246,9 +321,139 @@ function SidebarTreeItem({
               onDuplicatePage={onDuplicatePage}
               onArchivePage={onArchivePage}
               onCopyLink={onCopyLink}
+              onMovePage={onMovePage}
             />
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+function SidebarTreeItem({ 
+  item, 
+  level, 
+  onSelect, 
+  selectedId, 
+  onCreateSubPage, 
+  onCreatePageInEditor,
+  onDuplicatePage,
+  onArchivePage,
+  onCopyLink,
+  onMovePage
+}: SidebarTreeItemProps) {
+  // Use DraggablePageItem for pages, regular item for spaces
+  if (item.type === 'page') {
+    return (
+      <DraggablePageItem
+        item={item}
+        level={level}
+        onSelect={onSelect}
+        selectedId={selectedId}
+        onCreateSubPage={onCreateSubPage}
+        onCreatePageInEditor={onCreatePageInEditor}
+        onDuplicatePage={onDuplicatePage}
+        onArchivePage={onArchivePage}
+        onCopyLink={onCopyLink}
+        onMovePage={onMovePage}
+      />
+    );
+  }
+
+  // Regular non-draggable item for spaces
+  const [isExpanded, setIsExpanded] = useState(level < 2);
+  const [isHovered, setIsHovered] = useState(false);
+  const hasChildren = item.children && item.children.length > 0;
+  const isSelected = selectedId === item.id;
+
+  return (
+    <div>
+      <div
+        className={cn(
+          "flex items-center gap-2 px-2 py-1.5 text-sm rounded-md cursor-pointer transition-all duration-200 group",
+          "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+          isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
+          level > 0 && "ml-2"
+        )}
+        style={{ paddingLeft: `${level * 12 + 8}px` }}
+        onClick={() => onSelect(item)}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {hasChildren && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-4 w-4 p-0 hover:bg-transparent"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsExpanded(!isExpanded);
+            }}
+          >
+            {isExpanded ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
+          </Button>
+        )}
+        {!hasChildren && <div className="w-4" />}
+        
+        {item.type === 'space' ? (
+          isExpanded ? (
+            <FolderOpen className="h-4 w-4 text-amber-500 flex-shrink-0" />
+          ) : (
+            <Folder className="h-4 w-4 text-amber-500 flex-shrink-0" />
+          )
+        ) : (
+          <FileText className="h-4 w-4 text-blue-500 flex-shrink-0" />
+        )}
+        
+        <span className="truncate text-sidebar-foreground flex-1">{item.title}</span>
+        
+        {/* Action buttons - show on hover */}
+        <div className={cn(
+          "flex items-center gap-1 transition-opacity duration-200",
+          isHovered || isSelected ? "opacity-100" : "opacity-0"
+        )}>
+          {/* Add child page button */}
+          {item.type === 'space' && onCreatePageInEditor && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 hover:bg-sidebar-accent/50"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCreatePageInEditor(item.id);
+              }}
+              title="Add child page"
+            >
+              <Plus className="h-3 w-3" />
+            </Button>
+          )}
+        </div>
+      </div>
+      
+      {hasChildren && isExpanded && (
+        <SortableContext items={item.children?.map(c => c.id) || []} strategy={verticalListSortingStrategy}>
+          <div className="ml-2">
+            {item.children?.map((child) => (
+              <SidebarTreeItem
+                key={child.id}
+                item={child}
+                level={level + 1}
+                onSelect={onSelect}
+                selectedId={selectedId}
+                onCreateSubPage={onCreateSubPage}
+                onCreatePageInEditor={onCreatePageInEditor}
+                onDuplicatePage={onDuplicatePage}
+                onArchivePage={onArchivePage}
+                onCopyLink={onCopyLink}
+                onMovePage={onMovePage}
+              />
+            ))}
+          </div>
+        </SortableContext>
       )}
     </div>
   );
@@ -277,6 +482,13 @@ export function RealKnowledgeBaseSidebar({
   const [hierarchyData, setHierarchyData] = useState<SidebarItem[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     fetchHierarchyData();
@@ -438,6 +650,31 @@ export function RealKnowledgeBaseSidebar({
     });
   };
 
+  const handleMovePage = async (pageId: string, newParentId: string | null) => {
+    try {
+      const { error } = await supabase
+        .from('pages')
+        .update({ parent_page_id: newParentId })
+        .eq('id', pageId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Page moved",
+        description: "Page has been moved successfully.",
+      });
+      
+      fetchHierarchyData();
+    } catch (error) {
+      console.error('Error moving page:', error);
+      toast({
+        title: "Error",
+        description: "Failed to move page.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleCreateFolder = async () => {
     if (onCreateFolder) {
       onCreateFolder();
@@ -544,40 +781,48 @@ export function RealKnowledgeBaseSidebar({
               ))}
             </div>
           ) : (
-            <div className="space-y-1">
-              {filteredHierarchy.length > 0 ? (
-                filteredHierarchy.map((item) => (
-                  <SidebarTreeItem
-                    key={item.id}
-                    item={item}
-                    level={0}
-                    onSelect={handleItemSelect}
-                    selectedId={selectedId}
-                    onCreateSubPage={onCreateSubPage}
-                    onCreatePageInEditor={onCreatePageInEditor}
-                    onDuplicatePage={handleDuplicatePage}
-                    onArchivePage={handleArchivePage}
-                    onCopyLink={handleCopyLink}
-                  />
-                ))
-              ) : searchQuery ? (
-                <div className="text-center py-8 text-sidebar-foreground/50">
-                  <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No results found</p>
-                </div>
-              ) : (
-                <div className="text-center py-8 text-sidebar-foreground/50">
-                  <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm mb-3">No content yet</p>
-                  {onCreatePage && (
-                    <Button variant="outline" size="sm" onClick={handleCreatePage}>
-                      <Plus className="h-3 w-3 mr-1" />
-                      Create first page
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
+            <DndContext 
+              sensors={sensors}
+              collisionDetection={closestCenter}
+            >
+              <div className="space-y-1">
+                {filteredHierarchy.length > 0 ? (
+                  <SortableContext items={filteredHierarchy.map(item => item.id)} strategy={verticalListSortingStrategy}>
+                    {filteredHierarchy.map((item) => (
+                      <SidebarTreeItem
+                        key={item.id}
+                        item={item}
+                        level={0}
+                        onSelect={handleItemSelect}
+                        selectedId={selectedId}
+                        onCreateSubPage={onCreateSubPage}
+                        onCreatePageInEditor={onCreatePageInEditor}
+                        onDuplicatePage={handleDuplicatePage}
+                        onArchivePage={handleArchivePage}
+                        onCopyLink={handleCopyLink}
+                        onMovePage={handleMovePage}
+                      />
+                    ))}
+                  </SortableContext>
+                ) : searchQuery ? (
+                  <div className="text-center py-8 text-sidebar-foreground/50">
+                    <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No results found</p>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-sidebar-foreground/50">
+                    <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm mb-3">No content yet</p>
+                    {onCreatePage && (
+                      <Button variant="outline" size="sm" onClick={handleCreatePage}>
+                        <Plus className="h-3 w-3 mr-1" />
+                        Create first page
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </DndContext>
           )}
         </ScrollArea>
       </div>

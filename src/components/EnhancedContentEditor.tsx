@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -9,7 +8,6 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -27,7 +25,6 @@ import {
   Eye,
   Youtube,
   FileText,
-  Upload,
   Trash2,
   Globe,
   Lock,
@@ -39,15 +36,13 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  AlignJustify,
   Type,
   Palette,
   MoreHorizontal,
   ChevronDown,
   Smile,
   Calendar,
-  MapPin,
-  User,
-  Hash,
   AtSign
 } from "lucide-react";
 
@@ -67,11 +62,6 @@ interface MediaFile {
   url: string;
 }
 
-interface TableData {
-  rows: number;
-  cols: number;
-}
-
 export function EnhancedContentEditor({
   title = "",
   content = "",
@@ -89,106 +79,92 @@ export function EnhancedContentEditor({
   const [publicToken, setPublicToken] = useState('');
   const [showAdvancedToolbar, setShowAdvancedToolbar] = useState(false);
   const [selectedFontSize, setSelectedFontSize] = useState("14");
-  const [selectedTextColor, setSelectedTextColor] = useState("#000000");
-  const [selectedBgColor, setSelectedBgColor] = useState("#ffffff");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   useEffect(() => {
     setCurrentTitle(title);
     setCurrentContent(content);
-    fetchPageSettings();
-  }, [title, content, pageId]);
-
-  const fetchPageSettings = async () => {
-    if (!pageId) return;
-
-    try {
-      const { data } = await supabase
-        .from('pages')
-        .select('is_public, public_token')
-        .eq('id', pageId)
-        .single();
-
-      if (data) {
-        setIsPublic(data.is_public || false);
-        setPublicToken(data.public_token || '');
-      }
-    } catch (error) {
-      console.error('Error fetching page settings:', error);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = content;
     }
+  }, [title, content]);
+
+  // Load page settings if editing existing page
+  useEffect(() => {
+    if (pageId) {
+      const fetchPageSettings = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('pages')
+            .select('is_public, public_token')
+            .eq('id', pageId)
+            .single();
+
+          if (error) throw error;
+
+          if (data) {
+            setIsPublic(data.is_public || false);
+            setPublicToken(data.public_token || '');
+          }
+        } catch (error) {
+          console.error('Error fetching page settings:', error);
+        }
+      };
+
+      fetchPageSettings();
+    }
+  }, [pageId]);
+
+  const execCommand = (command: string, value?: string) => {
+    document.execCommand(command, false, value);
+    editorRef.current?.focus();
+    updateContent();
+  };
+
+  const updateContent = () => {
+    if (editorRef.current) {
+      setCurrentContent(editorRef.current.innerHTML);
+    }
+  };
+
+  const formatText = (command: string, value?: string) => {
+    execCommand(command, value);
   };
 
   const insertText = (text: string) => {
-    if (!textareaRef.current) return;
-    
-    const textarea = textareaRef.current;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const newText = currentContent.substring(0, start) + text + currentContent.substring(end);
-    
-    setCurrentContent(newText);
-    
-    setTimeout(() => {
-      textarea.focus();
-      textarea.setSelectionRange(start + text.length, start + text.length);
-    }, 0);
-  };
-
-  const wrapText = (prefix: string, suffix: string) => {
-    if (!textareaRef.current) return;
-    
-    const textarea = textareaRef.current;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selectedText = currentContent.substring(start, end);
-    const newText = currentContent.substring(0, start) + prefix + selectedText + suffix + currentContent.substring(end);
-    
-    setCurrentContent(newText);
-    
-    setTimeout(() => {
-      textarea.focus();
-      if (selectedText) {
-        textarea.setSelectionRange(start + prefix.length, start + prefix.length + selectedText.length);
-      } else {
-        textarea.setSelectionRange(start + prefix.length, start + prefix.length);
-      }
-    }, 0);
+    execCommand('insertHTML', text);
   };
 
   const insertTable = (rows: number, cols: number) => {
-    let tableMarkdown = '\n\n';
+    let tableHTML = '<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0;"><tbody>';
     
     // Header row
+    tableHTML += '<tr>';
     for (let j = 0; j < cols; j++) {
-      tableMarkdown += '| Header ' + (j + 1) + ' ';
+      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px;">Header ${j + 1}</th>`;
     }
-    tableMarkdown += '|\n';
-    
-    // Separator row
-    for (let j = 0; j < cols; j++) {
-      tableMarkdown += '|---';
-    }
-    tableMarkdown += '|\n';
+    tableHTML += '</tr>';
     
     // Data rows
     for (let i = 0; i < rows - 1; i++) {
+      tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableMarkdown += '| Cell ' + (i + 1) + '-' + (j + 1) + ' ';
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px;">Cell ${i + 1}-${j + 1}</td>`;
       }
-      tableMarkdown += '|\n';
+      tableHTML += '</tr>';
     }
     
-    tableMarkdown += '\n';
-    insertText(tableMarkdown);
+    tableHTML += '</tbody></table>';
+    insertText(tableHTML);
   };
 
   const insertLink = () => {
     const url = prompt("Enter URL:");
     const text = prompt("Enter link text:") || url;
     if (url) {
-      insertText(`[${text}](${url})`);
+      insertText(`<a href="${url}" target="_blank">${text}</a>`);
     }
   };
 
@@ -196,7 +172,7 @@ export function EnhancedContentEditor({
     const url = prompt("Enter image URL:");
     const alt = prompt("Enter alt text:") || "Image";
     if (url) {
-      insertText(`![${alt}](${url})`);
+      insertText(`<img src="${url}" alt="${alt}" style="max-width: 100%; height: auto;" />`);
     }
   };
 
@@ -205,7 +181,7 @@ export function EnhancedContentEditor({
     if (url) {
       const videoId = extractYouTubeId(url);
       if (videoId) {
-        insertText(`\n<iframe width="560" height="315" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe>\n`);
+        insertText(`<iframe width="560" height="315" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen style="max-width: 100%;"></iframe>`);
       } else {
         toast({
           title: "Invalid YouTube URL",
@@ -217,29 +193,36 @@ export function EnhancedContentEditor({
   };
 
   const basicToolbarItems = [
-    { icon: Bold, action: () => wrapText("**", "**"), tooltip: "Bold (Ctrl+B)" },
-    { icon: Italic, action: () => wrapText("*", "*"), tooltip: "Italic (Ctrl+I)" },
-    { icon: Underline, action: () => wrapText("<u>", "</u>"), tooltip: "Underline (Ctrl+U)" },
-    { icon: Strikethrough, action: () => wrapText("~~", "~~"), tooltip: "Strikethrough" },
+    { icon: Bold, action: () => formatText('bold'), tooltip: "Bold (Ctrl+B)" },
+    { icon: Italic, action: () => formatText('italic'), tooltip: "Italic (Ctrl+I)" },
+    { icon: Underline, action: () => formatText('underline'), tooltip: "Underline (Ctrl+U)" },
+    { icon: Strikethrough, action: () => formatText('strikeThrough'), tooltip: "Strikethrough" },
   ];
 
   const formatToolbarItems = [
-    { icon: Heading1, action: () => insertText("# "), tooltip: "Heading 1" },
-    { icon: Heading2, action: () => insertText("## "), tooltip: "Heading 2" },
-    { icon: Heading3, action: () => insertText("### "), tooltip: "Heading 3" },
+    { icon: Heading1, action: () => formatText('formatBlock', 'h1'), tooltip: "Heading 1" },
+    { icon: Heading2, action: () => formatText('formatBlock', 'h2'), tooltip: "Heading 2" },
+    { icon: Heading3, action: () => formatText('formatBlock', 'h3'), tooltip: "Heading 3" },
+  ];
+
+  const alignmentToolbarItems = [
+    { icon: AlignLeft, action: () => formatText('justifyLeft'), tooltip: "Align Left" },
+    { icon: AlignCenter, action: () => formatText('justifyCenter'), tooltip: "Align Center" },
+    { icon: AlignRight, action: () => formatText('justifyRight'), tooltip: "Align Right" },
+    { icon: AlignJustify, action: () => formatText('justifyFull'), tooltip: "Justify" },
   ];
 
   const listToolbarItems = [
-    { icon: List, action: () => insertText("- "), tooltip: "Bullet List" },
-    { icon: ListOrdered, action: () => insertText("1. "), tooltip: "Numbered List" },
-    { icon: Quote, action: () => insertText("> "), tooltip: "Quote" },
+    { icon: List, action: () => formatText('insertUnorderedList'), tooltip: "Bullet List" },
+    { icon: ListOrdered, action: () => formatText('insertOrderedList'), tooltip: "Numbered List" },
+    { icon: Quote, action: () => formatText('formatBlock', 'blockquote'), tooltip: "Quote" },
   ];
 
   const insertToolbarItems = [
     { icon: Link, action: insertLink, tooltip: "Insert Link" },
     { icon: Image, action: insertImage, tooltip: "Insert Image" },
     { icon: Youtube, action: insertYouTube, tooltip: "Insert YouTube Video" },
-    { icon: Code, action: () => wrapText("```\n", "\n```"), tooltip: "Code Block" },
+    { icon: Code, action: () => formatText('formatBlock', 'pre'), tooltip: "Code Block" },
     { icon: FileText, action: () => fileInputRef.current?.click(), tooltip: "Upload File" }
   ];
 
@@ -261,7 +244,7 @@ export function EnhancedContentEditor({
           url: mockUrl
         };
         setMediaFiles(prev => [...prev, newFile]);
-        insertText(`[${file.name}](${mockUrl})`);
+        insertText(`<a href="${mockUrl}" target="_blank">${file.name}</a>`);
       });
       
       toast({
@@ -368,8 +351,8 @@ export function EnhancedContentEditor({
           
           <div className="prose prose-lg max-w-none">
             <div 
-              className="whitespace-pre-wrap text-foreground leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: currentContent.replace(/\n/g, '<br>') }}
+              className="text-foreground leading-relaxed"
+              dangerouslySetInnerHTML={{ __html: currentContent }}
             />
           </div>
         </div>
@@ -484,6 +467,22 @@ export function EnhancedContentEditor({
               ))}
             </div>
 
+            {/* Alignment */}
+            <div className="flex items-center gap-1 px-2 border-r">
+              {alignmentToolbarItems.map((item, index) => (
+                <Button
+                  key={index}
+                  variant="ghost"
+                  size="sm"
+                  onClick={item.action}
+                  title={item.tooltip}
+                  className="h-8 w-8 p-0 hover:bg-muted"
+                >
+                  <item.icon className="h-4 w-4" />
+                </Button>
+              ))}
+            </div>
+
             {/* Lists */}
             <div className="flex items-center gap-1 px-2 border-r">
               {listToolbarItems.map((item, index) => (
@@ -551,94 +550,25 @@ export function EnhancedContentEditor({
                 </div>
               </PopoverContent>
             </Popover>
-
-            {/* Advanced Tools */}
-            <div className="flex items-center gap-1 pl-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowAdvancedToolbar(!showAdvancedToolbar)}
-                className="h-8 px-2 hover:bg-muted"
-                title="More options"
-              >
-                <MoreHorizontal className="h-4 w-4 mr-1" />
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-            </div>
           </div>
-
-          {/* Advanced Toolbar */}
-          {showAdvancedToolbar && (
-            <div className="flex items-center gap-2 p-2 bg-muted/30 rounded border">
-              <Select value={selectedFontSize} onValueChange={setSelectedFontSize}>
-                <SelectTrigger className="w-20 h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="12">12px</SelectItem>
-                  <SelectItem value="14">14px</SelectItem>
-                  <SelectItem value="16">16px</SelectItem>
-                  <SelectItem value="18">18px</SelectItem>
-                  <SelectItem value="20">20px</SelectItem>
-                  <SelectItem value="24">24px</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Separator orientation="vertical" className="h-6" />
-
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Text Color">
-                <Type className="h-4 w-4" />
-              </Button>
-              
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Background Color">
-                <Palette className="h-4 w-4" />
-              </Button>
-
-              <Separator orientation="vertical" className="h-6" />
-
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Align Left">
-                <AlignLeft className="h-4 w-4" />
-              </Button>
-              
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Align Center">
-                <AlignCenter className="h-4 w-4" />
-              </Button>
-              
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Align Right">
-                <AlignRight className="h-4 w-4" />
-              </Button>
-
-              <Separator orientation="vertical" className="h-6" />
-
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Insert Emoji">
-                <Smile className="h-4 w-4" />
-              </Button>
-              
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Insert Date">
-                <Calendar className="h-4 w-4" />
-              </Button>
-              
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Mention User">
-                <AtSign className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
         </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
         {/* Main Editor */}
         <div className="flex-1 p-6">
-          <Textarea
-            ref={textareaRef}
-            value={currentContent}
-            onChange={(e) => setCurrentContent(e.target.value)}
-            placeholder="Start writing your content... Use Markdown formatting, insert tables, add links and more!"
-            className="h-full resize-none border-none focus-visible:ring-0 text-base leading-relaxed bg-transparent"
-            style={{ 
-              userSelect: 'text',
-              fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
+          <div
+            ref={editorRef}
+            contentEditable
+            suppressContentEditableWarning
+            onInput={updateContent}
+            className="h-full w-full p-4 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-background text-foreground min-h-[500px] prose prose-lg max-w-none"
+            style={{
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+              fontSize: '16px',
+              lineHeight: '1.6'
             }}
+            data-placeholder="Start writing your content..."
           />
         </div>
 
