@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
-import { KnowledgeBaseSidebar } from "./KnowledgeBaseSidebar";
+import { RealKnowledgeBaseSidebar } from "./RealKnowledgeBaseSidebar";
 import { RealDashboard } from "./RealDashboard";
 import { RecentlyUpdatedPage } from "./RecentlyUpdatedPage";
 import { TagsPage } from "./TagsPage";
 import { PeoplePage } from "./PeoplePage";
 import { EnhancedContentEditor } from "./EnhancedContentEditor";
+import { CreatePageDialog } from "./CreatePageDialog";
 import { AuthForm } from "./AuthForm";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +37,8 @@ export function KnowledgeBaseApp() {
   const [selectedItemId, setSelectedItemId] = useState<string>('home');
   const [currentPage, setCurrentPage] = useState<Page | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [createPageDialogOpen, setCreatePageDialogOpen] = useState(false);
+  const [createPageParentId, setCreatePageParentId] = useState<string | null>(null);
   const { user, loading, signOut } = useAuth();
   const { toast } = useToast();
 
@@ -120,15 +123,18 @@ export function KnowledgeBaseApp() {
   };
 
   const handleCreatePage = () => {
-    setCurrentPage({
-      id: 'new',
-      title: 'Untitled Page',
-      content: '',
-      lastUpdated: new Date().toISOString(),
-      author: user?.user_metadata?.display_name || 'Current User'
-    });
-    setCurrentView('editor');
-    setIsEditing(true);
+    setCreatePageParentId(null);
+    setCreatePageDialogOpen(true);
+  };
+
+  const handleCreateSubPage = (parentId: string) => {
+    setCreatePageParentId(parentId);
+    setCreatePageDialogOpen(true);
+  };
+
+  const handlePageCreated = (pageId: string) => {
+    // Navigate to the newly created page
+    handleItemSelect({ id: pageId, title: '', type: 'page' });
   };
 
   const handleEditPage = () => {
@@ -210,9 +216,11 @@ export function KnowledgeBaseApp() {
 
   return (
     <div className="flex h-screen bg-background">
-      <KnowledgeBaseSidebar
+      <RealKnowledgeBaseSidebar
         onItemSelect={handleItemSelect}
         selectedId={selectedItemId}
+        onCreatePage={handleCreatePage}
+        onCreateSubPage={handleCreateSubPage}
       />
       
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -297,6 +305,14 @@ export function KnowledgeBaseApp() {
           </div>
         )}
       </div>
+
+      {/* Create Page Dialog */}
+      <CreatePageDialog
+        open={createPageDialogOpen}
+        onOpenChange={setCreatePageDialogOpen}
+        onPageCreated={handlePageCreated}
+        initialParentId={createPageParentId}
+      />
     </div>
   );
 }

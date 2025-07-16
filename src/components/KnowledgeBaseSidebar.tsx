@@ -149,11 +149,14 @@ export function KnowledgeBaseSidebar({ onItemSelect, selectedId }: KnowledgeBase
   const [searchQuery, setSearchQuery] = useState("");
 
   const handleItemSelect = (item: SidebarItem) => {
-    // Only call onItemSelect for actual navigation items, not dummy data
+    // Only call onItemSelect for actual navigation items or real pages
     if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people') {
       onItemSelect(item);
-    } else if (item.type === 'page' && !item.id.startsWith('1-') && !item.id.startsWith('2-') && !item.id.startsWith('3-')) {
-      // Only try to load real pages, not sample data
+    } else if (item.type === 'page' && item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      // Only try to load real pages with valid UUIDs
+      onItemSelect(item);
+    } else if (item.type === 'space' && item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+      // Only try to load real spaces with valid UUIDs
       onItemSelect(item);
     }
   };
