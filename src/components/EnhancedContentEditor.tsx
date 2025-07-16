@@ -50,7 +50,7 @@ import {
 interface ContentEditorProps {
   title?: string;
   content?: string;
-  onSave: (title: string, content: string) => void;
+  onSave: (title: string, content: string, recommendedReading?: Array<{title: string, url?: string, description: string, fileUrl?: string, fileName?: string}>) => void;
   onPreview?: () => void;
   isEditing?: boolean;
   pageId?: string;
@@ -80,8 +80,8 @@ export function EnhancedContentEditor({
   const [publicToken, setPublicToken] = useState('');
   const [showAdvancedToolbar, setShowAdvancedToolbar] = useState(false);
   const [selectedFontSize, setSelectedFontSize] = useState("14");
-  const [recommendedReading, setRecommendedReading] = useState<{title: string, url: string, description: string}[]>([]);
-  const [newRecommendation, setNewRecommendation] = useState({title: '', url: '', description: ''});
+  const [recommendedReading, setRecommendedReading] = useState<Array<{title: string, url?: string, description: string, fileUrl?: string, fileName?: string}>>([]);
+  const [newRecommendation, setNewRecommendation] = useState({title: '', url: '', description: '', type: 'link' as 'link' | 'file'});
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -101,7 +101,7 @@ export function EnhancedContentEditor({
         try {
           const { data, error } = await supabase
             .from('pages')
-            .select('is_public, public_token')
+            .select('is_public, public_token, content')
             .eq('id', pageId)
             .single();
 
@@ -110,6 +110,20 @@ export function EnhancedContentEditor({
           if (data) {
             setIsPublic(data.is_public || false);
             setPublicToken(data.public_token || '');
+            
+            // Try to extract recommended reading from content
+            try {
+              if (data.content && data.content.includes('RECOMMENDED_READING:')) {
+                const parts = data.content.split('RECOMMENDED_READING:');
+                if (parts.length > 1) {
+                  const readingData = JSON.parse(parts[1]);
+                  setRecommendedReading(readingData);
+                  setCurrentContent(parts[0]);
+                }
+              }
+            } catch (e) {
+              console.log('No recommended reading data found');
+            }
           }
         } catch (error) {
           console.error('Error fetching page settings:', error);
@@ -222,7 +236,7 @@ export function EnhancedContentEditor({
   const listToolbarItems = [
     { icon: List, action: () => formatText('insertUnorderedList'), tooltip: "Bullet List" },
     { icon: ListOrdered, action: () => formatText('insertOrderedList'), tooltip: "Numbered List" },
-    { icon: Quote, action: () => formatText('formatBlock', 'blockquote'), tooltip: "Quote" },
+    { icon: Quote, action: () => insertText('<blockquote style="border-left: 4px solid #e5e7eb; padding-left: 16px; margin: 16px 0; font-style: italic;">Quote text here</blockquote><br>'), tooltip: "Quote" },
   ];
 
   const insertToolbarItems = [
@@ -292,7 +306,13 @@ export function EnhancedContentEditor({
   };
 
   const handleSave = async () => {
-    onSave(currentTitle, currentContent);
+    // Combine content with recommended reading
+    let contentToSave = currentContent;
+    if (recommendedReading.length > 0) {
+      contentToSave += 'RECOMMENDED_READING:' + JSON.stringify(recommendedReading);
+    }
+    
+    onSave(currentTitle, contentToSave, recommendedReading);
     
     if (pageId) {
       try {
@@ -398,7 +418,7 @@ export function EnhancedContentEditor({
           <div className="prose prose-lg max-w-none">
             <div 
               className="text-foreground leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: currentContent }}
+              dangerouslySetInnerHTML={{ __html: currentContent.split('RECOMMENDED_READING:')[0] }}
             />
           </div>
           
@@ -407,15 +427,22 @@ export function EnhancedContentEditor({
             <div className="mt-8 pt-8 border-t border-border">
               <h3 className="text-xl font-semibold mb-4 text-foreground">Recommended Reading</h3>
               <div className="space-y-3">
-                {recommendedReading.map((item, index) => (
-                  <div key={index} className="p-4 border rounded-lg bg-muted/20">
-                    <h4 className="font-medium text-foreground mb-1">{item.title}</h4>
-                    <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm block mb-2">
-                      {item.url}
-                    </a>
-                    <p className="text-sm text-muted-foreground">{item.description}</p>
-                  </div>
-                ))}
+                 {recommendedReading.map((item, index) => (
+                   <div key={index} className="p-4 border rounded-lg bg-muted/20">
+                     <h4 className="font-medium text-foreground mb-1">{item.title}</h4>
+                     {item.url && (
+                       <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm block mb-2">
+                         {item.url}
+                       </a>
+                     )}
+                     {item.fileUrl && (
+                       <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm block mb-2">
+                         📁 {item.fileName}
+                       </a>
+                     )}
+                     <p className="text-sm text-muted-foreground">{item.description}</p>
+                   </div>
+                 ))}
               </div>
             </div>
           )}
@@ -651,73 +678,134 @@ export function EnhancedContentEditor({
             {/* Recommended Reading Section */}
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">Recommended Reading</CardTitle>
-                  <Button
-                    onClick={() => {
-                      if (newRecommendation.title && newRecommendation.url) {
-                        setRecommendedReading(prev => [...prev, newRecommendation]);
-                        setNewRecommendation({ title: '', url: '', description: '' });
-                        toast({
-                          title: "Added",
-                          description: "Recommended reading item added.",
-                        });
-                      }
-                    }}
-                    variant="outline"
-                    size="sm"
-                    disabled={!newRecommendation.title || !newRecommendation.url}
-                    className="flex items-center gap-2"
-                  >
-                    <FileText className="h-4 w-4" />
-                    Add Reading
-                  </Button>
-                </div>
+                 <div className="flex items-center justify-between">
+                   <CardTitle className="text-lg">Recommended Reading</CardTitle>
+                   <Button
+                     onClick={() => {
+                       if (newRecommendation.title && (newRecommendation.url || newRecommendation.type === 'file')) {
+                         if (newRecommendation.type === 'file') {
+                           // For file type, we'll handle file upload
+                           const input = document.createElement('input');
+                           input.type = 'file';
+                           input.accept = '.pdf,.doc,.docx,.txt,.png,.jpg,.jpeg';
+                           input.onchange = (e) => {
+                             const file = (e.target as HTMLInputElement).files?.[0];
+                             if (file) {
+                               const fileUrl = URL.createObjectURL(file);
+                               setRecommendedReading(prev => [...prev, {
+                                 title: newRecommendation.title,
+                                 description: newRecommendation.description,
+                                 fileUrl,
+                                 fileName: file.name
+                               }]);
+                               setNewRecommendation({ title: '', url: '', description: '', type: 'link' });
+                               toast({
+                                 title: "Added",
+                                 description: "Recommended reading file added.",
+                               });
+                             }
+                           };
+                           input.click();
+                         } else {
+                           setRecommendedReading(prev => [...prev, {
+                             title: newRecommendation.title,
+                             url: newRecommendation.url,
+                             description: newRecommendation.description
+                           }]);
+                           setNewRecommendation({ title: '', url: '', description: '', type: 'link' });
+                           toast({
+                             title: "Added",
+                             description: "Recommended reading item added.",
+                           });
+                         }
+                       }
+                     }}
+                     variant="outline"
+                     size="sm"
+                     disabled={!newRecommendation.title || (newRecommendation.type === 'link' && !newRecommendation.url)}
+                     className="flex items-center gap-2"
+                   >
+                     <FileText className="h-4 w-4" />
+                     Add Reading
+                   </Button>
+                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Form for adding new recommendation */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 border rounded-lg bg-muted/10">
-                  <Input
-                    placeholder="Title"
-                    value={newRecommendation.title}
-                    onChange={(e) => setNewRecommendation(prev => ({ ...prev, title: e.target.value }))}
-                  />
-                  <Input
-                    placeholder="URL"
-                    value={newRecommendation.url}
-                    onChange={(e) => setNewRecommendation(prev => ({ ...prev, url: e.target.value }))}
-                  />
-                  <Input
-                    placeholder="Description"
-                    value={newRecommendation.description}
-                    onChange={(e) => setNewRecommendation(prev => ({ ...prev, description: e.target.value }))}
-                  />
-                </div>
+               <CardContent className="space-y-4">
+                 {/* Form for adding new recommendation */}
+                 <div className="space-y-3 p-3 border rounded-lg bg-muted/10">
+                   <div className="flex gap-2">
+                     <Button
+                       variant={newRecommendation.type === 'link' ? 'default' : 'outline'}
+                       size="sm"
+                       onClick={() => setNewRecommendation(prev => ({ ...prev, type: 'link' }))}
+                     >
+                       Link
+                     </Button>
+                     <Button
+                       variant={newRecommendation.type === 'file' ? 'default' : 'outline'}
+                       size="sm"
+                       onClick={() => setNewRecommendation(prev => ({ ...prev, type: 'file' }))}
+                     >
+                       File
+                     </Button>
+                   </div>
+                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                     <Input
+                       placeholder="Title"
+                       value={newRecommendation.title}
+                       onChange={(e) => setNewRecommendation(prev => ({ ...prev, title: e.target.value }))}
+                     />
+                     {newRecommendation.type === 'link' && (
+                       <Input
+                         placeholder="URL"
+                         value={newRecommendation.url}
+                         onChange={(e) => setNewRecommendation(prev => ({ ...prev, url: e.target.value }))}
+                       />
+                     )}
+                     {newRecommendation.type === 'file' && (
+                       <div className="text-sm text-muted-foreground flex items-center">
+                         Click "Add Reading" to select file
+                       </div>
+                     )}
+                     <Input
+                       placeholder="Description"
+                       value={newRecommendation.description}
+                       onChange={(e) => setNewRecommendation(prev => ({ ...prev, description: e.target.value }))}
+                     />
+                   </div>
+                 </div>
 
                 {/* Existing recommendations */}
-                {recommendedReading.map((item, index) => (
-                  <div key={index} className="p-3 border rounded-lg bg-muted/20">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <h4 className="font-medium text-foreground">{item.title}</h4>
-                        <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline break-all">
-                          {item.url}
-                        </a>
-                        {item.description && (
-                          <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
-                        )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setRecommendedReading(prev => prev.filter((_, i) => i !== index))}
-                        className="h-8 w-8 p-0 text-destructive"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                 {recommendedReading.map((item, index) => (
+                   <div key={index} className="p-3 border rounded-lg bg-muted/20">
+                     <div className="flex items-start justify-between">
+                       <div className="flex-1">
+                         <h4 className="font-medium text-foreground">{item.title}</h4>
+                         {item.url && (
+                           <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline break-all">
+                             {item.url}
+                           </a>
+                         )}
+                         {item.fileUrl && (
+                           <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline break-all">
+                             📁 {item.fileName}
+                           </a>
+                         )}
+                         {item.description && (
+                           <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
+                         )}
+                       </div>
+                       <Button
+                         variant="ghost"
+                         size="sm"
+                         onClick={() => setRecommendedReading(prev => prev.filter((_, i) => i !== index))}
+                         className="h-8 w-8 p-0 text-destructive"
+                       >
+                         <Trash2 className="h-3 w-3" />
+                       </Button>
+                     </div>
+                   </div>
+                 ))}
                 
                 {recommendedReading.length === 0 && (
                   <div className="text-center py-4 text-muted-foreground">

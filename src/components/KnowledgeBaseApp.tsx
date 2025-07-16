@@ -239,7 +239,7 @@ export function KnowledgeBaseApp() {
     setCurrentView('editor');
   };
 
-  const handleSavePage = async (title: string, content: string) => {
+  const handleSavePage = async (title: string, content: string, recommendedReading?: Array<{title: string, url?: string, description: string, fileUrl?: string, fileName?: string}>) => {
     if (!currentPage || !user) return;
 
     try {
