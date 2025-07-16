@@ -80,7 +80,7 @@ export function EnhancedContentEditor({
   const [publicToken, setPublicToken] = useState('');
   const [showAdvancedToolbar, setShowAdvancedToolbar] = useState(false);
   const [selectedFontSize, setSelectedFontSize] = useState("14");
-  const [recommendedReading, setRecommendedReading] = useState<Array<{title: string, url?: string, description: string, fileUrl?: string, fileName?: string}>>([]);
+  const [recommendedReading, setRecommendedReading] = useState<Array<{title: string, url?: string, description: string, type: 'link' | 'file', fileName?: string, fileUrl?: string}>>([]);
   const [newRecommendation, setNewRecommendation] = useState({title: '', url: '', description: '', type: 'link' as 'link' | 'file'});
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -155,12 +155,18 @@ export function EnhancedContentEditor({
   };
 
   const insertTable = (rows: number, cols: number) => {
-    let tableHTML = '<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0;"><tbody>';
+    let tableHTML = `<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0;" data-table="true"><tbody>`;
     
     // Header row
     tableHTML += '<tr>';
     for (let j = 0; j < cols; j++) {
-      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px;">Header ${j + 1}</th>`;
+      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; position: relative;">
+        Header ${j + 1}
+        <div class="table-controls" style="position: absolute; top: 2px; right: 2px; display: none;">
+          <button onclick="addColumnAfter(this)" style="background: #007bff; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">+Col</button>
+          <button onclick="removeColumn(this)" style="background: #dc3545; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">-Col</button>
+        </div>
+      </th>`;
     }
     tableHTML += '</tr>';
     
@@ -168,13 +174,88 @@ export function EnhancedContentEditor({
     for (let i = 0; i < rows - 1; i++) {
       tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; min-width: 100px;">Cell ${i + 1}-${j + 1}</td>`;
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; min-width: 100px; position: relative;">
+          Cell ${i + 1}-${j + 1}
+          ${j === 0 ? `<div class="row-controls" style="position: absolute; top: 2px; right: 2px; display: none;">
+            <button onclick="addRowAfter(this)" style="background: #007bff; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">+Row</button>
+            <button onclick="removeRow(this)" style="background: #dc3545; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">-Row</button>
+          </div>` : ''}
+        </td>`;
       }
       tableHTML += '</tr>';
     }
     
-    tableHTML += '</tbody></table><br>';
-    insertText(tableHTML);
+    tableHTML += '</tbody></table>';
+    
+    // Add table control functions to window for inline onclick handlers
+    const scriptHTML = `
+      <script>
+        window.addRowAfter = function(btn) {
+          const row = btn.closest('tr');
+          const table = btn.closest('table');
+          const colCount = row.cells.length;
+          const newRow = table.insertRow(row.rowIndex + 1);
+          for (let i = 0; i < colCount; i++) {
+            const cell = newRow.insertCell(i);
+            cell.style.cssText = 'border: 1px solid #ccc; padding: 8px; min-width: 100px; position: relative;';
+            cell.innerHTML = 'New Cell';
+            if (i === 0) {
+              cell.innerHTML += '<div class="row-controls" style="position: absolute; top: 2px; right: 2px; display: none;"><button onclick="addRowAfter(this)" style="background: #007bff; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">+Row</button><button onclick="removeRow(this)" style="background: #dc3545; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">-Row</button></div>';
+            }
+          }
+        };
+        
+        window.removeRow = function(btn) {
+          const row = btn.closest('tr');
+          const table = btn.closest('table');
+          if (table.rows.length > 2) row.remove();
+        };
+        
+        window.addColumnAfter = function(btn) {
+          const table = btn.closest('table');
+          const cellIndex = btn.closest('th, td').cellIndex;
+          for (let i = 0; i < table.rows.length; i++) {
+            const cell = table.rows[i].insertCell(cellIndex + 1);
+            cell.style.cssText = 'border: 1px solid #ccc; padding: 8px; min-width: 100px; position: relative;';
+            if (i === 0) {
+              cell.innerHTML = 'New Header<div class="table-controls" style="position: absolute; top: 2px; right: 2px; display: none;"><button onclick="addColumnAfter(this)" style="background: #007bff; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">+Col</button><button onclick="removeColumn(this)" style="background: #dc3545; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">-Col</button></div>';
+            } else {
+              cell.innerHTML = 'New Cell';
+              if (cellIndex + 1 === 0) {
+                cell.innerHTML += '<div class="row-controls" style="position: absolute; top: 2px; right: 2px; display: none;"><button onclick="addRowAfter(this)" style="background: #007bff; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">+Row</button><button onclick="removeRow(this)" style="background: #dc3545; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">-Row</button></div>';
+              }
+            }
+          }
+        };
+        
+        window.removeColumn = function(btn) {
+          const table = btn.closest('table');
+          const cellIndex = btn.closest('th, td').cellIndex;
+          if (table.rows[0].cells.length > 1) {
+            for (let i = 0; i < table.rows.length; i++) {
+              table.rows[i].deleteCell(cellIndex);
+            }
+          }
+        };
+        
+        // Show controls on hover
+        document.addEventListener('mouseover', function(e) {
+          if (e.target.closest('table[data-table="true"]')) {
+            const controls = e.target.closest('th, td')?.querySelector('.table-controls, .row-controls');
+            if (controls) controls.style.display = 'block';
+          }
+        });
+        
+        document.addEventListener('mouseout', function(e) {
+          if (e.target.closest('table[data-table="true"]')) {
+            const controls = e.target.closest('th, td')?.querySelector('.table-controls, .row-controls');
+            if (controls) controls.style.display = 'none';
+          }
+        });
+      </script>
+    `;
+    
+    insertText(tableHTML + scriptHTML + '<br>');
   };
 
   const insertDivider = () => {
@@ -692,12 +773,13 @@ export function EnhancedContentEditor({
                              const file = (e.target as HTMLInputElement).files?.[0];
                              if (file) {
                                const fileUrl = URL.createObjectURL(file);
-                               setRecommendedReading(prev => [...prev, {
-                                 title: newRecommendation.title,
-                                 description: newRecommendation.description,
-                                 fileUrl,
-                                 fileName: file.name
-                               }]);
+                                setRecommendedReading(prev => [...prev, {
+                                  title: newRecommendation.title,
+                                  description: newRecommendation.description,
+                                  type: 'file',
+                                  fileUrl,
+                                  fileName: file.name
+                                }]);
                                setNewRecommendation({ title: '', url: '', description: '', type: 'link' });
                                toast({
                                  title: "Added",
@@ -707,11 +789,12 @@ export function EnhancedContentEditor({
                            };
                            input.click();
                          } else {
-                           setRecommendedReading(prev => [...prev, {
-                             title: newRecommendation.title,
-                             url: newRecommendation.url,
-                             description: newRecommendation.description
-                           }]);
+                            setRecommendedReading(prev => [...prev, {
+                              title: newRecommendation.title,
+                              url: newRecommendation.url,
+                              description: newRecommendation.description,
+                              type: 'link'
+                            }]);
                            setNewRecommendation({ title: '', url: '', description: '', type: 'link' });
                            toast({
                              title: "Added",

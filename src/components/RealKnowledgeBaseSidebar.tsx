@@ -247,7 +247,7 @@ interface RealKnowledgeBaseSidebarProps {
   selectedId?: string;
   onCreatePage?: () => void;
   onCreateSubPage?: (parentId: string) => void;
-  onCreateFolder?: () => void;
+  
   onCreatePageInEditor?: (parentId?: string) => void;
 }
 export function RealKnowledgeBaseSidebar({
@@ -255,7 +255,7 @@ export function RealKnowledgeBaseSidebar({
   selectedId,
   onCreatePage,
   onCreateSubPage,
-  onCreateFolder,
+  
   onCreatePageInEditor
 }: RealKnowledgeBaseSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -413,11 +413,6 @@ export function RealKnowledgeBaseSidebar({
       });
     }
   };
-  const handleCreateFolder = async () => {
-    if (onCreateFolder) {
-      onCreateFolder();
-    }
-  };
   const handleCreatePage = () => {
     if (onCreatePageInEditor) {
       onCreatePageInEditor();
@@ -464,12 +459,9 @@ export function RealKnowledgeBaseSidebar({
       <div className="flex-1 p-4 overflow-hidden">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-50">
-            Spaces & Pages
+            Pages
           </h3>
           <div className="flex gap-1">
-            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent" onClick={handleCreateFolder} title="Create new space">
-              <Folder className="h-3 w-3" />
-            </Button>
             {onCreatePage && <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent" onClick={handleCreatePage} title="Create new page">
                 <Plus className="h-3 w-3" />
               </Button>}

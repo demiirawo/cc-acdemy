@@ -140,38 +140,6 @@ export function KnowledgeBaseApp() {
     handleCreatePageInEditor(parentId);
   };
 
-  const handleCreateFolder = async () => {
-    if (!user) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('spaces')
-        .insert({
-          name: 'New Folder',
-          description: '',
-          created_by: user.id
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      toast({
-        title: "Folder created",
-        description: `"${data.name}" has been created successfully.`,
-      });
-
-      // Refresh sidebar to show new folder
-      window.location.reload();
-    } catch (error) {
-      console.error('Error creating folder:', error);
-      toast({
-        title: "Error creating folder",
-        description: "Failed to create folder. Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
 
   const handleCreatePageInEditor = async (parentId?: string) => {
     if (!user) return;
@@ -318,7 +286,6 @@ export function KnowledgeBaseApp() {
         selectedId={selectedItemId}
         onCreatePage={handleCreatePage}
         onCreateSubPage={handleCreateSubPage}
-        onCreateFolder={handleCreateFolder}
         onCreatePageInEditor={handleCreatePageInEditor}
       />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">

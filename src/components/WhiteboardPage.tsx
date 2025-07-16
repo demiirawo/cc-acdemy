@@ -2,13 +2,11 @@ import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Input } from "@/components/ui/input";
 import { 
   Pencil, 
   Eraser, 
   Trash2, 
   Download, 
-  Palette,
   Square,
   Circle,
   Type,
@@ -17,14 +15,15 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Canvas as FabricCanvas, Circle as FabricCircle, Rect as FabricRect, Textbox as FabricTextbox } from "fabric";
+import { useToast } from "@/hooks/use-toast";
 
 export function WhiteboardPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
-  const [activeTool, setActiveTool] = useState<'select' | 'draw' | 'eraser' | 'text' | 'rectangle' | 'circle' | 'line'>('select');
+  const [activeTool, setActiveTool] = useState<'select' | 'draw' | 'text' | 'rectangle' | 'circle'>('select');
   const [activeColor, setActiveColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(2);
-  const [textToAdd, setTextToAdd] = useState('');
+  const { toast } = useToast();
 
   const colors = [
     '#000000', '#FF0000', '#00FF00', '#0000FF', 
@@ -35,31 +34,55 @@ export function WhiteboardPage() {
   useEffect(() => {
     if (!canvasRef.current) return;
 
-    const canvas = new FabricCanvas(canvasRef.current, {
-      width: 1200,
-      height: 700,
-      backgroundColor: "#ffffff",
-    });
+    try {
+      const canvas = new FabricCanvas(canvasRef.current, {
+        width: 1200,
+        height: 700,
+        backgroundColor: "#ffffff",
+      });
 
-    // Initialize the freeDrawingBrush
-    canvas.freeDrawingBrush.color = activeColor;
-    canvas.freeDrawingBrush.width = brushSize;
+      // Initialize the freeDrawingBrush
+      if (canvas.freeDrawingBrush) {
+        canvas.freeDrawingBrush.color = activeColor;
+        canvas.freeDrawingBrush.width = brushSize;
+      }
 
-    setFabricCanvas(canvas);
+      setFabricCanvas(canvas);
+      
+      toast({
+        title: "Whiteboard ready!",
+        description: "Start drawing or adding shapes",
+      });
 
-    return () => {
-      canvas.dispose();
-    };
+      return () => {
+        try {
+          canvas.dispose();
+        } catch (error) {
+          console.error('Error disposing canvas:', error);
+        }
+      };
+    } catch (error) {
+      console.error('Error initializing canvas:', error);
+      toast({
+        title: "Error",
+        description: "Failed to initialize whiteboard",
+        variant: "destructive",
+      });
+    }
   }, []);
 
   useEffect(() => {
     if (!fabricCanvas) return;
 
-    fabricCanvas.isDrawingMode = activeTool === 'draw';
-    
-    if (activeTool === 'draw' && fabricCanvas.freeDrawingBrush) {
-      fabricCanvas.freeDrawingBrush.color = activeColor;
-      fabricCanvas.freeDrawingBrush.width = brushSize;
+    try {
+      fabricCanvas.isDrawingMode = activeTool === 'draw';
+      
+      if (activeTool === 'draw' && fabricCanvas.freeDrawingBrush) {
+        fabricCanvas.freeDrawingBrush.color = activeColor;
+        fabricCanvas.freeDrawingBrush.width = brushSize;
+      }
+    } catch (error) {
+      console.error('Error updating canvas mode:', error);
     }
   }, [activeTool, activeColor, brushSize, fabricCanvas]);
 
@@ -68,97 +91,129 @@ export function WhiteboardPage() {
 
     if (!fabricCanvas) return;
 
-    if (tool === 'rectangle') {
-      const rect = new FabricRect({
-        left: 100,
-        top: 100,
-        fill: activeColor,
-        width: 100,
-        height: 60,
-        stroke: activeColor,
-        strokeWidth: 2,
+    try {
+      if (tool === 'rectangle') {
+        const rect = new FabricRect({
+          left: 100,
+          top: 100,
+          fill: 'transparent',
+          width: 100,
+          height: 60,
+          stroke: activeColor,
+          strokeWidth: 2,
+        });
+        fabricCanvas.add(rect);
+        fabricCanvas.setActiveObject(rect);
+        fabricCanvas.renderAll();
+      } else if (tool === 'circle') {
+        const circle = new FabricCircle({
+          left: 100,
+          top: 100,
+          fill: 'transparent',
+          radius: 50,
+          stroke: activeColor,
+          strokeWidth: 2,
+        });
+        fabricCanvas.add(circle);
+        fabricCanvas.setActiveObject(circle);
+        fabricCanvas.renderAll();
+      } else if (tool === 'text') {
+        const text = new FabricTextbox('Double click to edit', {
+          left: 100,
+          top: 100,
+          fill: activeColor,
+          fontSize: 20,
+          fontFamily: 'Arial',
+        });
+        fabricCanvas.add(text);
+        fabricCanvas.setActiveObject(text);
+        fabricCanvas.renderAll();
+      }
+    } catch (error) {
+      console.error('Error adding shape:', error);
+      toast({
+        title: "Error",
+        description: "Failed to add shape",
+        variant: "destructive",
       });
-      fabricCanvas.add(rect);
-      fabricCanvas.setActiveObject(rect);
-    } else if (tool === 'circle') {
-      const circle = new FabricCircle({
-        left: 100,
-        top: 100,
-        fill: 'transparent',
-        radius: 50,
-        stroke: activeColor,
-        strokeWidth: 2,
-      });
-      fabricCanvas.add(circle);
-      fabricCanvas.setActiveObject(circle);
-    } else if (tool === 'text') {
-      const text = new FabricTextbox(textToAdd || 'Double click to edit', {
-        left: 100,
-        top: 100,
-        fill: activeColor,
-        fontSize: 20,
-        fontFamily: 'Arial',
-        width: 200,
-      });
-      fabricCanvas.add(text);
-      fabricCanvas.setActiveObject(text);
-      text.enterEditing();
     }
   };
 
-  const clearCanvas = () => {
+  const handleClear = () => {
     if (!fabricCanvas) return;
-    fabricCanvas.clear();
-    fabricCanvas.backgroundColor = "#ffffff";
-    fabricCanvas.renderAll();
+
+    try {
+      fabricCanvas.clear();
+      fabricCanvas.backgroundColor = "#ffffff";
+      fabricCanvas.renderAll();
+      
+      toast({
+        title: "Canvas cleared",
+        description: "All content has been removed",
+      });
+    } catch (error) {
+      console.error('Error clearing canvas:', error);
+    }
   };
 
-  const downloadCanvas = () => {
+  const handleDownload = () => {
     if (!fabricCanvas) return;
-    const link = document.createElement('a');
-    link.download = 'whiteboard.png';
-    link.href = fabricCanvas.toDataURL();
-    link.click();
+
+    try {
+      const dataURL = fabricCanvas.toDataURL({
+        format: 'png',
+        quality: 0.8,
+        multiplier: 1
+      });
+      
+      const link = document.createElement('a');
+      link.download = 'whiteboard.png';
+      link.href = dataURL;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      toast({
+        title: "Downloaded",
+        description: "Whiteboard saved as PNG",
+      });
+    } catch (error) {
+      console.error('Error downloading canvas:', error);
+      toast({
+        title: "Error",
+        description: "Failed to download whiteboard",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
-    <div className="flex-1 p-6 overflow-auto">
-      <Card className="h-full flex flex-col">
-        <CardHeader className="pb-4">
-          <CardTitle className="flex items-center justify-between">
-            Whiteboard
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={downloadCanvas}
-                className="flex items-center gap-2"
-              >
-                <Download className="h-4 w-4" />
-                Download
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={clearCanvas}
-                className="flex items-center gap-2 text-destructive hover:text-destructive"
-              >
-                <Trash2 className="h-4 w-4" />
-                Clear
-              </Button>
-            </div>
-          </CardTitle>
-          
-          {/* Toolbar */}
-          <div className="flex items-center gap-4 pt-4">
+    <div className="flex-1 flex flex-col overflow-hidden bg-background">
+      {/* Header */}
+      <div className="border-b border-border p-4 bg-background">
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="text-2xl font-bold text-foreground">Whiteboard</h1>
+          <div className="flex items-center gap-2">
+            <Button onClick={handleDownload} variant="outline" size="sm">
+              <Download className="h-4 w-4 mr-2" />
+              Download
+            </Button>
+            <Button onClick={handleClear} variant="outline" size="sm">
+              <Trash2 className="h-4 w-4 mr-2" />
+              Clear
+            </Button>
+          </div>
+        </div>
+
+        {/* Toolbar */}
+        <div className="flex items-center gap-4">
           {/* Tools */}
-          <div className="flex items-center gap-1 p-1 bg-muted rounded-lg">
+          <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg border">
             <Button
               variant={activeTool === 'select' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setActiveTool('select')}
               className="h-8 w-8 p-0"
-              title="Select"
             >
               <MousePointer className="h-4 w-4" />
             </Button>
@@ -167,25 +222,15 @@ export function WhiteboardPage() {
               size="sm"
               onClick={() => setActiveTool('draw')}
               className="h-8 w-8 p-0"
-              title="Draw"
             >
               <Pencil className="h-4 w-4" />
             </Button>
-            <Button
-              variant={activeTool === 'text' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => handleToolClick('text')}
-              className="h-8 w-8 p-0"
-              title="Add Text"
-            >
-              <Type className="h-4 w-4" />
-            </Button>
+            <Separator orientation="vertical" className="h-6" />
             <Button
               variant={activeTool === 'rectangle' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => handleToolClick('rectangle')}
               className="h-8 w-8 p-0"
-              title="Rectangle"
             >
               <Square className="h-4 w-4" />
             </Button>
@@ -194,69 +239,60 @@ export function WhiteboardPage() {
               size="sm"
               onClick={() => handleToolClick('circle')}
               className="h-8 w-8 p-0"
-              title="Circle"
             >
               <Circle className="h-4 w-4" />
             </Button>
+            <Button
+              variant={activeTool === 'text' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => handleToolClick('text')}
+              className="h-8 w-8 p-0"
+            >
+              <Type className="h-4 w-4" />
+            </Button>
           </div>
 
-            <Separator orientation="vertical" className="h-6" />
-
           {/* Colors */}
-          <div className="flex items-center gap-1">
-            <Palette className="h-4 w-4 text-muted-foreground mr-2" />
-            {colors.map((c) => (
+          <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg border">
+            {colors.map((color) => (
               <button
-                key={c}
+                key={color}
+                onClick={() => setActiveColor(color)}
                 className={cn(
-                  "w-6 h-6 rounded border-2 transition-all",
-                  activeColor === c ? "border-foreground scale-110" : "border-muted-foreground/30"
+                  "w-6 h-6 rounded border-2 cursor-pointer",
+                  activeColor === color ? "border-foreground scale-110" : "border-transparent"
                 )}
-                style={{ backgroundColor: c }}
-                onClick={() => setActiveColor(c)}
+                style={{ backgroundColor: color }}
               />
             ))}
           </div>
 
-            <Separator orientation="vertical" className="h-6" />
-
-            {/* Brush Size */}
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">Size:</span>
+          {/* Brush Size */}
+          {activeTool === 'draw' && (
+            <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg border">
+              <span className="text-sm">Size:</span>
               <input
                 type="range"
                 min="1"
                 max="20"
                 value={brushSize}
-                onChange={(e) => setBrushSize(parseInt(e.target.value))}
+                onChange={(e) => setBrushSize(Number(e.target.value))}
                 className="w-20"
               />
-              <span className="text-sm text-muted-foreground w-6">{brushSize}</span>
+              <span className="text-sm w-6">{brushSize}</span>
             </div>
-          {/* Text Input for Text Tool */}
-          {activeTool === 'text' && (
-            <>
-              <Separator orientation="vertical" className="h-6" />
-              <Input
-                placeholder="Enter text to add"
-                value={textToAdd}
-                onChange={(e) => setTextToAdd(e.target.value)}
-                className="w-40"
-              />
-            </>
           )}
         </div>
-      </CardHeader>
-      
-      <CardContent className="flex-1 p-0">
-        <div className="w-full h-full bg-white border rounded-lg overflow-hidden">
-          <canvas
-            ref={canvasRef}
-            className="w-full h-full"
-          />
+      </div>
+
+      {/* Canvas */}
+      <div className="flex-1 p-4 overflow-auto">
+        <div className="flex justify-center">
+          <div className="border border-border rounded-lg shadow-lg overflow-hidden bg-white">
+            <canvas ref={canvasRef} />
+          </div>
         </div>
-        </CardContent>
-      </Card>
+      </div>
     </div>
   );
 }

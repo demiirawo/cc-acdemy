@@ -18,7 +18,7 @@ interface ResizableSidebarProps {
   selectedId?: string;
   onCreatePage?: () => void;
   onCreateSubPage?: (parentId: string) => void;
-  onCreateFolder?: () => void;
+  
   onCreatePageInEditor?: (parentId?: string) => void;
 }
 
@@ -27,7 +27,7 @@ export function ResizableSidebar({
   selectedId,
   onCreatePage,
   onCreateSubPage,
-  onCreateFolder,
+  
   onCreatePageInEditor
 }: ResizableSidebarProps) {
   const [width, setWidth] = useState(320);
@@ -83,7 +83,7 @@ export function ResizableSidebar({
         selectedId={selectedId}
         onCreatePage={onCreatePage}
         onCreateSubPage={onCreateSubPage}
-        onCreateFolder={onCreateFolder}
+        
         onCreatePageInEditor={onCreatePageInEditor}
       />
       
