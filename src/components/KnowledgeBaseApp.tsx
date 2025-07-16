@@ -14,7 +14,178 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { LogOut, Settings as SettingsIcon, Shield } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy } from "lucide-react";
+
+// Page view component
+function PageView({ currentPage, onEditPage, setPermissionsDialogOpen }: {
+  currentPage: Page;
+  onEditPage: () => void;
+  setPermissionsDialogOpen: (open: boolean) => void;
+}) {
+  const [isPublic, setIsPublic] = useState(false);
+  const [publicToken, setPublicToken] = useState('');
+  const [recommendedReading, setRecommendedReading] = useState<Array<{title: string, url?: string, description: string, fileUrl?: string, fileName?: string}>>([]);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const fetchPageSettings = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('pages')
+          .select('is_public, public_token, content')
+          .eq('id', currentPage.id)
+          .single();
+
+        if (error) throw error;
+
+        if (data) {
+          setIsPublic(data.is_public || false);
+          setPublicToken(data.public_token || '');
+          
+          // Extract recommended reading from content
+          try {
+            if (data.content && data.content.includes('RECOMMENDED_READING:')) {
+              const parts = data.content.split('RECOMMENDED_READING:');
+              if (parts.length > 1) {
+                const readingData = JSON.parse(parts[1]);
+                setRecommendedReading(readingData);
+              }
+            }
+          } catch (e) {
+            console.log('No recommended reading data found');
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching page settings:', error);
+      }
+    };
+
+    fetchPageSettings();
+  }, [currentPage.id]);
+
+  const togglePublicAccess = async () => {
+    try {
+      const newIsPublic = !isPublic;
+      const { error } = await supabase
+        .from('pages')
+        .update({ is_public: newIsPublic })
+        .eq('id', currentPage.id);
+
+      if (error) throw error;
+
+      setIsPublic(newIsPublic);
+      toast({
+        title: newIsPublic ? "Page made public" : "Page made private",
+        description: newIsPublic ? "Anyone can view this page" : "Only authorized users can view this page",
+      });
+    } catch (error) {
+      console.error('Error updating public access:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update page visibility",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const copyPublicLink = () => {
+    if (!publicToken) return;
+    
+    const publicUrl = `${window.location.origin}/public/${publicToken}`;
+    navigator.clipboard.writeText(publicUrl);
+    toast({
+      title: "Link copied",
+      description: "Public link copied to clipboard",
+    });
+  };
+
+  const cleanContent = currentPage.content.split('RECOMMENDED_READING:')[0];
+
+  return (
+    <div className="flex-1 overflow-auto">
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h1 className="text-4xl font-bold text-foreground">{currentPage.title}</h1>
+            <div className="flex gap-2 items-center">
+              <div className="flex items-center gap-2">
+                {isPublic ? <Globe className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                <Label htmlFor="public-toggle" className="text-sm font-medium">
+                  Public
+                </Label>
+                <Switch
+                  id="public-toggle"
+                  checked={isPublic}
+                  onCheckedChange={togglePublicAccess}
+                />
+              </div>
+              
+              {isPublic && publicToken && (
+                <Button variant="outline" size="sm" onClick={copyPublicLink}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Copy Public Link
+                </Button>
+              )}
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPermissionsDialogOpen(true)}
+                className="flex items-center gap-2"
+              >
+                <Shield className="h-4 w-4" />
+                Permissions
+              </Button>
+              <Button
+                onClick={onEditPage}
+                className="bg-gradient-primary"
+              >
+                Edit
+              </Button>
+            </div>
+          </div>
+          <div className="text-sm text-muted-foreground">
+            Last updated {new Date(currentPage.lastUpdated).toLocaleDateString()} by {currentPage.author}
+          </div>
+        </div>
+        
+        <div className="prose prose-lg max-w-none">
+          <div 
+            className="text-foreground leading-relaxed"
+            dangerouslySetInnerHTML={{ __html: cleanContent }}
+          />
+        </div>
+
+        {/* Recommended Reading Section */}
+        {recommendedReading.length > 0 && (
+          <div className="mt-8 pt-8 border-t border-border">
+            <h3 className="text-xl font-semibold mb-4 text-foreground">Recommended Reading</h3>
+            <div className="space-y-3">
+              {recommendedReading.map((item, index) => (
+                <div key={index} className="p-4 border rounded-lg bg-muted/20">
+                  <h4 className="font-medium text-foreground mb-1">{item.title}</h4>
+                  {item.url && (
+                    <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm block mb-2">
+                      {item.url}
+                    </a>
+                  )}
+                  {item.fileUrl && (
+                    <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm block mb-2">
+                      📁 {item.fileName}
+                    </a>
+                  )}
+                  <p className="text-sm text-muted-foreground">{item.description}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'people' | 'settings' | 'whiteboard';
 
@@ -350,42 +521,11 @@ export function KnowledgeBaseApp() {
         )}
         
         {currentView === 'page' && currentPage && (
-          <div className="flex-1 overflow-auto">
-            <div className="max-w-4xl mx-auto p-6">
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h1 className="text-4xl font-bold text-foreground">{currentPage.title}</h1>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPermissionsDialogOpen(true)}
-                      className="flex items-center gap-2"
-                    >
-                      <Shield className="h-4 w-4" />
-                      Permissions
-                    </Button>
-                    <Button
-                      onClick={handleEditPage}
-                      className="bg-gradient-primary"
-                    >
-                      Edit
-                    </Button>
-                  </div>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  Last updated {new Date(currentPage.lastUpdated).toLocaleDateString()} by {currentPage.author}
-                </div>
-              </div>
-              
-              <div className="prose prose-lg max-w-none">
-                <div 
-                  className="whitespace-pre-wrap text-foreground leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: currentPage.content.replace(/\n/g, '<br>') }}
-                />
-              </div>
-            </div>
-          </div>
+          <PageView
+            currentPage={currentPage}
+            onEditPage={handleEditPage}
+            setPermissionsDialogOpen={setPermissionsDialogOpen}
+          />
         )}
       </div>
 

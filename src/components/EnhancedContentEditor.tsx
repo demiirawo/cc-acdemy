@@ -317,7 +317,15 @@ export function EnhancedContentEditor({
   const listToolbarItems = [
     { icon: List, action: () => formatText('insertUnorderedList'), tooltip: "Bullet List" },
     { icon: ListOrdered, action: () => formatText('insertOrderedList'), tooltip: "Numbered List" },
-    { icon: Quote, action: () => insertText('<blockquote style="border-left: 4px solid #e5e7eb; padding-left: 16px; margin: 16px 0; font-style: italic;">Quote text here</blockquote><br>'), tooltip: "Quote" },
+    { icon: Quote, action: () => {
+      const selection = window.getSelection();
+      if (selection && selection.toString()) {
+        const selectedText = selection.toString();
+        execCommand('insertHTML', `<blockquote style="border-left: 4px solid #e5e7eb; padding-left: 16px; margin: 16px 0; font-style: italic;">${selectedText}</blockquote><br>`);
+      } else {
+        insertText('<blockquote style="border-left: 4px solid #e5e7eb; padding-left: 16px; margin: 16px 0; font-style: italic;">Quote text here</blockquote><br>');
+      }
+    }, tooltip: "Quote" },
   ];
 
   const insertToolbarItems = [
@@ -543,26 +551,7 @@ export function EnhancedContentEditor({
             className="text-2xl font-bold"
             placeholder="Page title..."
           />
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              {isPublic ? <Globe className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
-              <Label htmlFor="public-toggle" className="text-sm font-medium">
-                Public
-              </Label>
-              <Switch
-                id="public-toggle"
-                checked={isPublic}
-                onCheckedChange={togglePublicAccess}
-              />
-            </div>
-            
-            {isPublic && publicToken && (
-              <Button variant="outline" size="sm" onClick={copyPublicLink}>
-                <Copy className="h-4 w-4 mr-2" />
-                Copy Public Link
-              </Button>
-            )}
-
+          <div className="flex gap-2">
             {pageId && (
               <Button
                 variant="destructive"
@@ -575,18 +564,16 @@ export function EnhancedContentEditor({
               </Button>
             )}
             
-            <div className="flex gap-2">
-              {onPreview && (
-                <Button onClick={onPreview} variant="outline">
-                  <Eye className="h-4 w-4 mr-2" />
-                  Preview
-                </Button>
-              )}
-              <Button onClick={handleSave} className="bg-gradient-primary">
-                <Save className="h-4 w-4 mr-2" />
-                Save
+            {onPreview && (
+              <Button onClick={onPreview} variant="outline">
+                <Eye className="h-4 w-4 mr-2" />
+                Preview
               </Button>
-            </div>
+            )}
+            <Button onClick={handleSave} className="bg-gradient-primary">
+              <Save className="h-4 w-4 mr-2" />
+              Save
+            </Button>
           </div>
         </div>
 
