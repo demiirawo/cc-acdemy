@@ -93,6 +93,13 @@ const navigationItems = [
   { id: 'recent', title: 'Recently Updated', icon: Clock, href: '/recent' },
   { id: 'tags', title: 'Tags', icon: Tag, href: '/tags' },
   { id: 'people', title: 'People', icon: Users, href: '/people' },
+  { id: 'whiteboard', title: 'Whiteboard', icon: () => (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+      <path d="m7 7 10 10"/>
+      <path d="m17 7-10 10"/>
+    </svg>
+  ), href: '/whiteboard' },
 ];
 
 interface SidebarTreeItemProps {
@@ -272,11 +279,25 @@ function DraggablePageItem({
                   <Copy className="h-4 w-4 mr-2" />
                   Copy link
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => {}}>
+                <DropdownMenuItem onClick={() => {
+                  // Placeholder for star functionality
+                  const { toast } = useToast();
+                  toast({
+                    title: "Star feature",
+                    description: "Coming soon!",
+                  });
+                }}>
                   <Star className="h-4 w-4 mr-2" />
                   Star
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => {}}>
+                <DropdownMenuItem onClick={() => {
+                  // Placeholder for share functionality
+                  const { toast } = useToast();
+                  toast({
+                    title: "Share feature",
+                    description: "Coming soon!",
+                  });
+                }}>
                   <Share className="h-4 w-4 mr-2" />
                   Share
                 </DropdownMenuItem>
@@ -285,7 +306,14 @@ function DraggablePageItem({
                   <Copy className="h-4 w-4 mr-2" />
                   Duplicate
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => {}}>
+                <DropdownMenuItem onClick={() => {
+                  // Placeholder for move functionality
+                  const { toast } = useToast();
+                  toast({
+                    title: "Move feature",
+                    description: "Use drag and drop to move pages!",
+                  });
+                }}>
                   <Move className="h-4 w-4 mr-2" />
                   Move
                 </DropdownMenuItem>
@@ -296,7 +324,35 @@ function DraggablePageItem({
                 </DropdownMenuItem>
                 <DropdownMenuItem 
                   className="text-destructive focus:text-destructive"
-                  onClick={() => {}}
+                  onClick={async () => {
+                    if (confirm("Are you sure you want to delete this page? This action cannot be undone.")) {
+                      try {
+                        const { error } = await supabase
+                          .from('pages')
+                          .delete()
+                          .eq('id', item.id);
+
+                        if (error) throw error;
+
+                        const { toast } = useToast();
+                        toast({
+                          title: "Page deleted",
+                          description: "Page has been permanently deleted.",
+                        });
+                        
+                        // Refresh the sidebar data
+                        window.location.reload();
+                      } catch (error) {
+                        console.error('Error deleting page:', error);
+                        const { toast } = useToast();
+                        toast({
+                          title: "Error",
+                          description: "Failed to delete page.",
+                          variant: "destructive",
+                        });
+                      }
+                    }
+                  }}
                 >
                   <Trash2 className="h-4 w-4 mr-2" />
                   Delete
@@ -571,7 +627,7 @@ export function RealKnowledgeBaseSidebar({
   };
 
   const handleItemSelect = (item: SidebarItem) => {
-    if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people' || item.id === 'settings') {
+    if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people' || item.id === 'settings' || item.id === 'whiteboard') {
       onItemSelect(item);
     } else if (item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
       onItemSelect(item);
@@ -704,7 +760,7 @@ export function RealKnowledgeBaseSidebar({
           <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center">
             <BookOpen className="h-4 w-4 text-primary-foreground" />
           </div>
-          <h1 className="font-semibold text-sidebar-foreground">Care Cuddle</h1>
+          <h1 className="font-semibold text-sidebar-foreground">CC Learn</h1>
         </div>
         
         {/* Search */}

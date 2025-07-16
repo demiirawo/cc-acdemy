@@ -68,7 +68,8 @@ export function ResizableSidebar({
     };
   }, [isResizing]);
 
-  const handleMouseDown = () => {
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
     setIsResizing(true);
   };
 
@@ -100,9 +101,11 @@ export function ResizableSidebar({
             {/* Resize handle */}
             <div
               ref={resizerRef}
-              className="absolute top-0 right-0 w-1 h-full cursor-col-resize bg-transparent hover:bg-primary/20 transition-colors"
+              className="absolute top-0 right-0 w-2 h-full cursor-col-resize bg-transparent hover:bg-primary/20 transition-colors z-10 flex items-center justify-center"
               onMouseDown={handleMouseDown}
-            />
+            >
+              <div className="w-0.5 h-8 bg-border rounded opacity-50" />
+            </div>
           </>
         )}
         

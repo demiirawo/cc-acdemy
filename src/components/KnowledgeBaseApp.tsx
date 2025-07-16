@@ -8,6 +8,7 @@ import { EnhancedContentEditor } from "./EnhancedContentEditor";
 import { CreatePageDialog } from "./CreatePageDialog";
 import { PagePermissionsDialog } from "./PagePermissionsDialog";
 import { SettingsPage } from "./SettingsPage";
+import { WhiteboardPage } from "./WhiteboardPage";
 import { AuthForm } from "./AuthForm";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -15,7 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { LogOut, Settings as SettingsIcon, Shield } from "lucide-react";
 
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'people' | 'settings';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'people' | 'settings' | 'whiteboard';
 
 interface SidebarItem {
   id: string;
@@ -78,6 +79,9 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
     } else if (item.id === 'settings') {
       setCurrentView('settings');
+      setCurrentPage(null);
+    } else if (item.id === 'whiteboard') {
+      setCurrentView('whiteboard');
       setCurrentPage(null);
     } else if (item.type === 'page') {
       try {
@@ -310,12 +314,13 @@ export function KnowledgeBaseApp() {
         <div className="border-b border-border p-4 bg-background/95 backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-foreground">
-              {currentView === 'dashboard' ? 'Dashboard' : 
+              {currentView === 'dashboard' ? 'CC Learn' : 
                currentView === 'editor' ? 'Editor' : 
                currentView === 'recent' ? 'Recently Updated' :
                currentView === 'tags' ? 'Tags' :
                currentView === 'people' ? 'People' :
                currentView === 'settings' ? 'Settings' :
+               currentView === 'whiteboard' ? 'Whiteboard' :
                currentPage?.title || 'Page'}
             </h2>
             <div className="flex items-center gap-2">
@@ -350,6 +355,10 @@ export function KnowledgeBaseApp() {
 
         {currentView === 'settings' && (
           <SettingsPage onClose={() => setCurrentView('dashboard')} />
+        )}
+
+        {currentView === 'whiteboard' && (
+          <WhiteboardPage />
         )}
         
         {currentView === 'editor' && currentPage && (

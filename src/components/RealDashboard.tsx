@@ -17,6 +17,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { CompanyNoticeboard } from "./CompanyNoticeboard";
 
 interface Page {
   id: string;
@@ -107,7 +108,7 @@ export function RealDashboard({ onCreatePage, onPageSelect }: DashboardProps) {
         profiles: profilesMap.get(page.created_by) || { display_name: 'Unknown' }
       })) || [];
         
-        {/* Company announcements will be added once types are available */}
+        
         
       // Fetch stats
       const { count: totalPages } = await supabase
@@ -253,6 +254,9 @@ export function RealDashboard({ onCreatePage, onPageSelect }: DashboardProps) {
             />
           </div>
         </div>
+
+        {/* Company Noticeboard */}
+        <CompanyNoticeboard />
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

@@ -8,8 +8,8 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 import {
   Bold,
   Italic,
@@ -430,7 +430,7 @@ export function EnhancedContentEditor({
                 className="mr-2"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
-                Delete Page
+              Delete Page
               </Button>
             )}
             
