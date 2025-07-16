@@ -79,6 +79,8 @@ export function EnhancedContentEditor({
   const [publicToken, setPublicToken] = useState('');
   const [showAdvancedToolbar, setShowAdvancedToolbar] = useState(false);
   const [selectedFontSize, setSelectedFontSize] = useState("14");
+  const [recommendedReading, setRecommendedReading] = useState<{title: string, url: string, description: string}[]>([]);
+  const [newRecommendation, setNewRecommendation] = useState({title: '', url: '', description: ''});
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -222,6 +224,7 @@ export function EnhancedContentEditor({
     { icon: Link, action: insertLink, tooltip: "Insert Link" },
     { icon: Image, action: insertImage, tooltip: "Insert Image" },
     { icon: Youtube, action: insertYouTube, tooltip: "Insert YouTube Video" },
+    { icon: Table, action: () => insertTable(3, 3), tooltip: "Insert Table" },
     { icon: Code, action: () => formatText('formatBlock', 'pre'), tooltip: "Code Block" },
     { icon: FileText, action: () => fileInputRef.current?.click(), tooltip: "Upload File" }
   ];
@@ -386,6 +389,24 @@ export function EnhancedContentEditor({
               dangerouslySetInnerHTML={{ __html: currentContent }}
             />
           </div>
+          
+          {/* Recommended Reading on Final Page */}
+          {recommendedReading.length > 0 && (
+            <div className="mt-8 pt-8 border-t border-border">
+              <h3 className="text-xl font-semibold mb-4 text-foreground">Recommended Reading</h3>
+              <div className="space-y-3">
+                {recommendedReading.map((item, index) => (
+                  <div key={index} className="p-4 border rounded-lg bg-muted/20">
+                    <h4 className="font-medium text-foreground mb-1">{item.title}</h4>
+                    <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm block mb-2">
+                      {item.url}
+                    </a>
+                    <p className="text-sm text-muted-foreground">{item.description}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -599,13 +620,13 @@ export function EnhancedContentEditor({
 
       <div className="flex-1 flex overflow-hidden">
         {/* Main Editor */}
-        <div className="flex-1 p-6">
+        <div className="flex-1 p-6 space-y-6">
           <div
             ref={editorRef}
             contentEditable
             suppressContentEditableWarning
             onInput={updateContent}
-            className="h-full w-full p-4 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-background text-foreground min-h-[500px] prose prose-lg max-w-none"
+            className="w-full p-4 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-background text-foreground min-h-[400px] prose prose-lg max-w-none"
             style={{
               fontFamily: 'system-ui, -apple-system, sans-serif',
               fontSize: '16px',
@@ -613,6 +634,68 @@ export function EnhancedContentEditor({
             }}
             data-placeholder="Start writing your content..."
           />
+          
+          {/* Recommended Reading Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Recommended Reading</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {recommendedReading.map((item, index) => (
+                <div key={index} className="p-3 border rounded-lg bg-muted/20">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h4 className="font-medium text-foreground">{item.title}</h4>
+                      <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline">
+                        {item.url}
+                      </a>
+                      <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setRecommendedReading(prev => prev.filter((_, i) => i !== index))}
+                      className="h-8 w-8 p-0 text-destructive"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <Input
+                  placeholder="Title"
+                  value={newRecommendation.title}
+                  onChange={(e) => setNewRecommendation(prev => ({ ...prev, title: e.target.value }))}
+                />
+                <Input
+                  placeholder="URL"
+                  value={newRecommendation.url}
+                  onChange={(e) => setNewRecommendation(prev => ({ ...prev, url: e.target.value }))}
+                />
+                <Input
+                  placeholder="Description"
+                  value={newRecommendation.description}
+                  onChange={(e) => setNewRecommendation(prev => ({ ...prev, description: e.target.value }))}
+                />
+              </div>
+              
+              <Button
+                onClick={() => {
+                  if (newRecommendation.title && newRecommendation.url) {
+                    setRecommendedReading(prev => [...prev, newRecommendation]);
+                    setNewRecommendation({ title: '', url: '', description: '' });
+                  }
+                }}
+                variant="outline"
+                size="sm"
+                disabled={!newRecommendation.title || !newRecommendation.url}
+              >
+                Add Recommended Reading
+              </Button>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Media Panel */}

@@ -185,18 +185,19 @@ function DraggablePageItem({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {/* Drag Handle */}
+        {/* Enhanced Drag Handle */}
         {item.type === 'page' && (
           <div
             {...attributes}
             {...listeners}
-            className="opacity-0 group-hover:opacity-100 cursor-grab active:cursor-grabbing"
+            className="flex-shrink-0 opacity-60 group-hover:opacity-100 cursor-grab active:cursor-grabbing transition-opacity p-1 hover:bg-sidebar-accent/50 rounded"
             draggable
             onDragStart={(e) => {
               e.dataTransfer.setData('text/plain', item.id);
             }}
+            title="Drag to move page"
           >
-            <GripVertical className="h-3 w-3 text-sidebar-foreground/40" />
+            <GripVertical className="h-4 w-4 text-sidebar-foreground/60" />
           </div>
         )}
 

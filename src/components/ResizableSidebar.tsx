@@ -30,7 +30,6 @@ export function ResizableSidebar({
   onCreateFolder,
   onCreatePageInEditor
 }: ResizableSidebarProps) {
-  const [isCollapsed, setIsCollapsed] = useState(false);
   const [width, setWidth] = useState(320);
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -73,58 +72,31 @@ export function ResizableSidebar({
     setIsResizing(true);
   };
 
-  const toggleSidebar = () => {
-    setIsCollapsed(!isCollapsed);
-  };
-
   return (
     <>
       <div
         ref={sidebarRef}
-        className={cn(
-          "relative bg-sidebar-background border-r border-sidebar-border transition-all duration-300 ease-in-out",
-          isCollapsed ? "w-0 overflow-hidden" : ""
-        )}
-        style={{ width: isCollapsed ? 0 : width }}
+        className="relative bg-sidebar-background border-r border-sidebar-border"
+        style={{ width }}
       >
-        {!isCollapsed && (
-          <>
-            <RealKnowledgeBaseSidebar
-              onItemSelect={onItemSelect}
-              selectedId={selectedId}
-              onCreatePage={onCreatePage}
-              onCreateSubPage={onCreateSubPage}
-              onCreateFolder={onCreateFolder}
-              onCreatePageInEditor={onCreatePageInEditor}
-            />
-            
-            {/* Resize handle */}
-            <div
-              ref={resizerRef}
-              className="absolute top-0 right-0 w-2 h-full cursor-col-resize bg-transparent hover:bg-primary/20 transition-colors z-10 flex items-center justify-center"
-              onMouseDown={handleMouseDown}
-            >
-              <div className="w-0.5 h-8 bg-border rounded opacity-50" />
-            </div>
-          </>
-        )}
+        <RealKnowledgeBaseSidebar
+          onItemSelect={onItemSelect}
+          selectedId={selectedId}
+          onCreatePage={onCreatePage}
+          onCreateSubPage={onCreateSubPage}
+          onCreateFolder={onCreateFolder}
+          onCreatePageInEditor={onCreatePageInEditor}
+        />
         
-        {/* Toggle button */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn(
-            "absolute top-4 -right-8 z-10 h-6 w-6 p-0 rounded-full border bg-background shadow-md hover:bg-muted",
-            isCollapsed && "-right-6"
-          )}
-          onClick={toggleSidebar}
+        {/* Enhanced Resize handle */}
+        <div
+          ref={resizerRef}
+          className="absolute top-0 right-0 w-4 h-full cursor-col-resize bg-transparent hover:bg-primary/10 transition-colors z-10 flex items-center justify-center group"
+          onMouseDown={handleMouseDown}
+          title="Drag to resize sidebar"
         >
-          {isCollapsed ? (
-            <ChevronRight className="h-3 w-3" />
-          ) : (
-            <ChevronLeft className="h-3 w-3" />
-          )}
-        </Button>
+          <div className="w-1 h-16 bg-border/40 rounded group-hover:bg-primary/40 transition-colors" />
+        </div>
       </div>
       
       {/* Overlay during resize */}

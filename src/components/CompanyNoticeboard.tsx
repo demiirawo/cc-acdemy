@@ -3,7 +3,6 @@ import { Plus, X, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,10 +23,10 @@ interface Announcement {
 export function CompanyNoticeboard() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
-  const [type, setType] = useState("info");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const [editingContent, setEditingContent] = useState("");
+  const [editingType, setEditingType] = useState("info");
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -59,9 +58,9 @@ export function CompanyNoticeboard() {
       const { error } = await supabase
         .from('announcements')
         .insert({
-          title,
-          content,
-          type,
+          title: 'New Announcement',
+          content: 'Click to edit this announcement',
+          type: 'info',
           created_by: user.id
         });
 
@@ -72,10 +71,6 @@ export function CompanyNoticeboard() {
         description: "Your announcement has been posted successfully.",
       });
 
-      setTitle("");
-      setContent("");
-      setType("info");
-      setIsDialogOpen(false);
       fetchAnnouncements();
     } catch (error) {
       console.error('Error creating announcement:', error);
@@ -85,6 +80,52 @@ export function CompanyNoticeboard() {
         variant: "destructive",
       });
     }
+  };
+
+  const handleEditAnnouncement = (announcement: Announcement) => {
+    setEditingId(announcement.id);
+    setEditingTitle(announcement.title);
+    setEditingContent(announcement.content);
+    setEditingType(announcement.type);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingId) return;
+
+    try {
+      const { error } = await supabase
+        .from('announcements')
+        .update({
+          title: editingTitle,
+          content: editingContent,
+          type: editingType
+        })
+        .eq('id', editingId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Announcement updated",
+        description: "Your changes have been saved.",
+      });
+
+      setEditingId(null);
+      fetchAnnouncements();
+    } catch (error) {
+      console.error('Error updating announcement:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update announcement.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditingTitle("");
+    setEditingContent("");
+    setEditingType("info");
   };
 
   const handleDeleteAnnouncement = async (id: string) => {
@@ -152,60 +193,10 @@ export function CompanyNoticeboard() {
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
           Company Noticeboard
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" className="bg-gradient-primary">
-                <Plus className="h-4 w-4 mr-2" />
-                Add Notice
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Create New Announcement</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div>
-                  <label className="text-sm font-medium">Title</label>
-                  <Input
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Enter announcement title"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Content</label>
-                  <Textarea
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    placeholder="Enter announcement content"
-                    rows={4}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Type</label>
-                  <Select value={type} onValueChange={setType}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="info">Info</SelectItem>
-                      <SelectItem value="warning">Warning</SelectItem>
-                      <SelectItem value="urgent">Urgent</SelectItem>
-                      <SelectItem value="success">Success</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleCreateAnnouncement} disabled={!title || !content}>
-                    Create Announcement
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <Button size="sm" onClick={handleCreateAnnouncement} className="bg-gradient-primary">
+            <Plus className="h-4 w-4 mr-2" />
+            Add Notice
+          </Button>
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -220,29 +211,76 @@ export function CompanyNoticeboard() {
                 key={announcement.id}
                 className="p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge variant={getTypeColor(announcement.type)} className="flex items-center gap-1">
-                        {getTypeIcon(announcement.type)}
-                        {announcement.type}
-                      </Badge>
-                      <h4 className="font-medium text-sm">{announcement.title}</h4>
+                {editingId === announcement.id ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Select value={editingType} onValueChange={setEditingType}>
+                        <SelectTrigger className="w-24">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="info">Info</SelectItem>
+                          <SelectItem value="warning">Warning</SelectItem>
+                          <SelectItem value="urgent">Urgent</SelectItem>
+                          <SelectItem value="success">Success</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        value={editingTitle}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        className="font-medium"
+                        placeholder="Title"
+                      />
                     </div>
-                    <p className="text-sm text-muted-foreground mb-2">{announcement.content}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(announcement.created_at).toLocaleDateString()}
-                    </p>
+                    <Textarea
+                      value={editingContent}
+                      onChange={(e) => setEditingContent(e.target.value)}
+                      placeholder="Content"
+                      rows={3}
+                    />
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={handleSaveEdit}>Save</Button>
+                      <Button size="sm" variant="outline" onClick={handleCancelEdit}>Cancel</Button>
+                    </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleDeleteAnnouncement(announcement.id)}
-                    className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
+                ) : (
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant={getTypeColor(announcement.type)} className="flex items-center gap-1">
+                          {getTypeIcon(announcement.type)}
+                          {announcement.type}
+                        </Badge>
+                        <h4 className="font-medium text-sm">{announcement.title}</h4>
+                      </div>
+                      <p className="text-sm text-muted-foreground mb-2">{announcement.content}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(announcement.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEditAnnouncement(announcement)}
+                        className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                      >
+                        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                          <path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteAnnouncement(announcement.id)}
+                        className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
