@@ -84,7 +84,7 @@ interface SidebarTreeItemProps {
 }
 
 function SidebarTreeItem({ item, level, onSelect, selectedId }: SidebarTreeItemProps) {
-  const [isExpanded, setIsExpanded] = useState(level < 2);
+  const [isExpanded, setIsExpanded] = useState(level < 2); // Tree item state
   const hasChildren = item.children && item.children.length > 0;
   const isSelected = selectedId === item.id;
   const Icon = item.icon || BookOpen;
