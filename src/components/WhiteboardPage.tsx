@@ -33,7 +33,7 @@ export function WhiteboardPage() {
   ];
 
   useEffect(() => {
-    if (!canvasRef.current || fabricCanvas) return;
+    if (!canvasRef.current) return;
 
     const canvas = new FabricCanvas(canvasRef.current, {
       width: 1200,
@@ -48,12 +48,9 @@ export function WhiteboardPage() {
     setFabricCanvas(canvas);
 
     return () => {
-      if (canvas) {
-        canvas.dispose();
-        setFabricCanvas(null);
-      }
+      canvas.dispose();
     };
-  }, [canvasRef.current]);
+  }, []);
 
   useEffect(() => {
     if (!fabricCanvas) return;
@@ -125,7 +122,7 @@ export function WhiteboardPage() {
   };
 
   return (
-    <div className="flex-1 p-6">
+    <div className="flex-1 p-6 overflow-auto">
       <Card className="h-full flex flex-col">
         <CardHeader className="pb-4">
           <CardTitle className="flex items-center justify-between">

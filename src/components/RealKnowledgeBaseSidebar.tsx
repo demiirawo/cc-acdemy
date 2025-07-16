@@ -150,7 +150,7 @@ function SidebarTreeItem({
         )}
         {!hasChildren && <div className="w-4" />}
         
-        {item.type === 'space' ? (
+        {item.type === 'space' || (!item.parent_page_id && item.type === 'page') ? (
           isExpanded ? (
             <FolderOpen className="h-4 w-4 text-amber-500 flex-shrink-0" />
           ) : (
@@ -253,25 +253,35 @@ function SidebarTreeItem({
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => onCopyLink?.(item.id)}>
                   <Copy className="h-4 w-4 mr-2" />
-                  Copy link
+                  Copy public link
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => {
-                  toast({
-                    title: "Star feature",
-                    description: "Coming soon!",
-                  });
+                <DropdownMenuItem onClick={async () => {
+                  try {
+                    const { data, error } = await supabase
+                      .from('pages')
+                      .update({ is_public: !item.is_public })
+                      .eq('id', item.id)
+                      .select()
+                      .single();
+                    
+                    if (error) throw error;
+                    
+                    toast({
+                      title: item.is_public ? "Page made private" : "Page made public",
+                      description: item.is_public ? "Page is now private" : "Page is now public",
+                    });
+                    
+                    window.location.reload();
+                  } catch (error) {
+                    toast({
+                      title: "Error",
+                      description: "Failed to update page visibility",
+                      variant: "destructive",
+                    });
+                  }
                 }}>
-                  <Star className="h-4 w-4 mr-2" />
-                  Star
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => {
-                  toast({
-                    title: "Share feature",
-                    description: "Coming soon!",
-                  });
-                }}>
-                  <Share className="h-4 w-4 mr-2" />
-                  Share
+                  <Globe className="h-4 w-4 mr-2" />
+                  {item.is_public ? 'Make private' : 'Make public'}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => onDuplicatePage?.(item.id)}>

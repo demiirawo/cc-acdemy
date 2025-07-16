@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { EditableTitle } from "./EditableTitle";
 import {
   Bold,
   Italic,
@@ -417,11 +418,11 @@ export function EnhancedContentEditor({
       {/* Header */}
       <div className="border-b border-border p-4 bg-background">
         <div className="flex items-center justify-between mb-4">
-          <Input
+          <EditableTitle
             value={currentTitle}
-            onChange={(e) => setCurrentTitle(e.target.value)}
+            onChange={setCurrentTitle}
+            className="text-2xl font-bold"
             placeholder="Page title..."
-            className="text-2xl font-bold border-none bg-transparent p-0 focus-visible:ring-0 text-foreground"
           />
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">

@@ -312,16 +312,14 @@ export function KnowledgeBaseApp() {
         {/* Header with user info */}
         <div className="border-b border-border p-4 bg-background/95 backdrop-blur-sm">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-foreground">
-              {currentView === 'dashboard' ? 'CC Learn' : 
-               currentView === 'editor' ? 'Editor' : 
-               currentView === 'recent' ? 'Recently Updated' :
-               currentView === 'tags' ? 'Tags' :
-               currentView === 'people' ? 'People' :
-               currentView === 'settings' ? 'Settings' :
-               currentView === 'whiteboard' ? 'Whiteboard' :
-               currentPage?.title || 'Page'}
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-foreground">CC Learn</h2>
+              {(currentView === 'page' || currentView === 'editor') && currentPage && (
+                <span className="text-muted-foreground">
+                  / {currentPage.title}
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">
                 {user?.user_metadata?.display_name || user?.email}
