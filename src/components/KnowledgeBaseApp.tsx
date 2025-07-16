@@ -1,8 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { KnowledgeBaseSidebar } from "./KnowledgeBaseSidebar";
-import { Dashboard } from "./Dashboard";
-import { ContentEditor } from "./ContentEditor";
+import { RealDashboard } from "./RealDashboard";
+import { EnhancedContentEditor } from "./EnhancedContentEditor";
+import { AuthForm } from "./AuthForm";
+import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { LogOut, User } from "lucide-react";
 
 type ViewMode = 'dashboard' | 'editor' | 'page';
 
@@ -28,25 +33,74 @@ export function KnowledgeBaseApp() {
   const [selectedItemId, setSelectedItemId] = useState<string>('home');
   const [currentPage, setCurrentPage] = useState<Page | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const { user, loading, signOut } = useAuth();
   const { toast } = useToast();
 
-  const handleItemSelect = (item: SidebarItem) => {
+  // Show auth form if not logged in
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-gradient-hero">
+        <div className="animate-pulse text-center">
+          <div className="w-16 h-16 bg-primary/20 rounded-lg mx-auto mb-4"></div>
+          <div className="h-4 bg-primary/20 rounded w-32 mx-auto"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <AuthForm onAuthStateChange={() => window.location.reload()} />;
+  }
+
+  const handleItemSelect = async (item: SidebarItem) => {
     setSelectedItemId(item.id);
     
     if (item.id === 'home') {
       setCurrentView('dashboard');
       setCurrentPage(null);
     } else if (item.type === 'page') {
-      // In a real app, this would fetch the page data
-      setCurrentPage({
-        id: item.id,
-        title: item.title,
-        content: `# ${item.title}\n\nThis is a sample page content for ${item.title}. In a real application, this would be loaded from your database.\n\n## Overview\n\nThis page demonstrates the knowledge base functionality with:\n\n- Rich text editing capabilities\n- Hierarchical organization\n- Search functionality\n- Collaborative features\n\n## Getting Started\n\nTo begin using this knowledge base:\n\n1. Create your first page\n2. Organize content into spaces\n3. Invite team members\n4. Start collaborating!\n\n> **Note**: This is a demo page. Connect to Supabase to enable full functionality.`,
-        lastUpdated: new Date().toISOString(),
-        author: 'Demo User'
-      });
-      setCurrentView('page');
-      setIsEditing(false);
+      try {
+        // Fetch real page data from Supabase
+        const { data, error } = await supabase
+          .from('pages')
+          .select(`
+            id,
+            title,
+            content,
+            updated_at,
+            view_count,
+            created_by
+          `)
+          .eq('id', item.id)
+          .single();
+
+        if (error) throw error;
+
+        if (data) {
+          setCurrentPage({
+            id: data.id,
+            title: data.title,
+            content: data.content,
+            lastUpdated: data.updated_at,
+            author: 'User'
+          });
+          setCurrentView('page');
+          setIsEditing(false);
+
+          // Increment view count
+          await supabase
+            .from('pages')
+            .update({ view_count: (data.view_count || 0) + 1 })
+            .eq('id', data.id);
+        }
+      } catch (error) {
+        console.error('Error fetching page:', error);
+        toast({
+          title: "Error loading page",
+          description: "Failed to load page content.",
+          variant: "destructive",
+        });
+      }
     } else if (item.type === 'space') {
       setCurrentView('dashboard');
       setCurrentPage(null);
@@ -59,7 +113,7 @@ export function KnowledgeBaseApp() {
       title: 'Untitled Page',
       content: '',
       lastUpdated: new Date().toISOString(),
-      author: 'Current User'
+      author: user?.user_metadata?.display_name || 'Current User'
     });
     setCurrentView('editor');
     setIsEditing(true);
@@ -70,20 +124,65 @@ export function KnowledgeBaseApp() {
     setCurrentView('editor');
   };
 
-  const handleSavePage = (title: string, content: string) => {
-    if (currentPage) {
-      setCurrentPage({
-        ...currentPage,
-        title,
-        content,
-        lastUpdated: new Date().toISOString()
-      });
+  const handleSavePage = async (title: string, content: string) => {
+    if (!currentPage || !user) return;
+
+    try {
+      if (currentPage.id === 'new') {
+        // Create new page
+        const { data, error } = await supabase
+          .from('pages')
+          .insert({
+            title,
+            content,
+            created_by: user.id
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        setCurrentPage({
+          ...currentPage,
+          id: data.id,
+          title,
+          content,
+          lastUpdated: data.updated_at
+        });
+      } else {
+        // Update existing page
+        const { error } = await supabase
+          .from('pages')
+          .update({
+            title,
+            content,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', currentPage.id);
+
+        if (error) throw error;
+
+        setCurrentPage({
+          ...currentPage,
+          title,
+          content,
+          lastUpdated: new Date().toISOString()
+        });
+      }
+
       setIsEditing(false);
       setCurrentView('page');
       
       toast({
         title: "Page saved",
         description: `"${title}" has been saved successfully.`,
+      });
+    } catch (error) {
+      console.error('Error saving page:', error);
+      toast({
+        title: "Error saving page",
+        description: "Failed to save page. Please try again.",
+        variant: "destructive",
       });
     }
   };
@@ -94,8 +193,7 @@ export function KnowledgeBaseApp() {
   };
 
   const handlePageSelect = (pageId: string) => {
-    // This would typically fetch the page data
-    handleItemSelect({ id: pageId, title: `Page ${pageId}`, type: 'page' });
+    handleItemSelect({ id: pageId, title: '', type: 'page' });
   };
 
   return (
@@ -106,15 +204,34 @@ export function KnowledgeBaseApp() {
       />
       
       <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Header with user info */}
+        <div className="border-b border-border p-4 bg-background/95 backdrop-blur-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-foreground">
+              {currentView === 'dashboard' ? 'Dashboard' : 
+               currentView === 'editor' ? 'Editor' : 
+               currentPage?.title || 'Page'}
+            </h2>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">
+                {user?.user_metadata?.display_name || user?.email}
+              </span>
+              <Button variant="ghost" size="sm" onClick={signOut}>
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+
         {currentView === 'dashboard' && (
-          <Dashboard
+          <RealDashboard
             onCreatePage={handleCreatePage}
             onPageSelect={handlePageSelect}
           />
         )}
         
         {currentView === 'editor' && currentPage && (
-          <ContentEditor
+          <EnhancedContentEditor
             title={currentPage.title}
             content={currentPage.content}
             onSave={handleSavePage}
@@ -130,12 +247,12 @@ export function KnowledgeBaseApp() {
                 <div className="flex items-center justify-between mb-4">
                   <h1 className="text-4xl font-bold text-foreground">{currentPage.title}</h1>
                   <div className="flex gap-2">
-                    <button
+                    <Button
                       onClick={handleEditPage}
-                      className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                      className="bg-gradient-primary"
                     >
                       Edit
-                    </button>
+                    </Button>
                   </div>
                 </div>
                 <div className="text-sm text-muted-foreground">
@@ -144,9 +261,10 @@ export function KnowledgeBaseApp() {
               </div>
               
               <div className="prose prose-lg max-w-none">
-                <div className="whitespace-pre-wrap text-foreground leading-relaxed">
-                  {currentPage.content}
-                </div>
+                <div 
+                  className="whitespace-pre-wrap text-foreground leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: currentPage.content.replace(/\n/g, '<br>') }}
+                />
               </div>
             </div>
           </div>
