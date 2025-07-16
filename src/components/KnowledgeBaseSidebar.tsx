@@ -99,7 +99,7 @@ function SidebarTreeItem({ item, level, onSelect, selectedId }: SidebarTreeItemP
           level > 0 && "ml-4"
         )}
         style={{ paddingLeft: `${level * 12 + 8}px` }}
-        onClick={() => handleItemSelect(item)}
+        onClick={() => onSelect(item)}
       >
         {hasChildren && (
           <Button
@@ -130,7 +130,7 @@ function SidebarTreeItem({ item, level, onSelect, selectedId }: SidebarTreeItemP
               key={child.id}
               item={child}
               level={level + 1}
-              onSelect={handleItemSelect}
+              onSelect={onSelect}
               selectedId={selectedId}
             />
           ))}
