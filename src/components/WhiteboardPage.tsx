@@ -2,38 +2,29 @@ import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
 import { 
   Pencil, 
   Eraser, 
   Trash2, 
   Download, 
   Palette,
-  Minus,
   Square,
-  Circle
+  Circle,
+  Type,
+  MousePointer,
+  Minus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-interface DrawingPoint {
-  x: number;
-  y: number;
-}
-
-interface DrawingPath {
-  points: DrawingPoint[];
-  color: string;
-  width: number;
-  tool: 'pen' | 'eraser';
-}
+import { Canvas as FabricCanvas, Circle as FabricCircle, Rect as FabricRect, Textbox as FabricTextbox } from "fabric";
 
 export function WhiteboardPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [currentPath, setCurrentPath] = useState<DrawingPoint[]>([]);
-  const [paths, setPaths] = useState<DrawingPath[]>([]);
-  const [tool, setTool] = useState<'pen' | 'eraser'>('pen');
-  const [color, setColor] = useState('#000000');
+  const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
+  const [activeTool, setActiveTool] = useState<'select' | 'draw' | 'eraser' | 'text' | 'rectangle' | 'circle' | 'line'>('select');
+  const [activeColor, setActiveColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(2);
+  const [textToAdd, setTextToAdd] = useState('');
 
   const colors = [
     '#000000', '#FF0000', '#00FF00', '#0000FF', 
@@ -42,129 +33,91 @@ export function WhiteboardPage() {
   ];
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvasRef.current) return;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const canvas = new FabricCanvas(canvasRef.current, {
+      width: 1200,
+      height: 700,
+      backgroundColor: "#ffffff",
+    });
 
-    // Set canvas size
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width;
-    canvas.height = rect.height;
+    // Initialize the freeDrawingBrush
+    canvas.freeDrawingBrush.color = activeColor;
+    canvas.freeDrawingBrush.width = brushSize;
 
-    // Set canvas styles
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    setFabricCanvas(canvas);
+
+    return () => {
+      canvas.dispose();
+    };
   }, []);
 
   useEffect(() => {
-    redrawCanvas();
-  }, [paths]);
+    if (!fabricCanvas) return;
 
-  const redrawCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Redraw all paths
-    paths.forEach(path => {
-      if (path.points.length < 2) return;
-
-      ctx.beginPath();
-      ctx.strokeStyle = path.color;
-      ctx.lineWidth = path.width;
-      ctx.globalCompositeOperation = path.tool === 'eraser' ? 'destination-out' : 'source-over';
-
-      ctx.moveTo(path.points[0].x, path.points[0].y);
-      for (let i = 1; i < path.points.length; i++) {
-        ctx.lineTo(path.points[i].x, path.points[i].y);
-      }
-      ctx.stroke();
-    });
-  };
-
-  const getMousePos = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top
-    };
-  };
-
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    setIsDrawing(true);
-    const pos = getMousePos(e);
-    setCurrentPath([pos]);
-  };
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-
-    const pos = getMousePos(e);
-    setCurrentPath(prev => [...prev, pos]);
-
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.strokeStyle = color;
-    ctx.lineWidth = brushSize;
-    ctx.globalCompositeOperation = tool === 'eraser' ? 'destination-out' : 'source-over';
-
-    if (currentPath.length > 0) {
-      ctx.beginPath();
-      ctx.moveTo(currentPath[currentPath.length - 1].x, currentPath[currentPath.length - 1].y);
-      ctx.lineTo(pos.x, pos.y);
-      ctx.stroke();
+    fabricCanvas.isDrawingMode = activeTool === 'draw';
+    
+    if (activeTool === 'draw' && fabricCanvas.freeDrawingBrush) {
+      fabricCanvas.freeDrawingBrush.color = activeColor;
+      fabricCanvas.freeDrawingBrush.width = brushSize;
     }
-  };
+  }, [activeTool, activeColor, brushSize, fabricCanvas]);
 
-  const stopDrawing = () => {
-    if (!isDrawing) return;
-    
-    setIsDrawing(false);
-    
-    if (currentPath.length > 0) {
-      setPaths(prev => [...prev, {
-        points: currentPath,
-        color: color,
-        width: brushSize,
-        tool: tool
-      }]);
+  const handleToolClick = (tool: typeof activeTool) => {
+    setActiveTool(tool);
+
+    if (!fabricCanvas) return;
+
+    if (tool === 'rectangle') {
+      const rect = new FabricRect({
+        left: 100,
+        top: 100,
+        fill: activeColor,
+        width: 100,
+        height: 60,
+        stroke: activeColor,
+        strokeWidth: 2,
+      });
+      fabricCanvas.add(rect);
+      fabricCanvas.setActiveObject(rect);
+    } else if (tool === 'circle') {
+      const circle = new FabricCircle({
+        left: 100,
+        top: 100,
+        fill: 'transparent',
+        radius: 50,
+        stroke: activeColor,
+        strokeWidth: 2,
+      });
+      fabricCanvas.add(circle);
+      fabricCanvas.setActiveObject(circle);
+    } else if (tool === 'text') {
+      const text = new FabricTextbox(textToAdd || 'Double click to edit', {
+        left: 100,
+        top: 100,
+        fill: activeColor,
+        fontSize: 20,
+        fontFamily: 'Arial',
+        width: 200,
+      });
+      fabricCanvas.add(text);
+      fabricCanvas.setActiveObject(text);
+      text.enterEditing();
     }
-    
-    setCurrentPath([]);
   };
 
   const clearCanvas = () => {
-    setPaths([]);
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!fabricCanvas) return;
+    fabricCanvas.clear();
+    fabricCanvas.backgroundColor = "#ffffff";
+    fabricCanvas.renderAll();
   };
 
   const downloadCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
+    if (!fabricCanvas) return;
     const link = document.createElement('a');
     link.download = 'whiteboard.png';
-    link.href = canvas.toDataURL();
+    link.href = fabricCanvas.toDataURL();
     link.click();
   };
 
@@ -198,43 +151,72 @@ export function WhiteboardPage() {
           
           {/* Toolbar */}
           <div className="flex items-center gap-4 pt-4">
-            {/* Tools */}
-            <div className="flex items-center gap-1 p-1 bg-muted rounded-lg">
-              <Button
-                variant={tool === 'pen' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setTool('pen')}
-                className="h-8 w-8 p-0"
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={tool === 'eraser' ? 'default' : 'ghost'}
-                size="sm"
-                onClick={() => setTool('eraser')}
-                className="h-8 w-8 p-0"
-              >
-                <Eraser className="h-4 w-4" />
-              </Button>
-            </div>
+          {/* Tools */}
+          <div className="flex items-center gap-1 p-1 bg-muted rounded-lg">
+            <Button
+              variant={activeTool === 'select' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTool('select')}
+              className="h-8 w-8 p-0"
+              title="Select"
+            >
+              <MousePointer className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={activeTool === 'draw' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTool('draw')}
+              className="h-8 w-8 p-0"
+              title="Draw"
+            >
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={activeTool === 'text' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => handleToolClick('text')}
+              className="h-8 w-8 p-0"
+              title="Add Text"
+            >
+              <Type className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={activeTool === 'rectangle' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => handleToolClick('rectangle')}
+              className="h-8 w-8 p-0"
+              title="Rectangle"
+            >
+              <Square className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={activeTool === 'circle' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => handleToolClick('circle')}
+              className="h-8 w-8 p-0"
+              title="Circle"
+            >
+              <Circle className="h-4 w-4" />
+            </Button>
+          </div>
 
             <Separator orientation="vertical" className="h-6" />
 
-            {/* Colors */}
-            <div className="flex items-center gap-1">
-              <Palette className="h-4 w-4 text-muted-foreground mr-2" />
-              {colors.map((c) => (
-                <button
-                  key={c}
-                  className={cn(
-                    "w-6 h-6 rounded border-2 transition-all",
-                    color === c ? "border-foreground scale-110" : "border-muted-foreground/30"
-                  )}
-                  style={{ backgroundColor: c }}
-                  onClick={() => setColor(c)}
-                />
-              ))}
-            </div>
+          {/* Colors */}
+          <div className="flex items-center gap-1">
+            <Palette className="h-4 w-4 text-muted-foreground mr-2" />
+            {colors.map((c) => (
+              <button
+                key={c}
+                className={cn(
+                  "w-6 h-6 rounded border-2 transition-all",
+                  activeColor === c ? "border-foreground scale-110" : "border-muted-foreground/30"
+                )}
+                style={{ backgroundColor: c }}
+                onClick={() => setActiveColor(c)}
+              />
+            ))}
+          </div>
 
             <Separator orientation="vertical" className="h-6" />
 
@@ -251,19 +233,28 @@ export function WhiteboardPage() {
               />
               <span className="text-sm text-muted-foreground w-6">{brushSize}</span>
             </div>
-          </div>
-        </CardHeader>
-        
-        <CardContent className="flex-1 p-0">
+          {/* Text Input for Text Tool */}
+          {activeTool === 'text' && (
+            <>
+              <Separator orientation="vertical" className="h-6" />
+              <Input
+                placeholder="Enter text to add"
+                value={textToAdd}
+                onChange={(e) => setTextToAdd(e.target.value)}
+                className="w-40"
+              />
+            </>
+          )}
+        </div>
+      </CardHeader>
+      
+      <CardContent className="flex-1 p-0">
+        <div className="w-full h-full bg-white border rounded-lg overflow-hidden">
           <canvas
             ref={canvasRef}
-            className="w-full h-full bg-white border rounded-lg cursor-crosshair"
-            style={{ height: 'calc(100vh - 280px)' }}
-            onMouseDown={startDrawing}
-            onMouseMove={draw}
-            onMouseUp={stopDrawing}
-            onMouseLeave={stopDrawing}
+            className="w-full h-full"
           />
+        </div>
         </CardContent>
       </Card>
     </div>

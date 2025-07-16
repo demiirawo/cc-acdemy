@@ -73,36 +73,34 @@ export function ResizableSidebar({
   };
 
   return (
-    <>
+    <div
+      ref={sidebarRef}
+      className="relative bg-sidebar-background border-r border-sidebar-border flex-shrink-0"
+      style={{ width }}
+    >
+      <RealKnowledgeBaseSidebar
+        onItemSelect={onItemSelect}
+        selectedId={selectedId}
+        onCreatePage={onCreatePage}
+        onCreateSubPage={onCreateSubPage}
+        onCreateFolder={onCreateFolder}
+        onCreatePageInEditor={onCreatePageInEditor}
+      />
+      
+      {/* Enhanced Resize handle */}
       <div
-        ref={sidebarRef}
-        className="relative bg-sidebar-background border-r border-sidebar-border"
-        style={{ width }}
+        ref={resizerRef}
+        className="absolute top-0 right-0 w-4 h-full cursor-col-resize bg-transparent hover:bg-primary/10 transition-colors z-10 flex items-center justify-center group"
+        onMouseDown={handleMouseDown}
+        title="Drag to resize sidebar"
       >
-        <RealKnowledgeBaseSidebar
-          onItemSelect={onItemSelect}
-          selectedId={selectedId}
-          onCreatePage={onCreatePage}
-          onCreateSubPage={onCreateSubPage}
-          onCreateFolder={onCreateFolder}
-          onCreatePageInEditor={onCreatePageInEditor}
-        />
-        
-        {/* Enhanced Resize handle */}
-        <div
-          ref={resizerRef}
-          className="absolute top-0 right-0 w-4 h-full cursor-col-resize bg-transparent hover:bg-primary/10 transition-colors z-10 flex items-center justify-center group"
-          onMouseDown={handleMouseDown}
-          title="Drag to resize sidebar"
-        >
-          <div className="w-1 h-16 bg-border/40 rounded group-hover:bg-primary/40 transition-colors" />
-        </div>
+        <div className="w-1 h-16 bg-border/40 rounded group-hover:bg-primary/40 transition-colors" />
       </div>
       
       {/* Overlay during resize */}
       {isResizing && (
-        <div className="fixed inset-0 z-50 cursor-col-resize" />
+        <div className="fixed inset-0 z-50 cursor-col-resize bg-black/5" />
       )}
-    </>
+    </div>
   );
 }

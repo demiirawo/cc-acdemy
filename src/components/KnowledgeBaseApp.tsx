@@ -300,16 +300,16 @@ export function KnowledgeBaseApp() {
 
   return (
     <div className="flex h-screen bg-background">
-        <ResizableSidebar
-          onItemSelect={handleItemSelect}
-          selectedId={selectedItemId}
-          onCreatePage={handleCreatePage}
-          onCreateSubPage={handleCreateSubPage}
-          onCreateFolder={handleCreateFolder}
-          onCreatePageInEditor={handleCreatePageInEditor}
-        />
+      <ResizableSidebar
+        onItemSelect={handleItemSelect}
+        selectedId={selectedItemId}
+        onCreatePage={handleCreatePage}
+        onCreateSubPage={handleCreateSubPage}
+        onCreateFolder={handleCreateFolder}
+        onCreatePageInEditor={handleCreatePageInEditor}
+      />
       
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Header with user info */}
         <div className="border-b border-border p-4 bg-background/95 backdrop-blur-sm">
           <div className="flex items-center justify-between">
