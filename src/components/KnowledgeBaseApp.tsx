@@ -177,6 +177,19 @@ export function KnowledgeBaseApp() {
     if (!user) return;
 
     try {
+      // Validate parentId if provided
+      if (parentId) {
+        const { data: parentExists } = await supabase
+          .from('pages')
+          .select('id')
+          .eq('id', parentId)
+          .single();
+        
+        if (!parentExists) {
+          parentId = null; // Reset if parent doesn't exist
+        }
+      }
+
       const { data, error } = await supabase
         .from('pages')
         .insert({

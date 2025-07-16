@@ -154,13 +154,17 @@ export function EnhancedContentEditor({
     for (let i = 0; i < rows - 1; i++) {
       tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px;">Cell ${i + 1}-${j + 1}</td>`;
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; min-width: 100px;">Cell ${i + 1}-${j + 1}</td>`;
       }
       tableHTML += '</tr>';
     }
     
-    tableHTML += '</tbody></table>';
+    tableHTML += '</tbody></table><br>';
     insertText(tableHTML);
+  };
+
+  const insertDivider = () => {
+    insertText('<hr style="border: none; border-top: 2px solid #e5e7eb; margin: 20px 0;" /><br>');
   };
 
   const insertLink = () => {
@@ -226,6 +230,13 @@ export function EnhancedContentEditor({
     { icon: Image, action: insertImage, tooltip: "Insert Image" },
     { icon: Youtube, action: insertYouTube, tooltip: "Insert YouTube Video" },
     { icon: Table, action: () => insertTable(3, 3), tooltip: "Insert Table" },
+    { 
+      icon: () => (
+        <div className="w-4 h-4 border-t-2 border-foreground"></div>
+      ), 
+      action: insertDivider, 
+      tooltip: "Insert Section Divider" 
+    },
     { icon: Code, action: () => formatText('formatBlock', 'pre'), tooltip: "Code Block" },
     { icon: FileText, action: () => fileInputRef.current?.click(), tooltip: "Upload File" }
   ];
@@ -620,83 +631,104 @@ export function EnhancedContentEditor({
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Main Editor */}
-        <div className="flex-1 p-6 space-y-6">
-          <div
-            ref={editorRef}
-            contentEditable
-            suppressContentEditableWarning
-            onInput={updateContent}
-            className="w-full p-4 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-background text-foreground min-h-[400px] prose prose-lg max-w-none"
-            style={{
-              fontFamily: 'system-ui, -apple-system, sans-serif',
-              fontSize: '16px',
-              lineHeight: '1.6'
-            }}
-            data-placeholder="Start writing your content..."
-          />
-          
-          {/* Recommended Reading Section */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Recommended Reading</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {recommendedReading.map((item, index) => (
-                <div key={index} className="p-3 border rounded-lg bg-muted/20">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <h4 className="font-medium text-foreground">{item.title}</h4>
-                      <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline">
-                        {item.url}
-                      </a>
-                      <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setRecommendedReading(prev => prev.filter((_, i) => i !== index))}
-                      className="h-8 w-8 p-0 text-destructive"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
+        {/* Main Editor - Make it scrollable */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-6 space-y-6">
+            <div
+              ref={editorRef}
+              contentEditable
+              suppressContentEditableWarning
+              onInput={updateContent}
+              className="w-full p-4 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-background text-foreground min-h-[400px] prose prose-lg max-w-none"
+              style={{
+                fontFamily: 'system-ui, -apple-system, sans-serif',
+                fontSize: '16px',
+                lineHeight: '1.6'
+              }}
+              data-placeholder="Start writing your content..."
+            />
+            
+            {/* Recommended Reading Section */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">Recommended Reading</CardTitle>
+                  <Button
+                    onClick={() => {
+                      if (newRecommendation.title && newRecommendation.url) {
+                        setRecommendedReading(prev => [...prev, newRecommendation]);
+                        setNewRecommendation({ title: '', url: '', description: '' });
+                        toast({
+                          title: "Added",
+                          description: "Recommended reading item added.",
+                        });
+                      }
+                    }}
+                    variant="outline"
+                    size="sm"
+                    disabled={!newRecommendation.title || !newRecommendation.url}
+                    className="flex items-center gap-2"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Add Reading
+                  </Button>
                 </div>
-              ))}
-              
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <Input
-                  placeholder="Title"
-                  value={newRecommendation.title}
-                  onChange={(e) => setNewRecommendation(prev => ({ ...prev, title: e.target.value }))}
-                />
-                <Input
-                  placeholder="URL"
-                  value={newRecommendation.url}
-                  onChange={(e) => setNewRecommendation(prev => ({ ...prev, url: e.target.value }))}
-                />
-                <Input
-                  placeholder="Description"
-                  value={newRecommendation.description}
-                  onChange={(e) => setNewRecommendation(prev => ({ ...prev, description: e.target.value }))}
-                />
-              </div>
-              
-              <Button
-                onClick={() => {
-                  if (newRecommendation.title && newRecommendation.url) {
-                    setRecommendedReading(prev => [...prev, newRecommendation]);
-                    setNewRecommendation({ title: '', url: '', description: '' });
-                  }
-                }}
-                variant="outline"
-                size="sm"
-                disabled={!newRecommendation.title || !newRecommendation.url}
-              >
-                Add Recommended Reading
-              </Button>
-            </CardContent>
-          </Card>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Form for adding new recommendation */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 border rounded-lg bg-muted/10">
+                  <Input
+                    placeholder="Title"
+                    value={newRecommendation.title}
+                    onChange={(e) => setNewRecommendation(prev => ({ ...prev, title: e.target.value }))}
+                  />
+                  <Input
+                    placeholder="URL"
+                    value={newRecommendation.url}
+                    onChange={(e) => setNewRecommendation(prev => ({ ...prev, url: e.target.value }))}
+                  />
+                  <Input
+                    placeholder="Description"
+                    value={newRecommendation.description}
+                    onChange={(e) => setNewRecommendation(prev => ({ ...prev, description: e.target.value }))}
+                  />
+                </div>
+
+                {/* Existing recommendations */}
+                {recommendedReading.map((item, index) => (
+                  <div key={index} className="p-3 border rounded-lg bg-muted/20">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h4 className="font-medium text-foreground">{item.title}</h4>
+                        <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline break-all">
+                          {item.url}
+                        </a>
+                        {item.description && (
+                          <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setRecommendedReading(prev => prev.filter((_, i) => i !== index))}
+                        className="h-8 w-8 p-0 text-destructive"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+                
+                {recommendedReading.length === 0 && (
+                  <div className="text-center py-4 text-muted-foreground">
+                    <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No recommended reading yet</p>
+                    <p className="text-xs">Add links to helpful resources for this page</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         {/* Media Panel */}
