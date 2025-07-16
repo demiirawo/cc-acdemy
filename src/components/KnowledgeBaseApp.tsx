@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { RealKnowledgeBaseSidebar } from "./RealKnowledgeBaseSidebar";
+import { ResizableSidebar } from "./ResizableSidebar";
 import { RealDashboard } from "./RealDashboard";
 import { RecentlyUpdatedPage } from "./RecentlyUpdatedPage";
 import { TagsPage } from "./TagsPage";
@@ -296,7 +296,7 @@ export function KnowledgeBaseApp() {
 
   return (
     <div className="flex h-screen bg-background">
-        <RealKnowledgeBaseSidebar
+        <ResizableSidebar
           onItemSelect={handleItemSelect}
           selectedId={selectedItemId}
           onCreatePage={handleCreatePage}

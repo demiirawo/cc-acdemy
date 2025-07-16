@@ -221,55 +221,13 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
     }
   };
 
+  // Export functionality removed as requested
   const handleExportData = async () => {
-    if (!user) return;
-
-    setLoading(true);
-
-    try {
-      // Fetch all user's pages
-      const { data: pagesData, error } = await supabase
-        .from('pages')
-        .select('*')
-        .eq('created_by', user.id);
-
-      if (error) throw error;
-
-      // Create export data
-      const exportData = {
-        profile: profile,
-        pages: pagesData,
-        exportDate: new Date().toISOString(),
-        version: "1.0"
-      };
-
-      // Download as JSON file
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], {
-        type: 'application/json'
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `knowledge-base-export-${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      toast({
-        title: "Export completed",
-        description: "Your data has been exported successfully.",
-      });
-    } catch (error) {
-      console.error('Error exporting data:', error);
-      toast({
-        title: "Error",
-        description: "Failed to export data. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
+    toast({
+      title: "Feature unavailable",
+      description: "Data export has been disabled.",
+      variant: "destructive",
+    });
   };
 
   const handleDeleteAccount = async () => {

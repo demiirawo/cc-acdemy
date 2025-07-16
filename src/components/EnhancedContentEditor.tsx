@@ -329,6 +329,37 @@ export function EnhancedContentEditor({
     });
   };
 
+  const handleDeletePage = async () => {
+    if (!pageId || !currentTitle) return;
+    
+    const confirmDelete = window.confirm(`Are you sure you want to delete "${currentTitle}"? This action cannot be undone.`);
+    if (!confirmDelete) return;
+
+    try {
+      const { error } = await supabase
+        .from('pages')
+        .delete()
+        .eq('id', pageId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Page deleted",
+        description: `"${currentTitle}" has been deleted successfully.`,
+      });
+
+      // Navigate back to dashboard
+      window.location.href = '/';
+    } catch (error) {
+      console.error('Error deleting page:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete page. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   if (!isEditing) {
     return (
       <div className="flex-1 overflow-auto">
@@ -388,6 +419,18 @@ export function EnhancedContentEditor({
               <Button variant="outline" size="sm" onClick={copyPublicLink}>
                 <Copy className="h-4 w-4 mr-2" />
                 Copy Public Link
+              </Button>
+            )}
+
+            {pageId && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDeletePage}
+                className="mr-2"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Page
               </Button>
             )}
             

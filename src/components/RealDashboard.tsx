@@ -106,7 +106,9 @@ export function RealDashboard({ onCreatePage, onPageSelect }: DashboardProps) {
         ...page,
         profiles: profilesMap.get(page.created_by) || { display_name: 'Unknown' }
       })) || [];
-
+        
+        {/* Company announcements will be added once types are available */}
+        
       // Fetch stats
       const { count: totalPages } = await supabase
         .from('pages')
