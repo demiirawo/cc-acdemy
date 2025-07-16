@@ -223,7 +223,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_current_user_role: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      user_has_page_permission: {
+        Args: { page_id: string; permission_types: string[] }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

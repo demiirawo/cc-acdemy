@@ -99,7 +99,7 @@ function SidebarTreeItem({ item, level, onSelect, selectedId }: SidebarTreeItemP
           level > 0 && "ml-4"
         )}
         style={{ paddingLeft: `${level * 12 + 8}px` }}
-        onClick={() => onSelect(item)}
+        onClick={() => handleItemSelect(item)}
       >
         {hasChildren && (
           <Button
@@ -130,7 +130,7 @@ function SidebarTreeItem({ item, level, onSelect, selectedId }: SidebarTreeItemP
               key={child.id}
               item={child}
               level={level + 1}
-              onSelect={onSelect}
+              onSelect={handleItemSelect}
               selectedId={selectedId}
             />
           ))}
@@ -147,6 +147,16 @@ interface KnowledgeBaseSidebarProps {
 
 export function KnowledgeBaseSidebar({ onItemSelect, selectedId }: KnowledgeBaseSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
+
+  const handleItemSelect = (item: SidebarItem) => {
+    // Only call onItemSelect for actual navigation items, not dummy data
+    if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people') {
+      onItemSelect(item);
+    } else if (item.type === 'page' && !item.id.startsWith('1-') && !item.id.startsWith('2-') && !item.id.startsWith('3-')) {
+      // Only try to load real pages, not sample data
+      onItemSelect(item);
+    }
+  };
 
   return (
     <div className="w-64 bg-sidebar border-r border-sidebar-border flex flex-col h-full">
@@ -185,7 +195,7 @@ export function KnowledgeBaseSidebar({ onItemSelect, selectedId }: KnowledgeBase
                   "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                   isSelected && "bg-sidebar-accent text-sidebar-accent-foreground"
                 )}
-                onClick={() => onItemSelect({ ...item, type: 'page' })}
+                onClick={() => handleItemSelect({ ...item, type: 'page' })}
               >
                 <Icon className="h-4 w-4 text-sidebar-foreground/70" />
                 <span className="text-sidebar-foreground">{item.title}</span>
@@ -213,7 +223,7 @@ export function KnowledgeBaseSidebar({ onItemSelect, selectedId }: KnowledgeBase
                 key={item.id}
                 item={item}
                 level={0}
-                onSelect={onItemSelect}
+                onSelect={handleItemSelect}
                 selectedId={selectedId}
               />
             ))}
