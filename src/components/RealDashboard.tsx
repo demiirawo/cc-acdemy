@@ -65,15 +65,7 @@ export function RealDashboard({ onCreatePage, onPageSelect }: DashboardProps) {
       // Fetch popular pages (most viewed)
       const { data: popularData, error: popularError } = await supabase
         .from('pages')
-        .select(`
-          id,
-          title,
-          content,
-          view_count,
-          updated_at,
-          created_by,
-          profiles:created_by (display_name)
-        `)
+        .select('id, title, content, view_count, updated_at, created_by')
         .order('view_count', { ascending: false })
         .limit(5);
 
@@ -82,19 +74,38 @@ export function RealDashboard({ onCreatePage, onPageSelect }: DashboardProps) {
       // Fetch recent pages (recently updated)
       const { data: recentData, error: recentError } = await supabase
         .from('pages')
-        .select(`
-          id,
-          title,
-          content,
-          view_count,
-          updated_at,
-          created_by,
-          profiles:created_by (display_name)
-        `)
+        .select('id, title, content, view_count, updated_at, created_by')
         .order('updated_at', { ascending: false })
         .limit(8);
 
       if (recentError) throw recentError;
+
+      // Fetch user profiles for display names
+      const userIds = [...new Set([
+        ...(popularData?.map(p => p.created_by) || []),
+        ...(recentData?.map(p => p.created_by) || [])
+      ])];
+
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('user_id, display_name')
+        .in('user_id', userIds);
+
+      // Create a map for quick lookup
+      const profilesMap = new Map(
+        profilesData?.map(p => [p.user_id, p]) || []
+      );
+
+      // Add profile data to pages
+      const enrichedPopularData = popularData?.map(page => ({
+        ...page,
+        profiles: profilesMap.get(page.created_by) || { display_name: 'Unknown' }
+      })) || [];
+
+      const enrichedRecentData = recentData?.map(page => ({
+        ...page,
+        profiles: profilesMap.get(page.created_by) || { display_name: 'Unknown' }
+      })) || [];
 
       // Fetch stats
       const { count: totalPages } = await supabase
@@ -121,8 +132,8 @@ export function RealDashboard({ onCreatePage, onPageSelect }: DashboardProps) {
         .select('*', { count: 'exact', head: true })
         .gte('updated_at', sevenDaysAgo.toISOString());
 
-      setPopularPages(popularData || []);
-      setRecentPages(recentData || []);
+      setPopularPages(enrichedPopularData);
+      setRecentPages(enrichedRecentData);
       setStats({
         totalPages: totalPages || 0,
         activeUsers: activeUsers || 0,
