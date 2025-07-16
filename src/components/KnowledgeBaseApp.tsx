@@ -6,12 +6,13 @@ import { TagsPage } from "./TagsPage";
 import { PeoplePage } from "./PeoplePage";
 import { EnhancedContentEditor } from "./EnhancedContentEditor";
 import { CreatePageDialog } from "./CreatePageDialog";
+import { PagePermissionsDialog } from "./PagePermissionsDialog";
 import { AuthForm } from "./AuthForm";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { LogOut, User } from "lucide-react";
+import { LogOut, Settings as SettingsIcon, Shield } from "lucide-react";
 
 type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'people';
 
@@ -39,6 +40,7 @@ export function KnowledgeBaseApp() {
   const [isEditing, setIsEditing] = useState(false);
   const [createPageDialogOpen, setCreatePageDialogOpen] = useState(false);
   const [createPageParentId, setCreatePageParentId] = useState<string | null>(null);
+  const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const { user, loading, signOut } = useAuth();
   const { toast } = useToast();
 
@@ -283,6 +285,15 @@ export function KnowledgeBaseApp() {
                   <h1 className="text-4xl font-bold text-foreground">{currentPage.title}</h1>
                   <div className="flex gap-2">
                     <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPermissionsDialogOpen(true)}
+                      className="flex items-center gap-2"
+                    >
+                      <Shield className="h-4 w-4" />
+                      Permissions
+                    </Button>
+                    <Button
                       onClick={handleEditPage}
                       className="bg-gradient-primary"
                     >
@@ -313,6 +324,16 @@ export function KnowledgeBaseApp() {
         onPageCreated={handlePageCreated}
         initialParentId={createPageParentId}
       />
+
+      {/* Page Permissions Dialog */}
+      {currentPage && (
+        <PagePermissionsDialog
+          open={permissionsDialogOpen}
+          onOpenChange={setPermissionsDialogOpen}
+          pageId={currentPage.id}
+          pageTitle={currentPage.title}
+        />
+      )}
     </div>
   );
 }

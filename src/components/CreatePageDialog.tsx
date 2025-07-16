@@ -232,9 +232,9 @@ export function CreatePageDialog({
             <div className="space-y-2">
               <Label>Space</Label>
               <Select 
-                value={selectedSpaceId || ""} 
+                value={selectedSpaceId || "none"} 
                 onValueChange={(value) => {
-                  setSelectedSpaceId(value || null);
+                  setSelectedSpaceId(value === "none" ? null : value);
                   setSelectedParentId(null); // Reset parent when space changes
                 }}
                 disabled={loadingData}
@@ -243,7 +243,7 @@ export function CreatePageDialog({
                   <SelectValue placeholder="Select a space (optional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No space</SelectItem>
+                  <SelectItem value="none">No space</SelectItem>
                   {spaces.map((space) => (
                     <SelectItem key={space.id} value={space.id}>
                       <div className="flex items-center gap-2">
@@ -260,15 +260,15 @@ export function CreatePageDialog({
             <div className="space-y-2">
               <Label>Parent Page</Label>
               <Select 
-                value={selectedParentId || ""} 
-                onValueChange={(value) => setSelectedParentId(value || null)}
+                value={selectedParentId || "none"} 
+                onValueChange={(value) => setSelectedParentId(value === "none" ? null : value)}
                 disabled={loadingData}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select parent page (optional)" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">No parent page</SelectItem>
+                  <SelectItem value="none">No parent page</SelectItem>
                   {availableParentPages.map((page) => (
                     <SelectItem key={page.id} value={page.id}>
                       <div className="flex items-center gap-2">
