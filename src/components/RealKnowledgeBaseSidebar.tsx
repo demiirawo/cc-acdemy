@@ -12,11 +12,27 @@ import {
   Users,
   Settings,
   Globe,
-  FolderOpen
+  FolderOpen,
+  FileText,
+  MoreHorizontal,
+  Edit,
+  Copy,
+  Share,
+  Star,
+  Archive,
+  Trash2,
+  Move
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -66,10 +82,24 @@ interface SidebarTreeItemProps {
   selectedId?: string;
   onCreateSubPage?: (parentId: string) => void;
   onCreatePageInEditor?: (parentId?: string) => void;
+  onDuplicatePage?: (pageId: string) => void;
+  onArchivePage?: (pageId: string) => void;
+  onCopyLink?: (pageId: string) => void;
 }
 
-function SidebarTreeItem({ item, level, onSelect, selectedId, onCreateSubPage, onCreatePageInEditor }: SidebarTreeItemProps) {
+function SidebarTreeItem({ 
+  item, 
+  level, 
+  onSelect, 
+  selectedId, 
+  onCreateSubPage, 
+  onCreatePageInEditor,
+  onDuplicatePage,
+  onArchivePage,
+  onCopyLink
+}: SidebarTreeItemProps) {
   const [isExpanded, setIsExpanded] = useState(level < 2);
+  const [isHovered, setIsHovered] = useState(false);
   const hasChildren = item.children && item.children.length > 0;
   const isSelected = selectedId === item.id;
   const Icon = item.icon || BookOpen;
@@ -78,13 +108,15 @@ function SidebarTreeItem({ item, level, onSelect, selectedId, onCreateSubPage, o
     <div>
       <div
         className={cn(
-          "flex items-center gap-2 px-2 py-1.5 text-sm rounded-md cursor-pointer transition-colors group",
+          "flex items-center gap-2 px-2 py-1.5 text-sm rounded-md cursor-pointer transition-all duration-200 group",
           "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-          isSelected && "bg-sidebar-accent text-sidebar-accent-foreground",
-          level > 0 && "ml-4"
+          isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
+          level > 0 && "ml-2"
         )}
         style={{ paddingLeft: `${level * 12 + 8}px` }}
         onClick={() => onSelect(item)}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
         {hasChildren && (
           <Button
@@ -104,32 +136,104 @@ function SidebarTreeItem({ item, level, onSelect, selectedId, onCreateSubPage, o
           </Button>
         )}
         {!hasChildren && <div className="w-4" />}
-        <Icon className="h-4 w-4 text-sidebar-foreground/70" />
+        
+        {item.type === 'space' ? (
+          isExpanded ? (
+            <FolderOpen className="h-4 w-4 text-amber-500 flex-shrink-0" />
+          ) : (
+            <Folder className="h-4 w-4 text-amber-500 flex-shrink-0" />
+          )
+        ) : (
+          <FileText className="h-4 w-4 text-blue-500 flex-shrink-0" />
+        )}
+        
         <span className="truncate text-sidebar-foreground flex-1">{item.title}</span>
         
         {/* Public indicator */}
         {item.is_public && (
-          <Globe className="h-3 w-3 text-sidebar-foreground/50" />
+          <Globe className="h-3 w-3 text-sidebar-foreground/50 flex-shrink-0" />
         )}
         
-        {/* Add sub-page button */}
-        {(item.type === 'space' || item.type === 'page') && onCreatePageInEditor && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 hover:bg-sidebar-accent transition-opacity"
-            onClick={(e) => {
-              e.stopPropagation();
-              onCreatePageInEditor(item.id);
-            }}
-          >
-            <Plus className="h-3 w-3" />
-          </Button>
-        )}
+        {/* Action buttons - show on hover */}
+        <div className={cn(
+          "flex items-center gap-1 transition-opacity duration-200",
+          isHovered || isSelected ? "opacity-100" : "opacity-0"
+        )}>
+          {/* Add child page button */}
+          {(item.type === 'space' || item.type === 'page') && onCreatePageInEditor && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 hover:bg-sidebar-accent/50"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCreatePageInEditor(item.id);
+              }}
+              title="Add child page"
+            >
+              <Plus className="h-3 w-3" />
+            </Button>
+          )}
+          
+          {/* Context menu for pages */}
+          {item.type === 'page' && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 hover:bg-sidebar-accent/50"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MoreHorizontal className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => onSelect(item)}>
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onCopyLink?.(item.id)}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Copy link
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => {}}>
+                  <Star className="h-4 w-4 mr-2" />
+                  Star
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => {}}>
+                  <Share className="h-4 w-4 mr-2" />
+                  Share
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => onDuplicatePage?.(item.id)}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Duplicate
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => {}}>
+                  <Move className="h-4 w-4 mr-2" />
+                  Move
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => onArchivePage?.(item.id)}>
+                  <Archive className="h-4 w-4 mr-2" />
+                  Archive
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => {}}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </div>
       
       {hasChildren && isExpanded && (
-        <div>
+        <div className="ml-2">
           {item.children?.map((child) => (
             <SidebarTreeItem
               key={child.id}
@@ -137,8 +241,11 @@ function SidebarTreeItem({ item, level, onSelect, selectedId, onCreateSubPage, o
               level={level + 1}
               onSelect={onSelect}
               selectedId={selectedId}
-                     onCreateSubPage={onCreateSubPage}
-                     onCreatePageInEditor={onCreatePageInEditor}
+              onCreateSubPage={onCreateSubPage}
+              onCreatePageInEditor={onCreatePageInEditor}
+              onDuplicatePage={onDuplicatePage}
+              onArchivePage={onArchivePage}
+              onCopyLink={onCopyLink}
             />
           ))}
         </div>
@@ -178,7 +285,6 @@ export function RealKnowledgeBaseSidebar({
   const fetchHierarchyData = async () => {
     setLoading(true);
     try {
-      // Fetch spaces and pages data from Supabase
       const [spacesResponse, pagesResponse] = await Promise.all([
         supabase.from('spaces').select('*').order('name'),
         supabase.from('pages').select('*').order('title')
@@ -190,7 +296,6 @@ export function RealKnowledgeBaseSidebar({
       setSpaces(spacesResponse.data || []);
       setPages(pagesResponse.data || []);
 
-      // Build hierarchy
       const hierarchy = buildHierarchy(spacesResponse.data || [], pagesResponse.data || []);
       setHierarchyData(hierarchy);
     } catch (error) {
@@ -208,7 +313,6 @@ export function RealKnowledgeBaseSidebar({
   const buildHierarchy = (spacesData: Space[], pagesData: Page[]): SidebarItem[] => {
     const hierarchy: SidebarItem[] = [];
 
-    // Add spaces with their pages
     spacesData.forEach(space => {
       const spaceItem: SidebarItem = {
         id: space.id,
@@ -218,7 +322,6 @@ export function RealKnowledgeBaseSidebar({
         children: []
       };
 
-      // Find pages that belong to this space and have no parent
       const spacePages = pagesData.filter(page => 
         page.space_id === space.id && !page.parent_page_id
       );
@@ -227,7 +330,6 @@ export function RealKnowledgeBaseSidebar({
       hierarchy.push(spaceItem);
     });
 
-    // Add orphaned pages (no space and no parent)
     const orphanedPages = pagesData.filter(page => 
       !page.space_id && !page.parent_page_id
     );
@@ -248,7 +350,7 @@ export function RealKnowledgeBaseSidebar({
       id: page.id,
       title: page.title,
       type: 'page',
-      icon: BookOpen,
+      icon: FileText,
       is_public: page.is_public || false,
       parent_page_id: page.parent_page_id,
       space_id: page.space_id,
@@ -257,13 +359,83 @@ export function RealKnowledgeBaseSidebar({
   };
 
   const handleItemSelect = (item: SidebarItem) => {
-    // Only call onItemSelect for navigation items or real database items with valid UUIDs
     if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people' || item.id === 'settings') {
       onItemSelect(item);
     } else if (item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-      // Valid UUID - safe to pass to database
       onItemSelect(item);
     }
+  };
+
+  const handleDuplicatePage = async (pageId: string) => {
+    try {
+      const { data: originalPage } = await supabase
+        .from('pages')
+        .select('*')
+        .eq('id', pageId)
+        .single();
+
+      if (originalPage) {
+        const { error } = await supabase
+          .from('pages')
+          .insert({
+            title: `${originalPage.title} (Copy)`,
+            content: originalPage.content,
+            created_by: originalPage.created_by,
+            space_id: originalPage.space_id,
+            parent_page_id: originalPage.parent_page_id
+          });
+
+        if (error) throw error;
+
+        toast({
+          title: "Page duplicated",
+          description: "Page has been successfully duplicated.",
+        });
+        
+        fetchHierarchyData();
+      }
+    } catch (error) {
+      console.error('Error duplicating page:', error);
+      toast({
+        title: "Error",
+        description: "Failed to duplicate page.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleArchivePage = async (pageId: string) => {
+    try {
+      const { error } = await supabase
+        .from('pages')
+        .update({ tags: ['archived'] })
+        .eq('id', pageId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Page archived",
+        description: "Page has been moved to archive.",
+      });
+      
+      fetchHierarchyData();
+    } catch (error) {
+      console.error('Error archiving page:', error);
+      toast({
+        title: "Error",
+        description: "Failed to archive page.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCopyLink = (pageId: string) => {
+    const url = `${window.location.origin}/?page=${pageId}`;
+    navigator.clipboard.writeText(url);
+    toast({
+      title: "Link copied",
+      description: "Page link copied to clipboard.",
+    });
   };
 
   const handleCreateFolder = async () => {
@@ -295,7 +467,7 @@ export function RealKnowledgeBaseSidebar({
           <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center">
             <BookOpen className="h-4 w-4 text-primary-foreground" />
           </div>
-          <h1 className="font-semibold text-sidebar-foreground">Knowledge Base</h1>
+          <h1 className="font-semibold text-sidebar-foreground">Care Cuddle</h1>
         </div>
         
         {/* Search */}
@@ -305,7 +477,7 @@ export function RealKnowledgeBaseSidebar({
             placeholder="Search..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 bg-sidebar border-sidebar-border text-sidebar-foreground placeholder:text-sidebar-foreground/50"
+            className="pl-9 bg-sidebar border-sidebar-border text-sidebar-foreground placeholder:text-sidebar-foreground/50 h-9"
           />
         </div>
       </div>
@@ -322,7 +494,7 @@ export function RealKnowledgeBaseSidebar({
                 className={cn(
                   "flex items-center gap-3 px-2 py-2 text-sm rounded-md cursor-pointer transition-colors",
                   "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                  isSelected && "bg-sidebar-accent text-sidebar-accent-foreground"
+                  isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                 )}
                 onClick={() => handleItemSelect({ ...item, type: 'page' })}
               >
@@ -344,9 +516,9 @@ export function RealKnowledgeBaseSidebar({
             <Button 
               variant="ghost" 
               size="sm" 
-              className="h-6 w-6 p-0 text-sidebar-foreground/70 hover:text-sidebar-foreground"
+              className="h-6 w-6 p-0 text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
               onClick={handleCreateFolder}
-              title="Create new folder"
+              title="Create new space"
             >
               <Folder className="h-3 w-3" />
             </Button>
@@ -354,7 +526,7 @@ export function RealKnowledgeBaseSidebar({
               <Button 
                 variant="ghost" 
                 size="sm" 
-                className="h-6 w-6 p-0 text-sidebar-foreground/70 hover:text-sidebar-foreground"
+                className="h-6 w-6 p-0 text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
                 onClick={handleCreatePage}
                 title="Create new page"
               >
@@ -375,15 +547,18 @@ export function RealKnowledgeBaseSidebar({
             <div className="space-y-1">
               {filteredHierarchy.length > 0 ? (
                 filteredHierarchy.map((item) => (
-                   <SidebarTreeItem
-                     key={item.id}
-                     item={item}
-                     level={0}
-                     onSelect={handleItemSelect}
-                     selectedId={selectedId}
-                     onCreateSubPage={onCreateSubPage}
-                     onCreatePageInEditor={onCreatePageInEditor}
-                   />
+                  <SidebarTreeItem
+                    key={item.id}
+                    item={item}
+                    level={0}
+                    onSelect={handleItemSelect}
+                    selectedId={selectedId}
+                    onCreateSubPage={onCreateSubPage}
+                    onCreatePageInEditor={onCreatePageInEditor}
+                    onDuplicatePage={handleDuplicatePage}
+                    onArchivePage={handleArchivePage}
+                    onCopyLink={handleCopyLink}
+                  />
                 ))
               ) : searchQuery ? (
                 <div className="text-center py-8 text-sidebar-foreground/50">
