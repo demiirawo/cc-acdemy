@@ -138,6 +138,82 @@ export function KnowledgeBaseApp() {
     setCreatePageDialogOpen(true);
   };
 
+  const handleCreateFolder = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('spaces')
+        .insert({
+          name: 'New Folder',
+          description: '',
+          created_by: user.id
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast({
+        title: "Folder created",
+        description: `"${data.name}" has been created successfully.`,
+      });
+
+      // Refresh sidebar to show new folder
+      window.location.reload();
+    } catch (error) {
+      console.error('Error creating folder:', error);
+      toast({
+        title: "Error creating folder",
+        description: "Failed to create folder. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCreatePageInEditor = async (parentId?: string) => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('pages')
+        .insert({
+          title: 'Untitled Page',
+          content: '',
+          created_by: user.id,
+          parent_page_id: parentId || null
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Navigate directly to editor
+      setCurrentPage({
+        id: data.id,
+        title: data.title,
+        content: data.content,
+        lastUpdated: data.updated_at,
+        author: 'User'
+      });
+      setIsEditing(true);
+      setCurrentView('editor');
+      setSelectedItemId(data.id);
+
+      toast({
+        title: "Page created",
+        description: "New page created. Start editing!",
+      });
+    } catch (error) {
+      console.error('Error creating page:', error);
+      toast({
+        title: "Error creating page",
+        description: "Failed to create page. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handlePageCreated = (pageId: string) => {
     // Navigate to the newly created page
     handleItemSelect({ id: pageId, title: '', type: 'page' });
@@ -222,12 +298,14 @@ export function KnowledgeBaseApp() {
 
   return (
     <div className="flex h-screen bg-background">
-      <RealKnowledgeBaseSidebar
-        onItemSelect={handleItemSelect}
-        selectedId={selectedItemId}
-        onCreatePage={handleCreatePage}
-        onCreateSubPage={handleCreateSubPage}
-      />
+        <RealKnowledgeBaseSidebar
+          onItemSelect={handleItemSelect}
+          selectedId={selectedItemId}
+          onCreatePage={handleCreatePage}
+          onCreateSubPage={handleCreateSubPage}
+          onCreateFolder={handleCreateFolder}
+          onCreatePageInEditor={handleCreatePageInEditor}
+        />
       
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header with user info */}

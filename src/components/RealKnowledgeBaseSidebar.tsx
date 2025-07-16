@@ -65,9 +65,10 @@ interface SidebarTreeItemProps {
   onSelect: (item: SidebarItem) => void;
   selectedId?: string;
   onCreateSubPage?: (parentId: string) => void;
+  onCreatePageInEditor?: (parentId?: string) => void;
 }
 
-function SidebarTreeItem({ item, level, onSelect, selectedId, onCreateSubPage }: SidebarTreeItemProps) {
+function SidebarTreeItem({ item, level, onSelect, selectedId, onCreateSubPage, onCreatePageInEditor }: SidebarTreeItemProps) {
   const [isExpanded, setIsExpanded] = useState(level < 2);
   const hasChildren = item.children && item.children.length > 0;
   const isSelected = selectedId === item.id;
@@ -112,14 +113,14 @@ function SidebarTreeItem({ item, level, onSelect, selectedId, onCreateSubPage }:
         )}
         
         {/* Add sub-page button */}
-        {(item.type === 'space' || item.type === 'page') && onCreateSubPage && (
+        {(item.type === 'space' || item.type === 'page') && onCreatePageInEditor && (
           <Button
             variant="ghost"
             size="sm"
             className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 hover:bg-sidebar-accent transition-opacity"
             onClick={(e) => {
               e.stopPropagation();
-              onCreateSubPage(item.id);
+              onCreatePageInEditor(item.id);
             }}
           >
             <Plus className="h-3 w-3" />
@@ -136,7 +137,8 @@ function SidebarTreeItem({ item, level, onSelect, selectedId, onCreateSubPage }:
               level={level + 1}
               onSelect={onSelect}
               selectedId={selectedId}
-              onCreateSubPage={onCreateSubPage}
+                     onCreateSubPage={onCreateSubPage}
+                     onCreatePageInEditor={onCreatePageInEditor}
             />
           ))}
         </div>
@@ -150,13 +152,17 @@ interface RealKnowledgeBaseSidebarProps {
   selectedId?: string;
   onCreatePage?: () => void;
   onCreateSubPage?: (parentId: string) => void;
+  onCreateFolder?: () => void;
+  onCreatePageInEditor?: (parentId?: string) => void;
 }
 
 export function RealKnowledgeBaseSidebar({ 
   onItemSelect, 
   selectedId, 
   onCreatePage, 
-  onCreateSubPage 
+  onCreateSubPage,
+  onCreateFolder,
+  onCreatePageInEditor
 }: RealKnowledgeBaseSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [spaces, setSpaces] = useState<Space[]>([]);
@@ -266,6 +272,20 @@ export function RealKnowledgeBaseSidebar({
     }
   };
 
+  const handleCreateFolder = async () => {
+    if (onCreateFolder) {
+      onCreateFolder();
+    }
+  };
+
+  const handleCreatePage = () => {
+    if (onCreatePageInEditor) {
+      onCreatePageInEditor();
+    } else if (onCreatePage) {
+      onCreatePage();
+    }
+  };
+
   const filteredHierarchy = hierarchyData.filter(item =>
     item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     (item.children && item.children.some(child => 
@@ -327,12 +347,21 @@ export function RealKnowledgeBaseSidebar({
             Spaces & Pages
           </h3>
           <div className="flex gap-1">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="h-6 w-6 p-0 text-sidebar-foreground/70 hover:text-sidebar-foreground"
+              onClick={handleCreateFolder}
+              title="Create new folder"
+            >
+              <Folder className="h-3 w-3" />
+            </Button>
             {onCreatePage && (
               <Button 
                 variant="ghost" 
                 size="sm" 
                 className="h-6 w-6 p-0 text-sidebar-foreground/70 hover:text-sidebar-foreground"
-                onClick={onCreatePage}
+                onClick={handleCreatePage}
                 title="Create new page"
               >
                 <Plus className="h-3 w-3" />
@@ -352,14 +381,15 @@ export function RealKnowledgeBaseSidebar({
             <div className="space-y-1">
               {filteredHierarchy.length > 0 ? (
                 filteredHierarchy.map((item) => (
-                  <SidebarTreeItem
-                    key={item.id}
-                    item={item}
-                    level={0}
-                    onSelect={handleItemSelect}
-                    selectedId={selectedId}
-                    onCreateSubPage={onCreateSubPage}
-                  />
+                   <SidebarTreeItem
+                     key={item.id}
+                     item={item}
+                     level={0}
+                     onSelect={handleItemSelect}
+                     selectedId={selectedId}
+                     onCreateSubPage={onCreateSubPage}
+                     onCreatePageInEditor={onCreatePageInEditor}
+                   />
                 ))
               ) : searchQuery ? (
                 <div className="text-center py-8 text-sidebar-foreground/50">
@@ -371,7 +401,7 @@ export function RealKnowledgeBaseSidebar({
                   <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   <p className="text-sm mb-3">No content yet</p>
                   {onCreatePage && (
-                    <Button variant="outline" size="sm" onClick={onCreatePage}>
+                    <Button variant="outline" size="sm" onClick={handleCreatePage}>
                       <Plus className="h-3 w-3 mr-1" />
                       Create first page
                     </Button>
