@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { KnowledgeBaseSidebar } from "./KnowledgeBaseSidebar";
 import { RealDashboard } from "./RealDashboard";
+import { RecentlyUpdatedPage } from "./RecentlyUpdatedPage";
+import { TagsPage } from "./TagsPage";
+import { PeoplePage } from "./PeoplePage";
 import { EnhancedContentEditor } from "./EnhancedContentEditor";
 import { AuthForm } from "./AuthForm";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,7 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { LogOut, User } from "lucide-react";
 
-type ViewMode = 'dashboard' | 'editor' | 'page';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'people';
 
 interface SidebarItem {
   id: string;
@@ -57,6 +60,15 @@ export function KnowledgeBaseApp() {
     
     if (item.id === 'home') {
       setCurrentView('dashboard');
+      setCurrentPage(null);
+    } else if (item.id === 'recent') {
+      setCurrentView('recent');
+      setCurrentPage(null);
+    } else if (item.id === 'tags') {
+      setCurrentView('tags');
+      setCurrentPage(null);
+    } else if (item.id === 'people') {
+      setCurrentView('people');
       setCurrentPage(null);
     } else if (item.type === 'page') {
       try {
@@ -210,6 +222,9 @@ export function KnowledgeBaseApp() {
             <h2 className="text-lg font-semibold text-foreground">
               {currentView === 'dashboard' ? 'Dashboard' : 
                currentView === 'editor' ? 'Editor' : 
+               currentView === 'recent' ? 'Recently Updated' :
+               currentView === 'tags' ? 'Tags' :
+               currentView === 'people' ? 'People' :
                currentPage?.title || 'Page'}
             </h2>
             <div className="flex items-center gap-2">
@@ -228,6 +243,18 @@ export function KnowledgeBaseApp() {
             onCreatePage={handleCreatePage}
             onPageSelect={handlePageSelect}
           />
+        )}
+
+        {currentView === 'recent' && (
+          <RecentlyUpdatedPage onPageSelect={handlePageSelect} />
+        )}
+
+        {currentView === 'tags' && (
+          <TagsPage onPageSelect={handlePageSelect} />
+        )}
+
+        {currentView === 'people' && (
+          <PeoplePage onPageSelect={handlePageSelect} />
         )}
         
         {currentView === 'editor' && currentPage && (
