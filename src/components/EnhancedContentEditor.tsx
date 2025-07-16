@@ -1,11 +1,14 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Bold,
   Italic,
@@ -21,7 +24,10 @@ import {
   Youtube,
   FileText,
   Upload,
-  Trash2
+  Trash2,
+  Globe,
+  Lock,
+  Copy
 } from "lucide-react";
 
 interface ContentEditorProps {
@@ -30,6 +36,7 @@ interface ContentEditorProps {
   onSave: (title: string, content: string) => void;
   onPreview?: () => void;
   isEditing?: boolean;
+  pageId?: string;
 }
 
 interface MediaFile {
@@ -44,16 +51,44 @@ export function EnhancedContentEditor({
   content = "",
   onSave,
   onPreview,
-  isEditing = true
+  isEditing = true,
+  pageId
 }: ContentEditorProps) {
   const [currentTitle, setCurrentTitle] = useState(title);
   const [currentContent, setCurrentContent] = useState(content);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
+  const [isPublic, setIsPublic] = useState(false);
+  const [publicToken, setPublicToken] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  useEffect(() => {
+    setCurrentTitle(title);
+    setCurrentContent(content);
+    fetchPageSettings();
+  }, [title, content, pageId]);
+
+  const fetchPageSettings = async () => {
+    if (!pageId) return;
+
+    try {
+      const { data } = await supabase
+        .from('pages')
+        .select('is_public, public_token')
+        .eq('id', pageId)
+        .single();
+
+      if (data) {
+        setIsPublic(data.is_public || false);
+        setPublicToken(data.public_token || '');
+      }
+    } catch (error) {
+      console.error('Error fetching page settings:', error);
+    }
+  };
 
   const insertLink = () => {
     const url = prompt("Enter URL:");
@@ -140,7 +175,6 @@ export function EnhancedContentEditor({
     }, 0);
   };
 
-
   const extractYouTubeId = (url: string): string | null => {
     const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
     const match = url.match(regex);
@@ -192,8 +226,58 @@ export function EnhancedContentEditor({
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     onSave(currentTitle, currentContent);
+    
+    // Update page settings
+    if (pageId) {
+      try {
+        await supabase
+          .from('pages')
+          .update({ is_public: isPublic })
+          .eq('id', pageId);
+      } catch (error) {
+        console.error('Error updating page settings:', error);
+      }
+    }
+  };
+
+  const togglePublicAccess = async () => {
+    if (!pageId) return;
+
+    try {
+      const newIsPublic = !isPublic;
+      const { error } = await supabase
+        .from('pages')
+        .update({ is_public: newIsPublic })
+        .eq('id', pageId);
+
+      if (error) throw error;
+
+      setIsPublic(newIsPublic);
+      toast({
+        title: newIsPublic ? "Page made public" : "Page made private",
+        description: newIsPublic ? "Anyone can view this page" : "Only authorized users can view this page",
+      });
+    } catch (error) {
+      console.error('Error updating public access:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update page visibility",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const copyPublicLink = () => {
+    if (!publicToken) return;
+    
+    const publicUrl = `${window.location.origin}/public/${publicToken}`;
+    navigator.clipboard.writeText(publicUrl);
+    toast({
+      title: "Link copied",
+      description: "Public link copied to clipboard",
+    });
   };
 
   if (!isEditing) {
@@ -237,17 +321,38 @@ export function EnhancedContentEditor({
             placeholder="Page title..."
             className="text-2xl font-bold border-none bg-transparent p-0 focus-visible:ring-0"
           />
-          <div className="flex gap-2">
-            {onPreview && (
-              <Button onClick={onPreview} variant="outline">
-                <Eye className="h-4 w-4 mr-2" />
-                Preview
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              {isPublic ? <Globe className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+              <Label htmlFor="public-toggle" className="text-sm font-medium">
+                Public
+              </Label>
+              <Switch
+                id="public-toggle"
+                checked={isPublic}
+                onCheckedChange={togglePublicAccess}
+              />
+            </div>
+            
+            {isPublic && publicToken && (
+              <Button variant="outline" size="sm" onClick={copyPublicLink}>
+                <Copy className="h-4 w-4 mr-2" />
+                Copy Public Link
               </Button>
             )}
-            <Button onClick={handleSave} className="bg-gradient-primary">
-              <Save className="h-4 w-4 mr-2" />
-              Save
-            </Button>
+            
+            <div className="flex gap-2">
+              {onPreview && (
+                <Button onClick={onPreview} variant="outline">
+                  <Eye className="h-4 w-4 mr-2" />
+                  Preview
+                </Button>
+              )}
+              <Button onClick={handleSave} className="bg-gradient-primary">
+                <Save className="h-4 w-4 mr-2" />
+                Save
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -302,6 +407,7 @@ export function EnhancedContentEditor({
             onChange={(e) => setCurrentContent(e.target.value)}
             placeholder="Start writing your content... You can use Markdown formatting and add YouTube videos!"
             className="h-full resize-none border-none focus-visible:ring-0 text-base leading-relaxed"
+            style={{ userSelect: 'text' }}
           />
         </div>
 

@@ -176,28 +176,22 @@ export function RealKnowledgeBaseSidebar({
   }, []);
 
   const fetchHierarchyData = async () => {
+    setLoading(true);
     try {
-      // Fetch spaces
-      const { data: spacesData, error: spacesError } = await supabase
-        .from('spaces')
-        .select('*')
-        .order('name');
+      // Fetch spaces and pages data from Supabase
+      const [spacesResponse, pagesResponse] = await Promise.all([
+        supabase.from('spaces').select('*').order('name'),
+        supabase.from('pages').select('*').order('title')
+      ]);
 
-      if (spacesError) throw spacesError;
+      if (spacesResponse.error) throw spacesResponse.error;
+      if (pagesResponse.error) throw pagesResponse.error;
 
-      // Fetch pages
-      const { data: pagesData, error: pagesError } = await supabase
-        .from('pages')
-        .select('*')
-        .order('title');
-
-      if (pagesError) throw pagesError;
-
-      setSpaces(spacesData || []);
-      setPages(pagesData || []);
+      setSpaces(spacesResponse.data || []);
+      setPages(pagesResponse.data || []);
 
       // Build hierarchy
-      const hierarchy = buildHierarchy(spacesData || [], pagesData || []);
+      const hierarchy = buildHierarchy(spacesResponse.data || [], pagesResponse.data || []);
       setHierarchyData(hierarchy);
     } catch (error) {
       console.error('Error fetching hierarchy data:', error);

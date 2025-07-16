@@ -668,17 +668,8 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">Export Knowledge Base</div>
-                    <div className="text-sm text-muted-foreground">
-                      Download all your pages, settings, and data as JSON
-                    </div>
-                  </div>
-                  <Button onClick={handleExportData} disabled={loading}>
-                    <Download className="h-4 w-4 mr-2" />
-                    {loading ? "Exporting..." : "Export Data"}
-                  </Button>
+                <div className="text-sm text-muted-foreground">
+                  Export functionality has been removed per administrator request.
                 </div>
               </CardContent>
             </Card>

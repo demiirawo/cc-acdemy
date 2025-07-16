@@ -129,13 +129,11 @@ export function KnowledgeBaseApp() {
   };
 
   const handleCreatePage = () => {
-    setCreatePageParentId(null);
-    setCreatePageDialogOpen(true);
+    handleCreatePageInEditor();
   };
 
   const handleCreateSubPage = (parentId: string) => {
-    setCreatePageParentId(parentId);
-    setCreatePageDialogOpen(true);
+    handleCreatePageInEditor(parentId);
   };
 
   const handleCreateFolder = async () => {
@@ -361,6 +359,7 @@ export function KnowledgeBaseApp() {
             onSave={handleSavePage}
             onPreview={handlePreview}
             isEditing={isEditing}
+            pageId={currentPage.id}
           />
         )}
         
