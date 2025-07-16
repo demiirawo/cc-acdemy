@@ -8,34 +8,34 @@
   :root {
     /* Core Background & Text */
     --background: 0 0% 100%;
-    --foreground: 215 27% 14%;
+    --foreground: 240 10% 3.9%;
 
     /* Card Components */
     --card: 0 0% 100%;
-    --card-foreground: 215 27% 14%;
+    --card-foreground: 240 10% 3.9%;
 
     /* Popover Components */
     --popover: 0 0% 100%;
-    --popover-foreground: 215 27% 14%;
+    --popover-foreground: 240 10% 3.9%;
 
-    /* Primary Brand Colors - Professional Blue */
-    --primary: 212 96% 54%;
+    /* Primary Brand Colors - Purple/Pink Theme */
+    --primary: 262 83% 58%;
     --primary-foreground: 0 0% 100%;
-    --primary-light: 212 96% 65%;
-    --primary-dark: 212 96% 45%;
+    --primary-light: 280 80% 70%;
+    --primary-dark: 250 85% 48%;
 
-    /* Secondary Colors - Subtle Gray */
-    --secondary: 210 11% 96%;
-    --secondary-foreground: 215 27% 14%;
+    /* Secondary Colors - Soft Purple */
+    --secondary: 270 20% 95%;
+    --secondary-foreground: 240 10% 3.9%;
 
     /* Muted Colors */
-    --muted: 210 11% 96%;
-    --muted-foreground: 215 13% 55%;
+    --muted: 270 20% 95%;
+    --muted-foreground: 240 3.8% 46.1%;
 
-    /* Accent Colors - Knowledge Teal */
-    --accent: 174 63% 45%;
-    --accent-foreground: 0 0% 100%;
-    --accent-light: 174 63% 55%;
+    /* Accent Colors - Pink Accent */
+    --accent: 328 85% 70%;
+    --accent-foreground: 240 10% 3.9%;
+    --accent-light: 328 85% 80%;
 
     /* Status Colors */
     --destructive: 354 84% 57%;
@@ -69,6 +69,7 @@
     --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-light)));
     --gradient-accent: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--accent-light)));
     --gradient-subtle: linear-gradient(180deg, hsl(var(--background)), hsl(var(--muted)));
+    --gradient-hero: linear-gradient(135deg, hsl(262 83% 58%), hsl(328 85% 70%));
 
     /* Animations */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -93,35 +94,35 @@
 
   .dark {
     /* Core Background & Text */
-    --background: 215 27% 8%;
-    --foreground: 210 11% 95%;
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
 
     /* Card Components */
-    --card: 215 27% 10%;
-    --card-foreground: 210 11% 95%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
 
     /* Popover Components */
-    --popover: 215 27% 10%;
-    --popover-foreground: 210 11% 95%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
 
     /* Primary Brand Colors */
-    --primary: 212 96% 65%;
-    --primary-foreground: 215 27% 8%;
-    --primary-light: 212 96% 75%;
-    --primary-dark: 212 96% 55%;
+    --primary: 262 83% 68%;
+    --primary-foreground: 0 0% 98%;
+    --primary-light: 280 80% 78%;
+    --primary-dark: 250 85% 58%;
 
     /* Secondary Colors */
-    --secondary: 215 20% 20%;
-    --secondary-foreground: 210 11% 95%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
 
     /* Muted Colors */
-    --muted: 215 20% 20%;
-    --muted-foreground: 215 13% 65%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
 
     /* Accent Colors */
-    --accent: 174 63% 55%;
-    --accent-foreground: 215 27% 8%;
-    --accent-light: 174 63% 65%;
+    --accent: 328 85% 75%;
+    --accent-foreground: 240 10% 3.9%;
+    --accent-light: 328 85% 85%;
 
     /* Status Colors */
     --destructive: 354 84% 67%;
