@@ -33,6 +33,17 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
     setIsLoading(true);
 
     try {
+      // Validate email domain for registration
+      if (!formData.email.endsWith('@care-cuddle.co.uk')) {
+        toast({
+          title: "Registration restricted",
+          description: "Registration is restricted to @care-cuddle.co.uk email addresses only",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
+
       const { error } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
