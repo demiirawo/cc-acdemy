@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 interface SidebarItem {
   id: string;
   title: string;
-  type: 'space' | 'page' | 'folder';
+  type: 'space' | 'page';
   icon?: any;
   children?: SidebarItem[];
   href?: string;
