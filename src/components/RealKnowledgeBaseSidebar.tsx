@@ -114,8 +114,6 @@ function SidebarTreeItem({
         
         <span className="truncate flex-1 text-neutral-50 font-medium">{item.title}</span>
         
-        {/* Public indicator */}
-        {item.is_public && <Globe className="h-3 w-3 text-sidebar-foreground/50 flex-shrink-0" />}
         
         {/* Action buttons - show on hover */}
         <div className={cn("flex items-center gap-1 transition-opacity duration-200", isHovered || isSelected ? "opacity-100" : "opacity-0")}>
@@ -467,7 +465,7 @@ export function RealKnowledgeBaseSidebar({
         </div>
         
         <ScrollArea className="h-full">
-          <div className="pb-8">
+          <div className="pb-16">
             {loading ? <div className="space-y-2">
                 {[...Array(5)].map((_, i) => <div key={i} className="h-8 bg-sidebar-accent/20 rounded animate-pulse" />)}
               </div> : <div className="space-y-1">

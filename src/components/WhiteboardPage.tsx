@@ -111,7 +111,7 @@ export function WhiteboardPage() {
         variant: "destructive",
       });
     }
-  }, [activeTool, activeColor, brushSize]);
+  }, []); // Remove dependencies to prevent re-initialization
 
   useEffect(() => {
     if (!fabricCanvas) return;
