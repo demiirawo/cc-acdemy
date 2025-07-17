@@ -11,28 +11,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { 
-  User, 
-  Mail, 
-  Shield, 
-  Bell, 
-  Palette, 
-  Download, 
-  Upload, 
-  Trash2, 
-  Key,
-  Settings as SettingsIcon,
-  Database,
-  Globe,
-  Eye,
-  EyeOff,
-  Save,
-  X
-} from "lucide-react";
+import { User, Mail, Shield, Bell, Palette, Download, Upload, Trash2, Key, Settings as SettingsIcon, Database, Globe, Eye, EyeOff, Save, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-
 interface UserProfile {
   id: string;
   user_id: string;
@@ -42,12 +24,12 @@ interface UserProfile {
   created_at: string;
   updated_at: string;
 }
-
 interface SettingsPageProps {
   onClose?: () => void;
 }
-
-export function SettingsPage({ onClose }: SettingsPageProps) {
+export function SettingsPage({
+  onClose
+}: SettingsPageProps) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
@@ -69,84 +51,73 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
     publicPages: 0,
     joinDate: ""
   });
-
-  const { user, signOut } = useAuth();
-  const { toast } = useToast();
-
+  const {
+    user,
+    signOut
+  } = useAuth();
+  const {
+    toast
+  } = useToast();
   useEffect(() => {
     fetchUserData();
   }, [user]);
-
   const fetchUserData = async () => {
     if (!user) return;
-
     try {
       setLoadingData(true);
 
       // Fetch user profile
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
-
+      const {
+        data: profileData,
+        error: profileError
+      } = await supabase.from('profiles').select('*').eq('user_id', user.id).single();
       if (profileError) throw profileError;
-
       setProfile(profileData);
       setDisplayName(profileData.display_name || "");
 
       // Fetch user stats
-      const { count: totalPages } = await supabase
-        .from('pages')
-        .select('*', { count: 'exact', head: true })
-        .eq('created_by', user.id);
-
-      const { data: pagesData } = await supabase
-        .from('pages')
-        .select('view_count, is_public')
-        .eq('created_by', user.id);
-
+      const {
+        count: totalPages
+      } = await supabase.from('pages').select('*', {
+        count: 'exact',
+        head: true
+      }).eq('created_by', user.id);
+      const {
+        data: pagesData
+      } = await supabase.from('pages').select('view_count, is_public').eq('created_by', user.id);
       const totalViews = pagesData?.reduce((sum, page) => sum + (page.view_count || 0), 0) || 0;
       const publicPages = pagesData?.filter(page => page.is_public).length || 0;
-
       setStats({
         totalPages: totalPages || 0,
         totalViews,
         publicPages,
         joinDate: new Date(profileData.created_at).toLocaleDateString()
       });
-
     } catch (error) {
       console.error('Error fetching user data:', error);
       toast({
         title: "Error",
         description: "Failed to load user settings.",
-        variant: "destructive",
+        variant: "destructive"
       });
     } finally {
       setLoadingData(false);
     }
   };
-
   const handleUpdateProfile = async () => {
     if (!user || !profile) return;
-
     setLoading(true);
-
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({
-          display_name: displayName.trim() || null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('user_id', user.id);
-
+      const {
+        error
+      } = await supabase.from('profiles').update({
+        display_name: displayName.trim() || null,
+        updated_at: new Date().toISOString()
+      }).eq('user_id', user.id);
       if (error) throw error;
-
       toast({
         title: "Profile updated",
-        description: "Your profile has been updated successfully.",
+        description: "Your profile has been updated successfully."
       });
 
       // Refresh data
@@ -156,53 +127,48 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
       toast({
         title: "Error",
         description: "Failed to update profile. Please try again.",
-        variant: "destructive",
+        variant: "destructive"
       });
     } finally {
       setLoading(false);
     }
   };
-
   const handleChangePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
       toast({
         title: "Error",
         description: "Please fill in all password fields.",
-        variant: "destructive",
+        variant: "destructive"
       });
       return;
     }
-
     if (newPassword !== confirmPassword) {
       toast({
         title: "Error",
         description: "New passwords do not match.",
-        variant: "destructive",
+        variant: "destructive"
       });
       return;
     }
-
     if (newPassword.length < 6) {
       toast({
         title: "Error",
         description: "Password must be at least 6 characters long.",
-        variant: "destructive",
+        variant: "destructive"
       });
       return;
     }
-
     setLoading(true);
-
     try {
-      const { error } = await supabase.auth.updateUser({
+      const {
+        error
+      } = await supabase.auth.updateUser({
         password: newPassword
       });
-
       if (error) throw error;
-
       toast({
         title: "Password updated",
-        description: "Your password has been changed successfully.",
+        description: "Your password has been changed successfully."
       });
 
       // Clear password fields
@@ -214,7 +180,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
       toast({
         title: "Error",
         description: "Failed to update password. Please try again.",
-        variant: "destructive",
+        variant: "destructive"
       });
     } finally {
       setLoading(false);
@@ -226,34 +192,28 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
     toast({
       title: "Feature unavailable",
       description: "Data export has been disabled.",
-      variant: "destructive",
+      variant: "destructive"
     });
   };
-
   const handleDeleteAccount = async () => {
     // This would typically involve more complex account deletion logic
     toast({
       title: "Account deletion",
       description: "Please contact support to delete your account.",
-      variant: "destructive",
+      variant: "destructive"
     });
   };
-
   if (loadingData) {
-    return (
-      <div className="flex-1 overflow-auto bg-gradient-subtle">
+    return <div className="flex-1 overflow-auto bg-gradient-subtle">
         <div className="max-w-4xl mx-auto p-6">
           <div className="animate-pulse space-y-6">
             <div className="h-8 bg-muted rounded w-1/3"></div>
             <div className="h-96 bg-muted rounded"></div>
           </div>
         </div>
-      </div>
-    );
+      </div>;
   }
-
-  return (
-    <div className="flex-1 overflow-auto bg-gradient-subtle">
+  return <div className="flex-1 overflow-auto bg-gradient-subtle">
       <div className="max-w-4xl mx-auto p-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -261,11 +221,9 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
             <SettingsIcon className="h-8 w-8 text-primary" />
             <h1 className="text-3xl font-bold text-foreground">Settings</h1>
           </div>
-          {onClose && (
-            <Button variant="ghost" size="sm" onClick={onClose}>
+          {onClose && <Button variant="ghost" size="sm" onClick={onClose}>
               <X className="h-4 w-4" />
-            </Button>
-          )}
+            </Button>}
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
@@ -308,21 +266,11 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="displayName">Display Name</Label>
-                    <Input
-                      id="displayName"
-                      value={displayName}
-                      onChange={(e) => setDisplayName(e.target.value)}
-                      placeholder="Enter your display name"
-                    />
+                    <Input id="displayName" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Enter your display name" />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
-                    <Input
-                      id="email"
-                      value={user?.email || ""}
-                      disabled
-                      className="bg-muted"
-                    />
+                    <Input id="email" value={user?.email || ""} disabled className="bg-muted" />
                     <p className="text-xs text-muted-foreground">
                       Contact support to change your email
                     </p>
@@ -385,20 +333,8 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
                 <div className="space-y-2">
                   <Label htmlFor="currentPassword">Current Password</Label>
                   <div className="relative">
-                    <Input
-                      id="currentPassword"
-                      type={showCurrentPassword ? "text" : "password"}
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      placeholder="Enter current password"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3"
-                      onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                    >
+                    <Input id="currentPassword" type={showCurrentPassword ? "text" : "password"} value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} placeholder="Enter current password" />
+                    <Button type="button" variant="ghost" size="sm" className="absolute right-0 top-0 h-full px-3" onClick={() => setShowCurrentPassword(!showCurrentPassword)}>
                       {showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
@@ -408,20 +344,8 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
                   <div className="space-y-2">
                     <Label htmlFor="newPassword">New Password</Label>
                     <div className="relative">
-                      <Input
-                        id="newPassword"
-                        type={showNewPassword ? "text" : "password"}
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        placeholder="Enter new password"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-0 top-0 h-full px-3"
-                        onClick={() => setShowNewPassword(!showNewPassword)}
-                      >
+                      <Input id="newPassword" type={showNewPassword ? "text" : "password"} value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Enter new password" />
+                      <Button type="button" variant="ghost" size="sm" className="absolute right-0 top-0 h-full px-3" onClick={() => setShowNewPassword(!showNewPassword)}>
                         {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </Button>
                     </div>
@@ -430,20 +354,8 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
                   <div className="space-y-2">
                     <Label htmlFor="confirmPassword">Confirm New Password</Label>
                     <div className="relative">
-                      <Input
-                        id="confirmPassword"
-                        type={showConfirmPassword ? "text" : "password"}
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        placeholder="Confirm new password"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="absolute right-0 top-0 h-full px-3"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      >
+                      <Input id="confirmPassword" type={showConfirmPassword ? "text" : "password"} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Confirm new password" />
+                      <Button type="button" variant="ghost" size="sm" className="absolute right-0 top-0 h-full px-3" onClick={() => setShowConfirmPassword(!showConfirmPassword)}>
                         {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </Button>
                     </div>
@@ -477,18 +389,13 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
                       Use an authenticator app to generate codes
                     </div>
                   </div>
-                  <Switch
-                    checked={twoFactorEnabled}
-                    onCheckedChange={setTwoFactorEnabled}
-                  />
+                  <Switch checked={twoFactorEnabled} onCheckedChange={setTwoFactorEnabled} />
                 </div>
-                {twoFactorEnabled && (
-                  <div className="mt-4 p-4 bg-muted rounded-lg">
+                {twoFactorEnabled && <div className="mt-4 p-4 bg-muted rounded-lg">
                     <p className="text-sm text-muted-foreground">
                       Two-factor authentication is not yet implemented. This is a placeholder for future functionality.
                     </p>
-                  </div>
-                )}
+                  </div>}
               </CardContent>
             </Card>
           </TabsContent>
@@ -514,10 +421,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
                         Receive email updates about page changes and mentions
                       </div>
                     </div>
-                    <Switch
-                      checked={emailNotifications}
-                      onCheckedChange={setEmailNotifications}
-                    />
+                    <Switch checked={emailNotifications} onCheckedChange={setEmailNotifications} />
                   </div>
 
                   <Separator />
@@ -529,10 +433,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
                         Get browser notifications for real-time updates
                       </div>
                     </div>
-                    <Switch
-                      checked={pushNotifications}
-                      onCheckedChange={setPushNotifications}
-                    />
+                    <Switch checked={pushNotifications} onCheckedChange={setPushNotifications} />
                   </div>
 
                   <Separator />
@@ -544,10 +445,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
                         Allow others to see your profile information
                       </div>
                     </div>
-                    <Switch
-                      checked={publicProfile}
-                      onCheckedChange={setPublicProfile}
-                    />
+                    <Switch checked={publicProfile} onCheckedChange={setPublicProfile} />
                   </div>
                 </div>
               </CardContent>
@@ -615,22 +513,7 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
 
           {/* Data & Privacy Tab */}
           <TabsContent value="data" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Download className="h-5 w-5" />
-                  Export Your Data
-                </CardTitle>
-                <CardDescription>
-                  Download a copy of all your pages and settings.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-sm text-muted-foreground">
-                  Export functionality has been removed per administrator request.
-                </div>
-              </CardContent>
-            </Card>
+            
 
             <Card className="border-destructive">
               <CardHeader>
@@ -681,6 +564,5 @@ export function SettingsPage({ onClose }: SettingsPageProps) {
           </TabsContent>
         </Tabs>
       </div>
-    </div>
-  );
+    </div>;
 }
