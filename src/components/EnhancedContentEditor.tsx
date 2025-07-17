@@ -2145,37 +2145,12 @@ export function EnhancedContentEditor({
   const handleSave = async () => {
     try {
       // Save content and recommended reading using the provided onSave function
-      onSave(currentTitle, currentContent, recommendedReading);
+      await onSave(currentTitle, currentContent, recommendedReading);
       
-      if (pageId) {
-        // Update page settings in database
-        const { error } = await supabase
-          .from('pages')
-          .update({ 
-            is_public: isPublic,
-            content: currentContent,
-            title: currentTitle,
-            recommended_reading: recommendedReading,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', pageId);
-
-        if (error) throw error;
-
-        // Send a custom event to update sidebar
-        window.dispatchEvent(new CustomEvent('pageUpdated', { 
-          detail: { 
-            pageId, 
-            title: currentTitle, 
-            content: currentContent 
-          } 
-        }));
-
-        toast({
-          title: "Saved",
-          description: "Page saved successfully",
-        });
-      }
+      toast({
+        title: "Saved",
+        description: "Page saved successfully",
+      });
     } catch (error) {
       console.error('Error saving page:', error);
       toast({
