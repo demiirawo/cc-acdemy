@@ -12,7 +12,10 @@ import {
   Trash2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Canvas as FabricCanvas, Circle as FabricCircle, Rect as FabricRect, Textbox as FabricTextbox, Line as FabricLine } from "fabric";
+
+// Define fabric types
+type FabricCanvas = any;
+type FabricObject = any;
 
 export function WhiteboardCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -29,25 +32,35 @@ export function WhiteboardCanvas() {
 
   // Initialize canvas
   useEffect(() => {
-    if (!canvasRef.current || fabricCanvas) return;
-
     let canvas: FabricCanvas | null = null;
     
-    try {
-      canvas = new FabricCanvas(canvasRef.current, {
-        width: 1200,
-        height: 700,
-        backgroundColor: '#ffffff',
-      });
+    const initCanvas = async () => {
+      if (!canvasRef.current) return;
 
-      // Set up drawing brush
-      canvas.freeDrawingBrush.color = activeColor;
-      canvas.freeDrawingBrush.width = brushSize;
+      try {
+        // Dynamic import to ensure fabric is loaded
+        const { Canvas, PencilBrush } = await import('fabric');
+        
+        canvas = new Canvas(canvasRef.current, {
+          width: 1200,
+          height: 700,
+          backgroundColor: '#ffffff',
+        });
 
-      setFabricCanvas(canvas);
-    } catch (error) {
-      console.error('Error initializing canvas:', error);
-    }
+        // Initialize drawing brush properly
+        canvas.freeDrawingBrush = new PencilBrush(canvas);
+        canvas.freeDrawingBrush.color = activeColor;
+        canvas.freeDrawingBrush.width = brushSize;
+
+        setFabricCanvas(canvas);
+        console.log('Canvas initialized successfully');
+
+      } catch (error) {
+        console.error('Failed to initialize canvas:', error);
+      }
+    };
+
+    initCanvas();
 
     return () => {
       if (canvas) {
@@ -57,80 +70,89 @@ export function WhiteboardCanvas() {
           console.error('Error disposing canvas:', error);
         }
       }
-      setFabricCanvas(null);
     };
-  }, []); // Empty dependency array to run only once
+  }, []);
 
-  // Update canvas when tool or color changes
+  // Update canvas mode when tool changes
   useEffect(() => {
     if (!fabricCanvas) return;
 
-    fabricCanvas.isDrawingMode = activeTool === 'draw';
-    fabricCanvas.selection = activeTool === 'select';
-    
-    if (activeTool === 'draw' && fabricCanvas.freeDrawingBrush) {
-      fabricCanvas.freeDrawingBrush.color = activeColor;
-      fabricCanvas.freeDrawingBrush.width = brushSize;
+    try {
+      fabricCanvas.isDrawingMode = activeTool === 'draw';
+      fabricCanvas.selection = activeTool === 'select';
+      
+      if (activeTool === 'draw' && fabricCanvas.freeDrawingBrush) {
+        fabricCanvas.freeDrawingBrush.color = activeColor;
+        fabricCanvas.freeDrawingBrush.width = brushSize;
+      }
+    } catch (error) {
+      console.error('Error updating canvas mode:', error);
     }
   }, [activeTool, activeColor, brushSize, fabricCanvas]);
 
-  const addShape = (shapeType: 'rectangle' | 'circle' | 'text' | 'line') => {
+  const addShape = async (shapeType: 'rectangle' | 'circle' | 'text' | 'line') => {
     if (!fabricCanvas) return;
 
-    let shape;
+    try {
+      const { Circle, Rect, Textbox, Line } = await import('fabric');
 
-    switch (shapeType) {
-      case 'rectangle':
-        shape = new FabricRect({
-          left: 100,
-          top: 100,
-          fill: 'transparent',
-          stroke: activeColor,
-          strokeWidth: 2,
-          width: 100,
-          height: 60,
-        });
-        break;
-      case 'circle':
-        shape = new FabricCircle({
-          left: 100,
-          top: 100,
-          fill: 'transparent',
-          stroke: activeColor,
-          strokeWidth: 2,
-          radius: 50,
-        });
-        break;
-      case 'text':
-        shape = new FabricTextbox('Edit me', {
-          left: 100,
-          top: 100,
-          fill: activeColor,
-          fontSize: 20,
-          width: 200,
-          editable: true,
-        });
-        break;
-      case 'line':
-        shape = new FabricLine([100, 100, 200, 100], {
-          stroke: activeColor,
-          strokeWidth: brushSize,
-        });
-        break;
-      default:
-        return;
-    }
+      let shape: FabricObject;
 
-    fabricCanvas.add(shape);
-    fabricCanvas.setActiveObject(shape);
-    fabricCanvas.renderAll();
+      switch (shapeType) {
+        case 'rectangle':
+          shape = new Rect({
+            left: 100,
+            top: 100,
+            fill: 'transparent',
+            stroke: activeColor,
+            strokeWidth: 2,
+            width: 100,
+            height: 60,
+          });
+          break;
+        case 'circle':
+          shape = new Circle({
+            left: 100,
+            top: 100,
+            fill: 'transparent',
+            stroke: activeColor,
+            strokeWidth: 2,
+            radius: 50,
+          });
+          break;
+        case 'text':
+          shape = new Textbox('Edit me', {
+            left: 100,
+            top: 100,
+            fill: activeColor,
+            fontSize: 20,
+            width: 200,
+            editable: true,
+          });
+          break;
+        case 'line':
+          shape = new Line([100, 100, 200, 100], {
+            stroke: activeColor,
+            strokeWidth: brushSize,
+          });
+          break;
+        default:
+          return;
+      }
 
-    // Auto-edit text
-    if (shapeType === 'text') {
-      setTimeout(() => {
-        shape.enterEditing();
-        shape.selectAll();
-      }, 100);
+      fabricCanvas.add(shape);
+      fabricCanvas.setActiveObject(shape);
+      fabricCanvas.renderAll();
+
+      // Auto-edit text
+      if (shapeType === 'text') {
+        setTimeout(() => {
+          shape.enterEditing();
+          shape.selectAll();
+        }, 100);
+      }
+    } catch (error) {
+      console.error('Error adding shape:', error);
     }
   };
 
@@ -145,26 +167,34 @@ export function WhiteboardCanvas() {
   const handleClear = () => {
     if (!fabricCanvas) return;
     
-    fabricCanvas.clear();
-    fabricCanvas.backgroundColor = '#ffffff';
-    fabricCanvas.renderAll();
+    try {
+      fabricCanvas.clear();
+      fabricCanvas.backgroundColor = '#ffffff';
+      fabricCanvas.renderAll();
+    } catch (error) {
+      console.error('Error clearing canvas:', error);
+    }
   };
 
   const handleDownload = () => {
     if (!fabricCanvas) return;
 
-    const dataURL = fabricCanvas.toDataURL({
-      format: 'png',
-      quality: 0.8,
-      multiplier: 1
-    });
-    
-    const link = document.createElement('a');
-    link.download = 'whiteboard.png';
-    link.href = dataURL;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      const dataURL = fabricCanvas.toDataURL({
+        format: 'png',
+        quality: 0.8,
+        multiplier: 1
+      });
+      
+      const link = document.createElement('a');
+      link.download = 'whiteboard.png';
+      link.href = dataURL;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Error downloading canvas:', error);
+    }
   };
 
   return (

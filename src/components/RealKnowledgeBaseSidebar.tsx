@@ -56,6 +56,11 @@ const navigationItems = [{
   icon: Users,
   href: '/people'
 }, {
+  id: 'user-management',
+  title: 'User Management',
+  icon: Users,
+  href: '/user-management'
+}, {
   id: 'whiteboard',
   title: 'Whiteboard',
   icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -125,33 +130,37 @@ function SidebarTreeItem({
               <Plus className="h-3 w-3" />
             </Button>}
           
-          {/* Move page buttons for simple nesting */}
+          {/* Move page buttons for better nesting control */}
           {item.type === 'page' && onMovePage && <div className="flex items-center gap-1">
-              <Button variant="ghost" size="sm" onClick={e => {
-            e.stopPropagation();
-            if (confirm(`Move "${item.title}" to become a sub-page?`)) {
-              const suitableParent = hierarchyData?.find(h => h.id !== item.id && (h.type === 'space' || h.type === 'page'));
-              if (suitableParent) {
-                onMovePage(item.id, suitableParent.id);
-              } else {
-                toast({
-                  title: "No suitable parent found",
-                  description: "Create a space or page first to move this page under it.",
-                  variant: "destructive"
-                });
-              }
-            }
-          }} className="h-6 w-6 p-0 hover:bg-sidebar-accent/50" title="Nest under another page">
-                <ArrowDown className="h-3 w-3" />
-              </Button>
-              {item.parent_page_id && <Button variant="ghost" size="sm" onClick={e => {
-            e.stopPropagation();
-            if (confirm(`Move "${item.title}" to top level?`)) {
-              onMovePage(item.id, null);
-            }
-          }} className="h-6 w-6 p-0 hover:bg-sidebar-accent/50" title="Move to top level">
-                  <ArrowUp className="h-3 w-3" />
-                </Button>}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" onClick={e => e.stopPropagation()} className="h-6 w-6 p-0 hover:bg-sidebar-accent/50" title="Move to...">
+                    <Move className="h-3 w-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={e => {
+                e.stopPropagation();
+                if (confirm(`Move "${item.title}" to top level?`)) {
+                  onMovePage(item.id, null);
+                }
+              }}>
+                    <ArrowUp className="h-4 w-4 mr-2" />
+                    Move to top level
+                  </DropdownMenuItem>
+                  {hierarchyData?.filter(h => h.id !== item.id && (h.type === 'space' || h.type === 'page')).map(parent => (
+                    <DropdownMenuItem key={parent.id} onClick={e => {
+                  e.stopPropagation();
+                  if (confirm(`Move "${item.title}" under "${parent.title}"?`)) {
+                    onMovePage(item.id, parent.id);
+                  }
+                }}>
+                      <Folder className="h-4 w-4 mr-2" />
+                      Move under "{parent.title}"
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>}
           
           {/* Context menu for pages */}
@@ -358,7 +367,7 @@ export function RealKnowledgeBaseSidebar({
     };
   };
   const handleItemSelect = (item: SidebarItem) => {
-    if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people' || item.id === 'settings' || item.id === 'whiteboard') {
+    if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people' || item.id === 'settings' || item.id === 'whiteboard' || item.id === 'user-management') {
       onItemSelect(item);
     } else if (item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
       onItemSelect(item);

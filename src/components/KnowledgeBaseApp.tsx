@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy, FileText } from "lucide-react";
+import { UserManagement } from "./UserManagement";
 import { RecommendedReadingList } from "./RecommendedReadingList";
 
 // Page view component
@@ -162,20 +163,36 @@ function PageView({
         {/* Recommended Reading Section */}
         {recommendedReading.length > 0 && (
           <div className="mt-8 pt-6 border-t border-border">
-            <h3 className="text-lg font-semibold mb-4 text-foreground">Recommended Reading</h3>
-            <div className="space-y-3">
+            <h3 className="text-xl font-semibold mb-6 text-foreground flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Recommended Reading
+            </h3>
+            <div className="space-y-4">
               {recommendedReading.map((item, index) => (
                 <div 
                   key={item.id || index} 
-                  className="flex items-start gap-3 p-3 bg-muted/30 rounded-md border border-border/50 hover:bg-muted/50 transition-colors cursor-pointer"
+                  className="group relative p-4 bg-gradient-to-r from-muted/30 to-muted/10 rounded-lg border border-border/50 hover:border-primary/30 transition-all duration-200 cursor-pointer hover:shadow-md"
                   onClick={() => item.id && onPageSelect(item.id)}
                 >
-                  <div className="flex-shrink-0 mt-0.5">
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-medium text-foreground text-sm">{item.title}</h4>
-                    <p className="text-xs text-muted-foreground mt-1">{item.description}</p>
+                  <div className="flex items-start gap-4">
+                    <div className="flex-shrink-0 mt-1">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                        <FileText className="h-4 w-4 text-primary" />
+                      </div>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-foreground text-base mb-2 group-hover:text-primary transition-colors">
+                        {item.title}
+                      </h4>
+                      <p className="text-sm text-muted-foreground leading-relaxed">
+                        {item.description}
+                      </p>
+                      <div className="mt-2">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                          {item.type}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -212,7 +229,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'people' | 'settings' | 'whiteboard';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'people' | 'settings' | 'whiteboard' | 'user-management';
 interface SidebarItem {
   id: string;
   title: string;
@@ -282,6 +299,9 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
     } else if (item.id === 'whiteboard') {
       setCurrentView('whiteboard');
+      setCurrentPage(null);
+    } else if (item.id === 'user-management') {
+      setCurrentView('user-management');
       setCurrentPage(null);
     } else if (item.type === 'page') {
       try {
@@ -498,6 +518,7 @@ export function KnowledgeBaseApp() {
         {currentView === 'settings' && <SettingsPage onClose={() => setCurrentView('dashboard')} />}
 
         {currentView === 'whiteboard' && <WhiteboardCanvas />}
+        {currentView === 'user-management' && <UserManagement />}
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} />}
         
