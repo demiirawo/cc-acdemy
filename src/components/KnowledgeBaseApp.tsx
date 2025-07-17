@@ -463,6 +463,9 @@ export function KnowledgeBaseApp() {
           content,
           lastUpdated: new Date().toISOString()
         });
+        
+        // Force refresh of sidebar to show updated title
+        window.location.reload();
       }
       setIsEditing(false);
       setCurrentView('page');

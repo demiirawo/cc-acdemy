@@ -580,35 +580,51 @@ export function EnhancedContentEditor({
 
   const listToolbarItems = [
     { icon: List, action: () => {
-      const selection = window.getSelection();
-      if (selection && selection.toString()) {
-        // Wrap selected text in list items
-        const selectedText = selection.toString();
-        const listItems = selectedText.split('\n').map(line => `<li>${line.trim()}</li>`).join('');
-        execCommand('insertHTML', `<ul>${listItems}</ul>`);
-      } else {
-        execCommand('insertUnorderedList');
-      }
+      document.execCommand('insertUnorderedList', false);
+      updateContent();
     }, tooltip: "Bullet List" },
     { icon: ListOrdered, action: () => {
-      const selection = window.getSelection();
-      if (selection && selection.toString()) {
-        // Wrap selected text in numbered list items
-        const selectedText = selection.toString();
-        const listItems = selectedText.split('\n').map(line => `<li>${line.trim()}</li>`).join('');
-        execCommand('insertHTML', `<ol>${listItems}</ol>`);
-      } else {
-        execCommand('insertOrderedList');
-      }
+      document.execCommand('insertOrderedList', false);
+      updateContent();
     }, tooltip: "Numbered List" },
     { icon: Quote, action: () => {
       const selection = window.getSelection();
       if (selection && selection.toString()) {
         const selectedText = selection.toString();
-        execCommand('insertHTML', `<blockquote style="border-left: 4px solid #e5e7eb; padding-left: 16px; margin: 16px 0; font-style: italic;">${selectedText}</blockquote><br>`);
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+        
+        const blockquote = document.createElement('blockquote');
+        blockquote.style.cssText = 'border-left: 4px solid #e5e7eb; padding-left: 16px; margin: 16px 0; font-style: italic;';
+        blockquote.textContent = selectedText;
+        
+        range.insertNode(blockquote);
+        
+        // Move cursor after blockquote
+        const afterRange = document.createRange();
+        afterRange.setStartAfter(blockquote);
+        afterRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(afterRange);
       } else {
-        insertText('<blockquote style="border-left: 4px solid #e5e7eb; padding-left: 16px; margin: 16px 0; font-style: italic;">Quote text here</blockquote><br>');
+        const blockquote = document.createElement('blockquote');
+        blockquote.style.cssText = 'border-left: 4px solid #e5e7eb; padding-left: 16px; margin: 16px 0; font-style: italic;';
+        blockquote.textContent = 'Quote text here';
+        
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+          range.insertNode(blockquote);
+          
+          // Move cursor after blockquote
+          const afterRange = document.createRange();
+          afterRange.setStartAfter(blockquote);
+          afterRange.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(afterRange);
+        }
       }
+      updateContent();
     }, tooltip: "Quote" },
   ];
 
@@ -678,13 +694,8 @@ export function EnhancedContentEditor({
   };
 
   const handleSave = async () => {
-    // Combine content with recommended reading
-    let contentToSave = currentContent;
-    if (recommendedReading.length > 0) {
-      contentToSave += 'RECOMMENDED_READING:' + JSON.stringify(recommendedReading);
-    }
-    
-    onSave(currentTitle, contentToSave, recommendedReading);
+    // Save content without appending recommended reading to it
+    onSave(currentTitle, currentContent, recommendedReading);
     
     if (pageId) {
       try {
