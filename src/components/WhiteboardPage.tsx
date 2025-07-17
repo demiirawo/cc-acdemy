@@ -43,14 +43,15 @@ export function WhiteboardPage() {
         backgroundColor: "#ffffff",
       });
 
-      // Set drawing mode first to initialize freeDrawingBrush
+      // Initialize the canvas properly
       canvas.isDrawingMode = false;
+      canvas.selection = true;
       
-      // Now we can safely access freeDrawingBrush
-      if (canvas.freeDrawingBrush) {
-        canvas.freeDrawingBrush.color = activeColor;
-        canvas.freeDrawingBrush.width = brushSize;
-      }
+      // The freeDrawingBrush is automatically created when setting isDrawingMode
+      canvas.isDrawingMode = true;
+      canvas.freeDrawingBrush.color = activeColor;
+      canvas.freeDrawingBrush.width = brushSize;
+      canvas.isDrawingMode = false; // Set back to selection mode
 
       // Add line drawing functionality
       let isDrawingLine = false;
@@ -95,11 +96,6 @@ export function WhiteboardPage() {
       });
 
       setFabricCanvas(canvas);
-      
-      toast({
-        title: "Whiteboard ready!",
-        description: "Start drawing or adding shapes",
-      });
 
       return () => {
         try {

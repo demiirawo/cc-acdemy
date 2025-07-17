@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy } from "lucide-react";
+import { RecommendedReading } from "./RecommendedReading";
 
 // Page view component
 function PageView({
@@ -141,21 +142,40 @@ function PageView({
         </div>
 
         {/* Recommended Reading Section */}
-        {recommendedReading.length > 0 && <div className="mt-8 pt-8 border-t border-border">
-            <h3 className="text-xl font-semibold mb-4 text-foreground">Recommended Reading</h3>
-            <div className="space-y-3">
-              {recommendedReading.map((item, index) => <div key={index} className="p-4 border rounded-lg bg-muted/20">
-                  <h4 className="font-medium text-foreground mb-1">{item.title}</h4>
-                  {item.url && <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm block mb-2">
-                      {item.url}
-                    </a>}
-                  {item.fileUrl && <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm block mb-2">
-                      📁 {item.fileName}
-                    </a>}
-                  <p className="text-sm text-muted-foreground">{item.description}</p>
-                </div>)}
-            </div>
-          </div>}
+        <RecommendedReading 
+          items={[
+            {
+              title: "Typical Admin Responsibilities",
+              subtitle: "Care Cuddle",
+              type: "more"
+            },
+            {
+              title: "Employee Training",
+              subtitle: "Care Cuddle", 
+              type: "more"
+            },
+            {
+              title: "Introduction to Home Care",
+              subtitle: "Care Cuddle",
+              type: "read"
+            },
+            {
+              title: "Staff Meeting",
+              subtitle: "Care Cuddle",
+              type: "more"
+            },
+            {
+              title: "Care Plans & Risk Assessments", 
+              subtitle: "Care Cuddle",
+              type: "read"
+            },
+            {
+              title: "Aden Health Care Forms",
+              subtitle: "Care Cuddle",
+              type: "more"
+            }
+          ]}
+        />
       </div>
     </div>;
 }

@@ -264,6 +264,44 @@ export function RealKnowledgeBaseSidebar({
   } = useToast();
   useEffect(() => {
     fetchHierarchyData();
+
+    // Set up real-time subscriptions for pages and spaces
+    const pagesChannel = supabase
+      .channel('pages-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'pages'
+        },
+        () => {
+          // Refetch data when pages change
+          fetchHierarchyData();
+        }
+      )
+      .subscribe();
+
+    const spacesChannel = supabase
+      .channel('spaces-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'spaces'
+        },
+        () => {
+          // Refetch data when spaces change
+          fetchHierarchyData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(pagesChannel);
+      supabase.removeChannel(spacesChannel);
+    };
   }, []);
   const fetchHierarchyData = async () => {
     setLoading(true);
