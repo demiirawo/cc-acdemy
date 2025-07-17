@@ -424,6 +424,7 @@ export function KnowledgeBaseApp() {
     description: string;
     fileUrl?: string;
     fileName?: string;
+    type?: string;
   }>) => {
     if (!currentPage || !user) return;
     try {
@@ -461,11 +462,12 @@ export function KnowledgeBaseApp() {
           ...currentPage,
           title,
           content,
-          lastUpdated: new Date().toISOString()
+          lastUpdated: new Date().toISOString(),
+          recommended_reading: (recommendedReading || []).map(item => ({
+            ...item,
+            type: item.type || (item.url ? 'link' : 'file')
+          }))
         });
-        
-        // Force refresh of sidebar to show updated title
-        window.location.reload();
       }
       setIsEditing(false);
       setCurrentView('page');

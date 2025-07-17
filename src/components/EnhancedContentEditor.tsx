@@ -785,7 +785,7 @@ export function EnhancedContentEditor({
                   id="${imageId}" 
                   src="${result}" 
                   alt="${file.name}" 
-                  style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer; resize: both; overflow: auto; min-width: 100px; min-height: 50px;" 
+                  style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer; display: block;" 
                   onclick="showImageControls('${imageId}')"
                 />
               </div>
@@ -839,7 +839,7 @@ export function EnhancedContentEditor({
                 id="${imageId}" 
                 src="${url}" 
                 alt="${alt}" 
-                style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer; resize: both; overflow: auto; min-width: 100px; min-height: 50px;" 
+                style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer; display: block;" 
                 onclick="showImageControls('${imageId}')"
               />
             </div>
@@ -1036,9 +1036,90 @@ export function EnhancedContentEditor({
   ];
 
   const alignmentToolbarItems = [
-    { icon: AlignLeft, action: () => formatText('justifyLeft'), tooltip: "Align Left" },
-    { icon: AlignCenter, action: () => formatText('justifyCenter'), tooltip: "Align Center" },
-    { icon: AlignRight, action: () => formatText('justifyRight'), tooltip: "Align Right" },
+    { icon: AlignLeft, action: () => {
+      // Check if cursor is near a YouTube video or image
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const container = range.commonAncestorContainer;
+        const element = container.nodeType === Node.TEXT_NODE ? container.parentElement : container as Element;
+        
+        // Find nearest YouTube iframe or image
+        const nearestMedia = element?.closest('.youtube-container, .image-container') || 
+                           element?.querySelector('iframe[src*="youtube"], .image-container img');
+        
+        if (nearestMedia) {
+          if (nearestMedia.classList.contains('youtube-container')) {
+            (nearestMedia as HTMLElement).style.textAlign = 'left';
+          } else if (nearestMedia.classList.contains('image-container')) {
+            (nearestMedia as HTMLElement).style.textAlign = 'left';
+          } else {
+            // Direct iframe or img element
+            const container = nearestMedia.parentElement;
+            if (container) (container as HTMLElement).style.textAlign = 'left';
+          }
+          updateContent();
+        } else {
+          formatText('justifyLeft');
+        }
+      } else {
+        formatText('justifyLeft');
+      }
+    }, tooltip: "Align Left" },
+    { icon: AlignCenter, action: () => {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const container = range.commonAncestorContainer;
+        const element = container.nodeType === Node.TEXT_NODE ? container.parentElement : container as Element;
+        
+        const nearestMedia = element?.closest('.youtube-container, .image-container') || 
+                           element?.querySelector('iframe[src*="youtube"], .image-container img');
+        
+        if (nearestMedia) {
+          if (nearestMedia.classList.contains('youtube-container')) {
+            (nearestMedia as HTMLElement).style.textAlign = 'center';
+          } else if (nearestMedia.classList.contains('image-container')) {
+            (nearestMedia as HTMLElement).style.textAlign = 'center';
+          } else {
+            const container = nearestMedia.parentElement;
+            if (container) (container as HTMLElement).style.textAlign = 'center';
+          }
+          updateContent();
+        } else {
+          formatText('justifyCenter');
+        }
+      } else {
+        formatText('justifyCenter');
+      }
+    }, tooltip: "Align Center" },
+    { icon: AlignRight, action: () => {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const container = range.commonAncestorContainer;
+        const element = container.nodeType === Node.TEXT_NODE ? container.parentElement : container as Element;
+        
+        const nearestMedia = element?.closest('.youtube-container, .image-container') || 
+                           element?.querySelector('iframe[src*="youtube"], .image-container img');
+        
+        if (nearestMedia) {
+          if (nearestMedia.classList.contains('youtube-container')) {
+            (nearestMedia as HTMLElement).style.textAlign = 'right';
+          } else if (nearestMedia.classList.contains('image-container')) {
+            (nearestMedia as HTMLElement).style.textAlign = 'right';
+          } else {
+            const container = nearestMedia.parentElement;
+            if (container) (container as HTMLElement).style.textAlign = 'right';
+          }
+          updateContent();
+        } else {
+          formatText('justifyRight');
+        }
+      } else {
+        formatText('justifyRight');
+      }
+    }, tooltip: "Align Right" },
     { icon: AlignJustify, action: () => formatText('justifyFull'), tooltip: "Justify" },
   ];
 
