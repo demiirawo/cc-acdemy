@@ -295,7 +295,7 @@ export function EnhancedContentEditor({
     // Header row
     tableHTML += '<thead><tr>';
     for (let j = 0; j < cols; j++) {
-      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; background-color: #f8f9fa; vertical-align: top; text-align: left; position: relative; min-width: 100px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" contenteditable="true"></th>`;
+      tableHTML += `<th style="border: 1px solid #ccc; padding: 12px; background-color: #f8f9fa; vertical-align: top; text-align: left; position: relative; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box;" contenteditable="true"></th>`;
     }
     tableHTML += '</tr></thead>';
     
@@ -304,7 +304,7 @@ export function EnhancedContentEditor({
     for (let i = 0; i < rows - 1; i++) {
       tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left; min-width: 100px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" contenteditable="true"></td>`;
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box;" contenteditable="true"></td>`;
       }
       tableHTML += '</tr>';
     }
@@ -375,6 +375,7 @@ export function EnhancedContentEditor({
       { text: 'Insert Column Right', action: () => insertColumnRight(cell, table) },
       { text: 'Delete Row', action: () => deleteRow(cell, table) },
       { text: 'Delete Column', action: () => deleteColumn(cell, table) },
+      { text: 'Delete Table', action: () => deleteTable(table) },
       { text: 'Change Cell Color', action: () => showCellColorPicker(cell as HTMLElement, e) },
       { text: 'Change Header Color', action: () => cell.tagName === 'TH' ? showHeaderColorPicker(cell as HTMLElement, e) : null },
     ].filter(item => item.action); // Filter out null actions
@@ -423,7 +424,7 @@ export function EnhancedContentEditor({
     
     for (let i = 0; i < cellCount; i++) {
       const newCell = document.createElement('td');
-      newCell.style.cssText = 'border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left; min-width: 100px;';
+      newCell.style.cssText = 'border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box;';
       newCell.contentEditable = 'true';
       newRow.appendChild(newCell);
     }
@@ -440,7 +441,7 @@ export function EnhancedContentEditor({
     
     for (let i = 0; i < cellCount; i++) {
       const newCell = document.createElement('td');
-      newCell.style.cssText = 'border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left; min-width: 100px;';
+      newCell.style.cssText = 'border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box;';
       newCell.contentEditable = 'true';
       newRow.appendChild(newCell);
     }
@@ -455,8 +456,8 @@ export function EnhancedContentEditor({
     rows.forEach((row, rowIndex) => {
       const newCell = document.createElement(rowIndex === 0 ? 'th' : 'td');
       newCell.style.cssText = rowIndex === 0 
-        ? 'border: 1px solid #ccc; padding: 8px; position: relative; background-color: #f8f9fa; min-width: 100px;'
-        : 'border: 1px solid #ccc; padding: 8px; position: relative; min-width: 100px;';
+        ? 'border: 1px solid #ccc; padding: 12px; position: relative; background-color: #f8f9fa; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box;'
+        : 'border: 1px solid #ccc; padding: 12px; position: relative; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box;';
       newCell.contentEditable = 'true';
       
       const targetCell = row.children[cellIndex];
@@ -471,8 +472,8 @@ export function EnhancedContentEditor({
     rows.forEach((row, rowIndex) => {
       const newCell = document.createElement(rowIndex === 0 ? 'th' : 'td');
       newCell.style.cssText = rowIndex === 0 
-        ? 'border: 1px solid #ccc; padding: 8px; position: relative; background-color: #f8f9fa; min-width: 100px;'
-        : 'border: 1px solid #ccc; padding: 8px; position: relative; min-width: 100px;';
+        ? 'border: 1px solid #ccc; padding: 12px; position: relative; background-color: #f8f9fa; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box;'
+        : 'border: 1px solid #ccc; padding: 12px; position: relative; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box;';
       newCell.contentEditable = 'true';
       
       const targetCell = row.children[cellIndex];
@@ -505,6 +506,12 @@ export function EnhancedContentEditor({
       const cellToDelete = row.children[cellIndex];
       cellToDelete?.remove();
     });
+  };
+
+  const deleteTable = (table: Element) => {
+    if (confirm('Are you sure you want to delete this table?')) {
+      table.remove();
+    }
   };
 
   const makeTableResizable = () => {
