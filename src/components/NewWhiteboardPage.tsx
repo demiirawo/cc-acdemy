@@ -1,31 +1,28 @@
 import { useRef, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { 
   Pencil, 
-  Eraser, 
-  Trash2, 
-  Download, 
+  MousePointer,
   Square,
   Circle,
   Type,
-  MousePointer,
-  Minus
+  Minus,
+  Download,
+  Trash2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Canvas as FabricCanvas, Circle as FabricCircle, Rect as FabricRect, Textbox as FabricTextbox, Line as FabricLine } from "fabric";
-import { useToast } from "@/hooks/use-toast";
 
-export function WhiteboardPage() {
+// Define fabric types to avoid import issues
+type FabricCanvas = any;
+type FabricObject = any;
+
+export function NewWhiteboardPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
   const [activeTool, setActiveTool] = useState<'select' | 'draw' | 'text' | 'rectangle' | 'circle' | 'line'>('select');
   const [activeColor, setActiveColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(2);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [startPoint, setStartPoint] = useState<{x: number, y: number} | null>(null);
-  const { toast } = useToast();
 
   const colors = [
     '#000000', '#FF0000', '#00FF00', '#0000FF', 
@@ -33,87 +30,51 @@ export function WhiteboardPage() {
     '#800080', '#008000', '#800000', '#000080'
   ];
 
+  // Initialize canvas
   useEffect(() => {
-    if (!canvasRef.current) return;
+    let canvas: FabricCanvas | null = null;
+    
+    const initCanvas = async () => {
+      if (!canvasRef.current) return;
 
-    try {
-      const canvas = new FabricCanvas(canvasRef.current, {
-        width: 1200,
-        height: 700,
-        backgroundColor: "#ffffff",
-      });
-
-      // Initialize the canvas properly
-      canvas.isDrawingMode = false;
-      canvas.selection = true;
-      
-      // The freeDrawingBrush is automatically created when setting isDrawingMode
-      canvas.isDrawingMode = true;
-      canvas.freeDrawingBrush.color = activeColor;
-      canvas.freeDrawingBrush.width = brushSize;
-      canvas.isDrawingMode = false; // Set back to selection mode
-
-      // Add line drawing functionality
-      let isDrawingLine = false;
-      let line: FabricLine | null = null;
-      let origX = 0;
-      let origY = 0;
-
-      canvas.on('mouse:down', function(opt) {
-        if (activeTool === 'line') {
-          isDrawingLine = true;
-          const pointer = canvas.getScenePoint(opt.e);
-          origX = pointer.x;
-          origY = pointer.y;
-          
-          line = new FabricLine([origX, origY, origX, origY], {
-            stroke: activeColor,
-            strokeWidth: brushSize,
-            selectable: false,
-          });
-          canvas.add(line);
-        }
-      });
-
-      canvas.on('mouse:move', function(opt) {
-        if (!isDrawingLine || !line || activeTool !== 'line') return;
+      try {
+        // Dynamic import to ensure fabric is loaded
+        const { Canvas, Circle, Rect, Textbox, Line } = await import('fabric');
         
-        const pointer = canvas.getScenePoint(opt.e);
-        line.set({
-          x2: pointer.x,
-          y2: pointer.y
+        canvas = new Canvas(canvasRef.current, {
+          width: 1200,
+          height: 700,
+          backgroundColor: '#ffffff',
         });
-        canvas.renderAll();
-      });
 
-      canvas.on('mouse:up', function() {
-        if (isDrawingLine && line) {
-          isDrawingLine = false;
-          line.selectable = true;
-          canvas.setActiveObject(line);
-          line = null;
-        }
-      });
+        // Enable drawing mode initially to create the brush
+        canvas.isDrawingMode = true;
+        canvas.freeDrawingBrush.color = activeColor;
+        canvas.freeDrawingBrush.width = brushSize;
+        canvas.isDrawingMode = false; // Switch back to selection
 
-      setFabricCanvas(canvas);
+        setFabricCanvas(canvas);
+        console.log('Canvas initialized successfully');
 
-      return () => {
+      } catch (error) {
+        console.error('Failed to initialize canvas:', error);
+      }
+    };
+
+    initCanvas();
+
+    return () => {
+      if (canvas) {
         try {
           canvas.dispose();
         } catch (error) {
           console.error('Error disposing canvas:', error);
         }
-      };
-    } catch (error) {
-      console.error('Error initializing canvas:', error);
-      toast({
-        title: "Error",
-        description: "Failed to initialize whiteboard",
-        variant: "destructive",
-      });
-    }
-  }, []); // Remove dependencies to prevent re-initialization
+      }
+    };
+  }, []);
 
+  // Update canvas mode when tool changes
   useEffect(() => {
     if (!fabricCanvas) return;
 
@@ -121,7 +82,7 @@ export function WhiteboardPage() {
       fabricCanvas.isDrawingMode = activeTool === 'draw';
       fabricCanvas.selection = activeTool === 'select';
       
-      if (activeTool === 'draw' && fabricCanvas.freeDrawingBrush) {
+      if (activeTool === 'draw') {
         fabricCanvas.freeDrawingBrush.color = activeColor;
         fabricCanvas.freeDrawingBrush.width = brushSize;
       }
@@ -130,79 +91,87 @@ export function WhiteboardPage() {
     }
   }, [activeTool, activeColor, brushSize, fabricCanvas]);
 
-  const handleToolClick = (tool: typeof activeTool) => {
-    setActiveTool(tool);
-
+  const addShape = async (shapeType: 'rectangle' | 'circle' | 'text' | 'line') => {
     if (!fabricCanvas) return;
 
     try {
-      if (tool === 'rectangle') {
-        const rect = new FabricRect({
-          left: 100,
-          top: 100,
-          fill: 'transparent',
-          width: 100,
-          height: 60,
-          stroke: activeColor,
-          strokeWidth: 2,
-        });
-        fabricCanvas.add(rect);
-        fabricCanvas.setActiveObject(rect);
-        fabricCanvas.renderAll();
-      } else if (tool === 'circle') {
-        const circle = new FabricCircle({
-          left: 100,
-          top: 100,
-          fill: 'transparent',
-          radius: 50,
-          stroke: activeColor,
-          strokeWidth: 2,
-        });
-        fabricCanvas.add(circle);
-        fabricCanvas.setActiveObject(circle);
-        fabricCanvas.renderAll();
-      } else if (tool === 'text') {
-        const text = new FabricTextbox('Edit me', {
-          left: 100,
-          top: 100,
-          fill: activeColor,
-          fontSize: 20,
-          fontFamily: 'Arial',
-          editable: true,
-          width: 200,
-        });
-        fabricCanvas.add(text);
-        fabricCanvas.setActiveObject(text);
-        fabricCanvas.renderAll();
-        
-        // Automatically enter editing mode
+      const { Circle, Rect, Textbox, Line } = await import('fabric');
+
+      let shape: FabricObject;
+
+      switch (shapeType) {
+        case 'rectangle':
+          shape = new Rect({
+            left: 100,
+            top: 100,
+            fill: 'transparent',
+            stroke: activeColor,
+            strokeWidth: 2,
+            width: 100,
+            height: 60,
+          });
+          break;
+        case 'circle':
+          shape = new Circle({
+            left: 100,
+            top: 100,
+            fill: 'transparent',
+            stroke: activeColor,
+            strokeWidth: 2,
+            radius: 50,
+          });
+          break;
+        case 'text':
+          shape = new Textbox('Edit me', {
+            left: 100,
+            top: 100,
+            fill: activeColor,
+            fontSize: 20,
+            width: 200,
+            editable: true,
+          });
+          break;
+        case 'line':
+          shape = new Line([100, 100, 200, 100], {
+            stroke: activeColor,
+            strokeWidth: brushSize,
+          });
+          break;
+        default:
+          return;
+      }
+
+      fabricCanvas.add(shape);
+      fabricCanvas.setActiveObject(shape);
+      fabricCanvas.renderAll();
+
+      // Auto-edit text
+      if (shapeType === 'text') {
         setTimeout(() => {
-          text.enterEditing();
-          text.selectAll();
+          shape.enterEditing();
+          shape.selectAll();
         }, 100);
       }
     } catch (error) {
       console.error('Error adding shape:', error);
-      toast({
-        title: "Error",
-        description: "Failed to add shape",
-        variant: "destructive",
-      });
+    }
+  };
+
+  const handleToolClick = (tool: typeof activeTool) => {
+    setActiveTool(tool);
+
+    if (tool !== 'select' && tool !== 'draw') {
+      addShape(tool);
     }
   };
 
   const handleClear = () => {
     if (!fabricCanvas) return;
-
+    
     try {
       fabricCanvas.clear();
-      fabricCanvas.backgroundColor = "#ffffff";
+      fabricCanvas.backgroundColor = '#ffffff';
       fabricCanvas.renderAll();
-      
-      toast({
-        title: "Canvas cleared",
-        description: "All content has been removed",
-      });
     } catch (error) {
       console.error('Error clearing canvas:', error);
     }
@@ -224,18 +193,8 @@ export function WhiteboardPage() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
-      toast({
-        title: "Downloaded",
-        description: "Whiteboard saved as PNG",
-      });
     } catch (error) {
       console.error('Error downloading canvas:', error);
-      toast({
-        title: "Error",
-        description: "Failed to download whiteboard",
-        variant: "destructive",
-      });
     }
   };
 
@@ -305,7 +264,7 @@ export function WhiteboardPage() {
             <Button
               variant={activeTool === 'line' ? 'default' : 'ghost'}
               size="sm"
-              onClick={() => setActiveTool('line')}
+              onClick={() => handleToolClick('line')}
               className="h-8 w-8 p-0"
             >
               <Minus className="h-4 w-4" />
@@ -319,8 +278,8 @@ export function WhiteboardPage() {
                 key={color}
                 onClick={() => setActiveColor(color)}
                 className={cn(
-                  "w-6 h-6 rounded border-2 cursor-pointer",
-                  activeColor === color ? "border-foreground scale-110" : "border-transparent"
+                  "w-6 h-6 rounded border-2 cursor-pointer transition-all",
+                  activeColor === color ? "border-foreground scale-110" : "border-transparent hover:scale-105"
                 )}
                 style={{ backgroundColor: color }}
               />

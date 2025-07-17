@@ -8,7 +8,7 @@ import { EnhancedContentEditor } from "./EnhancedContentEditor";
 import { CreatePageDialog } from "./CreatePageDialog";
 import { PagePermissionsDialog } from "./PagePermissionsDialog";
 import { SettingsPage } from "./SettingsPage";
-import { WhiteboardPage } from "./WhiteboardPage";
+import { NewWhiteboardPage } from "./NewWhiteboardPage";
 import { AuthForm } from "./AuthForm";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -16,8 +16,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy } from "lucide-react";
-import { RecommendedReading } from "./RecommendedReading";
+import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy, FileText } from "lucide-react";
+import { RecommendedReadingList } from "./RecommendedReadingList";
 
 // Page view component
 function PageView({
@@ -31,45 +31,42 @@ function PageView({
 }) {
   const [isPublic, setIsPublic] = useState(false);
   const [publicToken, setPublicToken] = useState('');
-  const [recommendedReading, setRecommendedReading] = useState<Array<{
+  const [relatedPages, setRelatedPages] = useState<Array<{
+    id: string;
     title: string;
-    url?: string;
-    description: string;
-    fileUrl?: string;
-    fileName?: string;
+    content: string;
   }>>([]);
-  const {
-    toast
-  } = useToast();
+  const { toast } = useToast();
   useEffect(() => {
     const fetchPageSettings = async () => {
       try {
-        const {
-          data,
-          error
-        } = await supabase.from('pages').select('is_public, public_token, content').eq('id', currentPage.id).single();
+        const { data, error } = await supabase
+          .from('pages')
+          .select('is_public, public_token')
+          .eq('id', currentPage.id)
+          .single();
+        
         if (error) throw error;
         if (data) {
           setIsPublic(data.is_public || false);
           setPublicToken(data.public_token || '');
+        }
 
-          // Extract recommended reading from content
-          try {
-            if (data.content && data.content.includes('RECOMMENDED_READING:')) {
-              const parts = data.content.split('RECOMMENDED_READING:');
-              if (parts.length > 1) {
-                const readingData = JSON.parse(parts[1]);
-                setRecommendedReading(readingData);
-              }
-            }
-          } catch (e) {
-            console.log('No recommended reading data found');
-          }
+        // Fetch related pages (limit to 2)
+        const { data: related, error: relatedError } = await supabase
+          .from('pages')
+          .select('id, title, content')
+          .neq('id', currentPage.id)
+          .limit(2);
+
+        if (!relatedError && related) {
+          setRelatedPages(related);
         }
       } catch (error) {
         console.error('Error fetching page settings:', error);
       }
     };
+    
     fetchPageSettings();
   }, [currentPage.id]);
   const togglePublicAccess = async () => {
@@ -104,7 +101,8 @@ function PageView({
       description: "Public link copied to clipboard"
     });
   };
-  const cleanContent = currentPage.content.split('RECOMMENDED_READING:')[0];
+  
+  const cleanContent = currentPage.content;
   return <div className="flex-1 overflow-auto">
       <div className="max-w-4xl mx-auto p-6">
           <div className="mb-6">
@@ -142,40 +140,50 @@ function PageView({
         </div>
 
         {/* Recommended Reading Section */}
-        <RecommendedReading 
-          items={[
-            {
-              title: "Typical Admin Responsibilities",
-              subtitle: "Care Cuddle",
-              type: "more"
-            },
-            {
-              title: "Employee Training",
-              subtitle: "Care Cuddle", 
-              type: "more"
-            },
-            {
-              title: "Introduction to Home Care",
-              subtitle: "Care Cuddle",
-              type: "read"
-            },
-            {
-              title: "Staff Meeting",
-              subtitle: "Care Cuddle",
-              type: "more"
-            },
-            {
-              title: "Care Plans & Risk Assessments", 
-              subtitle: "Care Cuddle",
-              type: "read"
-            },
-            {
-              title: "Aden Health Care Forms",
-              subtitle: "Care Cuddle",
-              type: "more"
-            }
-          ]}
-        />
+        <div className="mt-8 pt-6 border-t border-border">
+          <h3 className="text-lg font-semibold mb-4 text-foreground">Recommended Reading</h3>
+          <RecommendedReadingList 
+            items={[
+              {
+                title: "Care Plan Documentation Standards",
+                description: "Guidelines for proper documentation of care plans and risk assessments",
+                type: "guide"
+              },
+              {
+                title: "Staff Training Requirements",
+                description: "Mandatory training modules for all care staff members",
+                type: "reference"
+              }
+            ]}
+          />
+        </div>
+
+        {/* Related Content Section */}
+        {relatedPages.length > 0 && (
+          <div className="mt-6 pt-6 border-t border-border">
+            <div className="flex items-center gap-2 mb-4">
+              <h3 className="text-lg font-semibold text-foreground">Related content</h3>
+              <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center">
+                <span className="text-xs text-muted-foreground font-medium">i</span>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {relatedPages.map((page) => (
+                <div key={page.id} className="flex items-center gap-3 p-4 border border-border rounded-lg bg-card hover:bg-muted/20 transition-colors cursor-pointer">
+                  <div className="flex-shrink-0">
+                    <FileText className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-medium text-foreground truncate">{page.title}</h4>
+                    <p className="text-sm text-muted-foreground truncate">
+                      {page.content.replace(/<[^>]*>/g, '').substring(0, 100)}...
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>;
 }
@@ -456,7 +464,7 @@ export function KnowledgeBaseApp() {
 
         {currentView === 'settings' && <SettingsPage onClose={() => setCurrentView('dashboard')} />}
 
-        {currentView === 'whiteboard' && <WhiteboardPage />}
+        {currentView === 'whiteboard' && <NewWhiteboardPage />}
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} />}
         
