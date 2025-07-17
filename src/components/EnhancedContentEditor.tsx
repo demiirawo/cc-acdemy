@@ -587,8 +587,11 @@ export function EnhancedContentEditor({
     
     // Ensure proper text direction on click
     cell.style.direction = 'ltr';
-    cell.style.textAlign = 'start';
+    cell.style.textAlign = 'left';
+    cell.style.unicodeBidi = 'embed';
+    cell.style.writingMode = 'horizontal-tb';
     cell.dir = 'ltr';
+    cell.focus();
   };
 
   // Fixed functionality for cell deletion/editing to prevent re-appearing text
