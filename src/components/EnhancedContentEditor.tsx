@@ -481,10 +481,23 @@ export function EnhancedContentEditor({
   const handleCellFocus = (e: Event) => {
     const cell = e.target as HTMLElement;
     
-    // Ensure proper text direction on focus
+    // Force proper text direction and alignment
     cell.style.direction = 'ltr';
     cell.style.textAlign = 'start';
     cell.dir = 'ltr';
+    
+    // Special handling for first cells which often have text direction issues
+    const table = cell.closest('table');
+    if (table) {
+      const firstRowCells = table.querySelectorAll('tr:first-child td, tr:first-child th');
+      if (firstRowCells && firstRowCells.length > 0 && firstRowCells[0] === cell) {
+        cell.style.direction = 'ltr';
+        cell.style.textAlign = 'start';
+        cell.style.unicodeBidi = 'embed';
+        cell.style.writingMode = 'horizontal-tb';
+        cell.dir = 'ltr';
+      }
+    }
     
     // Set cursor to beginning if cell is empty
     if (cell.textContent === '') {
@@ -553,17 +566,19 @@ export function EnhancedContentEditor({
 
   const handleCellKeydown = (e: KeyboardEvent) => {
     const cell = e.target as HTMLElement;
+    const table = cell.closest('table');
     
-    // Ensure proper text direction when typing
-    cell.style.direction = 'ltr';
-    cell.style.textAlign = 'start';
-    cell.dir = 'ltr';
+    // Force proper text direction and alignment for first cell
+    if (table && (cell === table.querySelector('th:first-child') || cell === table.querySelector('td:first-child'))) {
+      cell.style.direction = 'ltr !important';
+      cell.style.textAlign = 'start !important';
+      cell.style.unicodeBidi = 'embed !important';
+      cell.style.writingMode = 'horizontal-tb !important';
+    }
     
     // Handle navigation between cells
     if (e.key === 'Tab') {
       e.preventDefault();
-      
-      const table = cell.closest('table');
       if (!table) return;
       
       const cells = Array.from(table.querySelectorAll('th, td'));

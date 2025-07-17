@@ -106,6 +106,22 @@ export function RecentlyUpdatedPage({ onPageSelect }: RecentlyUpdatedPageProps) 
     }
   };
 
+  const stripHtmlAndTruncate = (html: string, maxLength = 150) => {
+    // Remove HTML tags and decode entities
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    const text = tempDiv.textContent || tempDiv.innerText || '';
+    
+    // Remove multiple spaces/newlines
+    const cleanText = text.replace(/\s+/g, ' ').trim();
+    
+    // Truncate and add ellipsis if needed
+    if (cleanText.length > maxLength) {
+      return cleanText.substring(0, maxLength) + '...';
+    }
+    return cleanText;
+  };
+
   if (loading) {
     return (
       <div className="flex-1 overflow-auto bg-gradient-subtle">
@@ -181,9 +197,9 @@ export function RecentlyUpdatedPage({ onPageSelect }: RecentlyUpdatedPageProps) 
                           <Badge variant="secondary">Page</Badge>
                         </div>
                         
-                        <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
-                          {page.content.substring(0, 150)}...
-                        </p>
+                           <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
+                             {stripHtmlAndTruncate(page.content)}
+                           </p>
                         
                         <div className="flex items-center gap-4 text-xs text-muted-foreground">
                           <div className="flex items-center gap-1">
