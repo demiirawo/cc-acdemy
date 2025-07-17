@@ -412,32 +412,6 @@ export function EnhancedContentEditor({
   };
 
               selection.removeAllRanges();
-              const range = document.createRange();
-              range.setStart(firstCell, 0);
-              range.collapse(true);
-              selection.addRange(range);
-            }
-          }
-        }
-        
-        // Setup table controls
-        setupTableControls();
-      }, 100);
-      
-    } catch (error) {
-      console.error('Error inserting table:', error);
-      // Fallback: direct insertion
-      if (editorRef.current) {
-        editorRef.current.appendChild(table);
-        const br = document.createElement('br');
-        editorRef.current.appendChild(br);
-        updateContent();
-      }
-    }
-  };
-
-  const handleCellFocus = (e: Event) => {
-    const cell = e.target as HTMLElement;
     
     // Force proper text direction and alignment with !important to ensure it takes precedence
     cell.style.cssText += `
