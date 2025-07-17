@@ -502,7 +502,7 @@ export function KnowledgeBaseApp() {
         <div className="border-b border-border p-4 bg-background/95 backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold text-foreground">CC Learn</h2>
+              <h2 className="text-lg font-semibold text-foreground">Care Cuddle Academy</h2>
               {(currentView === 'page' || currentView === 'editor') && currentPage && <span className="text-muted-foreground">
                   / {currentPage.title}
                 </span>}

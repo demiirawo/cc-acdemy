@@ -656,7 +656,7 @@ export function RealKnowledgeBaseSidebar({
           <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center">
             <BookOpen className="h-4 w-4 text-primary-foreground" />
           </div>
-          <h1 className="font-semibold text-sidebar-foreground">CC Learn</h1>
+          <h1 className="font-semibold text-sidebar-foreground">Care Cuddle Academy</h1>
         </div>
         
         {/* Search */}
