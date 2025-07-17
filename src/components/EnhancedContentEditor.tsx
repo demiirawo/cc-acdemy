@@ -409,63 +409,18 @@ export function EnhancedContentEditor({
     
     updateContent();
   };
-  };
 
-              selection.removeAllRanges();
+  const handleCellFocus = (e: Event) => {
+    const cell = e.target as HTMLElement;
     
     // Force proper text direction and alignment with !important to ensure it takes precedence
     cell.style.cssText += `
       direction: ltr !important;
-      text-align: start !important;
+      text-align: left !important;
       unicode-bidi: embed !important;
       writing-mode: horizontal-tb !important;
     `;
     cell.dir = 'ltr';
-    
-    // Special handling for all cells in first row to fix direction issues
-    const table = cell.closest('table');
-    if (table) {
-      const firstRowCells = table.querySelectorAll('tr:first-child td, tr:first-child th');
-      firstRowCells.forEach(firstCell => {
-        // More aggressive styling to force horizontal text direction
-        const cellEl = firstCell as HTMLElement;
-        cellEl.style.cssText = `
-          border: 1px solid #ccc;
-          padding: 12px;
-          background-color: ${cellEl.tagName === 'TH' ? '#f8f9fa' : 'transparent'};
-          vertical-align: top;
-          text-align: start !important;
-          min-width: 120px;
-          word-wrap: break-word;
-          overflow-wrap: break-word;
-          font-size: 14px;
-          font-family: inherit;
-          height: auto;
-          box-sizing: border-box;
-          white-space: normal;
-          direction: ltr !important;
-          text-align: left !important;
-          unicode-bidi: embed !important;
-          writing-mode: horizontal-tb !important;
-        `;
-        cellEl.dir = 'ltr';
-      });
-    }
-    
-    // Set cursor to beginning if cell is empty
-    if (cell.textContent === '') {
-      setTimeout(() => {
-        const range = document.createRange();
-        const selection = window.getSelection();
-        
-        if (selection) {
-          range.setStart(cell, 0);
-          range.collapse(true);
-          selection.removeAllRanges();
-          selection.addRange(range);
-        }
-      }, 0);
-    }
   };
 
   const handleCellClick = (e: Event) => {
