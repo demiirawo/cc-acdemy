@@ -352,35 +352,195 @@ export function EnhancedContentEditor({
   };
 
   const insertTable = (rows: number, cols: number) => {
-    let tableHTML = `<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0; table-layout: fixed;" data-editable-table="true">`;
+    // Create table element programmatically for better control
+    const table = document.createElement('table');
+    table.setAttribute('data-editable-table', 'true');
+    table.style.cssText = `
+      border-collapse: collapse;
+      width: 100%;
+      margin: 10px 0;
+      table-layout: fixed;
+      border: 1px solid #ccc;
+    `;
     
-    // Header row
-    tableHTML += '<thead><tr>';
+    // Create header
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    
     for (let j = 0; j < cols; j++) {
-      tableHTML += `<th style="border: 1px solid #ccc; padding: 12px; background-color: #f8f9fa; vertical-align: top; text-align: left !important; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb !important; direction: ltr !important; white-space: normal; unicode-bidi: embed;" contenteditable="true"></th>`;
+      const th = document.createElement('th');
+      th.contentEditable = 'true';
+      th.style.cssText = `
+        border: 1px solid #ccc;
+        padding: 12px;
+        background-color: #f8f9fa;
+        vertical-align: top;
+        text-align: start;
+        min-width: 120px;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        font-size: 14px;
+        font-family: inherit;
+        height: auto;
+        box-sizing: border-box;
+        white-space: normal;
+      `;
+      
+      // Force proper text direction
+      th.dir = 'ltr';
+      th.setAttribute('data-cell-type', 'header');
+      
+      // Add event listeners for proper cursor behavior
+      th.addEventListener('focus', handleCellFocus);
+      th.addEventListener('click', handleCellClick);
+      th.addEventListener('keydown', handleCellKeydown);
+      th.addEventListener('input', updateContent);
+      
+      headerRow.appendChild(th);
     }
-    tableHTML += '</tr></thead>';
     
-    // Data rows
-    tableHTML += '<tbody>';
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    
+    // Create body
+    const tbody = document.createElement('tbody');
+    
     for (let i = 0; i < rows - 1; i++) {
-      tableHTML += '<tr>';
+      const row = document.createElement('tr');
+      
       for (let j = 0; j < cols; j++) {
-        tableHTML += `<td style="border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left !important; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb !important; direction: ltr !important; white-space: normal; unicode-bidi: embed;" contenteditable="true"></td>`;
+        const td = document.createElement('td');
+        td.contentEditable = 'true';
+        td.style.cssText = `
+          border: 1px solid #ccc;
+          padding: 12px;
+          vertical-align: top;
+          text-align: start;
+          min-width: 120px;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
+          font-size: 14px;
+          font-family: inherit;
+          height: auto;
+          box-sizing: border-box;
+          white-space: normal;
+        `;
+        
+        // Force proper text direction
+        td.dir = 'ltr';
+        td.setAttribute('data-cell-type', 'data');
+        
+        // Add event listeners for proper cursor behavior
+        td.addEventListener('focus', handleCellFocus);
+        td.addEventListener('click', handleCellClick);
+        td.addEventListener('keydown', handleCellKeydown);
+        td.addEventListener('input', updateContent);
+        
+        row.appendChild(td);
       }
-      tableHTML += '</tr>';
+      
+      tbody.appendChild(row);
     }
-    tableHTML += '</tbody>';
     
-    tableHTML += '</table>';
+    table.appendChild(tbody);
     
-    insertText(tableHTML + '<br>');
+    // Insert the table
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      range.deleteContents();
+      range.insertNode(table);
+      
+      // Add a line break after the table
+      const br = document.createElement('br');
+      range.setStartAfter(table);
+      range.insertNode(br);
+      
+      // Position cursor in first cell
+      const firstCell = table.querySelector('th') as HTMLElement;
+      if (firstCell) {
+        firstCell.focus();
+        const newRange = document.createRange();
+        newRange.setStart(firstCell, 0);
+        newRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(newRange);
+      }
+    }
     
-    // Add table manipulation functionality
+    updateContent();
+    
+    // Setup table controls
     setTimeout(() => {
       setupTableControls();
-      makeTableResizable();
     }, 100);
+  };
+
+  const handleCellFocus = (e: Event) => {
+    const cell = e.target as HTMLElement;
+    
+    // Ensure proper text direction on focus
+    cell.style.direction = 'ltr';
+    cell.style.textAlign = 'start';
+    cell.dir = 'ltr';
+    
+    // Set cursor to beginning if cell is empty
+    if (cell.textContent === '') {
+      setTimeout(() => {
+        const range = document.createRange();
+        const selection = window.getSelection();
+        
+        if (selection) {
+          range.setStart(cell, 0);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+      }, 0);
+    }
+  };
+
+  const handleCellClick = (e: Event) => {
+    const cell = e.target as HTMLElement;
+    
+    // Ensure proper text direction on click
+    cell.style.direction = 'ltr';
+    cell.style.textAlign = 'start';
+    cell.dir = 'ltr';
+  };
+
+  const handleCellKeydown = (e: KeyboardEvent) => {
+    const cell = e.target as HTMLElement;
+    
+    // Ensure proper text direction when typing
+    cell.style.direction = 'ltr';
+    cell.style.textAlign = 'start';
+    cell.dir = 'ltr';
+    
+    // Handle navigation between cells
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      
+      const table = cell.closest('table');
+      if (!table) return;
+      
+      const cells = Array.from(table.querySelectorAll('th, td'));
+      const currentIndex = cells.indexOf(cell);
+      
+      if (e.shiftKey) {
+        // Previous cell
+        const prevCell = cells[currentIndex - 1] as HTMLElement;
+        if (prevCell) {
+          prevCell.focus();
+        }
+      } else {
+        // Next cell
+        const nextCell = cells[currentIndex + 1] as HTMLElement;
+        if (nextCell) {
+          nextCell.focus();
+        }
+      }
+    }
   };
 
   const setupTableControls = () => {
@@ -388,15 +548,40 @@ export function EnhancedContentEditor({
     document.removeEventListener('contextmenu', handleTableContextMenu);
     document.addEventListener('contextmenu', handleTableContextMenu);
     
-    // Add hover effects for table cells
+    // Setup all tables in the editor
     const tables = editorRef.current?.querySelectorAll('table[data-editable-table="true"]');
     tables?.forEach(table => {
       const cells = table.querySelectorAll('th, td');
       cells.forEach(cell => {
-        cell.addEventListener('mouseenter', showTableControls);
-        cell.addEventListener('mouseleave', hideTableControls);
+        const htmlCell = cell as HTMLElement;
+        
+        // Ensure proper direction and alignment
+        htmlCell.style.direction = 'ltr';
+        htmlCell.style.textAlign = 'start';
+        htmlCell.dir = 'ltr';
+        
+        // Add event listeners if not already added
+        if (!htmlCell.hasAttribute('data-listeners-added')) {
+          htmlCell.addEventListener('focus', handleCellFocus);
+          htmlCell.addEventListener('click', handleCellClick);
+          htmlCell.addEventListener('keydown', handleCellKeydown);
+          htmlCell.addEventListener('input', updateContent);
+          htmlCell.setAttribute('data-listeners-added', 'true');
+        }
+        
+        // Add hover effects
+        htmlCell.addEventListener('mouseenter', showTableControls);
+        htmlCell.addEventListener('mouseleave', hideTableControls);
       });
     });
+  };
+
+  const showTableControls = (e: Event) => {
+    // Implementation for showing table controls on hover
+  };
+
+  const hideTableControls = (e: Event) => {
+    // Implementation for hiding table controls
   };
 
   const handleTableContextMenu = (e: MouseEvent) => {
@@ -438,9 +623,7 @@ export function EnhancedContentEditor({
       { text: 'Delete Row', action: () => deleteRow(cell, table) },
       { text: 'Delete Column', action: () => deleteColumn(cell, table) },
       { text: 'Delete Table', action: () => deleteTable(table) },
-      { text: 'Change Cell Color', action: () => showCellColorPicker(cell as HTMLElement, e) },
-      { text: 'Change Header Color', action: () => cell.tagName === 'TH' ? showHeaderColorPicker(cell as HTMLElement, e) : null },
-    ].filter(item => item.action); // Filter out null actions
+    ];
     
     menuItems.forEach(item => {
       const menuItem = document.createElement('div');
@@ -486,8 +669,26 @@ export function EnhancedContentEditor({
     
     for (let i = 0; i < cellCount; i++) {
       const newCell = document.createElement('td');
-      newCell.style.cssText = 'border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left !important; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb !important; direction: ltr !important; white-space: normal; unicode-bidi: embed;';
       newCell.contentEditable = 'true';
+      newCell.style.cssText = `
+        border: 1px solid #ccc;
+        padding: 12px;
+        vertical-align: top;
+        text-align: start;
+        min-width: 120px;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        font-size: 14px;
+        font-family: inherit;
+        height: auto;
+        box-sizing: border-box;
+        white-space: normal;
+      `;
+      newCell.dir = 'ltr';
+      newCell.addEventListener('focus', handleCellFocus);
+      newCell.addEventListener('click', handleCellClick);
+      newCell.addEventListener('keydown', handleCellKeydown);
+      newCell.addEventListener('input', updateContent);
       newRow.appendChild(newCell);
     }
     
@@ -503,77 +704,136 @@ export function EnhancedContentEditor({
     
     for (let i = 0; i < cellCount; i++) {
       const newCell = document.createElement('td');
-      newCell.style.cssText = 'border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb; direction: ltr; white-space: normal;';
       newCell.contentEditable = 'true';
+      newCell.style.cssText = `
+        border: 1px solid #ccc;
+        padding: 12px;
+        vertical-align: top;
+        text-align: start;
+        min-width: 120px;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        font-size: 14px;
+        font-family: inherit;
+        height: auto;
+        box-sizing: border-box;
+        white-space: normal;
+      `;
+      newCell.dir = 'ltr';
+      newCell.addEventListener('focus', handleCellFocus);
+      newCell.addEventListener('click', handleCellClick);
+      newCell.addEventListener('keydown', handleCellKeydown);
+      newCell.addEventListener('input', updateContent);
       newRow.appendChild(newCell);
     }
     
-    row.parentNode?.insertBefore(newRow, row.nextSibling);
+    if (row.nextSibling) {
+      row.parentNode?.insertBefore(newRow, row.nextSibling);
+    } else {
+      row.parentNode?.appendChild(newRow);
+    }
   };
 
   const insertColumnLeft = (cell: Element, table: Element) => {
-    const cellIndex = Array.from(cell.parentNode?.children || []).indexOf(cell);
+    const cellIndex = Array.from(cell.parentElement?.children || []).indexOf(cell);
     const rows = table.querySelectorAll('tr');
     
     rows.forEach((row, rowIndex) => {
       const newCell = document.createElement(rowIndex === 0 ? 'th' : 'td');
-      newCell.style.cssText = rowIndex === 0 
-        ? 'border: 1px solid #ccc; padding: 12px; position: relative; background-color: #f8f9fa; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box;'
-        : 'border: 1px solid #ccc; padding: 12px; position: relative; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box;';
       newCell.contentEditable = 'true';
+      newCell.style.cssText = `
+        border: 1px solid #ccc;
+        padding: 12px;
+        ${rowIndex === 0 ? 'background-color: #f8f9fa;' : ''}
+        vertical-align: top;
+        text-align: start;
+        min-width: 120px;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        font-size: 14px;
+        font-family: inherit;
+        height: auto;
+        box-sizing: border-box;
+        white-space: normal;
+      `;
+      newCell.dir = 'ltr';
+      newCell.addEventListener('focus', handleCellFocus);
+      newCell.addEventListener('click', handleCellClick);
+      newCell.addEventListener('keydown', handleCellKeydown);
+      newCell.addEventListener('input', updateContent);
       
       const targetCell = row.children[cellIndex];
-      row.insertBefore(newCell, targetCell);
+      if (targetCell) {
+        row.insertBefore(newCell, targetCell);
+      }
     });
   };
 
   const insertColumnRight = (cell: Element, table: Element) => {
-    const cellIndex = Array.from(cell.parentNode?.children || []).indexOf(cell);
+    const cellIndex = Array.from(cell.parentElement?.children || []).indexOf(cell);
     const rows = table.querySelectorAll('tr');
     
     rows.forEach((row, rowIndex) => {
       const newCell = document.createElement(rowIndex === 0 ? 'th' : 'td');
-      newCell.style.cssText = rowIndex === 0 
-        ? 'border: 1px solid #ccc; padding: 12px; position: relative; background-color: #f8f9fa; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box;'
-        : 'border: 1px solid #ccc; padding: 12px; position: relative; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box;';
       newCell.contentEditable = 'true';
+      newCell.style.cssText = `
+        border: 1px solid #ccc;
+        padding: 12px;
+        ${rowIndex === 0 ? 'background-color: #f8f9fa;' : ''}
+        vertical-align: top;
+        text-align: start;
+        min-width: 120px;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        font-size: 14px;
+        font-family: inherit;
+        height: auto;
+        box-sizing: border-box;
+        white-space: normal;
+      `;
+      newCell.dir = 'ltr';
+      newCell.addEventListener('focus', handleCellFocus);
+      newCell.addEventListener('click', handleCellClick);
+      newCell.addEventListener('keydown', handleCellKeydown);
+      newCell.addEventListener('input', updateContent);
       
-      const targetCell = row.children[cellIndex];
-      row.insertBefore(newCell, targetCell?.nextSibling || null);
+      const targetCell = row.children[cellIndex + 1];
+      if (targetCell) {
+        row.insertBefore(newCell, targetCell);
+      } else {
+        row.appendChild(newCell);
+      }
     });
   };
 
   const deleteRow = (cell: Element, table: Element) => {
     const row = cell.closest('tr');
-    const tbody = table.querySelector('tbody');
-    const thead = table.querySelector('thead');
+    if (!row) return;
     
-    if (row && tbody && tbody.children.length > 1) {
-      row.remove();
-    } else if (row && thead?.contains(row)) {
-      // Don't delete header row if it's the only row
-      if (tbody && tbody.children.length > 0) {
-        row.remove();
-      }
-    }
+    // Don't delete if it's the only row
+    const rows = table.querySelectorAll('tr');
+    if (rows.length <= 1) return;
+    
+    row.remove();
   };
 
   const deleteColumn = (cell: Element, table: Element) => {
-    const cellIndex = Array.from(cell.parentNode?.children || []).indexOf(cell);
+    const cellIndex = Array.from(cell.parentElement?.children || []).indexOf(cell);
     const rows = table.querySelectorAll('tr');
     
-    if (rows[0]?.children.length === 1) return; // Don't delete last column
+    // Don't delete if it's the only column
+    if (rows[0]?.children.length <= 1) return;
     
     rows.forEach(row => {
       const cellToDelete = row.children[cellIndex];
-      cellToDelete?.remove();
+      if (cellToDelete) {
+        cellToDelete.remove();
+      }
     });
   };
 
   const deleteTable = (table: Element) => {
-    if (confirm('Are you sure you want to delete this table?')) {
-      table.remove();
-    }
+    table.remove();
   };
 
   const makeTableResizable = () => {
@@ -646,9 +906,6 @@ export function EnhancedContentEditor({
     });
   };
 
-  const showTableControls = (e: Event) => {
-    // Implementation for showing table controls on hover
-  };
 
   const showCellColorPicker = (cell: HTMLElement, e: MouseEvent) => {
     // Remove any existing color picker
@@ -840,9 +1097,6 @@ export function EnhancedContentEditor({
     }
   };
 
-  const hideTableControls = (e: Event) => {
-    // Implementation for hiding table controls on hover
-  };
 
   const insertDivider = () => {
     insertText('<hr style="border: none; border-top: 2px solid #e5e7eb; margin: 20px 0;" /><br>');
