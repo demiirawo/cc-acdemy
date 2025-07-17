@@ -170,12 +170,12 @@ export function EnhancedContentEditor({
   };
 
   const insertTable = (rows: number, cols: number) => {
-    let tableHTML = `<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0; position: relative; table-layout: fixed;" data-editable-table="true">`;
+    let tableHTML = `<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0; position: relative;" data-editable-table="true">`;
     
     // Header row
     tableHTML += '<thead><tr>';
     for (let j = 0; j < cols; j++) {
-      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; position: relative; background-color: #f8f9fa; resize: horizontal; overflow: hidden;" contenteditable="true"></th>`;
+      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; background-color: #f8f9fa; vertical-align: top; text-align: left;" contenteditable="true"></th>`;
     }
     tableHTML += '</tr></thead>';
     
@@ -184,7 +184,7 @@ export function EnhancedContentEditor({
     for (let i = 0; i < rows - 1; i++) {
       tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; position: relative; resize: horizontal; overflow: hidden;" contenteditable="true"></td>`;
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left;" contenteditable="true"></td>`;
       }
       tableHTML += '</tr>';
     }
@@ -197,7 +197,6 @@ export function EnhancedContentEditor({
     // Add table manipulation functionality
     setTimeout(() => {
       setupTableControls();
-      makeTableResizable();
     }, 100);
   };
 
@@ -301,7 +300,7 @@ export function EnhancedContentEditor({
     
     for (let i = 0; i < cellCount; i++) {
       const newCell = document.createElement('td');
-      newCell.style.cssText = 'border: 1px solid #ccc; padding: 8px; position: relative;';
+      newCell.style.cssText = 'border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left;';
       newCell.contentEditable = 'true';
       newRow.appendChild(newCell);
     }
@@ -318,7 +317,7 @@ export function EnhancedContentEditor({
     
     for (let i = 0; i < cellCount; i++) {
       const newCell = document.createElement('td');
-      newCell.style.cssText = 'border: 1px solid #ccc; padding: 8px; position: relative;';
+      newCell.style.cssText = 'border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left;';
       newCell.contentEditable = 'true';
       newRow.appendChild(newCell);
     }
@@ -388,21 +387,34 @@ export function EnhancedContentEditor({
   const makeTableResizable = () => {
     const tables = editorRef.current?.querySelectorAll('table[data-editable-table="true"]');
     tables?.forEach(table => {
-      // Add column resize handles
-      const headers = table.querySelectorAll('th');
+      // Remove any existing resize handles first
+      table.querySelectorAll('.resize-handle').forEach(handle => handle.remove());
+      
+      // Add column resize handles only to headers
+      const headers = table.querySelectorAll('thead th');
       headers.forEach((header, index) => {
         if (index < headers.length - 1) { // Don't add handle to last column
           const resizeHandle = document.createElement('div');
+          resizeHandle.className = 'resize-handle';
           resizeHandle.style.cssText = `
             position: absolute;
             top: 0;
-            right: 0;
+            right: -2px;
             width: 4px;
             height: 100%;
-            background: #ddd;
+            background: transparent;
             cursor: col-resize;
-            z-index: 10;
+            z-index: 1000;
           `;
+          
+          // Add hover effect
+          resizeHandle.addEventListener('mouseenter', () => {
+            resizeHandle.style.background = '#007acc';
+          });
+          
+          resizeHandle.addEventListener('mouseleave', () => {
+            resizeHandle.style.background = 'transparent';
+          });
           
           let isResizing = false;
           let startX = 0;
@@ -411,15 +423,22 @@ export function EnhancedContentEditor({
           resizeHandle.addEventListener('mousedown', (e) => {
             isResizing = true;
             startX = e.clientX;
-            startWidth = header.offsetWidth;
+            startWidth = (header as HTMLElement).offsetWidth;
             e.preventDefault();
+            e.stopPropagation();
           });
           
           document.addEventListener('mousemove', (e) => {
             if (!isResizing) return;
+            e.preventDefault();
             const width = startWidth + e.clientX - startX;
             if (width > 50) { // Minimum width
-              header.style.width = width + 'px';
+              (header as HTMLElement).style.width = width + 'px';
+              // Also update corresponding cells in the column
+              const columnIndex = Array.from(header.parentElement!.children).indexOf(header);
+              table.querySelectorAll(`tbody tr td:nth-child(${columnIndex + 1})`).forEach(cell => {
+                (cell as HTMLElement).style.width = width + 'px';
+              });
             }
           });
           
@@ -427,7 +446,8 @@ export function EnhancedContentEditor({
             isResizing = false;
           });
           
-          header.style.position = 'relative';
+          // Ensure header has relative positioning for absolute handle
+          (header as HTMLElement).style.position = 'relative';
           header.appendChild(resizeHandle);
         }
       });
