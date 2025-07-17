@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { EditableTitle } from "./EditableTitle";
+import { ColorPicker } from "./ColorPicker";
 import {
   Bold,
   Italic,
@@ -56,6 +57,28 @@ interface ContentEditorProps {
   pageId?: string;
 }
 
+interface ContentEditorProps {
+  title?: string;
+  content?: string;
+  onSave: (title: string, content: string, recommendedReading?: Array<{
+    title: string;
+    url?: string;
+    description: string;
+    fileUrl?: string;
+    fileName?: string;
+  }>) => void;
+  onPreview?: () => void;
+  isEditing?: boolean;
+  pageId?: string;
+}
+
+interface MediaFile {
+  id: string;
+  name: string;
+  type: string;
+  url: string;
+}
+
 interface MediaFile {
   id: string;
   name: string;
@@ -96,6 +119,8 @@ export function EnhancedContentEditor({
     if (editorRef.current) {
       editorRef.current.innerHTML = cleanContent;
     }
+  }, [title, content]);
+
   const [currentTableCell, setCurrentTableCell] = useState<HTMLElement | null>(null);
 
   // Load page settings if editing existing page
@@ -691,6 +716,13 @@ export function EnhancedContentEditor({
     { icon: Italic, action: () => formatText('italic'), tooltip: "Italic (Ctrl+I)" },
     { icon: Underline, action: () => formatText('underline'), tooltip: "Underline (Ctrl+U)" },
     { icon: Strikethrough, action: () => formatText('strikeThrough'), tooltip: "Strikethrough" },
+  ];
+
+  const alignmentToolbarItems = [
+    { icon: AlignLeft, action: () => formatText('justifyLeft'), tooltip: "Align Left" },
+    { icon: AlignCenter, action: () => formatText('justifyCenter'), tooltip: "Align Center" },
+    { icon: AlignRight, action: () => formatText('justifyRight'), tooltip: "Align Right" },
+    { icon: AlignJustify, action: () => formatText('justifyFull'), tooltip: "Justify" },
   ];
 
   const increaseFontSize = () => {
