@@ -125,14 +125,19 @@ function SidebarTreeItem({
       } else {
         query = query.is('space_id', null);
       }
-      const { data: siblings, error: siblingsError } = await query.order('created_at', { ascending: true });
+      const { data: siblings, error: siblingsError } = await query;
 
       if (siblingsError) throw siblingsError;
+      
+      // Ensure siblings are sorted by creation date
+      const sortedSiblings = siblings?.sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      ) || [];
 
-      const currentIndex = siblings.findIndex(p => p.id === pageId);
+  const currentIndex = sortedSiblings.findIndex(p => p.id === pageId);
       if (currentIndex > 0) {
         // Swap timestamps with previous sibling
-        const prevSibling = siblings[currentIndex - 1];
+        const prevSibling = sortedSiblings[currentIndex - 1];
         
         await supabase
           .from('pages')
@@ -189,14 +194,19 @@ function SidebarTreeItem({
       } else {
         query = query.is('space_id', null);
       }
-      const { data: siblings, error: siblingsError } = await query.order('created_at', { ascending: true });
+      const { data: siblings, error: siblingsError } = await query;
 
       if (siblingsError) throw siblingsError;
+      
+      // Ensure siblings are sorted by creation date
+      const sortedSiblings = siblings?.sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      ) || [];
 
-      const currentIndex = siblings.findIndex(p => p.id === pageId);
-      if (currentIndex < siblings.length - 1) {
+      const currentIndex = sortedSiblings.findIndex(p => p.id === pageId);
+      if (currentIndex < sortedSiblings.length - 1) {
         // Swap timestamps with next sibling
-        const nextSibling = siblings[currentIndex + 1];
+        const nextSibling = sortedSiblings[currentIndex + 1];
         
         await supabase
           .from('pages')

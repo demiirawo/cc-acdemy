@@ -2132,7 +2132,7 @@ export function EnhancedContentEditor({
 
   const handleSave = async () => {
     try {
-      // Save content without appending recommended reading to it
+      // Save content and recommended reading using the provided onSave function
       onSave(currentTitle, currentContent, recommendedReading);
       
       if (pageId) {
@@ -2143,6 +2143,7 @@ export function EnhancedContentEditor({
             is_public: isPublic,
             content: currentContent,
             title: currentTitle,
+            recommended_reading: recommendedReading,
             updated_at: new Date().toISOString()
           })
           .eq('id', pageId);
