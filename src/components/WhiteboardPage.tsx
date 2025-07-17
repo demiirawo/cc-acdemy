@@ -43,9 +43,14 @@ export function WhiteboardPage() {
         backgroundColor: "#ffffff",
       });
 
-      // Initialize the freeDrawingBrush properly
-      canvas.freeDrawingBrush.color = activeColor;
-      canvas.freeDrawingBrush.width = brushSize;
+      // Set drawing mode first to initialize freeDrawingBrush
+      canvas.isDrawingMode = false;
+      
+      // Now we can safely access freeDrawingBrush
+      if (canvas.freeDrawingBrush) {
+        canvas.freeDrawingBrush.color = activeColor;
+        canvas.freeDrawingBrush.width = brushSize;
+      }
 
       // Add line drawing functionality
       let isDrawingLine = false;
