@@ -1322,17 +1322,35 @@ export function EnhancedContentEditor({
       if (selection && selection.rangeCount > 0) {
         const range = selection.getRangeAt(0);
         
-        if (!selection.toString()) {
+        // Check if cursor is already in a list item
+        const currentListItem = range.startContainer.parentElement?.closest('li');
+        const currentList = currentListItem?.closest('ul, ol');
+        
+        if (currentList && currentList.tagName === 'UL') {
+          // Already in bullet list - remove list formatting
+          const listText = Array.from(currentList.querySelectorAll('li'))
+            .map(li => li.textContent || '')
+            .join('\n');
+          
+          const textNode = document.createTextNode(listText);
+          currentList.parentNode?.replaceChild(textNode, currentList);
+          
+          // Position cursor after the text
+          const newRange = document.createRange();
+          newRange.setStartAfter(textNode);
+          newRange.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+        } else if (!selection.toString()) {
           // No text selected - insert new bullet list
           const ul = document.createElement('ul');
           ul.style.cssText = 'margin: 16px 0; padding-left: 40px; list-style-type: disc;';
           const li = document.createElement('li');
-          li.innerHTML = '&nbsp;'; // Add non-breaking space for cursor placement
+          li.innerHTML = '&nbsp;';
           ul.appendChild(li);
           
           range.insertNode(ul);
           
-          // Position cursor inside the list item
           const newRange = document.createRange();
           newRange.setStart(li, 0);
           newRange.collapse(true);
@@ -1355,7 +1373,6 @@ export function EnhancedContentEditor({
           
           range.insertNode(ul);
           
-          // Move cursor after list
           const afterRange = document.createRange();
           afterRange.setStartAfter(ul);
           afterRange.collapse(true);
@@ -1370,17 +1387,35 @@ export function EnhancedContentEditor({
       if (selection && selection.rangeCount > 0) {
         const range = selection.getRangeAt(0);
         
-        if (!selection.toString()) {
+        // Check if cursor is already in a list item
+        const currentListItem = range.startContainer.parentElement?.closest('li');
+        const currentList = currentListItem?.closest('ul, ol');
+        
+        if (currentList && currentList.tagName === 'OL') {
+          // Already in numbered list - remove list formatting
+          const listText = Array.from(currentList.querySelectorAll('li'))
+            .map(li => li.textContent || '')
+            .join('\n');
+          
+          const textNode = document.createTextNode(listText);
+          currentList.parentNode?.replaceChild(textNode, currentList);
+          
+          // Position cursor after the text
+          const newRange = document.createRange();
+          newRange.setStartAfter(textNode);
+          newRange.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+        } else if (!selection.toString()) {
           // No text selected - insert new numbered list
           const ol = document.createElement('ol');
           ol.style.cssText = 'margin: 16px 0; padding-left: 40px; list-style-type: decimal;';
           const li = document.createElement('li');
-          li.innerHTML = '&nbsp;'; // Add non-breaking space for cursor placement
+          li.innerHTML = '&nbsp;';
           ol.appendChild(li);
           
           range.insertNode(ol);
           
-          // Position cursor inside the list item
           const newRange = document.createRange();
           newRange.setStart(li, 0);
           newRange.collapse(true);
@@ -1403,7 +1438,6 @@ export function EnhancedContentEditor({
           
           range.insertNode(ol);
           
-          // Move cursor after list
           const afterRange = document.createRange();
           afterRange.setStartAfter(ol);
           afterRange.collapse(true);
@@ -1676,18 +1710,45 @@ export function EnhancedContentEditor({
   };
 
   const handleSave = async () => {
-    // Save content without appending recommended reading to it
-    onSave(currentTitle, currentContent, recommendedReading);
-    
-    if (pageId) {
-      try {
-        await supabase
+    try {
+      // Save content without appending recommended reading to it
+      onSave(currentTitle, currentContent, recommendedReading);
+      
+      if (pageId) {
+        // Update page settings in database
+        const { error } = await supabase
           .from('pages')
-          .update({ is_public: isPublic })
+          .update({ 
+            is_public: isPublic,
+            content: currentContent,
+            title: currentTitle,
+            updated_at: new Date().toISOString()
+          })
           .eq('id', pageId);
-      } catch (error) {
-        console.error('Error updating page settings:', error);
+
+        if (error) throw error;
+
+        // Send a custom event to update sidebar
+        window.dispatchEvent(new CustomEvent('pageUpdated', { 
+          detail: { 
+            pageId, 
+            title: currentTitle, 
+            content: currentContent 
+          } 
+        }));
+
+        toast({
+          title: "Saved",
+          description: "Page saved successfully",
+        });
       }
+    } catch (error) {
+      console.error('Error saving page:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save page",
+        variant: "destructive",
+      });
     }
   };
 

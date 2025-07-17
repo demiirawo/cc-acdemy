@@ -104,11 +104,52 @@ function SidebarTreeItem({
 
   const handleMovePageUp = async (pageId: string) => {
     try {
-      // This is a simplified approach - in a real app you'd need order fields
-      toast({
-        title: "Move up",
-        description: "Page moved up in the list (feature demo)"
-      });
+      // Get current page and its siblings
+      const { data: currentPage, error: currentError } = await supabase
+        .from('pages')
+        .select('*')
+        .eq('id', pageId)
+        .single();
+
+      if (currentError) throw currentError;
+
+      // Get siblings with same parent
+      const { data: siblings, error: siblingsError } = await supabase
+        .from('pages')
+        .select('*')
+        .eq('parent_page_id', currentPage.parent_page_id || null)
+        .order('created_at', { ascending: true });
+
+      if (siblingsError) throw siblingsError;
+
+      const currentIndex = siblings.findIndex(p => p.id === pageId);
+      if (currentIndex > 0) {
+        // Swap timestamps with previous sibling
+        const prevSibling = siblings[currentIndex - 1];
+        
+        await supabase
+          .from('pages')
+          .update({ created_at: prevSibling.created_at })
+          .eq('id', pageId);
+          
+        await supabase
+          .from('pages')
+          .update({ created_at: currentPage.created_at })
+          .eq('id', prevSibling.id);
+
+        toast({
+          title: "Moved up",
+          description: "Page moved up successfully"
+        });
+        
+        // Refresh the page list
+        window.location.reload();
+      } else {
+        toast({
+          title: "Cannot move up",
+          description: "Page is already at the top"
+        });
+      }
     } catch (error) {
       toast({
         title: "Error", 
@@ -120,11 +161,52 @@ function SidebarTreeItem({
 
   const handleMovePageDown = async (pageId: string) => {
     try {
-      // This is a simplified approach - in a real app you'd need order fields  
-      toast({
-        title: "Move down",
-        description: "Page moved down in the list (feature demo)"
-      });
+      // Get current page and its siblings
+      const { data: currentPage, error: currentError } = await supabase
+        .from('pages')
+        .select('*')
+        .eq('id', pageId)
+        .single();
+
+      if (currentError) throw currentError;
+
+      // Get siblings with same parent
+      const { data: siblings, error: siblingsError } = await supabase
+        .from('pages')
+        .select('*')
+        .eq('parent_page_id', currentPage.parent_page_id || null)
+        .order('created_at', { ascending: true });
+
+      if (siblingsError) throw siblingsError;
+
+      const currentIndex = siblings.findIndex(p => p.id === pageId);
+      if (currentIndex < siblings.length - 1) {
+        // Swap timestamps with next sibling
+        const nextSibling = siblings[currentIndex + 1];
+        
+        await supabase
+          .from('pages')
+          .update({ created_at: nextSibling.created_at })
+          .eq('id', pageId);
+          
+        await supabase
+          .from('pages')
+          .update({ created_at: currentPage.created_at })
+          .eq('id', nextSibling.id);
+
+        toast({
+          title: "Moved down",
+          description: "Page moved down successfully"
+        });
+        
+        // Refresh the page list
+        window.location.reload();
+      } else {
+        toast({
+          title: "Cannot move down",
+          description: "Page is already at the bottom"
+        });
+      }
     } catch (error) {
       toast({
         title: "Error",
@@ -314,6 +396,13 @@ export function RealKnowledgeBaseSidebar({
   useEffect(() => {
     fetchHierarchyData();
 
+    // Listen for page updates from editor
+    const handlePageUpdated = () => {
+      fetchHierarchyData();
+    };
+
+    window.addEventListener('pageUpdated', handlePageUpdated);
+
     // Set up real-time subscriptions for pages and spaces
     const pagesChannel = supabase
       .channel('pages-changes')
@@ -348,6 +437,7 @@ export function RealKnowledgeBaseSidebar({
       .subscribe();
 
     return () => {
+      window.removeEventListener('pageUpdated', handlePageUpdated);
       supabase.removeChannel(pagesChannel);
       supabase.removeChannel(spacesChannel);
     };
