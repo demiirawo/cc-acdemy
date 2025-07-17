@@ -247,7 +247,6 @@ interface RealKnowledgeBaseSidebarProps {
   selectedId?: string;
   onCreatePage?: () => void;
   onCreateSubPage?: (parentId: string) => void;
-  
   onCreatePageInEditor?: (parentId?: string) => void;
 }
 export function RealKnowledgeBaseSidebar({
@@ -255,7 +254,6 @@ export function RealKnowledgeBaseSidebar({
   selectedId,
   onCreatePage,
   onCreateSubPage,
-  
   onCreatePageInEditor
 }: RealKnowledgeBaseSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -421,7 +419,7 @@ export function RealKnowledgeBaseSidebar({
     }
   };
   const filteredHierarchy = hierarchyData.filter(item => item.title.toLowerCase().includes(searchQuery.toLowerCase()) || item.children && item.children.some(child => child.title.toLowerCase().includes(searchQuery.toLowerCase())));
-  return <div className="w-full border-r-0 flex flex-col h-full bg-pink-600">
+  return <div className="w-full border-r-0 flex flex-col h-full bg-purple-800">
       {/* Header */}
       <div className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2 mb-4">
