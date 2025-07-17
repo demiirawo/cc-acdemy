@@ -257,6 +257,8 @@ export function RealKnowledgeBaseSidebar({
   onCreatePageInEditor
 }: RealKnowledgeBaseSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SidebarItem[]>([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [pages, setPages] = useState<Page[]>([]);
   const [hierarchyData, setHierarchyData] = useState<SidebarItem[]>([]);
@@ -305,6 +307,61 @@ export function RealKnowledgeBaseSidebar({
       supabase.removeChannel(spacesChannel);
     };
   }, []);
+
+  // Search functionality
+  useEffect(() => {
+    if (searchQuery.trim().length === 0) {
+      setShowSearchResults(false);
+      setSearchResults([]);
+      return;
+    }
+
+    if (searchQuery.trim().length < 2) {
+      return;
+    }
+
+    // Search through pages and spaces
+    const query = searchQuery.toLowerCase();
+    const results: SidebarItem[] = [];
+
+    // Search pages
+    pages
+      .filter(page => 
+        page.title.toLowerCase().includes(query) || 
+        page.content.toLowerCase().includes(query)
+      )
+      .slice(0, 10)
+      .forEach(page => {
+        results.push({
+          id: page.id,
+          title: page.title,
+          type: 'page',
+          icon: FileText,
+          parent_page_id: page.parent_page_id,
+          space_id: page.space_id,
+          is_public: page.is_public
+        });
+      });
+
+    // Search spaces
+    spaces
+      .filter(space => 
+        space.name.toLowerCase().includes(query) || 
+        (space.description && space.description.toLowerCase().includes(query))
+      )
+      .slice(0, 5)
+      .forEach(space => {
+        results.push({
+          id: space.id,
+          title: space.name,
+          type: 'space',
+          icon: Folder
+        });
+      });
+
+    setSearchResults(results);
+    setShowSearchResults(true);
+  }, [searchQuery, pages, spaces]);
   const fetchHierarchyData = async () => {
     setLoading(true);
     try {
@@ -470,7 +527,51 @@ export function RealKnowledgeBaseSidebar({
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-sidebar-foreground/50" />
-          <Input placeholder="Search..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-9 bg-sidebar border-sidebar-border text-sidebar-foreground placeholder:text-sidebar-foreground/50 h-9" />
+          <Input 
+            placeholder="Search..." 
+            value={searchQuery} 
+            onChange={e => setSearchQuery(e.target.value)} 
+            className="pl-9 bg-sidebar border-sidebar-border text-sidebar-foreground placeholder:text-sidebar-foreground/50 h-9" 
+          />
+          
+          {/* Search Results Dropdown */}
+          {showSearchResults && searchResults.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-sidebar border border-sidebar-border rounded-md shadow-lg z-50 max-h-64 overflow-y-auto">
+              <div className="py-2">
+                <div className="px-3 py-1 text-xs font-medium text-sidebar-foreground/70 border-b border-sidebar-border">
+                  Search Results ({searchResults.length})
+                </div>
+                {searchResults.map(result => {
+                  const Icon = result.type === 'space' ? Folder : FileText;
+                  return (
+                    <div
+                      key={result.id}
+                      className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-sidebar-accent/50 transition-colors"
+                      onClick={() => {
+                        onItemSelect(result);
+                        setSearchQuery("");
+                        setShowSearchResults(false);
+                      }}
+                    >
+                      <Icon className="h-4 w-4 text-sidebar-foreground/70 flex-shrink-0" />
+                      <span className="truncate text-sidebar-foreground">{result.title}</span>
+                      <span className="text-xs text-sidebar-foreground/50 ml-auto">
+                        {result.type}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          
+          {showSearchResults && searchResults.length === 0 && searchQuery.trim().length >= 2 && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-sidebar border border-sidebar-border rounded-md shadow-lg z-50">
+              <div className="py-4 px-3 text-sm text-sidebar-foreground/70 text-center">
+                No results found for "{searchQuery}"
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

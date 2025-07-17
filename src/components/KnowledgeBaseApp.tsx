@@ -431,6 +431,7 @@ export function KnowledgeBaseApp() {
         } = await supabase.from('pages').insert({
           title,
           content,
+          recommended_reading: recommendedReading || [],
           created_by: user.id
         }).select().single();
         if (error) throw error;
@@ -448,6 +449,7 @@ export function KnowledgeBaseApp() {
         } = await supabase.from('pages').update({
           title,
           content,
+          recommended_reading: recommendedReading || [],
           updated_at: new Date().toISOString()
         }).eq('id', currentPage.id);
         if (error) throw error;

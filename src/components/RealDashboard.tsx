@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, Clock, TrendingUp, Users, BookOpen, Star, ChevronRight } from "lucide-react";
+import { Search, Plus, Clock, TrendingUp, Users, BookOpen, Star, ChevronRight, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,6 +35,8 @@ export function RealDashboard({
   onPageSelect
 }: DashboardProps) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Page[]>([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
   const [popularPages, setPopularPages] = useState<Page[]>([]);
   const [recentPages, setRecentPages] = useState<Page[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
@@ -53,6 +55,55 @@ export function RealDashboard({
   useEffect(() => {
     fetchDashboardData();
   }, []);
+
+  // Search functionality
+  useEffect(() => {
+    if (searchQuery.trim().length === 0) {
+      setShowSearchResults(false);
+      setSearchResults([]);
+      return;
+    }
+
+    if (searchQuery.trim().length < 2) {
+      return;
+    }
+
+    performSearch(searchQuery.trim());
+  }, [searchQuery]);
+
+  const performSearch = async (query: string) => {
+    try {
+      const { data: searchData, error } = await supabase
+        .from('pages')
+        .select('id, title, content, view_count, updated_at, created_by')
+        .or(`title.ilike.%${query}%,content.ilike.%${query}%`)
+        .order('view_count', { ascending: false })
+        .limit(10);
+
+      if (error) throw error;
+
+      // Get user profiles for display names
+      const userIds = [...new Set(searchData?.map(p => p.created_by) || [])];
+      const { data: profilesData } = await supabase
+        .from('profiles')
+        .select('user_id, display_name')
+        .in('user_id', userIds);
+
+      const profilesMap = new Map(profilesData?.map(p => [p.user_id, p]) || []);
+
+      const enrichedResults = searchData?.map(page => ({
+        ...page,
+        profiles: profilesMap.get(page.created_by) || { display_name: 'Unknown' }
+      })) || [];
+
+      setSearchResults(enrichedResults);
+      setShowSearchResults(true);
+    } catch (error) {
+      console.error('Search error:', error);
+      setSearchResults([]);
+      setShowSearchResults(false);
+    }
+  };
   const fetchDashboardData = async () => {
     try {
       // Fetch popular pages (most viewed)
@@ -217,7 +268,56 @@ export function RealDashboard({
           {/* Search Bar */}
           <div className="relative max-w-2xl">
             <Search className="absolute left-4 top-3 h-5 w-5 text-muted-foreground" />
-            <Input placeholder="Search knowledge base..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-12 h-12 text-lg shadow-md" />
+            <Input 
+              placeholder="Search knowledge base..." 
+              value={searchQuery} 
+              onChange={e => setSearchQuery(e.target.value)} 
+              className="pl-12 h-12 text-lg shadow-md" 
+            />
+            
+            {/* Search Results Dropdown */}
+            {showSearchResults && searchResults.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
+                <div className="py-2">
+                  <div className="px-4 py-2 text-sm font-medium text-muted-foreground border-b border-border">
+                    Search Results ({searchResults.length})
+                  </div>
+                  {searchResults.map(result => (
+                    <div
+                      key={result.id}
+                      className="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors border-b border-border last:border-b-0"
+                      onClick={() => {
+                        onPageSelect(result.id);
+                        setSearchQuery("");
+                        setShowSearchResults(false);
+                      }}
+                    >
+                      <FileText className="h-4 w-4 text-primary mt-1 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-medium text-foreground truncate">{result.title}</h4>
+                        <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                          {result.content.substring(0, 120)}...
+                        </p>
+                        <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                          <span>{result.view_count || 0} views</span>
+                          <span>•</span>
+                          <span>by {result.profiles?.display_name || 'Unknown'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {showSearchResults && searchResults.length === 0 && searchQuery.trim().length >= 2 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-lg z-50">
+                <div className="py-8 px-4 text-center">
+                  <Search className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">No results found for "{searchQuery}"</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
