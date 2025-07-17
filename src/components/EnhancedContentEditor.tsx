@@ -357,7 +357,7 @@ export function EnhancedContentEditor({
     // Header row
     tableHTML += '<thead><tr>';
     for (let j = 0; j < cols; j++) {
-      tableHTML += `<th style="border: 1px solid #ccc; padding: 12px; background-color: #f8f9fa; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb; direction: ltr; white-space: normal;" contenteditable="true"></th>`;
+      tableHTML += `<th style="border: 1px solid #ccc; padding: 12px; background-color: #f8f9fa; vertical-align: top; text-align: left !important; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb !important; direction: ltr !important; white-space: normal; unicode-bidi: embed;" contenteditable="true"></th>`;
     }
     tableHTML += '</tr></thead>';
     
@@ -366,7 +366,7 @@ export function EnhancedContentEditor({
     for (let i = 0; i < rows - 1; i++) {
       tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableHTML += `<td style="border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb; direction: ltr; white-space: normal;" contenteditable="true"></td>`;
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left !important; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb !important; direction: ltr !important; white-space: normal; unicode-bidi: embed;" contenteditable="true"></td>`;
       }
       tableHTML += '</tr>';
     }
@@ -486,7 +486,7 @@ export function EnhancedContentEditor({
     
     for (let i = 0; i < cellCount; i++) {
       const newCell = document.createElement('td');
-      newCell.style.cssText = 'border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb; direction: ltr; white-space: normal;';
+      newCell.style.cssText = 'border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left !important; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb !important; direction: ltr !important; white-space: normal; unicode-bidi: embed;';
       newCell.contentEditable = 'true';
       newRow.appendChild(newCell);
     }
