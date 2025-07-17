@@ -240,7 +240,7 @@ export function EnhancedContentEditor({
           ? container.parentElement 
           : container as Element;
           
-        while (blockElement && !['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI'].includes(blockElement.tagName)) {
+        while (blockElement && !['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TD', 'TH', 'BLOCKQUOTE', 'PRE'].includes(blockElement.tagName)) {
           blockElement = blockElement.parentElement;
         }
         
@@ -259,6 +259,31 @@ export function EnhancedContentEditor({
             case 'justifyFull':
               element.style.textAlign = 'justify';
               break;
+          }
+        } else {
+          // If no block element found, wrap the selection in a div
+          const div = document.createElement('div');
+          switch (command) {
+            case 'justifyLeft':
+              div.style.textAlign = 'left';
+              break;
+            case 'justifyCenter':
+              div.style.textAlign = 'center';
+              break;
+            case 'justifyRight':
+              div.style.textAlign = 'right';
+              break;
+            case 'justifyFull':
+              div.style.textAlign = 'justify';
+              break;
+          }
+          
+          try {
+            range.surroundContents(div);
+          } catch {
+            // If surrounding fails, insert the div and move content
+            div.appendChild(range.extractContents());
+            range.insertNode(div);
           }
         }
       }
@@ -327,12 +352,12 @@ export function EnhancedContentEditor({
   };
 
   const insertTable = (rows: number, cols: number) => {
-    let tableHTML = `<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0; position: relative; table-layout: fixed;" data-editable-table="true">`;
+    let tableHTML = `<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0; table-layout: fixed;" data-editable-table="true">`;
     
     // Header row
     tableHTML += '<thead><tr>';
     for (let j = 0; j < cols; j++) {
-      tableHTML += `<th style="border: 1px solid #ccc; padding: 12px; background-color: #f8f9fa; vertical-align: top; text-align: left; position: relative; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; white-space: normal;" contenteditable="true"></th>`;
+      tableHTML += `<th style="border: 1px solid #ccc; padding: 12px; background-color: #f8f9fa; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; white-space: nowrap; writing-mode: horizontal-tb; direction: ltr;" contenteditable="true"></th>`;
     }
     tableHTML += '</tr></thead>';
     
@@ -341,7 +366,7 @@ export function EnhancedContentEditor({
     for (let i = 0; i < rows - 1; i++) {
       tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableHTML += `<td style="border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box;" contenteditable="true"></td>`;
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; white-space: nowrap; writing-mode: horizontal-tb; direction: ltr;" contenteditable="true"></td>`;
       }
       tableHTML += '</tr>';
     }
