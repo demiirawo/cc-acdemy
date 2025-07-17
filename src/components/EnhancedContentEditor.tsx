@@ -120,6 +120,12 @@ export function EnhancedContentEditor({
     if (editorRef.current) {
       editorRef.current.innerHTML = cleanContent;
     }
+    
+    // Setup image and video controls after content is set
+    setTimeout(() => {
+      setupImageControls();
+      setupYouTubeControls();
+    }, 100);
   }, [title, content]);
 
   const [currentTableCell, setCurrentTableCell] = useState<HTMLElement | null>(null);
@@ -201,6 +207,13 @@ export function EnhancedContentEditor({
     }, 3000); // Auto-save after 3 seconds of inactivity
   };
 
+  // Trigger auto-save when recommended reading changes
+  useEffect(() => {
+    if (pageId && recommendedReading.length > 0) {
+      triggerAutoSave();
+    }
+  }, [recommendedReading, pageId]);
+
   const autoSave = async () => {
     if (!pageId || !currentContent) return;
     
@@ -209,6 +222,7 @@ export function EnhancedContentEditor({
         .from('pages')
         .update({ 
           content: currentContent,
+          recommended_reading: recommendedReading,
           updated_at: new Date().toISOString()
         })
         .eq('id', pageId);
@@ -230,12 +244,12 @@ export function EnhancedContentEditor({
   };
 
   const insertTable = (rows: number, cols: number) => {
-    let tableHTML = `<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0; position: relative;" data-editable-table="true">`;
+    let tableHTML = `<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0; position: relative; table-layout: fixed;" data-editable-table="true">`;
     
     // Header row
     tableHTML += '<thead><tr>';
     for (let j = 0; j < cols; j++) {
-      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; background-color: #f8f9fa; vertical-align: top; text-align: left; position: relative; min-width: 100px;" contenteditable="true"></th>`;
+      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; background-color: #f8f9fa; vertical-align: top; text-align: left; position: relative; min-width: 100px; word-wrap: break-word; overflow-wrap: break-word;" contenteditable="true"></th>`;
     }
     tableHTML += '</tr></thead>';
     
@@ -244,7 +258,7 @@ export function EnhancedContentEditor({
     for (let i = 0; i < rows - 1; i++) {
       tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left; min-width: 100px;" contenteditable="true"></td>`;
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left; min-width: 100px; word-wrap: break-word; overflow-wrap: break-word;" contenteditable="true"></td>`;
       }
       tableHTML += '</tr>';
     }
@@ -764,10 +778,25 @@ export function EnhancedContentEditor({
           const reader = new FileReader();
           reader.onload = (e) => {
             const result = e.target?.result as string;
-            insertText(`<img src="${result}" alt="${file.name}" style="max-width: 100%; height: auto; border-radius: 8px; margin: 10px 0;" />`);
+            const imageId = `img-${Date.now()}`;
+            insertText(`
+              <div class="image-container" style="text-align: left; margin: 10px 0;">
+                <img 
+                  id="${imageId}" 
+                  src="${result}" 
+                  alt="${file.name}" 
+                  style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer; resize: both; overflow: auto; min-width: 100px; min-height: 50px;" 
+                  onclick="showImageControls('${imageId}')"
+                />
+              </div>
+            `);
+            
+            // Add image control functionality
+            setTimeout(() => setupImageControls(), 100);
+            
             toast({
               title: "Image inserted",
-              description: "Image has been added to your content",
+              description: "Click the image to resize and align it",
             });
           };
           reader.readAsDataURL(file);
@@ -803,7 +832,19 @@ export function EnhancedContentEditor({
       const alt = prompt("Enter alt text or description:") || "Media";
       if (url) {
         if (url.match(/\.(jpg|jpeg|png|gif|bmp|webp)$/i)) {
-          insertText(`<img src="${url}" alt="${alt}" style="max-width: 100%; height: auto; border-radius: 8px; margin: 10px 0;" />`);
+          const imageId = `img-${Date.now()}`;
+          insertText(`
+            <div class="image-container" style="text-align: left; margin: 10px 0;">
+              <img 
+                id="${imageId}" 
+                src="${url}" 
+                alt="${alt}" 
+                style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer; resize: both; overflow: auto; min-width: 100px; min-height: 50px;" 
+                onclick="showImageControls('${imageId}')"
+              />
+            </div>
+          `);
+          setTimeout(() => setupImageControls(), 100);
         } else {
           insertText(`<a href="${url}" target="_blank" style="color: #3b82f6; text-decoration: underline;">${alt}</a>`);
         }
@@ -811,12 +852,111 @@ export function EnhancedContentEditor({
     }
   };
 
+  const setupImageControls = () => {
+    // Add global function for image controls
+    (window as any).showImageControls = (imageId: string) => {
+      const img = document.getElementById(imageId);
+      if (!img) return;
+      
+      // Remove existing controls
+      document.querySelectorAll('.image-controls').forEach(control => control.remove());
+      
+      const controls = document.createElement('div');
+      controls.className = 'image-controls';
+      controls.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: white;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 1000;
+        padding: 12px;
+        min-width: 200px;
+      `;
+      
+      controls.innerHTML = `
+        <h4 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600;">Image Controls</h4>
+        <div style="margin-bottom: 8px;">
+          <label style="display: block; margin-bottom: 4px; font-size: 12px;">Alignment:</label>
+          <button onclick="alignImage('${imageId}', 'left')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Left</button>
+          <button onclick="alignImage('${imageId}', 'center')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Center</button>
+          <button onclick="alignImage('${imageId}', 'right')" style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Right</button>
+        </div>
+        <div style="margin-bottom: 8px;">
+          <label style="display: block; margin-bottom: 4px; font-size: 12px;">Size:</label>
+          <button onclick="resizeImage('${imageId}', '25%')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">25%</button>
+          <button onclick="resizeImage('${imageId}', '50%')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">50%</button>
+          <button onclick="resizeImage('${imageId}', '100%')" style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">100%</button>
+        </div>
+        <button onclick="closeImageControls()" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: #f5f5f5;">Close</button>
+      `;
+      
+      document.body.appendChild(controls);
+      
+      // Click outside to close
+      setTimeout(() => {
+        document.addEventListener('click', (e) => {
+          if (!controls.contains(e.target as Node)) {
+            controls.remove();
+          }
+        }, { once: true });
+      }, 100);
+    };
+    
+    (window as any).alignImage = (imageId: string, alignment: string) => {
+      const img = document.getElementById(imageId);
+      if (!img) return;
+      
+      const container = img.parentElement;
+      if (container) {
+        container.style.textAlign = alignment;
+        updateContent();
+      }
+    };
+    
+    (window as any).resizeImage = (imageId: string, size: string) => {
+      const img = document.getElementById(imageId) as HTMLImageElement;
+      if (!img) return;
+      
+      img.style.width = size;
+      img.style.height = 'auto';
+      updateContent();
+    };
+    
+    (window as any).closeImageControls = () => {
+      document.querySelectorAll('.image-controls').forEach(control => control.remove());
+    };
+  };
+
   const insertYouTube = () => {
     const url = prompt("Enter YouTube URL:");
     if (url) {
       const videoId = extractYouTubeId(url);
       if (videoId) {
-        insertText(`<iframe width="560" height="315" src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen style="max-width: 100%;"></iframe>`);
+        const iframeId = `youtube-${Date.now()}`;
+        insertText(`
+          <div class="youtube-container" style="text-align: left; margin: 10px 0;">
+            <iframe 
+              id="${iframeId}"
+              width="560" 
+              height="315" 
+              src="https://www.youtube.com/embed/${videoId}" 
+              frameborder="0" 
+              allowfullscreen 
+              style="max-width: 100%; cursor: pointer; border-radius: 8px;"
+              onclick="showYouTubeControls('${iframeId}')"
+            ></iframe>
+          </div>
+        `);
+        
+        setTimeout(() => setupYouTubeControls(), 100);
+        
+        toast({
+          title: "YouTube video inserted",
+          description: "Click the video to change alignment",
+        });
       } else {
         toast({
           title: "Invalid YouTube URL",
@@ -825,6 +965,67 @@ export function EnhancedContentEditor({
         });
       }
     }
+  };
+
+  const setupYouTubeControls = () => {
+    (window as any).showYouTubeControls = (iframeId: string) => {
+      const iframe = document.getElementById(iframeId);
+      if (!iframe) return;
+      
+      // Remove existing controls
+      document.querySelectorAll('.youtube-controls').forEach(control => control.remove());
+      
+      const controls = document.createElement('div');
+      controls.className = 'youtube-controls';
+      controls.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: white;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 1000;
+        padding: 12px;
+        min-width: 200px;
+      `;
+      
+      controls.innerHTML = `
+        <h4 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600;">Video Alignment</h4>
+        <div style="margin-bottom: 8px;">
+          <button onclick="alignYouTube('${iframeId}', 'left')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Left</button>
+          <button onclick="alignYouTube('${iframeId}', 'center')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Center</button>
+          <button onclick="alignYouTube('${iframeId}', 'right')" style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Right</button>
+        </div>
+        <button onclick="closeYouTubeControls()" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: #f5f5f5;">Close</button>
+      `;
+      
+      document.body.appendChild(controls);
+      
+      // Click outside to close
+      setTimeout(() => {
+        document.addEventListener('click', (e) => {
+          if (!controls.contains(e.target as Node)) {
+            controls.remove();
+          }
+        }, { once: true });
+      }, 100);
+    };
+    
+    (window as any).alignYouTube = (iframeId: string, alignment: string) => {
+      const iframe = document.getElementById(iframeId);
+      if (!iframe) return;
+      
+      const container = iframe.parentElement;
+      if (container) {
+        container.style.textAlign = alignment;
+        updateContent();
+      }
+    };
+    
+    (window as any).closeYouTubeControls = () => {
+      document.querySelectorAll('.youtube-controls').forEach(control => control.remove());
+    };
   };
 
   const basicToolbarItems = [
