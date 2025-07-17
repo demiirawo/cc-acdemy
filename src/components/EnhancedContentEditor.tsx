@@ -126,6 +126,52 @@ export function EnhancedContentEditor({
       setupImageControls();
       setupYouTubeControls();
     }, 100);
+
+    // Add keyboard shortcuts
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key) {
+          case 'z':
+            e.preventDefault();
+            document.execCommand('undo');
+            updateContent();
+            break;
+          case 'y':
+            e.preventDefault();
+            document.execCommand('redo');
+            updateContent();
+            break;
+          case 'c':
+            // Let browser handle copy naturally
+            break;
+          case 'v':
+            // Let browser handle paste naturally, but update content after
+            setTimeout(() => updateContent(), 50);
+            break;
+          case 'a':
+            // Let browser handle select all naturally
+            break;
+          case 'b':
+            e.preventDefault();
+            formatText('bold');
+            break;
+          case 'i':
+            e.preventDefault();
+            formatText('italic');
+            break;
+          case 'u':
+            e.preventDefault();
+            formatText('underline');
+            break;
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [title, content]);
 
   const [currentTableCell, setCurrentTableCell] = useState<HTMLElement | null>(null);
@@ -249,7 +295,7 @@ export function EnhancedContentEditor({
     // Header row
     tableHTML += '<thead><tr>';
     for (let j = 0; j < cols; j++) {
-      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; background-color: #f8f9fa; vertical-align: top; text-align: left; position: relative; min-width: 100px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit;" contenteditable="true"></th>`;
+      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; background-color: #f8f9fa; vertical-align: top; text-align: left; position: relative; min-width: 100px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" contenteditable="true"></th>`;
     }
     tableHTML += '</tr></thead>';
     
@@ -258,7 +304,7 @@ export function EnhancedContentEditor({
     for (let i = 0; i < rows - 1; i++) {
       tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left; min-width: 100px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit;" contenteditable="true"></td>`;
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left; min-width: 100px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" contenteditable="true"></td>`;
       }
       tableHTML += '</tr>';
     }
