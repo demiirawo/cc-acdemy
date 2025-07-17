@@ -31,9 +31,6 @@ import {
   Lock,
   Copy,
   Table,
-  Heading1,
-  Heading2,
-  Heading3,
   AlignLeft,
   AlignCenter,
   AlignRight,
@@ -44,7 +41,10 @@ import {
   ChevronDown,
   Smile,
   Calendar,
-  AtSign
+  AtSign,
+  Plus,
+  Minus,
+  Settings
 } from "lucide-react";
 
 interface ContentEditorProps {
@@ -352,23 +352,58 @@ export function EnhancedContentEditor({
     { icon: Strikethrough, action: () => formatText('strikeThrough'), tooltip: "Strikethrough" },
   ];
 
-  const formatToolbarItems = [
-    { icon: Heading1, action: () => {
-      document.execCommand('formatBlock', false, 'h1');
+  const textSizeToolbarItems = [
+    { icon: Minus, action: () => {
+      const selection = window.getSelection();
+      if (selection && selection.toString()) {
+        const selectedText = selection.toString();
+        const currentSize = getCurrentFontSize();
+        const newSize = Math.max(10, currentSize - 2);
+        document.execCommand('insertHTML', false, `<span style="font-size: ${newSize}px">${selectedText}</span>`);
+      } else {
+        const currentSize = getCurrentFontSize();
+        const newSize = Math.max(10, currentSize - 2);
+        document.execCommand('fontSize', false, '7');
+        document.execCommand('foreColor', false, 'transparent');
+        document.execCommand('insertHTML', false, `<span style="font-size: ${newSize}px">Text</span>`);
+      }
       editorRef.current?.focus();
       updateContent();
-    }, tooltip: "Heading 1" },
-    { icon: Heading2, action: () => {
-      document.execCommand('formatBlock', false, 'h2');
+    }, tooltip: "Decrease Text Size" },
+    { icon: Plus, action: () => {
+      const selection = window.getSelection();
+      if (selection && selection.toString()) {
+        const selectedText = selection.toString();
+        const currentSize = getCurrentFontSize();
+        const newSize = Math.min(48, currentSize + 2);
+        document.execCommand('insertHTML', false, `<span style="font-size: ${newSize}px">${selectedText}</span>`);
+      } else {
+        const currentSize = getCurrentFontSize();
+        const newSize = Math.min(48, currentSize + 2);
+        document.execCommand('fontSize', false, '7');
+        document.execCommand('foreColor', false, 'transparent');
+        document.execCommand('insertHTML', false, `<span style="font-size: ${newSize}px">Text</span>`);
+      }
       editorRef.current?.focus();
       updateContent();
-    }, tooltip: "Heading 2" },
-    { icon: Heading3, action: () => {
-      document.execCommand('formatBlock', false, 'h3');
-      editorRef.current?.focus();
-      updateContent();
-    }, tooltip: "Heading 3" },
+    }, tooltip: "Increase Text Size" },
   ];
+
+  const getCurrentFontSize = (): number => {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const parentElement = range.commonAncestorContainer.nodeType === Node.TEXT_NODE 
+        ? range.commonAncestorContainer.parentElement 
+        : range.commonAncestorContainer as Element;
+      
+      if (parentElement) {
+        const computedStyle = window.getComputedStyle(parentElement as Element);
+        return parseInt(computedStyle.fontSize) || 16;
+      }
+    }
+    return 16; // Default font size
+  };
 
   const alignmentToolbarItems = [
     { icon: AlignLeft, action: () => formatText('justifyLeft'), tooltip: "Align Left" },
@@ -704,9 +739,9 @@ export function EnhancedContentEditor({
               ))}
             </div>
 
-            {/* Headings */}
+            {/* Text Size Controls */}
             <div className="flex items-center gap-1 px-2 border-r">
-              {formatToolbarItems.map((item, index) => (
+              {textSizeToolbarItems.map((item, index) => (
                 <Button
                   key={index}
                   variant="ghost"
@@ -718,6 +753,48 @@ export function EnhancedContentEditor({
                   <item.icon className="h-4 w-4" />
                 </Button>
               ))}
+              
+              {/* Font Size Selector */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2 hover:bg-muted"
+                    title="Set Text Size"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-48">
+                  <div className="space-y-2">
+                    <h4 className="font-medium text-sm">Text Size</h4>
+                    <div className="grid grid-cols-3 gap-1">
+                      {[10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48].map((size) => (
+                        <Button
+                          key={size}
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs"
+                          onClick={() => {
+                            const selection = window.getSelection();
+                            if (selection && selection.toString()) {
+                              const selectedText = selection.toString();
+                              document.execCommand('insertHTML', false, `<span style="font-size: ${size}px">${selectedText}</span>`);
+                            } else {
+                              document.execCommand('insertHTML', false, `<span style="font-size: ${size}px">Text</span>`);
+                            }
+                            editorRef.current?.focus();
+                            updateContent();
+                          }}
+                        >
+                          {size}px
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Alignment */}
