@@ -13,6 +13,7 @@ import { AuthForm } from "./AuthForm";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { sanitizeHtml, validateText, validateRecommendedReading } from "@/lib/security";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -158,7 +159,7 @@ function PageView({
         
         <div className="prose prose-lg max-w-none">
           <div className="text-foreground leading-relaxed" dangerouslySetInnerHTML={{
-          __html: cleanContent.split('RECOMMENDED_READING:')[0]
+          __html: sanitizeHtml(cleanContent.split('RECOMMENDED_READING:')[0])
         }} />
         </div>
 
@@ -427,6 +428,23 @@ export function KnowledgeBaseApp() {
     type?: string;
   }>) => {
     if (!currentPage || !user) return;
+    
+    // Validate inputs
+    try {
+      validateText(title, 255);
+      validateText(content, 52428800); // 50MB limit
+      
+      if (recommendedReading && !validateRecommendedReading(recommendedReading as any[])) {
+        throw new Error('Invalid recommended reading data');
+      }
+    } catch (error: any) {
+      toast({
+        title: "Validation Error",
+        description: error.message,
+        variant: "destructive"
+      });
+      return;
+    }
     try {
       if (currentPage.id === 'new') {
         // Create new page

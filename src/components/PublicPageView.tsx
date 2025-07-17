@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Globe, Eye, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { sanitizeHtml } from "@/lib/security";
 
 interface PublicPage {
   id: string;
@@ -173,7 +174,7 @@ export function PublicPageView() {
               <div 
                 className="whitespace-pre-wrap text-foreground leading-relaxed"
                 dangerouslySetInnerHTML={{ 
-                  __html: page.content.replace(/\n/g, '<br>') 
+                  __html: sanitizeHtml(page.content.replace(/\n/g, '<br>')) 
                 }}
               />
             </div>

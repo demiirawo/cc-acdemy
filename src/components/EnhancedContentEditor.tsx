@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { EditableTitle } from "./EditableTitle";
 import { ColorPicker } from "./ColorPicker";
+import { sanitizeHtml, validateText, validateRecommendedReading } from "@/lib/security";
 import {
   Bold,
   Italic,
@@ -2158,7 +2159,7 @@ export function EnhancedContentEditor({
           <div className="prose prose-lg max-w-none">
             <div 
               className="text-foreground leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: currentContent.split('RECOMMENDED_READING:')[0] }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(currentContent.split('RECOMMENDED_READING:')[0]) }}
             />
           </div>
           

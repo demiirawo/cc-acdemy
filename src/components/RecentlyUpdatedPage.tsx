@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { sanitizeHtml } from "@/lib/security";
 
 interface Page {
   id: string;
@@ -107,9 +108,12 @@ export function RecentlyUpdatedPage({ onPageSelect }: RecentlyUpdatedPageProps) 
   };
 
   const stripHtmlAndTruncate = (html: string, maxLength = 150) => {
+    // Sanitize HTML first to prevent XSS
+    const sanitized = sanitizeHtml(html);
+    
     // Remove HTML tags and decode entities
     const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = html;
+    tempDiv.innerHTML = sanitized;
     const text = tempDiv.textContent || tempDiv.innerText || '';
     
     // Remove multiple spaces/newlines
