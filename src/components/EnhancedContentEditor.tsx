@@ -356,7 +356,8 @@ export function EnhancedContentEditor({
     { icon: Heading1, action: () => {
       const selection = window.getSelection();
       if (selection && selection.toString()) {
-        execCommand('formatBlock', 'h1');
+        const selectedText = selection.toString();
+        document.execCommand('insertHTML', false, `<h1>${selectedText}</h1>`);
       } else {
         insertText('<h1>Heading 1</h1>');
       }
@@ -364,7 +365,8 @@ export function EnhancedContentEditor({
     { icon: Heading2, action: () => {
       const selection = window.getSelection();
       if (selection && selection.toString()) {
-        execCommand('formatBlock', 'h2');
+        const selectedText = selection.toString();
+        document.execCommand('insertHTML', false, `<h2>${selectedText}</h2>`);
       } else {
         insertText('<h2>Heading 2</h2>');
       }
@@ -372,7 +374,8 @@ export function EnhancedContentEditor({
     { icon: Heading3, action: () => {
       const selection = window.getSelection();
       if (selection && selection.toString()) {
-        execCommand('formatBlock', 'h3');
+        const selectedText = selection.toString();
+        document.execCommand('insertHTML', false, `<h3>${selectedText}</h3>`);
       } else {
         insertText('<h3>Heading 3</h3>');
       }
@@ -424,13 +427,6 @@ export function EnhancedContentEditor({
     { icon: Link, action: insertLink, tooltip: "Insert Link" },
     { icon: Image, action: insertImage, tooltip: "Insert Image" },
     { icon: Youtube, action: insertYouTube, tooltip: "Insert YouTube Video" },
-    { icon: Table, action: () => {
-      const rows = parseInt(prompt("Number of rows:") || "3");
-      const cols = parseInt(prompt("Number of columns:") || "3");
-      if (rows > 0 && cols > 0) {
-        insertTable(rows, cols);
-      }
-    }, tooltip: "Insert Table" },
     { 
       icon: () => (
         <div className="w-4 h-4 border-t-2 border-foreground"></div>

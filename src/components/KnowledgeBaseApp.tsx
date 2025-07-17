@@ -44,6 +44,9 @@ function PageView({
     title: string;
     description: string;
     type: string;
+    url?: string;
+    fileUrl?: string;
+    fileName?: string;
   }>>([]);
   const {
     toast
@@ -77,6 +80,9 @@ function PageView({
             title: string;
             description: string;
             type: string;
+            url?: string;
+            fileUrl?: string;
+            fileName?: string;
           }>);
         } else {
           setRecommendedReading([]);
@@ -157,45 +163,53 @@ function PageView({
         </div>
 
         {/* Recommended Reading Section */}
-        {recommendedReading.length > 0 && <div className="mt-8 pt-6 border-t border-border">
-            <h3 className="text-xl font-semibold mb-6 text-foreground flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Recommended Reading
-            </h3>
-            <div className="space-y-4">
-              {recommendedReading.map((item, index) => <div key={item.id || index} className="group relative p-4 bg-gradient-to-r from-muted/30 to-muted/10 rounded-lg border border-border/50 hover:border-primary/30 transition-all duration-200 cursor-pointer hover:shadow-md" onClick={() => item.id && onPageSelect(item.id)}>
-                  <div className="flex items-start gap-4">
-                    <div className="flex-shrink-0 mt-1">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                        <FileText className="h-4 w-4 text-primary" />
-                      </div>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-foreground text-base mb-2 group-hover:text-primary transition-colors">
-                        {item.title}
-                      </h4>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        {item.description}
-                      </p>
-                      <div className="mt-2">
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
-                          {item.type}
-                        </span>
-                      </div>
-                    </div>
+        {recommendedReading.length > 0 && (
+          <div className="mt-8 pt-6 border-t border-border">
+            <h3 className="text-lg font-semibold text-foreground">Recommended reading</h3>
+            <div className="space-y-3 mt-4">
+              {recommendedReading.map((item, index) => (
+                <div 
+                  key={item.id || index} 
+                  className="flex items-center gap-3 p-4 border border-border rounded-lg bg-card hover:bg-muted/20 transition-colors cursor-pointer"
+                  onClick={() => {
+                    if (item.id) {
+                      onPageSelect(item.id);
+                    } else if (item.url) {
+                      window.open(item.url, '_blank');
+                    } else if (item.fileUrl) {
+                      const link = document.createElement('a');
+                      link.href = item.fileUrl;
+                      link.download = item.fileName || 'download';
+                      link.click();
+                    }
+                  }}
+                >
+                  <div className="flex-shrink-0">
+                    <FileText className="h-5 w-5 text-muted-foreground" />
                   </div>
-                </div>)}
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-medium text-foreground truncate">{item.title}</h4>
+                    <p className="text-sm text-muted-foreground truncate">
+                      {item.description}
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>}
+          </div>
+        )}
 
         {/* Related Content Section */}
-        {relatedPages.length > 0 && <div className="mt-6 pt-6 border-t border-border">
-            <div className="flex items-center gap-2 mb-4">
-              <h3 className="text-lg font-semibold text-foreground">Related content</h3>
-              
-            </div>
-            <div className="space-y-3">
-              {relatedPages.map(page => <div key={page.id} className="flex items-center gap-3 p-4 border border-border rounded-lg bg-card hover:bg-muted/20 transition-colors cursor-pointer">
+        {relatedPages.length > 0 && (
+          <div className="mt-6 pt-6 border-t border-border">
+            <h3 className="text-lg font-semibold text-foreground">Related content</h3>
+            <div className="space-y-3 mt-4">
+              {relatedPages.map(page => (
+                <div 
+                  key={page.id} 
+                  className="flex items-center gap-3 p-4 border border-border rounded-lg bg-card hover:bg-muted/20 transition-colors cursor-pointer"
+                  onClick={() => onPageSelect(page.id)}
+                >
                   <div className="flex-shrink-0">
                     <FileText className="h-5 w-5 text-muted-foreground" />
                   </div>
@@ -205,9 +219,11 @@ function PageView({
                       {page.content.replace(/<[^>]*>/g, '').substring(0, 100)}...
                     </p>
                   </div>
-                </div>)}
+                </div>
+              ))}
             </div>
-          </div>}
+          </div>
+        )}
       </div>
     </div>;
 }
@@ -231,6 +247,9 @@ interface Page {
     title: string;
     description: string;
     type: string;
+    url?: string;
+    fileUrl?: string;
+    fileName?: string;
   }>;
 }
 export function KnowledgeBaseApp() {
