@@ -390,10 +390,11 @@ export function EnhancedContentEditor({
       th.dir = 'ltr';
       th.setAttribute('data-cell-type', 'header');
       
-      // Add event listeners for proper cursor behavior
+      // Add event listeners for proper cursor behavior and cell-specific paste handling
       th.addEventListener('focus', handleCellFocus);
       th.addEventListener('click', handleCellClick);
       th.addEventListener('keydown', handleCellKeydown);
+      th.addEventListener('paste', handleCellPaste);
       th.addEventListener('input', updateContent);
       
       headerRow.appendChild(th);
@@ -430,10 +431,11 @@ export function EnhancedContentEditor({
         td.dir = 'ltr';
         td.setAttribute('data-cell-type', 'data');
         
-        // Add event listeners for proper cursor behavior
+        // Add event listeners for proper cursor behavior and cell-specific paste handling
         td.addEventListener('focus', handleCellFocus);
         td.addEventListener('click', handleCellClick);
         td.addEventListener('keydown', handleCellKeydown);
+        td.addEventListener('paste', handleCellPaste);
         td.addEventListener('input', updateContent);
         
         row.appendChild(td);
@@ -509,6 +511,39 @@ export function EnhancedContentEditor({
     cell.dir = 'ltr';
   };
 
+  const handleCellPaste = (e: ClipboardEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const cell = e.target as HTMLElement;
+    const clipboardData = e.clipboardData;
+    
+    if (!clipboardData) return;
+    
+    // Only get plain text for table cells to prevent structure breaking
+    const pastedText = clipboardData.getData('text/plain');
+    
+    if (pastedText) {
+      // Clean the text and insert as plain text only
+      const cleanText = pastedText.replace(/[\r\n]+/g, ' ').trim();
+      
+      // Insert text at cursor position
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+        const textNode = document.createTextNode(cleanText);
+        range.insertNode(textNode);
+        range.setStartAfter(textNode);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      
+      updateContent();
+    }
+  };
+
   const handleCellKeydown = (e: KeyboardEvent) => {
     const cell = e.target as HTMLElement;
     
@@ -565,6 +600,7 @@ export function EnhancedContentEditor({
           htmlCell.addEventListener('focus', handleCellFocus);
           htmlCell.addEventListener('click', handleCellClick);
           htmlCell.addEventListener('keydown', handleCellKeydown);
+          htmlCell.addEventListener('paste', handleCellPaste);
           htmlCell.addEventListener('input', updateContent);
           htmlCell.setAttribute('data-listeners-added', 'true');
         }
@@ -688,6 +724,7 @@ export function EnhancedContentEditor({
       newCell.addEventListener('focus', handleCellFocus);
       newCell.addEventListener('click', handleCellClick);
       newCell.addEventListener('keydown', handleCellKeydown);
+      newCell.addEventListener('paste', handleCellPaste);
       newCell.addEventListener('input', updateContent);
       newRow.appendChild(newCell);
     }
@@ -723,6 +760,7 @@ export function EnhancedContentEditor({
       newCell.addEventListener('focus', handleCellFocus);
       newCell.addEventListener('click', handleCellClick);
       newCell.addEventListener('keydown', handleCellKeydown);
+      newCell.addEventListener('paste', handleCellPaste);
       newCell.addEventListener('input', updateContent);
       newRow.appendChild(newCell);
     }
@@ -760,6 +798,7 @@ export function EnhancedContentEditor({
       newCell.addEventListener('focus', handleCellFocus);
       newCell.addEventListener('click', handleCellClick);
       newCell.addEventListener('keydown', handleCellKeydown);
+      newCell.addEventListener('paste', handleCellPaste);
       newCell.addEventListener('input', updateContent);
       
       const targetCell = row.children[cellIndex];
@@ -795,6 +834,7 @@ export function EnhancedContentEditor({
       newCell.addEventListener('focus', handleCellFocus);
       newCell.addEventListener('click', handleCellClick);
       newCell.addEventListener('keydown', handleCellKeydown);
+      newCell.addEventListener('paste', handleCellPaste);
       newCell.addEventListener('input', updateContent);
       
       const targetCell = row.children[cellIndex + 1];
@@ -1882,16 +1922,30 @@ export function EnhancedContentEditor({
           table.setAttribute('data-editable-table', 'true');
           table.style.cssText = 'border-collapse: collapse; width: 100%; margin: 10px 0; position: relative;';
           
-          // Style headers
+          // Style headers and add event listeners
           table.querySelectorAll('th').forEach(th => {
-            (th as HTMLElement).style.cssText = 'border: 1px solid #ccc; padding: 12px; background-color: #f8f9fa; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb; direction: ltr; white-space: normal;';
-            (th as HTMLElement).contentEditable = 'true';
+            const thElement = th as HTMLElement;
+            thElement.style.cssText = 'border: 1px solid #ccc; padding: 12px; background-color: #f8f9fa; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb; direction: ltr; white-space: normal;';
+            thElement.contentEditable = 'true';
+            thElement.dir = 'ltr';
+            thElement.addEventListener('focus', handleCellFocus);
+            thElement.addEventListener('click', handleCellClick);
+            thElement.addEventListener('keydown', handleCellKeydown);
+            thElement.addEventListener('paste', handleCellPaste);
+            thElement.addEventListener('input', updateContent);
           });
           
-          // Style data cells
+          // Style data cells and add event listeners
           table.querySelectorAll('td').forEach(td => {
-            (td as HTMLElement).style.cssText = 'border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb; direction: ltr; white-space: normal;';
-            (td as HTMLElement).contentEditable = 'true';
+            const tdElement = td as HTMLElement;
+            tdElement.style.cssText = 'border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb; direction: ltr; white-space: normal;';
+            tdElement.contentEditable = 'true';
+            tdElement.dir = 'ltr';
+            tdElement.addEventListener('focus', handleCellFocus);
+            tdElement.addEventListener('click', handleCellClick);
+            tdElement.addEventListener('keydown', handleCellKeydown);
+            tdElement.addEventListener('paste', handleCellPaste);
+            tdElement.addEventListener('input', updateContent);
           });
         });
         
