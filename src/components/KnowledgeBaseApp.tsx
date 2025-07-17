@@ -45,16 +45,16 @@ function PageView({
     description: string;
     type: string;
   }>>([]);
-  const { toast } = useToast();
+  const {
+    toast
+  } = useToast();
   useEffect(() => {
     const fetchPageSettings = async () => {
       try {
-        const { data, error } = await supabase
-          .from('pages')
-          .select('is_public, public_token')
-          .eq('id', currentPage.id)
-          .single();
-        
+        const {
+          data,
+          error
+        } = await supabase.from('pages').select('is_public, public_token').eq('id', currentPage.id).single();
         if (error) throw error;
         if (data) {
           setIsPublic(data.is_public || false);
@@ -62,12 +62,10 @@ function PageView({
         }
 
         // Fetch related pages (limit to 2)
-        const { data: related, error: relatedError } = await supabase
-          .from('pages')
-          .select('id, title, content')
-          .neq('id', currentPage.id)
-          .limit(2);
-
+        const {
+          data: related,
+          error: relatedError
+        } = await supabase.from('pages').select('id, title, content').neq('id', currentPage.id).limit(2);
         if (!relatedError && related) {
           setRelatedPages(related);
         }
@@ -87,7 +85,6 @@ function PageView({
         console.error('Error fetching page settings:', error);
       }
     };
-    
     fetchPageSettings();
   }, [currentPage.id]);
   const togglePublicAccess = async () => {
@@ -122,7 +119,6 @@ function PageView({
       description: "Public link copied to clipboard"
     });
   };
-  
   const cleanContent = currentPage.content;
   return <div className="flex-1 overflow-auto">
       <div className="max-w-4xl mx-auto p-6">
@@ -161,19 +157,13 @@ function PageView({
         </div>
 
         {/* Recommended Reading Section */}
-        {recommendedReading.length > 0 && (
-          <div className="mt-8 pt-6 border-t border-border">
+        {recommendedReading.length > 0 && <div className="mt-8 pt-6 border-t border-border">
             <h3 className="text-xl font-semibold mb-6 text-foreground flex items-center gap-2">
               <FileText className="h-5 w-5" />
               Recommended Reading
             </h3>
             <div className="space-y-4">
-              {recommendedReading.map((item, index) => (
-                <div 
-                  key={item.id || index} 
-                  className="group relative p-4 bg-gradient-to-r from-muted/30 to-muted/10 rounded-lg border border-border/50 hover:border-primary/30 transition-all duration-200 cursor-pointer hover:shadow-md"
-                  onClick={() => item.id && onPageSelect(item.id)}
-                >
+              {recommendedReading.map((item, index) => <div key={item.id || index} className="group relative p-4 bg-gradient-to-r from-muted/30 to-muted/10 rounded-lg border border-border/50 hover:border-primary/30 transition-all duration-200 cursor-pointer hover:shadow-md" onClick={() => item.id && onPageSelect(item.id)}>
                   <div className="flex items-start gap-4">
                     <div className="flex-shrink-0 mt-1">
                       <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
@@ -194,24 +184,18 @@ function PageView({
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                </div>)}
             </div>
-          </div>
-        )}
+          </div>}
 
         {/* Related Content Section */}
-        {relatedPages.length > 0 && (
-          <div className="mt-6 pt-6 border-t border-border">
+        {relatedPages.length > 0 && <div className="mt-6 pt-6 border-t border-border">
             <div className="flex items-center gap-2 mb-4">
               <h3 className="text-lg font-semibold text-foreground">Related content</h3>
-              <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center">
-                <span className="text-xs text-muted-foreground font-medium">i</span>
-              </div>
+              
             </div>
             <div className="space-y-3">
-              {relatedPages.map((page) => (
-                <div key={page.id} className="flex items-center gap-3 p-4 border border-border rounded-lg bg-card hover:bg-muted/20 transition-colors cursor-pointer">
+              {relatedPages.map(page => <div key={page.id} className="flex items-center gap-3 p-4 border border-border rounded-lg bg-card hover:bg-muted/20 transition-colors cursor-pointer">
                   <div className="flex-shrink-0">
                     <FileText className="h-5 w-5 text-muted-foreground" />
                   </div>
@@ -221,11 +205,9 @@ function PageView({
                       {page.content.replace(/<[^>]*>/g, '').substring(0, 100)}...
                     </p>
                   </div>
-                </div>
-              ))}
+                </div>)}
             </div>
-          </div>
-        )}
+          </div>}
       </div>
     </div>;
 }
@@ -326,7 +308,7 @@ export function KnowledgeBaseApp() {
             content: data.content,
             lastUpdated: data.updated_at,
             author: 'User',
-            recommended_reading: (data.recommended_reading as any) || []
+            recommended_reading: data.recommended_reading as any || []
           });
           setCurrentView('page');
           setIsEditing(false);
