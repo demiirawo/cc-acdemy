@@ -58,7 +58,7 @@ const navigationItems = [{
 }, {
   id: 'whiteboard',
   title: 'Whiteboard',
-  icon: () => <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+  icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
       <path d="m7 7 10 10" />
       <path d="m17 7-10 10" />
@@ -110,7 +110,7 @@ function SidebarTreeItem({
           </Button>}
         {!hasChildren && <div className="w-4" />}
         
-        {item.type === 'space' || !item.parent_page_id && item.type === 'page' ? isExpanded ? <FolderOpen className="h-4 w-4 text-amber-500 flex-shrink-0" /> : <Folder className="h-4 w-4 text-amber-500 flex-shrink-0" /> : <FileText className="h-4 w-4 text-blue-500 flex-shrink-0" />}
+        {item.type === 'space' || !item.parent_page_id && item.type === 'page' ? isExpanded ? <FolderOpen className="h-4 w-4 text-pink-500 flex-shrink-0" /> : <Folder className="h-4 w-4 text-pink-500 flex-shrink-0" /> : <FileText className="h-4 w-4 text-white flex-shrink-0" />}
         
         <span className="truncate flex-1 text-neutral-50 font-medium">{item.title}</span>
         

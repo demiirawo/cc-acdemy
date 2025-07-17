@@ -8,7 +8,7 @@ import { EnhancedContentEditor } from "./EnhancedContentEditor";
 import { CreatePageDialog } from "./CreatePageDialog";
 import { PagePermissionsDialog } from "./PagePermissionsDialog";
 import { SettingsPage } from "./SettingsPage";
-import { NewWhiteboardPage } from "./NewWhiteboardPage";
+import { WhiteboardCanvas } from "./WhiteboardCanvas";
 import { AuthForm } from "./AuthForm";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -23,11 +23,13 @@ import { RecommendedReadingList } from "./RecommendedReadingList";
 function PageView({
   currentPage,
   onEditPage,
-  setPermissionsDialogOpen
+  setPermissionsDialogOpen,
+  onPageSelect
 }: {
   currentPage: Page;
   onEditPage: () => void;
   setPermissionsDialogOpen: (open: boolean) => void;
+  onPageSelect: (pageId: string) => void;
 }) {
   const [isPublic, setIsPublic] = useState(false);
   const [publicToken, setPublicToken] = useState('');
@@ -35,6 +37,12 @@ function PageView({
     id: string;
     title: string;
     content: string;
+  }>>([]);
+  const [recommendedReading, setRecommendedReading] = useState<Array<{
+    id: string;
+    title: string;
+    description: string;
+    type: string;
   }>>([]);
   const { toast } = useToast();
   useEffect(() => {
@@ -61,6 +69,22 @@ function PageView({
 
         if (!relatedError && related) {
           setRelatedPages(related);
+        }
+
+        // Fetch recommended reading (actual pages that could be recommended)
+        const { data: recommended, error: recommendedError } = await supabase
+          .from('pages')
+          .select('id, title, content')
+          .neq('id', currentPage.id)
+          .limit(2);
+
+        if (!recommendedError && recommended) {
+          setRecommendedReading(recommended.map(page => ({
+            id: page.id,
+            title: page.title,
+            description: page.content.replace(/<[^>]*>/g, '').substring(0, 100) + '...',
+            type: 'document'
+          })));
         }
       } catch (error) {
         console.error('Error fetching page settings:', error);
@@ -140,23 +164,28 @@ function PageView({
         </div>
 
         {/* Recommended Reading Section */}
-        <div className="mt-8 pt-6 border-t border-border">
-          <h3 className="text-lg font-semibold mb-4 text-foreground">Recommended Reading</h3>
-          <RecommendedReadingList 
-            items={[
-              {
-                title: "Care Plan Documentation Standards",
-                description: "Guidelines for proper documentation of care plans and risk assessments",
-                type: "guide"
-              },
-              {
-                title: "Staff Training Requirements",
-                description: "Mandatory training modules for all care staff members",
-                type: "reference"
-              }
-            ]}
-          />
-        </div>
+        {recommendedReading.length > 0 && (
+          <div className="mt-8 pt-6 border-t border-border">
+            <h3 className="text-lg font-semibold mb-4 text-foreground">Recommended Reading</h3>
+            <div className="space-y-3">
+              {recommendedReading.map((item) => (
+                <div 
+                  key={item.id} 
+                  className="flex items-start gap-3 p-3 bg-muted/30 rounded-md border border-border/50 hover:bg-muted/50 transition-colors cursor-pointer"
+                  onClick={() => onPageSelect(item.id)}
+                >
+                  <div className="flex-shrink-0 mt-0.5">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-medium text-foreground text-sm">{item.title}</h4>
+                    <p className="text-xs text-muted-foreground mt-1">{item.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Related Content Section */}
         {relatedPages.length > 0 && (
@@ -464,11 +493,11 @@ export function KnowledgeBaseApp() {
 
         {currentView === 'settings' && <SettingsPage onClose={() => setCurrentView('dashboard')} />}
 
-        {currentView === 'whiteboard' && <NewWhiteboardPage />}
+        {currentView === 'whiteboard' && <WhiteboardCanvas />}
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} />}
         
-        {currentView === 'page' && currentPage && <PageView currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} />}
+        {currentView === 'page' && currentPage && <PageView currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
       </div>
 
       {/* Create Page Dialog */}
