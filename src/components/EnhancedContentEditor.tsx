@@ -88,9 +88,13 @@ export function EnhancedContentEditor({
 
   useEffect(() => {
     setCurrentTitle(title);
-    setCurrentContent(content);
+    
+    // Clean content of any RECOMMENDED_READING data before setting
+    const cleanContent = content.split('RECOMMENDED_READING:')[0];
+    setCurrentContent(cleanContent);
+    
     if (editorRef.current) {
-      editorRef.current.innerHTML = content;
+      editorRef.current.innerHTML = cleanContent;
     }
   }, [title, content]);
 
@@ -111,7 +115,7 @@ export function EnhancedContentEditor({
             setIsPublic(data.is_public || false);
             setPublicToken(data.public_token || '');
             
-            // Try to extract recommended reading from content
+            // Try to extract recommended reading from content and clean it
             try {
               if (data.content && data.content.includes('RECOMMENDED_READING:')) {
                 const parts = data.content.split('RECOMMENDED_READING:');
@@ -119,10 +123,21 @@ export function EnhancedContentEditor({
                   const readingData = JSON.parse(parts[1]);
                   setRecommendedReading(readingData);
                   setCurrentContent(parts[0]);
+                  
+                  // Update the database to remove the appended data
+                  supabase
+                    .from('pages')
+                    .update({ content: parts[0] })
+                    .eq('id', pageId);
+                } else {
+                  setCurrentContent(data.content);
                 }
+              } else {
+                setCurrentContent(data.content);
               }
             } catch (e) {
               console.log('No recommended reading data found');
+              setCurrentContent(data.content);
             }
           }
         } catch (error) {
