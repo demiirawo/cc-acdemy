@@ -29,24 +29,37 @@ export function WhiteboardCanvas() {
 
   // Initialize canvas
   useEffect(() => {
-    if (!canvasRef.current) return;
+    if (!canvasRef.current || fabricCanvas) return;
 
-    const canvas = new FabricCanvas(canvasRef.current, {
-      width: 1200,
-      height: 700,
-      backgroundColor: '#ffffff',
-    });
+    let canvas: FabricCanvas | null = null;
+    
+    try {
+      canvas = new FabricCanvas(canvasRef.current, {
+        width: 1200,
+        height: 700,
+        backgroundColor: '#ffffff',
+      });
 
-    // Set up drawing brush
-    canvas.freeDrawingBrush.color = activeColor;
-    canvas.freeDrawingBrush.width = brushSize;
+      // Set up drawing brush
+      canvas.freeDrawingBrush.color = activeColor;
+      canvas.freeDrawingBrush.width = brushSize;
 
-    setFabricCanvas(canvas);
+      setFabricCanvas(canvas);
+    } catch (error) {
+      console.error('Error initializing canvas:', error);
+    }
 
     return () => {
-      canvas.dispose();
+      if (canvas) {
+        try {
+          canvas.dispose();
+        } catch (error) {
+          console.error('Error disposing canvas:', error);
+        }
+      }
+      setFabricCanvas(null);
     };
-  }, []);
+  }, []); // Empty dependency array to run only once
 
   // Update canvas when tool or color changes
   useEffect(() => {

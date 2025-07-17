@@ -143,6 +143,7 @@ export type Database = {
           is_public: boolean | null
           parent_page_id: string | null
           public_token: string | null
+          recommended_reading: Json | null
           space_id: string | null
           tags: string[] | null
           title: string
@@ -157,6 +158,7 @@ export type Database = {
           is_public?: boolean | null
           parent_page_id?: string | null
           public_token?: string | null
+          recommended_reading?: Json | null
           space_id?: string | null
           tags?: string[] | null
           title: string
@@ -171,6 +173,7 @@ export type Database = {
           is_public?: boolean | null
           parent_page_id?: string | null
           public_token?: string | null
+          recommended_reading?: Json | null
           space_id?: string | null
           tags?: string[] | null
           title?: string

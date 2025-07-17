@@ -39,7 +39,7 @@ function PageView({
     content: string;
   }>>([]);
   const [recommendedReading, setRecommendedReading] = useState<Array<{
-    id: string;
+    id?: string;
     title: string;
     description: string;
     type: string;
@@ -71,20 +71,16 @@ function PageView({
           setRelatedPages(related);
         }
 
-        // Fetch recommended reading (actual pages that could be recommended)
-        const { data: recommended, error: recommendedError } = await supabase
-          .from('pages')
-          .select('id, title, content')
-          .neq('id', currentPage.id)
-          .limit(2);
-
-        if (!recommendedError && recommended) {
-          setRecommendedReading(recommended.map(page => ({
-            id: page.id,
-            title: page.title,
-            description: page.content.replace(/<[^>]*>/g, '').substring(0, 100) + '...',
-            type: 'document'
-          })));
+        // Fetch recommended reading from the page's recommended_reading field
+        if (currentPage.recommended_reading && Array.isArray(currentPage.recommended_reading)) {
+          setRecommendedReading(currentPage.recommended_reading as Array<{
+            id?: string;
+            title: string;
+            description: string;
+            type: string;
+          }>);
+        } else {
+          setRecommendedReading([]);
         }
       } catch (error) {
         console.error('Error fetching page settings:', error);
@@ -168,11 +164,11 @@ function PageView({
           <div className="mt-8 pt-6 border-t border-border">
             <h3 className="text-lg font-semibold mb-4 text-foreground">Recommended Reading</h3>
             <div className="space-y-3">
-              {recommendedReading.map((item) => (
+              {recommendedReading.map((item, index) => (
                 <div 
-                  key={item.id} 
+                  key={item.id || index} 
                   className="flex items-start gap-3 p-3 bg-muted/30 rounded-md border border-border/50 hover:bg-muted/50 transition-colors cursor-pointer"
-                  onClick={() => onPageSelect(item.id)}
+                  onClick={() => item.id && onPageSelect(item.id)}
                 >
                   <div className="flex-shrink-0 mt-0.5">
                     <FileText className="h-4 w-4 text-muted-foreground" />
@@ -231,6 +227,12 @@ interface Page {
   content: string;
   lastUpdated: string;
   author: string;
+  recommended_reading?: Array<{
+    id?: string;
+    title: string;
+    description: string;
+    type: string;
+  }>;
 }
 export function KnowledgeBaseApp() {
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
@@ -293,7 +295,8 @@ export function KnowledgeBaseApp() {
             content,
             updated_at,
             view_count,
-            created_by
+            created_by,
+            recommended_reading
           `).eq('id', item.id).single();
         if (error) throw error;
         if (data) {
@@ -302,7 +305,8 @@ export function KnowledgeBaseApp() {
             title: data.title,
             content: data.content,
             lastUpdated: data.updated_at,
-            author: 'User'
+            author: 'User',
+            recommended_reading: (data.recommended_reading as any) || []
           });
           setCurrentView('page');
           setIsEditing(false);
