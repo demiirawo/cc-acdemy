@@ -82,6 +82,7 @@ interface SidebarTreeItemProps {
   onCopyLink?: (pageId: string) => void;
   onMovePage?: (pageId: string, newParentId: string | null) => void;
   hierarchyData?: SidebarItem[];
+  onRefreshData?: () => void;
 }
 function SidebarTreeItem({
   item,
@@ -94,7 +95,8 @@ function SidebarTreeItem({
   onArchivePage,
   onCopyLink,
   onMovePage,
-  hierarchyData
+  hierarchyData,
+  onRefreshData
 }: SidebarTreeItemProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
@@ -104,73 +106,25 @@ function SidebarTreeItem({
 
   const handleMovePageUp = async (pageId: string) => {
     try {
-      // Get all pages in the same context and sort them by creation date
-      const { data: currentPage } = await supabase
-        .from('pages')
-        .select('*')
-        .eq('id', pageId)
-        .single();
-
-      if (!currentPage) return;
-
-      // Find all sibling pages
-      let query = supabase.from('pages').select('*');
-      
-      if (currentPage.parent_page_id) {
-        query = query.eq('parent_page_id', currentPage.parent_page_id);
-      } else {
-        query = query.is('parent_page_id', null);
-      }
-      
-      if (currentPage.space_id) {
-        query = query.eq('space_id', currentPage.space_id);
-      } else {
-        query = query.is('space_id', null);
-      }
-
-      const { data: siblings } = await query.order('created_at', { ascending: true });
-      
-      if (!siblings || siblings.length < 2) {
-        toast({
-          title: "Cannot move",
-          description: "No other pages to reorder with"
-        });
-        return;
-      }
-
-      const currentIndex = siblings.findIndex(p => p.id === pageId);
-      
-      if (currentIndex <= 0) {
-        toast({
-          title: "Already at top",
-          description: "Page is already at the top position"
-        });
-        return;
-      }
-
-      // Swap with the previous page by swapping their created_at timestamps
-      const previousPage = siblings[currentIndex - 1];
-      const currentTimestamp = currentPage.created_at;
-      const previousTimestamp = previousPage.created_at;
-
-      // Update both pages in a transaction-like manner
-      await supabase
-        .from('pages')
-        .update({ created_at: previousTimestamp })
-        .eq('id', currentPage.id);
-        
-      await supabase
-        .from('pages')
-        .update({ created_at: currentTimestamp })
-        .eq('id', previousPage.id);
-
-      toast({
-        title: "Success",
-        description: "Page moved up successfully"
+      const { data: result, error } = await supabase.rpc('move_page_up', {
+        page_id: pageId
       });
 
-      // Refresh the page list
-      window.location.reload();
+      if (error) throw error;
+
+      if (result) {
+        toast({
+          title: "Success",
+          description: "Page moved up successfully"
+        });
+        // Trigger a refresh of the hierarchy data
+        onRefreshData?.();
+      } else {
+        toast({
+          title: "Cannot move",
+          description: "Page is already at the top position"
+        });
+      }
     } catch (error) {
       console.error('Error moving page up:', error);
       toast({
@@ -183,73 +137,25 @@ function SidebarTreeItem({
   
   const handleMovePageDown = async (pageId: string) => {
     try {
-      // Get all pages in the same context and sort them by creation date
-      const { data: currentPage } = await supabase
-        .from('pages')
-        .select('*')
-        .eq('id', pageId)
-        .single();
-
-      if (!currentPage) return;
-
-      // Find all sibling pages
-      let query = supabase.from('pages').select('*');
-      
-      if (currentPage.parent_page_id) {
-        query = query.eq('parent_page_id', currentPage.parent_page_id);
-      } else {
-        query = query.is('parent_page_id', null);
-      }
-      
-      if (currentPage.space_id) {
-        query = query.eq('space_id', currentPage.space_id);
-      } else {
-        query = query.is('space_id', null);
-      }
-
-      const { data: siblings } = await query.order('created_at', { ascending: true });
-      
-      if (!siblings || siblings.length < 2) {
-        toast({
-          title: "Cannot move",
-          description: "No other pages to reorder with"
-        });
-        return;
-      }
-
-      const currentIndex = siblings.findIndex(p => p.id === pageId);
-      
-      if (currentIndex >= siblings.length - 1) {
-        toast({
-          title: "Already at bottom",
-          description: "Page is already at the bottom position"
-        });
-        return;
-      }
-
-      // Swap with the next page by swapping their created_at timestamps
-      const nextPage = siblings[currentIndex + 1];
-      const currentTimestamp = currentPage.created_at;
-      const nextTimestamp = nextPage.created_at;
-
-      // Update both pages in a transaction-like manner
-      await supabase
-        .from('pages')
-        .update({ created_at: nextTimestamp })
-        .eq('id', currentPage.id);
-        
-      await supabase
-        .from('pages')
-        .update({ created_at: currentTimestamp })
-        .eq('id', nextPage.id);
-
-      toast({
-        title: "Success",
-        description: "Page moved down successfully"
+      const { data: result, error } = await supabase.rpc('move_page_down', {
+        page_id: pageId
       });
 
-      // Refresh the page list
-      window.location.reload();
+      if (error) throw error;
+
+      if (result) {
+        toast({
+          title: "Success",
+          description: "Page moved down successfully"
+        });
+        // Trigger a refresh of the hierarchy data
+        onRefreshData?.();
+      } else {
+        toast({
+          title: "Cannot move",
+          description: "Page is already at the bottom position"
+        });
+      }
     } catch (error) {
       console.error('Error moving page down:', error);
       toast({
@@ -409,7 +315,7 @@ function SidebarTreeItem({
       </div>
       
       {hasChildren && isExpanded && <div className="ml-2">
-          {item.children?.map(child => <SidebarTreeItem key={child.id} item={child} level={level + 1} onSelect={onSelect} selectedId={selectedId} onCreateSubPage={onCreateSubPage} onCreatePageInEditor={onCreatePageInEditor} onDuplicatePage={onDuplicatePage} onArchivePage={onArchivePage} onCopyLink={onCopyLink} onMovePage={onMovePage} hierarchyData={hierarchyData} />)}
+          {item.children?.map(child => <SidebarTreeItem key={child.id} item={child} level={level + 1} onSelect={onSelect} selectedId={selectedId} onCreateSubPage={onCreateSubPage} onCreatePageInEditor={onCreatePageInEditor} onDuplicatePage={onDuplicatePage} onArchivePage={onArchivePage} onCopyLink={onCopyLink} onMovePage={onMovePage} hierarchyData={hierarchyData} onRefreshData={onRefreshData} />)}
         </div>}
     </div>;
 }
@@ -544,7 +450,7 @@ export function RealKnowledgeBaseSidebar({
   const fetchHierarchyData = async () => {
     setLoading(true);
     try {
-      const [spacesResponse, pagesResponse] = await Promise.all([supabase.from('spaces').select('*').order('name'), supabase.from('pages').select('*').order('title')]);
+      const [spacesResponse, pagesResponse] = await Promise.all([supabase.from('spaces').select('*').order('name'), supabase.from('pages').select('*').order('sort_order', { ascending: true })]);
       if (spacesResponse.error) throw spacesResponse.error;
       if (pagesResponse.error) throw pagesResponse.error;
       setSpaces(spacesResponse.data || []);
@@ -789,7 +695,7 @@ export function RealKnowledgeBaseSidebar({
             {loading ? <div className="space-y-2">
                 {[...Array(5)].map((_, i) => <div key={i} className="h-8 bg-sidebar-accent/20 rounded animate-pulse" />)}
               </div> : <div className="space-y-1">
-                {filteredHierarchy.length > 0 ? filteredHierarchy.map(item => <SidebarTreeItem key={item.id} item={item} level={0} onSelect={handleItemSelect} selectedId={selectedId} onCreateSubPage={onCreateSubPage} onCreatePageInEditor={onCreatePageInEditor} onDuplicatePage={handleDuplicatePage} onArchivePage={handleArchivePage} onCopyLink={handleCopyLink} onMovePage={handleMovePage} hierarchyData={hierarchyData} />) : searchQuery ? <div className="text-center py-8 text-sidebar-foreground/50">
+                {filteredHierarchy.length > 0 ? filteredHierarchy.map(item => <SidebarTreeItem key={item.id} item={item} level={0} onSelect={handleItemSelect} selectedId={selectedId} onCreateSubPage={onCreateSubPage} onCreatePageInEditor={onCreatePageInEditor} onDuplicatePage={handleDuplicatePage} onArchivePage={handleArchivePage} onCopyLink={handleCopyLink} onMovePage={handleMovePage} hierarchyData={hierarchyData} onRefreshData={fetchHierarchyData} />) : searchQuery ? <div className="text-center py-8 text-sidebar-foreground/50">
                     <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">No results found</p>
                   </div> : <div className="text-center py-8 text-sidebar-foreground/50">

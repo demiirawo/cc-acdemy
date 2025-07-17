@@ -147,6 +147,7 @@ export type Database = {
           parent_page_id: string | null
           public_token: string | null
           recommended_reading: Json | null
+          sort_order: number | null
           space_id: string | null
           tags: string[] | null
           title: string
@@ -162,6 +163,7 @@ export type Database = {
           parent_page_id?: string | null
           public_token?: string | null
           recommended_reading?: Json | null
+          sort_order?: number | null
           space_id?: string | null
           tags?: string[] | null
           title: string
@@ -177,6 +179,7 @@ export type Database = {
           parent_page_id?: string | null
           public_token?: string | null
           recommended_reading?: Json | null
+          sort_order?: number | null
           space_id?: string | null
           tags?: string[] | null
           title?: string
@@ -287,6 +290,10 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: string
       }
+      get_next_sort_order: {
+        Args: { p_parent_page_id: string; p_space_id: string }
+        Returns: number
+      }
       get_user_roles: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"][]
@@ -296,6 +303,14 @@ export type Database = {
           _user_id: string
           _role: Database["public"]["Enums"]["app_role"]
         }
+        Returns: boolean
+      }
+      move_page_down: {
+        Args: { page_id: string }
+        Returns: boolean
+      }
+      move_page_up: {
+        Args: { page_id: string }
         Returns: boolean
       }
       user_has_page_permission: {

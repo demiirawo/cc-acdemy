@@ -383,122 +383,34 @@ export function EnhancedContentEditor({
       editorRef.current.focus();
     }
     
-    // Create table element programmatically for better control
-    const table = document.createElement('table');
-    table.setAttribute('data-editable-table', 'true');
-    table.style.cssText = `
-      border-collapse: collapse;
-      width: 100%;
-      margin: 10px 0;
-      table-layout: fixed;
-      border: 1px solid #ccc;
-    `;
+    // Create table HTML with enforced text direction
+    let tableHTML = `<table style="border-collapse: collapse; width: 100%; margin: 10px 0; table-layout: fixed; border: 1px solid #ccc;" data-editable-table="true">`;
     
-    // Create header
-    const thead = document.createElement('thead');
-    const headerRow = document.createElement('tr');
-    
-     for (let j = 0; j < cols; j++) {
-       const th = document.createElement('th');
-      th.contentEditable = 'true';
-      th.style.cssText = `
-        border: 1px solid #ccc;
-        padding: 12px;
-        background-color: #f8f9fa;
-        vertical-align: top;
-        text-align: left !important;
-        min-width: 120px;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-        font-size: 14px;
-        font-family: inherit;
-        height: auto;
-        box-sizing: border-box;
-        white-space: normal;
-        direction: ltr !important;
-        unicode-bidi: embed !important;
-        writing-mode: horizontal-tb !important;
-      `;
-      
-      // Force proper text direction
-      th.dir = 'ltr';
-      th.setAttribute('data-cell-type', 'header');
-      
-      // Add event listeners for proper cursor behavior and cell-specific paste handling
-      th.addEventListener('focus', handleCellFocus);
-      th.addEventListener('click', handleCellClick);
-      th.addEventListener('keydown', handleCellKeydown);
-      th.addEventListener('paste', handleCellPaste);
-      th.addEventListener('input', updateContent);
-      
-      headerRow.appendChild(th);
+    // Header row
+    tableHTML += '<thead><tr>';
+    for (let j = 0; j < cols; j++) {
+      tableHTML += `<th style="border: 1px solid #ccc; padding: 12px; background-color: #f8f9fa; text-align: left !important; direction: ltr !important; unicode-bidi: embed !important; writing-mode: horizontal-tb !important; min-width: 120px;" contenteditable="true" data-cell-type="header"></th>`;
     }
+    tableHTML += '</tr></thead>';
     
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-    
-    // Create body
-    const tbody = document.createElement('tbody');
-    
+    // Body rows
+    tableHTML += '<tbody>';
     for (let i = 0; i < rows - 1; i++) {
-      const row = document.createElement('tr');
-      
+      tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-         const td = document.createElement('td');
-        td.contentEditable = 'true';
-        td.style.cssText = `
-          border: 1px solid #ccc;
-          padding: 12px;
-          vertical-align: top;
-          text-align: start;
-          min-width: 120px;
-          word-wrap: break-word;
-          overflow-wrap: break-word;
-          font-size: 14px;
-          font-family: inherit;
-          height: auto;
-          box-sizing: border-box;
-          white-space: normal;
-          direction: ltr !important;
-          unicode-bidi: embed !important;
-          writing-mode: horizontal-tb !important;
-        `;
-        
-        // Force proper text direction
-        td.dir = 'ltr';
-        td.setAttribute('data-cell-type', 'data');
-        
-        // Add event listeners for proper cursor behavior and cell-specific paste handling
-        td.addEventListener('focus', handleCellFocus);
-        td.addEventListener('click', handleCellClick);
-        td.addEventListener('keydown', handleCellKeydown);
-        td.addEventListener('paste', handleCellPaste);
-        td.addEventListener('input', updateContent);
-        
-        row.appendChild(td);
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 12px; text-align: left !important; direction: ltr !important; unicode-bidi: embed !important; writing-mode: horizontal-tb !important; min-width: 120px;" contenteditable="true" data-cell-type="body"></td>`;
       }
-      
-      tbody.appendChild(row);
+      tableHTML += '</tr>';
     }
+    tableHTML += '</tbody></table>';
     
-    table.appendChild(tbody);
+    // Insert the table
+    execCommand('insertHTML', tableHTML);
     
-    // Insert the table using execCommand for better compatibility
-    try {
-      const tableHTML = table.outerHTML + '<br>';
-      execCommand('insertHTML', tableHTML);
-      
-      console.log('Table inserted successfully');
-      
-      // Position cursor in first cell after a short delay
-      setTimeout(() => {
-        const insertedTable = editorRef.current?.querySelector('table[data-editable-table]:last-of-type');
-        if (insertedTable) {
-          const firstCell = insertedTable.querySelector('th') as HTMLElement;
-          if (firstCell) {
-            firstCell.focus();
-            const selection = window.getSelection();
-            if (selection) {
+    updateContent();
+  };
+  };
+
               selection.removeAllRanges();
               const range = document.createRange();
               range.setStart(firstCell, 0);
