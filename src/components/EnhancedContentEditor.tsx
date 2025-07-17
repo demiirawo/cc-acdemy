@@ -354,31 +354,19 @@ export function EnhancedContentEditor({
 
   const formatToolbarItems = [
     { icon: Heading1, action: () => {
-      const selection = window.getSelection();
-      if (selection && selection.toString()) {
-        const selectedText = selection.toString();
-        document.execCommand('insertHTML', false, `<h1>${selectedText}</h1>`);
-      } else {
-        insertText('<h1>Heading 1</h1>');
-      }
+      document.execCommand('formatBlock', false, 'h1');
+      editorRef.current?.focus();
+      updateContent();
     }, tooltip: "Heading 1" },
     { icon: Heading2, action: () => {
-      const selection = window.getSelection();
-      if (selection && selection.toString()) {
-        const selectedText = selection.toString();
-        document.execCommand('insertHTML', false, `<h2>${selectedText}</h2>`);
-      } else {
-        insertText('<h2>Heading 2</h2>');
-      }
+      document.execCommand('formatBlock', false, 'h2');
+      editorRef.current?.focus();
+      updateContent();
     }, tooltip: "Heading 2" },
     { icon: Heading3, action: () => {
-      const selection = window.getSelection();
-      if (selection && selection.toString()) {
-        const selectedText = selection.toString();
-        document.execCommand('insertHTML', false, `<h3>${selectedText}</h3>`);
-      } else {
-        insertText('<h3>Heading 3</h3>');
-      }
+      document.execCommand('formatBlock', false, 'h3');
+      editorRef.current?.focus();
+      updateContent();
     }, tooltip: "Heading 3" },
   ];
 

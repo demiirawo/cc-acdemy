@@ -371,33 +371,6 @@ export function SettingsPage({
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Shield className="h-5 w-5" />
-                  Two-Factor Authentication
-                </CardTitle>
-                <CardDescription>
-                  Add an extra layer of security to your account.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">Two-Factor Authentication</div>
-                    <div className="text-sm text-muted-foreground">
-                      Use an authenticator app to generate codes
-                    </div>
-                  </div>
-                  <Switch checked={twoFactorEnabled} onCheckedChange={setTwoFactorEnabled} />
-                </div>
-                {twoFactorEnabled && <div className="mt-4 p-4 bg-muted rounded-lg">
-                    <p className="text-sm text-muted-foreground">
-                      Two-factor authentication is not yet implemented. This is a placeholder for future functionality.
-                    </p>
-                  </div>}
-              </CardContent>
-            </Card>
           </TabsContent>
 
           {/* Notifications Tab */}
@@ -458,54 +431,15 @@ export function SettingsPage({
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Palette className="h-5 w-5" />
-                  Appearance & Behavior
+                  General Preferences
                 </CardTitle>
                 <CardDescription>
-                  Customize how the knowledge base looks and behaves.
+                  Customize your experience.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Theme</Label>
-                    <Select defaultValue="system">
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select theme" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="light">Light</SelectItem>
-                        <SelectItem value="dark">Dark</SelectItem>
-                        <SelectItem value="system">System</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Default Page View</Label>
-                    <Select defaultValue="edit">
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select default view" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="view">View Mode</SelectItem>
-                        <SelectItem value="edit">Edit Mode</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Sidebar Behavior</Label>
-                  <Select defaultValue="auto">
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select sidebar behavior" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="auto">Auto-collapse</SelectItem>
-                      <SelectItem value="always">Always expanded</SelectItem>
-                      <SelectItem value="manual">Manual control</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="text-sm text-muted-foreground">
+                  Additional preferences will be available in future updates.
                 </div>
               </CardContent>
             </Card>

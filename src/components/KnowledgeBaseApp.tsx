@@ -158,7 +158,7 @@ function PageView({
         
         <div className="prose prose-lg max-w-none">
           <div className="text-foreground leading-relaxed" dangerouslySetInnerHTML={{
-          __html: cleanContent
+          __html: cleanContent.split('RECOMMENDED_READING:')[0]
         }} />
         </div>
 
@@ -171,16 +171,19 @@ function PageView({
                 <div 
                   key={item.id || index} 
                   className="flex items-center gap-3 p-4 border border-border rounded-lg bg-card hover:bg-muted/20 transition-colors cursor-pointer"
-                  onClick={() => {
-                    if (item.id) {
-                      onPageSelect(item.id);
-                    } else if (item.url) {
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (item.type === 'link' && item.url) {
                       window.open(item.url, '_blank');
-                    } else if (item.fileUrl) {
+                    } else if (item.type === 'file' && item.fileUrl) {
                       const link = document.createElement('a');
                       link.href = item.fileUrl;
                       link.download = item.fileName || 'download';
+                      document.body.appendChild(link);
                       link.click();
+                      document.body.removeChild(link);
+                    } else if (item.id) {
+                      onPageSelect(item.id);
                     }
                   }}
                 >
