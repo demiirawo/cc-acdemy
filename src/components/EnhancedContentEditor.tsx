@@ -183,7 +183,7 @@ export function EnhancedContentEditor({
         try {
           const { data, error } = await supabase
             .from('pages')
-            .select('is_public, public_token, content')
+            .select('is_public, public_token, content, recommended_reading')
             .eq('id', pageId)
             .single();
 
@@ -192,30 +192,54 @@ export function EnhancedContentEditor({
           if (data) {
             setIsPublic(data.is_public || false);
             setPublicToken(data.public_token || '');
+            setCurrentContent(data.content);
             
-            // Try to extract recommended reading from content and clean it
-            try {
-              if (data.content && data.content.includes('RECOMMENDED_READING:')) {
-                const parts = data.content.split('RECOMMENDED_READING:');
-                if (parts.length > 1) {
-                  const readingData = JSON.parse(parts[1]);
-                  setRecommendedReading(readingData);
-                  setCurrentContent(parts[0]);
-                  
-                  // Update the database to remove the appended data
-                  supabase
-                    .from('pages')
-                    .update({ content: parts[0] })
-                    .eq('id', pageId);
-                } else {
-                  setCurrentContent(data.content);
+            // Set recommended reading from database
+            if (data.recommended_reading && Array.isArray(data.recommended_reading)) {
+              console.log('Found recommended reading in database:', data.recommended_reading);
+              const typedReadings = data.recommended_reading.map((item: any) => ({
+                title: item.title || '',
+                url: item.url,
+                description: item.description || '',
+                type: (item.type as 'link' | 'file') || 'link',
+                fileName: item.fileName,
+                fileUrl: item.fileUrl
+              }));
+              setRecommendedReading(typedReadings);
+            } else {
+              console.log('No recommended reading found in database');
+              setRecommendedReading([]);
+              
+              // Legacy: Try to extract recommended reading from content if it exists
+              try {
+                if (data.content && data.content.includes('RECOMMENDED_READING:')) {
+                  const parts = data.content.split('RECOMMENDED_READING:');
+                  if (parts.length > 1) {
+                    const readingData = JSON.parse(parts[1]);
+                    const typedReadings = readingData.map((item: any) => ({
+                      title: item.title || '',
+                      url: item.url,
+                      description: item.description || '',
+                      type: (item.type as 'link' | 'file') || 'link',
+                      fileName: item.fileName,
+                      fileUrl: item.fileUrl
+                    }));
+                    setRecommendedReading(typedReadings);
+                    setCurrentContent(parts[0]);
+                    
+                    // Update the database to remove the appended data and save properly
+                    supabase
+                      .from('pages')
+                      .update({ 
+                        content: parts[0],
+                        recommended_reading: readingData
+                      })
+                      .eq('id', pageId);
+                  }
                 }
-              } else {
-                setCurrentContent(data.content);
+              } catch (e) {
+                console.log('Error parsing legacy recommended reading:', e);
               }
-            } catch (e) {
-              console.log('No recommended reading data found');
-              setCurrentContent(data.content);
             }
           }
         } catch (error) {
@@ -2176,6 +2200,7 @@ export function EnhancedContentEditor({
   const handleSave = async () => {
     try {
       // Save content and recommended reading using the provided onSave function
+      console.log('Saving with recommended reading:', recommendedReading);
       await onSave(currentTitle, currentContent, recommendedReading);
       
       toast({
@@ -2301,11 +2326,25 @@ export function EnhancedContentEditor({
                  {recommendedReading.map((item, index) => (
                    <div key={index} className="p-4 border rounded-lg bg-muted/20">
                      <h4 className="font-medium text-foreground mb-1">{item.title}</h4>
-                     {item.url && (
-                       <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm block mb-2">
-                         {item.url}
-                       </a>
-                     )}
+                      {item.url && (
+                        <a 
+                          href={item.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="text-primary hover:underline text-sm block mb-2"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            // Add protocol if missing
+                            let url = item.url || '';
+                            if (url && !url.match(/^https?:\/\//i)) {
+                              url = 'https://' + url;
+                            }
+                            window.open(url, '_blank', 'noopener,noreferrer');
+                          }}
+                        >
+                          {item.url}
+                        </a>
+                      )}
                      {item.fileUrl && (
                        <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm block mb-2">
                          📁 {item.fileName}
@@ -2700,6 +2739,14 @@ export function EnhancedContentEditor({
                               target="_blank" 
                               rel="noopener noreferrer" 
                               className="text-sm text-primary hover:underline break-all"
+                              onClick={() => {
+                                // Add protocol if missing
+                                let url = item.url || '';
+                                if (url && !url.match(/^https?:\/\//i)) {
+                                  url = 'https://' + url;
+                                }
+                                window.open(url, '_blank', 'noopener,noreferrer');
+                              }}
                             >
                               {item.url}
                             </a>

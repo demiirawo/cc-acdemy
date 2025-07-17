@@ -104,186 +104,212 @@ function SidebarTreeItem({
 
   const handleMovePageUp = async (pageId: string) => {
     try {
-      // Get current page and its siblings
-      const { data: currentPage, error: currentError } = await supabase
+      toast({
+        title: "Moving page up",
+        description: "Please wait..."
+      });
+      
+      // Step 1: Get the current page
+      const { data: currentPage, error: pageError } = await supabase
         .from('pages')
         .select('*')
         .eq('id', pageId)
         .single();
-
-      if (currentError) throw currentError;
-
-      // Build comprehensive query for siblings
+      
+      if (pageError) throw pageError;
+      
+      console.log('Moving page:', currentPage.title);
+      
+      // Step 2: Find siblings (pages with same parent and space)
       let query = supabase.from('pages').select('*');
       
-      // Match parent context exactly
+      // Match parent context
       if (currentPage.parent_page_id) {
         query = query.eq('parent_page_id', currentPage.parent_page_id);
       } else {
         query = query.is('parent_page_id', null);
       }
       
-      // Match space context exactly  
+      // Match space context
       if (currentPage.space_id) {
         query = query.eq('space_id', currentPage.space_id);
       } else {
         query = query.is('space_id', null);
       }
-
+      
+      // Order by created_at to determine sequence
       const { data: siblings, error: siblingsError } = await query.order('created_at', { ascending: true });
-
+      
       if (siblingsError) throw siblingsError;
       
-      console.log('Current page:', currentPage.title);
-      console.log('Found siblings:', siblings?.map(s => s.title));
-
       if (!siblings || siblings.length < 2) {
         toast({
-          title: "Cannot move up",
-          description: "Page is already at the top or no siblings found"
+          title: "Cannot move page",
+          description: "No other pages at this level"
         });
         return;
       }
-
-      const currentIndex = siblings.findIndex(p => p.id === pageId);
-      console.log('Current index:', currentIndex);
       
+      // Step 3: Find current position
+      const currentIndex = siblings.findIndex(p => p.id === pageId);
+      console.log(`Page ${currentPage.title} is at position ${currentIndex + 1} of ${siblings.length}`);
+      
+      // Step 4: Check if already at the top
       if (currentIndex <= 0) {
         toast({
-          title: "Cannot move up",
-          description: "Page is already at the top"
+          title: "Already at top",
+          description: "This page is already at the top position"
         });
         return;
       }
-
-      // Get previous sibling
-      const prevSibling = siblings[currentIndex - 1];
-      console.log('Swapping with:', prevSibling.title);
       
-      // Create new timestamps to ensure proper ordering
-      const now = new Date();
-      const prevTime = new Date(now.getTime() - 1000); // 1 second earlier
+      // Step 5: Get the page above
+      const previousPage = siblings[currentIndex - 1];
+      console.log(`Will swap with page: ${previousPage.title}`);
       
-      // Update both pages with new timestamps
+      // Step 6: Swap positions by updating timestamps
+      // Use UUIDs for timestamps to ensure uniqueness and proper ordering
+      const timestamp1 = crypto.randomUUID();
+      const timestamp2 = crypto.randomUUID();
+      
+      // Update current page with earlier timestamp
       const { error: updateError1 } = await supabase
         .from('pages')
-        .update({ created_at: prevTime.toISOString() })
-        .eq('id', pageId);
+        .update({ 
+          created_at: new Date(`2000-01-01T00:00:00.000${timestamp1}Z`).toISOString() 
+        })
+        .eq('id', currentPage.id);
         
       if (updateError1) throw updateError1;
-        
+      
+      // Update previous page with later timestamp
       const { error: updateError2 } = await supabase
         .from('pages')
-        .update({ created_at: now.toISOString() })
-        .eq('id', prevSibling.id);
+        .update({ 
+          created_at: new Date(`2000-01-01T00:00:00.001${timestamp2}Z`).toISOString() 
+        })
+        .eq('id', previousPage.id);
         
       if (updateError2) throw updateError2;
-
+      
       toast({
-        title: "Moved up",
+        title: "Success",
         description: "Page moved up successfully"
       });
       
-      // Trigger page refresh
+      // Force reload to show changes
       window.location.reload();
     } catch (error) {
-      console.error('Move up error:', error);
+      console.error('Error moving page up:', error);
       toast({
-        title: "Error", 
+        title: "Error",
         description: "Failed to move page up",
         variant: "destructive"
       });
     }
   };
-
+  
   const handleMovePageDown = async (pageId: string) => {
     try {
-      // Get current page and its siblings
-      const { data: currentPage, error: currentError } = await supabase
+      toast({
+        title: "Moving page down",
+        description: "Please wait..."
+      });
+      
+      // Step 1: Get the current page
+      const { data: currentPage, error: pageError } = await supabase
         .from('pages')
         .select('*')
         .eq('id', pageId)
         .single();
-
-      if (currentError) throw currentError;
-
-      // Build comprehensive query for siblings
+      
+      if (pageError) throw pageError;
+      
+      console.log('Moving page:', currentPage.title);
+      
+      // Step 2: Find siblings (pages with same parent and space)
       let query = supabase.from('pages').select('*');
       
-      // Match parent context exactly
+      // Match parent context
       if (currentPage.parent_page_id) {
         query = query.eq('parent_page_id', currentPage.parent_page_id);
       } else {
         query = query.is('parent_page_id', null);
       }
       
-      // Match space context exactly  
+      // Match space context
       if (currentPage.space_id) {
         query = query.eq('space_id', currentPage.space_id);
       } else {
         query = query.is('space_id', null);
       }
-
+      
+      // Order by created_at to determine sequence
       const { data: siblings, error: siblingsError } = await query.order('created_at', { ascending: true });
-
+      
       if (siblingsError) throw siblingsError;
       
-      console.log('Current page:', currentPage.title);
-      console.log('Found siblings:', siblings?.map(s => s.title));
-
       if (!siblings || siblings.length < 2) {
         toast({
-          title: "Cannot move down",
-          description: "Page is already at the bottom or no siblings found"
+          title: "Cannot move page",
+          description: "No other pages at this level"
         });
         return;
       }
-
-      const currentIndex = siblings.findIndex(p => p.id === pageId);
-      console.log('Current index:', currentIndex);
       
+      // Step 3: Find current position
+      const currentIndex = siblings.findIndex(p => p.id === pageId);
+      console.log(`Page ${currentPage.title} is at position ${currentIndex + 1} of ${siblings.length}`);
+      
+      // Step 4: Check if already at the bottom
       if (currentIndex >= siblings.length - 1) {
         toast({
-          title: "Cannot move down",
-          description: "Page is already at the bottom"
+          title: "Already at bottom",
+          description: "This page is already at the bottom position"
         });
         return;
       }
-
-      // Get next sibling
-      const nextSibling = siblings[currentIndex + 1];
-      console.log('Swapping with:', nextSibling.title);
       
-      // Create new timestamps to ensure proper ordering
-      const now = new Date();
-      const nextTime = new Date(now.getTime() + 1000); // 1 second later
+      // Step 5: Get the page below
+      const nextPage = siblings[currentIndex + 1];
+      console.log(`Will swap with page: ${nextPage.title}`);
       
-      // Update both pages with new timestamps
+      // Step 6: Swap positions by updating timestamps
+      // Use UUIDs for timestamps to ensure uniqueness and proper ordering
+      const timestamp1 = crypto.randomUUID();
+      const timestamp2 = crypto.randomUUID();
+      
+      // Update next page with earlier timestamp
       const { error: updateError1 } = await supabase
         .from('pages')
-        .update({ created_at: nextTime.toISOString() })
-        .eq('id', pageId);
+        .update({ 
+          created_at: new Date(`2000-01-01T00:00:00.000${timestamp1}Z`).toISOString() 
+        })
+        .eq('id', nextPage.id);
         
       if (updateError1) throw updateError1;
-        
+      
+      // Update current page with later timestamp
       const { error: updateError2 } = await supabase
         .from('pages')
-        .update({ created_at: now.toISOString() })
-        .eq('id', nextSibling.id);
+        .update({ 
+          created_at: new Date(`2000-01-01T00:00:00.001${timestamp2}Z`).toISOString() 
+        })
+        .eq('id', currentPage.id);
         
       if (updateError2) throw updateError2;
-
+      
       toast({
-        title: "Moved down",
+        title: "Success",
         description: "Page moved down successfully"
       });
       
-      // Trigger page refresh
+      // Force reload to show changes
       window.location.reload();
     } catch (error) {
-      console.error('Move down error:', error);
+      console.error('Error moving page down:', error);
       toast({
-        title: "Error", 
+        title: "Error",
         description: "Failed to move page down",
         variant: "destructive"
       });
