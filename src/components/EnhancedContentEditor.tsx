@@ -155,12 +155,12 @@ export function EnhancedContentEditor({
   };
 
   const insertTable = (rows: number, cols: number) => {
-    let tableHTML = `<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0; position: relative;" data-editable-table="true">`;
+    let tableHTML = `<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0; position: relative; table-layout: fixed;" data-editable-table="true">`;
     
     // Header row
     tableHTML += '<thead><tr>';
     for (let j = 0; j < cols; j++) {
-      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; position: relative; background-color: #f8f9fa;" contenteditable="true"></th>`;
+      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; position: relative; background-color: #f8f9fa; resize: horizontal; overflow: hidden;" contenteditable="true"></th>`;
     }
     tableHTML += '</tr></thead>';
     
@@ -169,7 +169,7 @@ export function EnhancedContentEditor({
     for (let i = 0; i < rows - 1; i++) {
       tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; position: relative;" contenteditable="true"></td>`;
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; position: relative; resize: horizontal; overflow: hidden;" contenteditable="true"></td>`;
       }
       tableHTML += '</tr>';
     }
@@ -182,6 +182,7 @@ export function EnhancedContentEditor({
     // Add table manipulation functionality
     setTimeout(() => {
       setupTableControls();
+      makeTableResizable();
     }, 100);
   };
 
@@ -366,6 +367,55 @@ export function EnhancedContentEditor({
     rows.forEach(row => {
       const cellToDelete = row.children[cellIndex];
       cellToDelete?.remove();
+    });
+  };
+
+  const makeTableResizable = () => {
+    const tables = editorRef.current?.querySelectorAll('table[data-editable-table="true"]');
+    tables?.forEach(table => {
+      // Add column resize handles
+      const headers = table.querySelectorAll('th');
+      headers.forEach((header, index) => {
+        if (index < headers.length - 1) { // Don't add handle to last column
+          const resizeHandle = document.createElement('div');
+          resizeHandle.style.cssText = `
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 4px;
+            height: 100%;
+            background: #ddd;
+            cursor: col-resize;
+            z-index: 10;
+          `;
+          
+          let isResizing = false;
+          let startX = 0;
+          let startWidth = 0;
+          
+          resizeHandle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startX = e.clientX;
+            startWidth = header.offsetWidth;
+            e.preventDefault();
+          });
+          
+          document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            const width = startWidth + e.clientX - startX;
+            if (width > 50) { // Minimum width
+              header.style.width = width + 'px';
+            }
+          });
+          
+          document.addEventListener('mouseup', () => {
+            isResizing = false;
+          });
+          
+          header.style.position = 'relative';
+          header.appendChild(resizeHandle);
+        }
+      });
     });
   };
 
@@ -754,13 +804,18 @@ export function EnhancedContentEditor({
     if (!confirmDelete) return;
 
     try {
+      console.log('Attempting to delete page:', pageId);
       const { error } = await supabase
         .from('pages')
         .delete()
         .eq('id', pageId);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Delete error:', error);
+        throw error;
+      }
 
+      console.log('Page deleted successfully');
       toast({
         title: "Page deleted",
         description: `"${currentTitle}" has been deleted successfully.`,
