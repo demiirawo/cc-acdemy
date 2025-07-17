@@ -106,46 +106,49 @@ function PageView({ currentPage, onEditPage, setPermissionsDialogOpen }: {
   return (
     <div className="flex-1 overflow-auto">
       <div className="max-w-4xl mx-auto p-6">
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <h1 className="text-4xl font-bold text-foreground">{currentPage.title}</h1>
-            <div className="flex gap-2 items-center">
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                {isPublic ? <Globe className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
-                <Label htmlFor="public-toggle" className="text-sm font-medium">
-                  Public
-                </Label>
-                <Switch
-                  id="public-toggle"
-                  checked={isPublic}
-                  onCheckedChange={togglePublicAccess}
-                />
+                <h1 className="text-4xl font-bold text-foreground">{currentPage.title}</h1>
+                {isPublic && <Globe className="h-4 w-4 text-muted-foreground" />}
               </div>
-              
-              {isPublic && publicToken && (
-                <Button variant="outline" size="sm" onClick={copyPublicLink}>
-                  <Copy className="h-4 w-4 mr-2" />
-                  Copy Public Link
+              <div className="flex gap-2 items-center">
+                <div className="flex items-center gap-2">
+                  {isPublic ? <Globe className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+                  <Label htmlFor="public-toggle" className="text-sm font-medium">
+                    Public
+                  </Label>
+                  <Switch
+                    id="public-toggle"
+                    checked={isPublic}
+                    onCheckedChange={togglePublicAccess}
+                  />
+                </div>
+                
+                {isPublic && publicToken && (
+                  <Button variant="outline" size="sm" onClick={copyPublicLink}>
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy Public Link
+                  </Button>
+                )}
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPermissionsDialogOpen(true)}
+                  className="flex items-center gap-2"
+                >
+                  <Shield className="h-4 w-4" />
+                  Permissions
                 </Button>
-              )}
-              
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPermissionsDialogOpen(true)}
-                className="flex items-center gap-2"
-              >
-                <Shield className="h-4 w-4" />
-                Permissions
-              </Button>
-              <Button
-                onClick={onEditPage}
-                className="bg-gradient-primary"
-              >
-                Edit
-              </Button>
+                <Button
+                  onClick={onEditPage}
+                  className="bg-gradient-primary"
+                >
+                  Edit
+                </Button>
+              </div>
             </div>
-          </div>
           <div className="text-sm text-muted-foreground">
             Last updated {new Date(currentPage.lastUpdated).toLocaleDateString()} by {currentPage.author}
           </div>

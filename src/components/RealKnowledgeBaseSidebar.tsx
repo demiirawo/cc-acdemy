@@ -469,21 +469,23 @@ export function RealKnowledgeBaseSidebar({
         </div>
         
         <ScrollArea className="h-full">
-          {loading ? <div className="space-y-2">
-              {[...Array(5)].map((_, i) => <div key={i} className="h-8 bg-sidebar-accent/20 rounded animate-pulse" />)}
-            </div> : <div className="space-y-1">
-              {filteredHierarchy.length > 0 ? filteredHierarchy.map(item => <SidebarTreeItem key={item.id} item={item} level={0} onSelect={handleItemSelect} selectedId={selectedId} onCreateSubPage={onCreateSubPage} onCreatePageInEditor={onCreatePageInEditor} onDuplicatePage={handleDuplicatePage} onArchivePage={handleArchivePage} onCopyLink={handleCopyLink} onMovePage={handleMovePage} hierarchyData={hierarchyData} />) : searchQuery ? <div className="text-center py-8 text-sidebar-foreground/50">
-                  <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm">No results found</p>
-                </div> : <div className="text-center py-8 text-sidebar-foreground/50">
-                  <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p className="text-sm mb-3">No content yet</p>
-                  {onCreatePage && <Button variant="outline" size="sm" onClick={handleCreatePage}>
-                      <Plus className="h-3 w-3 mr-1" />
-                      Create first page
-                    </Button>}
-                </div>}
-            </div>}
+          <div className="pb-8">
+            {loading ? <div className="space-y-2">
+                {[...Array(5)].map((_, i) => <div key={i} className="h-8 bg-sidebar-accent/20 rounded animate-pulse" />)}
+              </div> : <div className="space-y-1">
+                {filteredHierarchy.length > 0 ? filteredHierarchy.map(item => <SidebarTreeItem key={item.id} item={item} level={0} onSelect={handleItemSelect} selectedId={selectedId} onCreateSubPage={onCreateSubPage} onCreatePageInEditor={onCreatePageInEditor} onDuplicatePage={handleDuplicatePage} onArchivePage={handleArchivePage} onCopyLink={handleCopyLink} onMovePage={handleMovePage} hierarchyData={hierarchyData} />) : searchQuery ? <div className="text-center py-8 text-sidebar-foreground/50">
+                    <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No results found</p>
+                  </div> : <div className="text-center py-8 text-sidebar-foreground/50">
+                    <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm mb-3">No content yet</p>
+                    {onCreatePage && <Button variant="outline" size="sm" onClick={handleCreatePage}>
+                        <Plus className="h-3 w-3 mr-1" />
+                        Create first page
+                      </Button>}
+                  </div>}
+              </div>}
+          </div>
         </ScrollArea>
       </div>
 

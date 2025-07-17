@@ -14,15 +14,17 @@ import {
   Minus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Canvas as FabricCanvas, Circle as FabricCircle, Rect as FabricRect, Textbox as FabricTextbox } from "fabric";
+import { Canvas as FabricCanvas, Circle as FabricCircle, Rect as FabricRect, Textbox as FabricTextbox, Line as FabricLine } from "fabric";
 import { useToast } from "@/hooks/use-toast";
 
 export function WhiteboardPage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
-  const [activeTool, setActiveTool] = useState<'select' | 'draw' | 'text' | 'rectangle' | 'circle'>('select');
+  const [activeTool, setActiveTool] = useState<'select' | 'draw' | 'text' | 'rectangle' | 'circle' | 'line'>('select');
   const [activeColor, setActiveColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(2);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [startPoint, setStartPoint] = useState<{x: number, y: number} | null>(null);
   const { toast } = useToast();
 
   const colors = [
@@ -41,11 +43,51 @@ export function WhiteboardPage() {
         backgroundColor: "#ffffff",
       });
 
-      // Initialize the freeDrawingBrush
-      if (canvas.freeDrawingBrush) {
-        canvas.freeDrawingBrush.color = activeColor;
-        canvas.freeDrawingBrush.width = brushSize;
-      }
+      // Initialize the freeDrawingBrush properly
+      canvas.freeDrawingBrush.color = activeColor;
+      canvas.freeDrawingBrush.width = brushSize;
+
+      // Add line drawing functionality
+      let isDrawingLine = false;
+      let line: FabricLine | null = null;
+      let origX = 0;
+      let origY = 0;
+
+      canvas.on('mouse:down', function(opt) {
+        if (activeTool === 'line') {
+          isDrawingLine = true;
+          const pointer = canvas.getScenePoint(opt.e);
+          origX = pointer.x;
+          origY = pointer.y;
+          
+          line = new FabricLine([origX, origY, origX, origY], {
+            stroke: activeColor,
+            strokeWidth: brushSize,
+            selectable: false,
+          });
+          canvas.add(line);
+        }
+      });
+
+      canvas.on('mouse:move', function(opt) {
+        if (!isDrawingLine || !line || activeTool !== 'line') return;
+        
+        const pointer = canvas.getScenePoint(opt.e);
+        line.set({
+          x2: pointer.x,
+          y2: pointer.y
+        });
+        canvas.renderAll();
+      });
+
+      canvas.on('mouse:up', function() {
+        if (isDrawingLine && line) {
+          isDrawingLine = false;
+          line.selectable = true;
+          canvas.setActiveObject(line);
+          line = null;
+        }
+      });
 
       setFabricCanvas(canvas);
       
@@ -69,7 +111,7 @@ export function WhiteboardPage() {
         variant: "destructive",
       });
     }
-  }, []);
+  }, [activeTool, activeColor, brushSize]);
 
   useEffect(() => {
     if (!fabricCanvas) return;
@@ -119,20 +161,24 @@ export function WhiteboardPage() {
         fabricCanvas.setActiveObject(circle);
         fabricCanvas.renderAll();
       } else if (tool === 'text') {
-        const text = new FabricTextbox('Click here to edit text', {
+        const text = new FabricTextbox('Edit me', {
           left: 100,
           top: 100,
           fill: activeColor,
           fontSize: 20,
           fontFamily: 'Arial',
           editable: true,
+          width: 200,
         });
         fabricCanvas.add(text);
         fabricCanvas.setActiveObject(text);
         fabricCanvas.renderAll();
-        // Immediately enter edit mode
-        text.enterEditing();
-        text.selectAll();
+        
+        // Automatically enter editing mode
+        setTimeout(() => {
+          text.enterEditing();
+          text.selectAll();
+        }, 100);
       }
     } catch (error) {
       console.error('Error adding shape:', error);
@@ -254,6 +300,14 @@ export function WhiteboardPage() {
               className="h-8 w-8 p-0"
             >
               <Type className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={activeTool === 'line' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveTool('line')}
+              className="h-8 w-8 p-0"
+            >
+              <Minus className="h-4 w-4" />
             </Button>
           </div>
 

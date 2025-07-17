@@ -361,17 +361,23 @@ export function EnhancedContentEditor({
     { icon: List, action: () => {
       const selection = window.getSelection();
       if (selection && selection.toString()) {
-        execCommand('insertUnorderedList');
+        // Wrap selected text in list items
+        const selectedText = selection.toString();
+        const listItems = selectedText.split('\n').map(line => `<li>${line.trim()}</li>`).join('');
+        execCommand('insertHTML', `<ul>${listItems}</ul>`);
       } else {
-        insertText('<ul><li>List item 1</li><li>List item 2</li></ul>');
+        execCommand('insertUnorderedList');
       }
     }, tooltip: "Bullet List" },
     { icon: ListOrdered, action: () => {
       const selection = window.getSelection();
       if (selection && selection.toString()) {
-        execCommand('insertOrderedList');
+        // Wrap selected text in numbered list items
+        const selectedText = selection.toString();
+        const listItems = selectedText.split('\n').map(line => `<li>${line.trim()}</li>`).join('');
+        execCommand('insertHTML', `<ol>${listItems}</ol>`);
       } else {
-        insertText('<ol><li>List item 1</li><li>List item 2</li></ol>');
+        execCommand('insertOrderedList');
       }
     }, tooltip: "Numbered List" },
     { icon: Quote, action: () => {
