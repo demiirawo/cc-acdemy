@@ -172,7 +172,7 @@ export function PeoplePage({ onPageSelect }: PeoplePageProps) {
             <h1 className="text-3xl font-bold text-foreground">People</h1>
           </div>
           <p className="text-muted-foreground mb-6">
-            Team members and their contributions to the knowledge base
+            Team members and their contributions to Care Cudde Academy
           </p>
 
           {/* Search */}

@@ -197,7 +197,7 @@ export function CreatePageDialog({
         <DialogHeader>
           <DialogTitle>Create New Page</DialogTitle>
           <DialogDescription>
-            Create a new page in your knowledge base. You can organize it within a space and set a parent page.
+            Create a new page in Care Cudde Academy. You can organize it within a space and set a parent page.
           </DialogDescription>
         </DialogHeader>
 

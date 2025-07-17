@@ -17,6 +17,32 @@ interface RecommendedReadingSectionProps {
   onItemClick?: (item: RecommendedReadingItem) => void;
 }
 
+// Function to get clean text preview (strip HTML formatting)
+const getCleanTextPreview = (htmlContent: string, maxLength: number = 150): string => {
+  if (!htmlContent) return '';
+  
+  // Create a temporary element to parse HTML
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = htmlContent;
+  
+  // Remove script and style elements
+  const scripts = tempDiv.querySelectorAll('script, style');
+  scripts.forEach(el => el.remove());
+  
+  // Get text content and clean it up
+  let textContent = tempDiv.textContent || tempDiv.innerText || '';
+  
+  // Remove extra whitespace and line breaks
+  textContent = textContent.replace(/\s+/g, ' ').trim();
+  
+  // Truncate if necessary
+  if (textContent.length > maxLength) {
+    textContent = textContent.substring(0, maxLength).trim() + '...';
+  }
+  
+  return textContent;
+};
+
 export function RecommendedReadingSection({ items, onItemClick }: RecommendedReadingSectionProps) {
   if (!items || items.length === 0) {
     return null;
@@ -70,7 +96,7 @@ export function RecommendedReadingSection({ items, onItemClick }: RecommendedRea
                       </h4>
                       {item.description && (
                         <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                          {item.description}
+                          {getCleanTextPreview(item.description, 100)}
                         </p>
                       )}
                       {(item.url || item.fileUrl) && (

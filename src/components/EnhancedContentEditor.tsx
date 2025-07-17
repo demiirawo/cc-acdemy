@@ -107,6 +107,7 @@ export function EnhancedContentEditor({
   const [newRecommendation, setNewRecommendation] = useState({title: '', url: '', description: '', type: 'link' as 'link' | 'file', fileName: '', fileUrl: ''});
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -183,6 +184,40 @@ export function EnhancedContentEditor({
   const updateContent = () => {
     if (editorRef.current) {
       setCurrentContent(editorRef.current.innerHTML);
+      triggerAutoSave();
+    }
+  };
+
+  // Auto-save functionality
+  const triggerAutoSave = () => {
+    if (!pageId) return; // Only auto-save for existing pages
+    
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+    
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      autoSave();
+    }, 3000); // Auto-save after 3 seconds of inactivity
+  };
+
+  const autoSave = async () => {
+    if (!pageId || !currentContent) return;
+    
+    try {
+      const { error } = await supabase
+        .from('pages')
+        .update({ 
+          content: currentContent,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', pageId);
+
+      if (error) throw error;
+      
+      console.log('Auto-saved successfully');
+    } catch (error) {
+      console.error('Auto-save failed:', error);
     }
   };
 
@@ -200,7 +235,7 @@ export function EnhancedContentEditor({
     // Header row
     tableHTML += '<thead><tr>';
     for (let j = 0; j < cols; j++) {
-      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; background-color: #f8f9fa; vertical-align: top; text-align: left;" contenteditable="true"></th>`;
+      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; background-color: #f8f9fa; vertical-align: top; text-align: left; position: relative; min-width: 100px;" contenteditable="true"></th>`;
     }
     tableHTML += '</tr></thead>';
     
@@ -209,7 +244,7 @@ export function EnhancedContentEditor({
     for (let i = 0; i < rows - 1; i++) {
       tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left;" contenteditable="true"></td>`;
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left; min-width: 100px;" contenteditable="true"></td>`;
       }
       tableHTML += '</tr>';
     }
@@ -222,6 +257,7 @@ export function EnhancedContentEditor({
     // Add table manipulation functionality
     setTimeout(() => {
       setupTableControls();
+      makeTableResizable();
     }, 100);
   };
 
@@ -279,7 +315,9 @@ export function EnhancedContentEditor({
       { text: 'Insert Column Right', action: () => insertColumnRight(cell, table) },
       { text: 'Delete Row', action: () => deleteRow(cell, table) },
       { text: 'Delete Column', action: () => deleteColumn(cell, table) },
-    ];
+      { text: 'Change Cell Color', action: () => showCellColorPicker(cell as HTMLElement, e) },
+      { text: 'Change Header Color', action: () => cell.tagName === 'TH' ? showHeaderColorPicker(cell as HTMLElement, e) : null },
+    ].filter(item => item.action); // Filter out null actions
     
     menuItems.forEach(item => {
       const menuItem = document.createElement('div');
@@ -325,7 +363,7 @@ export function EnhancedContentEditor({
     
     for (let i = 0; i < cellCount; i++) {
       const newCell = document.createElement('td');
-      newCell.style.cssText = 'border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left;';
+      newCell.style.cssText = 'border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left; min-width: 100px;';
       newCell.contentEditable = 'true';
       newRow.appendChild(newCell);
     }
@@ -342,7 +380,7 @@ export function EnhancedContentEditor({
     
     for (let i = 0; i < cellCount; i++) {
       const newCell = document.createElement('td');
-      newCell.style.cssText = 'border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left;';
+      newCell.style.cssText = 'border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left; min-width: 100px;';
       newCell.contentEditable = 'true';
       newRow.appendChild(newCell);
     }
@@ -357,8 +395,8 @@ export function EnhancedContentEditor({
     rows.forEach((row, rowIndex) => {
       const newCell = document.createElement(rowIndex === 0 ? 'th' : 'td');
       newCell.style.cssText = rowIndex === 0 
-        ? 'border: 1px solid #ccc; padding: 8px; position: relative; background-color: #f8f9fa;'
-        : 'border: 1px solid #ccc; padding: 8px; position: relative;';
+        ? 'border: 1px solid #ccc; padding: 8px; position: relative; background-color: #f8f9fa; min-width: 100px;'
+        : 'border: 1px solid #ccc; padding: 8px; position: relative; min-width: 100px;';
       newCell.contentEditable = 'true';
       
       const targetCell = row.children[cellIndex];
@@ -373,8 +411,8 @@ export function EnhancedContentEditor({
     rows.forEach((row, rowIndex) => {
       const newCell = document.createElement(rowIndex === 0 ? 'th' : 'td');
       newCell.style.cssText = rowIndex === 0 
-        ? 'border: 1px solid #ccc; padding: 8px; position: relative; background-color: #f8f9fa;'
-        : 'border: 1px solid #ccc; padding: 8px; position: relative;';
+        ? 'border: 1px solid #ccc; padding: 8px; position: relative; background-color: #f8f9fa; min-width: 100px;'
+        : 'border: 1px solid #ccc; padding: 8px; position: relative; min-width: 100px;';
       newCell.contentEditable = 'true';
       
       const targetCell = row.children[cellIndex];
@@ -512,6 +550,84 @@ export function EnhancedContentEditor({
     colorGrid.style.cssText = 'display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-bottom: 8px;';
     
     colors.forEach(color => {
+      const colorButton = document.createElement('button');
+      colorButton.style.cssText = `
+        width: 24px;
+        height: 24px;
+        border: 1px solid #ccc;
+        border-radius: 2px;
+        background-color: ${color};
+        cursor: pointer;
+      `;
+      colorButton.addEventListener('click', () => {
+        cell.style.backgroundColor = color;
+        updateContent();
+        colorPicker.remove();
+      });
+      colorGrid.appendChild(colorButton);
+    });
+    
+    colorPicker.appendChild(colorGrid);
+    
+    const removeButton = document.createElement('button');
+    removeButton.textContent = 'Remove Color';
+    removeButton.style.cssText = `
+      width: 100%;
+      padding: 4px 8px;
+      border: 1px solid #ccc;
+      border-radius: 2px;
+      background: #f8f9fa;
+      cursor: pointer;
+      font-size: 12px;
+    `;
+    removeButton.addEventListener('click', () => {
+      cell.style.backgroundColor = '';
+      updateContent();
+      colorPicker.remove();
+    });
+    
+    colorPicker.appendChild(removeButton);
+    document.body.appendChild(colorPicker);
+    
+    // Remove picker when clicking elsewhere
+    const removePicker = () => {
+      colorPicker.remove();
+      document.removeEventListener('click', removePicker);
+    };
+    setTimeout(() => {
+      document.addEventListener('click', removePicker);
+    }, 100);
+  };
+
+  const showHeaderColorPicker = (cell: HTMLElement, e: MouseEvent) => {
+    // Remove any existing color picker
+    document.querySelectorAll('.cell-color-picker').forEach(picker => picker.remove());
+    
+    const colorPicker = document.createElement('div');
+    colorPicker.className = 'cell-color-picker';
+    colorPicker.style.cssText = `
+      position: fixed;
+      top: ${e.clientY + 10}px;
+      left: ${e.clientX + 10}px;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 1001;
+      padding: 8px;
+    `;
+    
+    const headerColors = [
+      '#f8f9fa', '#e9ecef', '#dee2e6', '#ced4da', '#adb5bd',
+      '#ff6b6b', '#fd79a8', '#fdcb6e', '#e17055', '#00b894', 
+      '#00cec9', '#0984e3', '#6c5ce7', '#a29bfe', '#ffeaa7',
+      '#fab1a0', '#ff7675', '#fd79a8', '#74b9ff', '#0abde3'
+    ];
+    
+    const colorGrid = document.createElement('div');
+    colorGrid.style.cssText = 'display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 8px;';
+    
+    headerColors.forEach(color => {
       const colorButton = document.createElement('button');
       colorButton.style.cssText = `
         width: 24px;
@@ -972,6 +1088,162 @@ export function EnhancedContentEditor({
     return match ? match[1] : null;
   };
 
+  // Enhanced paste handling for tables, images, and links
+  const handlePaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    
+    const clipboardData = e.clipboardData;
+    const items = clipboardData.items;
+    
+    // Check for images first
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf('image') !== -1) {
+        const blob = items[i].getAsFile();
+        if (blob) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const result = event.target?.result as string;
+            insertText(`<img src="${result}" alt="Pasted image" style="max-width: 100%; height: auto; border-radius: 8px; margin: 10px 0;" />`);
+          };
+          reader.readAsDataURL(blob);
+          return;
+        }
+      }
+    }
+    
+    // Handle text content
+    const pastedText = clipboardData.getData('text/plain');
+    const pastedHtml = clipboardData.getData('text/html');
+    
+    if (pastedHtml) {
+      // Handle HTML content (including tables)
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(pastedHtml, 'text/html');
+      
+      // Check if it contains a table
+      const tables = doc.querySelectorAll('table');
+      if (tables.length > 0) {
+        tables.forEach(table => {
+          // Convert pasted table to our format with proper styling
+          table.setAttribute('data-editable-table', 'true');
+          table.style.cssText = 'border-collapse: collapse; width: 100%; margin: 10px 0; position: relative;';
+          
+          // Style headers
+          table.querySelectorAll('th').forEach(th => {
+            (th as HTMLElement).style.cssText = 'border: 1px solid #ccc; padding: 8px; background-color: #f8f9fa; vertical-align: top; text-align: left; position: relative; min-width: 100px;';
+            (th as HTMLElement).contentEditable = 'true';
+          });
+          
+          // Style data cells
+          table.querySelectorAll('td').forEach(td => {
+            (td as HTMLElement).style.cssText = 'border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left; min-width: 100px;';
+            (td as HTMLElement).contentEditable = 'true';
+          });
+        });
+        
+        insertText(doc.body.innerHTML);
+        setTimeout(() => {
+          setupTableControls();
+          makeTableResizable();
+        }, 100);
+        return;
+      }
+      
+      // Process links in HTML content
+      const links = doc.querySelectorAll('a');
+      links.forEach(link => {
+        link.style.cssText = 'color: #3b82f6; text-decoration: underline; font-weight: bold;';
+        link.target = '_blank';
+      });
+      
+      if (doc.body.innerHTML.trim()) {
+        insertText(doc.body.innerHTML);
+        return;
+      }
+    }
+    
+    if (pastedText) {
+      // Check if it's a URL
+      const urlRegex = /^https?:\/\/[^\s]+$/;
+      if (urlRegex.test(pastedText.trim())) {
+        const url = pastedText.trim();
+        const linkText = prompt("Enter link text:") || url;
+        insertText(`<a href="${url}" target="_blank" style="color: #3b82f6; text-decoration: underline; font-weight: bold;">${linkText}</a>`);
+        return;
+      }
+      
+      // Handle regular text
+      const lines = pastedText.split('\n');
+      const formattedText = lines.map(line => line.trim()).join('<br>');
+      insertText(formattedText);
+    }
+  };
+
+  // Handle keyboard shortcuts and code block deletion
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Handle code block deletion with backspace
+    if (e.key === 'Backspace') {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const container = range.commonAncestorContainer;
+        
+        // Check if cursor is at the start of a code block
+        const preElement = container.nodeType === Node.TEXT_NODE 
+          ? container.parentElement?.closest('pre')
+          : (container as Element).closest('pre');
+          
+        if (preElement && range.startOffset === 0 && range.endOffset === 0) {
+          // If the code block is empty or cursor is at the very beginning
+          const textContent = preElement.textContent || '';
+          if (textContent.trim() === '' || range.startOffset === 0) {
+            e.preventDefault();
+            
+            // Replace the code block with a regular paragraph
+            const newP = document.createElement('p');
+            newP.innerHTML = '<br>';
+            preElement.parentNode?.replaceChild(newP, preElement);
+            
+            // Place cursor in the new paragraph
+            const newRange = document.createRange();
+            newRange.setStart(newP, 0);
+            newRange.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(newRange);
+            
+            updateContent();
+          }
+        }
+      }
+    }
+  };
+
+  // Function to get clean text preview (strip HTML formatting)
+  const getCleanTextPreview = (htmlContent: string, maxLength: number = 150): string => {
+    if (!htmlContent) return '';
+    
+    // Create a temporary element to parse HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = htmlContent;
+    
+    // Remove script and style elements
+    const scripts = tempDiv.querySelectorAll('script, style');
+    scripts.forEach(el => el.remove());
+    
+    // Get text content and clean it up
+    let textContent = tempDiv.textContent || tempDiv.innerText || '';
+    
+    // Remove extra whitespace and line breaks
+    textContent = textContent.replace(/\s+/g, ' ').trim();
+    
+    // Truncate if necessary
+    if (textContent.length > maxLength) {
+      textContent = textContent.substring(0, maxLength).trim() + '...';
+    }
+    
+    return textContent;
+  };
+
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files) {
@@ -1375,6 +1647,8 @@ export function EnhancedContentEditor({
               contentEditable
               suppressContentEditableWarning
               onInput={updateContent}
+              onPaste={handlePaste}
+              onKeyDown={handleKeyDown}
               className="w-full p-4 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-background text-foreground min-h-[400px] prose prose-lg max-w-none"
               style={{
                 fontFamily: 'system-ui, -apple-system, sans-serif',
