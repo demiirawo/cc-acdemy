@@ -352,41 +352,79 @@ export function EnhancedContentEditor({
     { icon: Strikethrough, action: () => formatText('strikeThrough'), tooltip: "Strikethrough" },
   ];
 
+  const increaseFontSize = () => {
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+      const range = selection.getRangeAt(0);
+      const selectedText = selection.toString();
+      const currentSize = getCurrentFontSize();
+      const newSize = Math.min(48, currentSize + 2);
+      
+      // Create a span with the new font size
+      const span = document.createElement('span');
+      span.style.fontSize = `${newSize}px`;
+      span.textContent = selectedText;
+      
+      // Replace the selected text
+      range.deleteContents();
+      range.insertNode(span);
+      
+      // Clear selection and update content
+      selection.removeAllRanges();
+      editorRef.current?.focus();
+      updateContent();
+    }
+  };
+
+  const decreaseFontSize = () => {
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+      const range = selection.getRangeAt(0);
+      const selectedText = selection.toString();
+      const currentSize = getCurrentFontSize();
+      const newSize = Math.max(10, currentSize - 2);
+      
+      // Create a span with the new font size
+      const span = document.createElement('span');
+      span.style.fontSize = `${newSize}px`;
+      span.textContent = selectedText;
+      
+      // Replace the selected text
+      range.deleteContents();
+      range.insertNode(span);
+      
+      // Clear selection and update content
+      selection.removeAllRanges();
+      editorRef.current?.focus();
+      updateContent();
+    }
+  };
+
+  const setFontSize = (size: string) => {
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+      const range = selection.getRangeAt(0);
+      const selectedText = selection.toString();
+      
+      // Create a span with the specified font size
+      const span = document.createElement('span');
+      span.style.fontSize = size;
+      span.textContent = selectedText;
+      
+      // Replace the selected text
+      range.deleteContents();
+      range.insertNode(span);
+      
+      // Clear selection and update content
+      selection.removeAllRanges();
+      editorRef.current?.focus();
+      updateContent();
+    }
+  };
+
   const textSizeToolbarItems = [
-    { icon: Minus, action: () => {
-      const selection = window.getSelection();
-      if (selection && selection.toString()) {
-        const selectedText = selection.toString();
-        const currentSize = getCurrentFontSize();
-        const newSize = Math.max(10, currentSize - 2);
-        document.execCommand('insertHTML', false, `<span style="font-size: ${newSize}px">${selectedText}</span>`);
-      } else {
-        const currentSize = getCurrentFontSize();
-        const newSize = Math.max(10, currentSize - 2);
-        document.execCommand('fontSize', false, '7');
-        document.execCommand('foreColor', false, 'transparent');
-        document.execCommand('insertHTML', false, `<span style="font-size: ${newSize}px">Text</span>`);
-      }
-      editorRef.current?.focus();
-      updateContent();
-    }, tooltip: "Decrease Text Size" },
-    { icon: Plus, action: () => {
-      const selection = window.getSelection();
-      if (selection && selection.toString()) {
-        const selectedText = selection.toString();
-        const currentSize = getCurrentFontSize();
-        const newSize = Math.min(48, currentSize + 2);
-        document.execCommand('insertHTML', false, `<span style="font-size: ${newSize}px">${selectedText}</span>`);
-      } else {
-        const currentSize = getCurrentFontSize();
-        const newSize = Math.min(48, currentSize + 2);
-        document.execCommand('fontSize', false, '7');
-        document.execCommand('foreColor', false, 'transparent');
-        document.execCommand('insertHTML', false, `<span style="font-size: ${newSize}px">Text</span>`);
-      }
-      editorRef.current?.focus();
-      updateContent();
-    }, tooltip: "Increase Text Size" },
+    { icon: Minus, action: decreaseFontSize, tooltip: "Decrease Text Size" },
+    { icon: Plus, action: increaseFontSize, tooltip: "Increase Text Size" },
   ];
 
   const getCurrentFontSize = (): number => {
@@ -754,47 +792,19 @@ export function EnhancedContentEditor({
                 </Button>
               ))}
               
-              {/* Font Size Selector */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2 hover:bg-muted"
-                    title="Set Text Size"
-                  >
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-48">
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-sm">Text Size</h4>
-                    <div className="grid grid-cols-3 gap-1">
-                      {[10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48].map((size) => (
-                        <Button
-                          key={size}
-                          variant="outline"
-                          size="sm"
-                          className="h-8 text-xs"
-                          onClick={() => {
-                            const selection = window.getSelection();
-                            if (selection && selection.toString()) {
-                              const selectedText = selection.toString();
-                              document.execCommand('insertHTML', false, `<span style="font-size: ${size}px">${selectedText}</span>`);
-                            } else {
-                              document.execCommand('insertHTML', false, `<span style="font-size: ${size}px">Text</span>`);
-                            }
-                            editorRef.current?.focus();
-                            updateContent();
-                          }}
-                        >
-                          {size}px
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                </PopoverContent>
-              </Popover>
+              {/* Font Size Dropdown */}
+              <Select onValueChange={(value) => setFontSize(`${value}px`)}>
+                <SelectTrigger className="h-8 w-20 text-xs">
+                  <SelectValue placeholder="Size" />
+                </SelectTrigger>
+                <SelectContent>
+                  {[10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48].map((size) => (
+                    <SelectItem key={size} value={size.toString()}>
+                      {size}px
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Alignment */}
