@@ -1319,59 +1319,99 @@ export function EnhancedContentEditor({
   const listToolbarItems = [
     { icon: List, action: () => {
       const selection = window.getSelection();
-      if (selection && selection.toString()) {
-        // Apply bullet points to selected text
-        const selectedText = selection.toString();
+      if (selection && selection.rangeCount > 0) {
         const range = selection.getRangeAt(0);
-        range.deleteContents();
         
-        const lines = selectedText.split('\n').filter(line => line.trim() !== '');
-        const listItems = lines.map(line => `<li>${line.trim()}</li>`).join('');
-        const ul = document.createElement('ul');
-        ul.innerHTML = listItems;
-        ul.style.cssText = 'margin: 16px 0; padding-left: 40px;';
-        
-        range.insertNode(ul);
-        
-        // Move cursor after list
-        const afterRange = document.createRange();
-        afterRange.setStartAfter(ul);
-        afterRange.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(afterRange);
-      } else {
-        // Insert empty bullet point
-        insertText('<ul style="margin: 16px 0; padding-left: 40px;"><li></li></ul>');
+        if (!selection.toString()) {
+          // No text selected - insert new bullet list
+          const ul = document.createElement('ul');
+          ul.style.cssText = 'margin: 16px 0; padding-left: 40px; list-style-type: disc;';
+          const li = document.createElement('li');
+          li.innerHTML = '&nbsp;'; // Add non-breaking space for cursor placement
+          ul.appendChild(li);
+          
+          range.insertNode(ul);
+          
+          // Position cursor inside the list item
+          const newRange = document.createRange();
+          newRange.setStart(li, 0);
+          newRange.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+        } else {
+          // Text is selected - convert to bullet list
+          const selectedText = selection.toString();
+          range.deleteContents();
+          
+          const lines = selectedText.split('\n').filter(line => line.trim() !== '');
+          const ul = document.createElement('ul');
+          ul.style.cssText = 'margin: 16px 0; padding-left: 40px; list-style-type: disc;';
+          
+          lines.forEach(line => {
+            const li = document.createElement('li');
+            li.textContent = line.trim();
+            ul.appendChild(li);
+          });
+          
+          range.insertNode(ul);
+          
+          // Move cursor after list
+          const afterRange = document.createRange();
+          afterRange.setStartAfter(ul);
+          afterRange.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(afterRange);
+        }
+        updateContent();
       }
-      updateContent();
     }, tooltip: "Bullet List" },
     { icon: ListOrdered, action: () => {
       const selection = window.getSelection();
-      if (selection && selection.toString()) {
-        // Apply numbered list to selected text
-        const selectedText = selection.toString();
+      if (selection && selection.rangeCount > 0) {
         const range = selection.getRangeAt(0);
-        range.deleteContents();
         
-        const lines = selectedText.split('\n').filter(line => line.trim() !== '');
-        const listItems = lines.map(line => `<li>${line.trim()}</li>`).join('');
-        const ol = document.createElement('ol');
-        ol.innerHTML = listItems;
-        ol.style.cssText = 'margin: 16px 0; padding-left: 40px;';
-        
-        range.insertNode(ol);
-        
-        // Move cursor after list
-        const afterRange = document.createRange();
-        afterRange.setStartAfter(ol);
-        afterRange.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(afterRange);
-      } else {
-        // Insert empty numbered list
-        insertText('<ol style="margin: 16px 0; padding-left: 40px;"><li></li></ol>');
+        if (!selection.toString()) {
+          // No text selected - insert new numbered list
+          const ol = document.createElement('ol');
+          ol.style.cssText = 'margin: 16px 0; padding-left: 40px; list-style-type: decimal;';
+          const li = document.createElement('li');
+          li.innerHTML = '&nbsp;'; // Add non-breaking space for cursor placement
+          ol.appendChild(li);
+          
+          range.insertNode(ol);
+          
+          // Position cursor inside the list item
+          const newRange = document.createRange();
+          newRange.setStart(li, 0);
+          newRange.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(newRange);
+        } else {
+          // Text is selected - convert to numbered list
+          const selectedText = selection.toString();
+          range.deleteContents();
+          
+          const lines = selectedText.split('\n').filter(line => line.trim() !== '');
+          const ol = document.createElement('ol');
+          ol.style.cssText = 'margin: 16px 0; padding-left: 40px; list-style-type: decimal;';
+          
+          lines.forEach(line => {
+            const li = document.createElement('li');
+            li.textContent = line.trim();
+            ol.appendChild(li);
+          });
+          
+          range.insertNode(ol);
+          
+          // Move cursor after list
+          const afterRange = document.createRange();
+          afterRange.setStartAfter(ol);
+          afterRange.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(afterRange);
+        }
+        updateContent();
       }
-      updateContent();
     }, tooltip: "Numbered List" },
     { icon: Quote, action: () => {
       const selection = window.getSelection();
