@@ -96,7 +96,7 @@ export function EnhancedContentEditor({
     if (editorRef.current) {
       editorRef.current.innerHTML = cleanContent;
     }
-  }, [title, content]);
+  const [currentTableCell, setCurrentTableCell] = useState<HTMLElement | null>(null);
 
   // Load page settings if editing existing page
   useEffect(() => {
@@ -458,6 +458,118 @@ export function EnhancedContentEditor({
     // Implementation for showing table controls on hover
   };
 
+  const showCellColorPicker = (cell: HTMLElement, e: MouseEvent) => {
+    // Remove any existing color picker
+    document.querySelectorAll('.cell-color-picker').forEach(picker => picker.remove());
+    
+    const colorPicker = document.createElement('div');
+    colorPicker.className = 'cell-color-picker';
+    colorPicker.style.cssText = `
+      position: fixed;
+      top: ${e.clientY + 10}px;
+      left: ${e.clientX + 10}px;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 1001;
+      padding: 8px;
+    `;
+    
+    const colors = [
+      '#ffffff', '#f8f9fa', '#e9ecef', '#dee2e6', '#ced4da', '#adb5bd',
+      '#6c757d', '#495057', '#343a40', '#212529', '#ff0000', '#ff6b6b',
+      '#fd79a8', '#fdcb6e', '#e17055', '#00b894', '#00cec9', '#0984e3',
+      '#6c5ce7', '#a29bfe', '#ffeaa7', '#fab1a0', '#ff7675', '#fd79a8'
+    ];
+    
+    const colorGrid = document.createElement('div');
+    colorGrid.style.cssText = 'display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-bottom: 8px;';
+    
+    colors.forEach(color => {
+      const colorButton = document.createElement('button');
+      colorButton.style.cssText = `
+        width: 24px;
+        height: 24px;
+        border: 1px solid #ccc;
+        border-radius: 2px;
+        background-color: ${color};
+        cursor: pointer;
+      `;
+      colorButton.addEventListener('click', () => {
+        cell.style.backgroundColor = color;
+        updateContent();
+        colorPicker.remove();
+      });
+      colorGrid.appendChild(colorButton);
+    });
+    
+    colorPicker.appendChild(colorGrid);
+    
+    const removeButton = document.createElement('button');
+    removeButton.textContent = 'Remove Color';
+    removeButton.style.cssText = `
+      width: 100%;
+      padding: 4px 8px;
+      border: 1px solid #ccc;
+      border-radius: 2px;
+      background: #f8f9fa;
+      cursor: pointer;
+      font-size: 12px;
+    `;
+    removeButton.addEventListener('click', () => {
+      cell.style.backgroundColor = '';
+      updateContent();
+      colorPicker.remove();
+    });
+    
+    colorPicker.appendChild(removeButton);
+    document.body.appendChild(colorPicker);
+    
+    // Remove picker when clicking elsewhere
+    const removePicker = () => {
+      colorPicker.remove();
+      document.removeEventListener('click', removePicker);
+    };
+    setTimeout(() => {
+      document.addEventListener('click', removePicker);
+    }, 100);
+  };
+
+  const removeCellColor = (cell: HTMLElement) => {
+    cell.style.backgroundColor = '';
+    updateContent();
+  };
+
+  const changeTextColor = (color: string) => {
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed) {
+      const range = selection.getRangeAt(0);
+      const selectedText = selection.toString();
+      
+      // Create a span with the specified color
+      const span = document.createElement('span');
+      if (color === 'inherit') {
+        span.style.color = '';
+      } else {
+        span.style.color = color;
+      }
+      span.textContent = selectedText;
+      
+      // Replace the selected text
+      range.deleteContents();
+      range.insertNode(span);
+      
+      // Restore selection to the newly created span
+      const newRange = document.createRange();
+      newRange.selectNodeContents(span);
+      selection.removeAllRanges();
+      selection.addRange(newRange);
+      
+      updateContent();
+    }
+  };
+
   const hideTableControls = (e: Event) => {
     // Implementation for hiding table controls on hover
   };
@@ -704,11 +816,9 @@ export function EnhancedContentEditor({
     return 16; // Default font size
   };
 
-  const alignmentToolbarItems = [
-    { icon: AlignLeft, action: () => formatText('justifyLeft'), tooltip: "Align Left" },
-    { icon: AlignCenter, action: () => formatText('justifyCenter'), tooltip: "Align Center" },
-    { icon: AlignRight, action: () => formatText('justifyRight'), tooltip: "Align Right" },
-    { icon: AlignJustify, action: () => formatText('justifyFull'), tooltip: "Justify" },
+  const formattingToolbarItems = [
+    ...basicToolbarItems,
+    ...alignmentToolbarItems,
   ];
 
   const listToolbarItems = [
@@ -1132,6 +1242,11 @@ export function EnhancedContentEditor({
               </Select>
             </div>
 
+            {/* Text Color */}
+            <div className="flex items-center gap-1 px-2 border-r">
+              <ColorPicker onColorSelect={changeTextColor} size="sm" />
+            </div>
+
             {/* Alignment */}
             <div className="flex items-center gap-1 px-2 border-r">
               {alignmentToolbarItems.map((item, index) => (
@@ -1459,6 +1574,6 @@ export function EnhancedContentEditor({
         className="hidden"
         accept="image/*,video/*,.pdf,.doc,.docx,.txt"
       />
-    </div>
-  );
+     </div>
+   );
 }
