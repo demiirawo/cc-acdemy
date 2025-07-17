@@ -155,107 +155,226 @@ export function EnhancedContentEditor({
   };
 
   const insertTable = (rows: number, cols: number) => {
-    let tableHTML = `<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0;" data-table="true"><tbody>`;
+    let tableHTML = `<table border="1" style="border-collapse: collapse; width: 100%; margin: 10px 0; position: relative;" data-editable-table="true">`;
     
     // Header row
-    tableHTML += '<tr>';
+    tableHTML += '<thead><tr>';
     for (let j = 0; j < cols; j++) {
-      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; position: relative;">
-        Header ${j + 1}
-        <div class="table-controls" style="position: absolute; top: 2px; right: 2px; display: none;">
-          <button onclick="addColumnAfter(this)" style="background: #007bff; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">+Col</button>
-          <button onclick="removeColumn(this)" style="background: #dc3545; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">-Col</button>
-        </div>
-      </th>`;
+      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; position: relative; background-color: #f8f9fa;" contenteditable="true"></th>`;
     }
-    tableHTML += '</tr>';
+    tableHTML += '</tr></thead>';
     
     // Data rows
+    tableHTML += '<tbody>';
     for (let i = 0; i < rows - 1; i++) {
       tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; min-width: 100px; position: relative;">
-          Cell ${i + 1}-${j + 1}
-          ${j === 0 ? `<div class="row-controls" style="position: absolute; top: 2px; right: 2px; display: none;">
-            <button onclick="addRowAfter(this)" style="background: #007bff; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">+Row</button>
-            <button onclick="removeRow(this)" style="background: #dc3545; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">-Row</button>
-          </div>` : ''}
-        </td>`;
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; position: relative;" contenteditable="true"></td>`;
       }
       tableHTML += '</tr>';
     }
+    tableHTML += '</tbody>';
     
-    tableHTML += '</tbody></table>';
+    tableHTML += '</table>';
     
-    // Add table control functions to window for inline onclick handlers
-    const scriptHTML = `
-      <script>
-        window.addRowAfter = function(btn) {
-          const row = btn.closest('tr');
-          const table = btn.closest('table');
-          const colCount = row.cells.length;
-          const newRow = table.insertRow(row.rowIndex + 1);
-          for (let i = 0; i < colCount; i++) {
-            const cell = newRow.insertCell(i);
-            cell.style.cssText = 'border: 1px solid #ccc; padding: 8px; min-width: 100px; position: relative;';
-            cell.innerHTML = 'New Cell';
-            if (i === 0) {
-              cell.innerHTML += '<div class="row-controls" style="position: absolute; top: 2px; right: 2px; display: none;"><button onclick="addRowAfter(this)" style="background: #007bff; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">+Row</button><button onclick="removeRow(this)" style="background: #dc3545; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">-Row</button></div>';
-            }
-          }
-        };
-        
-        window.removeRow = function(btn) {
-          const row = btn.closest('tr');
-          const table = btn.closest('table');
-          if (table.rows.length > 2) row.remove();
-        };
-        
-        window.addColumnAfter = function(btn) {
-          const table = btn.closest('table');
-          const cellIndex = btn.closest('th, td').cellIndex;
-          for (let i = 0; i < table.rows.length; i++) {
-            const cell = table.rows[i].insertCell(cellIndex + 1);
-            cell.style.cssText = 'border: 1px solid #ccc; padding: 8px; min-width: 100px; position: relative;';
-            if (i === 0) {
-              cell.innerHTML = 'New Header<div class="table-controls" style="position: absolute; top: 2px; right: 2px; display: none;"><button onclick="addColumnAfter(this)" style="background: #007bff; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">+Col</button><button onclick="removeColumn(this)" style="background: #dc3545; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">-Col</button></div>';
-            } else {
-              cell.innerHTML = 'New Cell';
-              if (cellIndex + 1 === 0) {
-                cell.innerHTML += '<div class="row-controls" style="position: absolute; top: 2px; right: 2px; display: none;"><button onclick="addRowAfter(this)" style="background: #007bff; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">+Row</button><button onclick="removeRow(this)" style="background: #dc3545; color: white; border: none; padding: 2px 4px; margin: 1px; font-size: 10px; cursor: pointer;">-Row</button></div>';
-              }
-            }
-          }
-        };
-        
-        window.removeColumn = function(btn) {
-          const table = btn.closest('table');
-          const cellIndex = btn.closest('th, td').cellIndex;
-          if (table.rows[0].cells.length > 1) {
-            for (let i = 0; i < table.rows.length; i++) {
-              table.rows[i].deleteCell(cellIndex);
-            }
-          }
-        };
-        
-        // Show controls on hover
-        document.addEventListener('mouseover', function(e) {
-          if (e.target.closest('table[data-table="true"]')) {
-            const controls = e.target.closest('th, td')?.querySelector('.table-controls, .row-controls');
-            if (controls) controls.style.display = 'block';
-          }
-        });
-        
-        document.addEventListener('mouseout', function(e) {
-          if (e.target.closest('table[data-table="true"]')) {
-            const controls = e.target.closest('th, td')?.querySelector('.table-controls, .row-controls');
-            if (controls) controls.style.display = 'none';
-          }
-        });
-      </script>
+    insertText(tableHTML + '<br>');
+    
+    // Add table manipulation functionality
+    setTimeout(() => {
+      setupTableControls();
+    }, 100);
+  };
+
+  const setupTableControls = () => {
+    // Remove existing event listeners to prevent duplicates
+    document.removeEventListener('contextmenu', handleTableContextMenu);
+    document.addEventListener('contextmenu', handleTableContextMenu);
+    
+    // Add hover effects for table cells
+    const tables = editorRef.current?.querySelectorAll('table[data-editable-table="true"]');
+    tables?.forEach(table => {
+      const cells = table.querySelectorAll('th, td');
+      cells.forEach(cell => {
+        cell.addEventListener('mouseenter', showTableControls);
+        cell.addEventListener('mouseleave', hideTableControls);
+      });
+    });
+  };
+
+  const handleTableContextMenu = (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const cell = target.closest('th, td');
+    const table = target.closest('table[data-editable-table="true"]');
+    
+    if (table && cell) {
+      e.preventDefault();
+      showTableContextMenu(e, cell, table);
+    }
+  };
+
+  const showTableContextMenu = (e: MouseEvent, cell: Element, table: Element) => {
+    // Remove existing context menu if any
+    const existingMenu = document.querySelector('.table-context-menu');
+    existingMenu?.remove();
+    
+    const menu = document.createElement('div');
+    menu.className = 'table-context-menu';
+    menu.style.cssText = `
+      position: fixed;
+      top: ${e.clientY}px;
+      left: ${e.clientX}px;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      z-index: 1000;
+      padding: 4px 0;
+      min-width: 150px;
     `;
     
-    insertText(tableHTML + scriptHTML + '<br>');
+    const menuItems = [
+      { text: 'Insert Row Above', action: () => insertRowAbove(cell, table) },
+      { text: 'Insert Row Below', action: () => insertRowBelow(cell, table) },
+      { text: 'Insert Column Left', action: () => insertColumnLeft(cell, table) },
+      { text: 'Insert Column Right', action: () => insertColumnRight(cell, table) },
+      { text: 'Delete Row', action: () => deleteRow(cell, table) },
+      { text: 'Delete Column', action: () => deleteColumn(cell, table) },
+    ];
+    
+    menuItems.forEach(item => {
+      const menuItem = document.createElement('div');
+      menuItem.textContent = item.text;
+      menuItem.style.cssText = `
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 14px;
+        color: #333;
+      `;
+      menuItem.addEventListener('mouseenter', () => {
+        menuItem.style.backgroundColor = '#f0f0f0';
+      });
+      menuItem.addEventListener('mouseleave', () => {
+        menuItem.style.backgroundColor = 'transparent';
+      });
+      menuItem.addEventListener('click', () => {
+        item.action();
+        menu.remove();
+        updateContent();
+      });
+      menu.appendChild(menuItem);
+    });
+    
+    document.body.appendChild(menu);
+    
+    // Remove menu when clicking elsewhere
+    const removeMenu = () => {
+      menu.remove();
+      document.removeEventListener('click', removeMenu);
+    };
+    setTimeout(() => {
+      document.addEventListener('click', removeMenu);
+    }, 100);
+  };
+
+  const insertRowAbove = (cell: Element, table: Element) => {
+    const row = cell.closest('tr');
+    if (!row) return;
+    
+    const newRow = document.createElement('tr');
+    const cellCount = row.children.length;
+    
+    for (let i = 0; i < cellCount; i++) {
+      const newCell = document.createElement('td');
+      newCell.style.cssText = 'border: 1px solid #ccc; padding: 8px; position: relative;';
+      newCell.contentEditable = 'true';
+      newRow.appendChild(newCell);
+    }
+    
+    row.parentNode?.insertBefore(newRow, row);
+  };
+
+  const insertRowBelow = (cell: Element, table: Element) => {
+    const row = cell.closest('tr');
+    if (!row) return;
+    
+    const newRow = document.createElement('tr');
+    const cellCount = row.children.length;
+    
+    for (let i = 0; i < cellCount; i++) {
+      const newCell = document.createElement('td');
+      newCell.style.cssText = 'border: 1px solid #ccc; padding: 8px; position: relative;';
+      newCell.contentEditable = 'true';
+      newRow.appendChild(newCell);
+    }
+    
+    row.parentNode?.insertBefore(newRow, row.nextSibling);
+  };
+
+  const insertColumnLeft = (cell: Element, table: Element) => {
+    const cellIndex = Array.from(cell.parentNode?.children || []).indexOf(cell);
+    const rows = table.querySelectorAll('tr');
+    
+    rows.forEach((row, rowIndex) => {
+      const newCell = document.createElement(rowIndex === 0 ? 'th' : 'td');
+      newCell.style.cssText = rowIndex === 0 
+        ? 'border: 1px solid #ccc; padding: 8px; position: relative; background-color: #f8f9fa;'
+        : 'border: 1px solid #ccc; padding: 8px; position: relative;';
+      newCell.contentEditable = 'true';
+      
+      const targetCell = row.children[cellIndex];
+      row.insertBefore(newCell, targetCell);
+    });
+  };
+
+  const insertColumnRight = (cell: Element, table: Element) => {
+    const cellIndex = Array.from(cell.parentNode?.children || []).indexOf(cell);
+    const rows = table.querySelectorAll('tr');
+    
+    rows.forEach((row, rowIndex) => {
+      const newCell = document.createElement(rowIndex === 0 ? 'th' : 'td');
+      newCell.style.cssText = rowIndex === 0 
+        ? 'border: 1px solid #ccc; padding: 8px; position: relative; background-color: #f8f9fa;'
+        : 'border: 1px solid #ccc; padding: 8px; position: relative;';
+      newCell.contentEditable = 'true';
+      
+      const targetCell = row.children[cellIndex];
+      row.insertBefore(newCell, targetCell?.nextSibling || null);
+    });
+  };
+
+  const deleteRow = (cell: Element, table: Element) => {
+    const row = cell.closest('tr');
+    const tbody = table.querySelector('tbody');
+    const thead = table.querySelector('thead');
+    
+    if (row && tbody && tbody.children.length > 1) {
+      row.remove();
+    } else if (row && thead?.contains(row)) {
+      // Don't delete header row if it's the only row
+      if (tbody && tbody.children.length > 0) {
+        row.remove();
+      }
+    }
+  };
+
+  const deleteColumn = (cell: Element, table: Element) => {
+    const cellIndex = Array.from(cell.parentNode?.children || []).indexOf(cell);
+    const rows = table.querySelectorAll('tr');
+    
+    if (rows[0]?.children.length === 1) return; // Don't delete last column
+    
+    rows.forEach(row => {
+      const cellToDelete = row.children[cellIndex];
+      cellToDelete?.remove();
+    });
+  };
+
+  const showTableControls = (e: Event) => {
+    // Implementation for showing table controls on hover
+  };
+
+  const hideTableControls = (e: Event) => {
+    // Implementation for hiding table controls on hover
   };
 
   const insertDivider = () => {
@@ -369,9 +488,12 @@ export function EnhancedContentEditor({
       range.deleteContents();
       range.insertNode(span);
       
-      // Clear selection and update content
+      // Restore selection to the newly created span
+      const newRange = document.createRange();
+      newRange.selectNodeContents(span);
       selection.removeAllRanges();
-      editorRef.current?.focus();
+      selection.addRange(newRange);
+      
       updateContent();
     }
   };
@@ -393,9 +515,12 @@ export function EnhancedContentEditor({
       range.deleteContents();
       range.insertNode(span);
       
-      // Clear selection and update content
+      // Restore selection to the newly created span
+      const newRange = document.createRange();
+      newRange.selectNodeContents(span);
       selection.removeAllRanges();
-      editorRef.current?.focus();
+      selection.addRange(newRange);
+      
       updateContent();
     }
   };
@@ -415,9 +540,12 @@ export function EnhancedContentEditor({
       range.deleteContents();
       range.insertNode(span);
       
-      // Clear selection and update content
+      // Restore selection to the newly created span
+      const newRange = document.createRange();
+      newRange.selectNodeContents(span);
       selection.removeAllRanges();
-      editorRef.current?.focus();
+      selection.addRange(newRange);
+      
       updateContent();
     }
   };
@@ -917,57 +1045,65 @@ export function EnhancedContentEditor({
               <CardHeader>
                  <div className="flex items-center justify-between">
                    <CardTitle className="text-lg">Recommended Reading</CardTitle>
-                   <Button
-                     onClick={() => {
-                       if (newRecommendation.title && (newRecommendation.url || newRecommendation.type === 'file')) {
-                         if (newRecommendation.type === 'file') {
-                           // For file type, we'll handle file upload
-                           const input = document.createElement('input');
-                           input.type = 'file';
-                           input.accept = '.pdf,.doc,.docx,.txt,.png,.jpg,.jpeg';
-                           input.onchange = (e) => {
-                             const file = (e.target as HTMLInputElement).files?.[0];
-                             if (file) {
-                               const fileUrl = URL.createObjectURL(file);
-                                setRecommendedReading(prev => [...prev, {
-                                  title: newRecommendation.title,
-                                  description: newRecommendation.description,
-                                  type: 'file',
-                                  fileUrl,
-                                  fileName: file.name
-                                }]);
-                            setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '' });
-                               toast({
-                                 title: "Added",
-                                 description: "Recommended reading file added.",
-                               });
-                             }
-                           };
-                           input.click();
-                         } else {
+                    <Button
+                      onClick={() => {
+                        if (newRecommendation.title && newRecommendation.description) {
+                          if (newRecommendation.type === 'file') {
+                            // Check if file is already selected
+                            if (newRecommendation.fileUrl && newRecommendation.fileName) {
+                              setRecommendedReading(prev => [...prev, {
+                                title: newRecommendation.title,
+                                description: newRecommendation.description,
+                                type: 'file',
+                                fileUrl: newRecommendation.fileUrl,
+                                fileName: newRecommendation.fileName
+                              }]);
+                              setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '' });
+                              toast({
+                                title: "Added",
+                                description: "Recommended reading file added.",
+                              });
+                            } else {
+                              toast({
+                                title: "No file selected",
+                                description: "Please select a file first.",
+                                variant: "destructive"
+                              });
+                            }
+                          } else if (newRecommendation.url) {
                             setRecommendedReading(prev => [...prev, {
                               title: newRecommendation.title,
                               url: newRecommendation.url,
                               description: newRecommendation.description,
                               type: 'link'
                             }]);
-                           setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '' });
-                           toast({
-                             title: "Added",
-                             description: "Recommended reading item added.",
-                           });
-                         }
-                       }
-                     }}
-                     variant="outline"
-                     size="sm"
-                      disabled={!newRecommendation.title || !newRecommendation.description || 
-                               (newRecommendation.type === 'link' ? !newRecommendation.url : !newRecommendation.fileName)}
-                     className="flex items-center gap-2"
-                   >
-                     <FileText className="h-4 w-4" />
-                     Add Reading
-                   </Button>
+                            setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '' });
+                            toast({
+                              title: "Added",
+                              description: "Recommended reading item added.",
+                            });
+                          } else {
+                            toast({
+                              title: "Missing URL",
+                              description: "Please enter a URL for the link.",
+                              variant: "destructive"
+                            });
+                          }
+                        } else {
+                          toast({
+                            title: "Missing information",
+                            description: "Please fill in title and description.",
+                            variant: "destructive"
+                          });
+                        }
+                      }}
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center gap-2"
+                    >
+                      <FileText className="h-4 w-4" />
+                      Add Reading
+                    </Button>
                  </div>
               </CardHeader>
                <CardContent className="space-y-4">
@@ -1002,33 +1138,42 @@ export function EnhancedContentEditor({
                          onChange={(e) => setNewRecommendation(prev => ({ ...prev, url: e.target.value }))}
                        />
                      )}
-                      {newRecommendation.type === 'file' && (
-                        <div className="space-y-2">
-                          <input
-                            type="file"
-                            id="reading-file-upload"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                const mockUrl = URL.createObjectURL(file);
-                                setNewRecommendation(prev => ({ ...prev, fileName: file.name, fileUrl: mockUrl }));
-                              }
-                            }}
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => document.getElementById('reading-file-upload')?.click()}
-                            className="w-full"
-                          >
-                            Upload File
-                          </Button>
-                          {newRecommendation.fileName && (
-                            <p className="text-sm text-muted-foreground">{newRecommendation.fileName}</p>
-                          )}
-                        </div>
-                      )}
+                       {newRecommendation.type === 'file' && (
+                         <div className="space-y-2">
+                           <input
+                             type="file"
+                             id="reading-file-upload"
+                             className="hidden"
+                             accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.mp4,.mov,.avi"
+                             onChange={(e) => {
+                               const file = e.target.files?.[0];
+                               if (file) {
+                                 const reader = new FileReader();
+                                 reader.onload = (event) => {
+                                   const result = event.target?.result as string;
+                                   setNewRecommendation(prev => ({ 
+                                     ...prev, 
+                                     fileName: file.name, 
+                                     fileUrl: result 
+                                   }));
+                                 };
+                                 reader.readAsDataURL(file);
+                               }
+                             }}
+                           />
+                           <Button
+                             type="button"
+                             variant="outline"
+                             onClick={() => document.getElementById('reading-file-upload')?.click()}
+                             className="w-full"
+                           >
+                             {newRecommendation.fileName ? 'Change File' : 'Upload File'}
+                           </Button>
+                           {newRecommendation.fileName && (
+                             <p className="text-sm text-muted-foreground">📁 {newRecommendation.fileName}</p>
+                           )}
+                         </div>
+                       )}
                      <Input
                        placeholder="Description"
                        value={newRecommendation.description}
