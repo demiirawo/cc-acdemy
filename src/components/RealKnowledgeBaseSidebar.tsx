@@ -113,12 +113,17 @@ function SidebarTreeItem({
 
       if (currentError) throw currentError;
 
-      // Get siblings with same parent
+      // Get siblings with same parent and space
       let query = supabase.from('pages').select('*');
       if (currentPage.parent_page_id) {
         query = query.eq('parent_page_id', currentPage.parent_page_id);
       } else {
         query = query.is('parent_page_id', null);
+      }
+      if (currentPage.space_id) {
+        query = query.eq('space_id', currentPage.space_id);
+      } else {
+        query = query.is('space_id', null);
       }
       const { data: siblings, error: siblingsError } = await query.order('created_at', { ascending: true });
 
@@ -172,12 +177,17 @@ function SidebarTreeItem({
 
       if (currentError) throw currentError;
 
-      // Get siblings with same parent
+      // Get siblings with same parent and space
       let query = supabase.from('pages').select('*');
       if (currentPage.parent_page_id) {
         query = query.eq('parent_page_id', currentPage.parent_page_id);
       } else {
         query = query.is('parent_page_id', null);
+      }
+      if (currentPage.space_id) {
+        query = query.eq('space_id', currentPage.space_id);
+      } else {
+        query = query.is('space_id', null);
       }
       const { data: siblings, error: siblingsError } = await query.order('created_at', { ascending: true });
 

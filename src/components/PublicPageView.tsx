@@ -127,7 +127,7 @@ export function PublicPageView() {
               <Globe className="h-6 w-6 text-muted-foreground" />
               <div>
                 <div className="text-sm text-muted-foreground">Public Page</div>
-                <div className="font-medium">Care Cudde Academy</div>
+                <div className="font-medium">Care Cuddle Academy</div>
               </div>
             </div>
             <Button 
@@ -136,7 +136,7 @@ export function PublicPageView() {
               onClick={() => window.location.href = '/'}
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
-              Visit Care Cudde Academy
+              Visit Care Cuddle Academy
             </Button>
           </div>
         </div>
@@ -183,12 +183,12 @@ export function PublicPageView() {
         {/* Footer */}
         <div className="mt-8 text-center text-sm text-muted-foreground">
           <p>
-            This page is publicly shared from Care Cudde Academy.{' '}
+            This page is publicly shared from Care Cuddle Academy.{' '}
             <button 
               onClick={() => window.location.href = '/'}
               className="underline hover:text-foreground transition-colors"
             >
-              Visit the full Care Cudde Academy
+              Visit the full Care Cuddle Academy
             </button>
           </p>
         </div>
