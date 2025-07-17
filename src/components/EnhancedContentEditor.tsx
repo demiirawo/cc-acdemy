@@ -357,7 +357,7 @@ export function EnhancedContentEditor({
     // Header row
     tableHTML += '<thead><tr>';
     for (let j = 0; j < cols; j++) {
-      tableHTML += `<th style="border: 1px solid #ccc; padding: 12px; background-color: #f8f9fa; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; white-space: nowrap; writing-mode: horizontal-tb; direction: ltr;" contenteditable="true"></th>`;
+      tableHTML += `<th style="border: 1px solid #ccc; padding: 12px; background-color: #f8f9fa; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb; direction: ltr; white-space: normal;" contenteditable="true"></th>`;
     }
     tableHTML += '</tr></thead>';
     
@@ -366,7 +366,7 @@ export function EnhancedContentEditor({
     for (let i = 0; i < rows - 1; i++) {
       tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableHTML += `<td style="border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; white-space: nowrap; writing-mode: horizontal-tb; direction: ltr;" contenteditable="true"></td>`;
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb; direction: ltr; white-space: normal;" contenteditable="true"></td>`;
       }
       tableHTML += '</tr>';
     }
@@ -486,7 +486,7 @@ export function EnhancedContentEditor({
     
     for (let i = 0; i < cellCount; i++) {
       const newCell = document.createElement('td');
-      newCell.style.cssText = 'border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box;';
+      newCell.style.cssText = 'border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb; direction: ltr; white-space: normal;';
       newCell.contentEditable = 'true';
       newRow.appendChild(newCell);
     }
@@ -503,7 +503,7 @@ export function EnhancedContentEditor({
     
     for (let i = 0; i < cellCount; i++) {
       const newCell = document.createElement('td');
-      newCell.style.cssText = 'border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box;';
+      newCell.style.cssText = 'border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb; direction: ltr; white-space: normal;';
       newCell.contentEditable = 'true';
       newRow.appendChild(newCell);
     }
@@ -1586,7 +1586,24 @@ export function EnhancedContentEditor({
           const reader = new FileReader();
           reader.onload = (event) => {
             const result = event.target?.result as string;
-            insertText(`<img src="${result}" alt="Pasted image" style="max-width: 100%; height: auto; border-radius: 8px; margin: 10px 0;" />`);
+            const imageId = `img-${Date.now()}`;
+            insertText(`
+              <div class="image-container" style="text-align: left; margin: 10px 0;">
+                <img 
+                  id="${imageId}" 
+                  src="${result}" 
+                  alt="Pasted image" 
+                  style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer; display: block;" 
+                  onclick="showImageControls('${imageId}')"
+                />
+              </div>
+            `);
+            // Add image control functionality
+            setTimeout(() => setupImageControls(), 100);
+            toast({
+              title: "Image pasted",
+              description: "Click the image to resize and align it",
+            });
           };
           reader.readAsDataURL(blob);
           return;
@@ -1613,13 +1630,13 @@ export function EnhancedContentEditor({
           
           // Style headers
           table.querySelectorAll('th').forEach(th => {
-            (th as HTMLElement).style.cssText = 'border: 1px solid #ccc; padding: 8px; background-color: #f8f9fa; vertical-align: top; text-align: left; position: relative; min-width: 100px;';
+            (th as HTMLElement).style.cssText = 'border: 1px solid #ccc; padding: 12px; background-color: #f8f9fa; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb; direction: ltr; white-space: normal;';
             (th as HTMLElement).contentEditable = 'true';
           });
           
           // Style data cells
           table.querySelectorAll('td').forEach(td => {
-            (td as HTMLElement).style.cssText = 'border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left; min-width: 100px;';
+            (td as HTMLElement).style.cssText = 'border: 1px solid #ccc; padding: 12px; vertical-align: top; text-align: left; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; writing-mode: horizontal-tb; direction: ltr; white-space: normal;';
             (td as HTMLElement).contentEditable = 'true';
           });
         });
