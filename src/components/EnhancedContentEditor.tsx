@@ -81,7 +81,7 @@ export function EnhancedContentEditor({
   const [showAdvancedToolbar, setShowAdvancedToolbar] = useState(false);
   const [selectedFontSize, setSelectedFontSize] = useState("14");
   const [recommendedReading, setRecommendedReading] = useState<Array<{title: string, url?: string, description: string, type: 'link' | 'file', fileName?: string, fileUrl?: string}>>([]);
-  const [newRecommendation, setNewRecommendation] = useState({title: '', url: '', description: '', type: 'link' as 'link' | 'file'});
+  const [newRecommendation, setNewRecommendation] = useState({title: '', url: '', description: '', type: 'link' as 'link' | 'file', fileName: '', fileUrl: ''});
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -266,15 +266,37 @@ export function EnhancedContentEditor({
     const url = prompt("Enter URL:");
     const text = prompt("Enter link text:") || url;
     if (url) {
-      insertText(`<a href="${url}" target="_blank">${text}</a>`);
+      insertText(`<a href="${url}" target="_blank" style="color: #3b82f6; text-decoration: underline;">${text}</a>`);
     }
   };
 
   const insertImage = () => {
-    const url = prompt("Enter image URL:");
-    const alt = prompt("Enter alt text:") || "Image";
-    if (url) {
-      insertText(`<img src="${url}" alt="${alt}" style="max-width: 100%; height: auto;" />`);
+    // Create a file input for local uploads
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const result = e.target?.result as string;
+          insertText(`<img src="${result}" alt="${file.name}" style="max-width: 100%; height: auto;" />`);
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+    
+    // Also provide option for URL
+    const choice = confirm("Upload local image? (Cancel for URL input)");
+    if (choice) {
+      fileInput.click();
+    } else {
+      const url = prompt("Enter image URL:");
+      const alt = prompt("Enter alt text:") || "Image";
+      if (url) {
+        insertText(`<img src="${url}" alt="${alt}" style="max-width: 100%; height: auto;" />`);
+      }
     }
   };
 
@@ -302,9 +324,30 @@ export function EnhancedContentEditor({
   ];
 
   const formatToolbarItems = [
-    { icon: Heading1, action: () => formatText('formatBlock', 'h1'), tooltip: "Heading 1" },
-    { icon: Heading2, action: () => formatText('formatBlock', 'h2'), tooltip: "Heading 2" },
-    { icon: Heading3, action: () => formatText('formatBlock', 'h3'), tooltip: "Heading 3" },
+    { icon: Heading1, action: () => {
+      const selection = window.getSelection();
+      if (selection && selection.toString()) {
+        execCommand('formatBlock', 'h1');
+      } else {
+        insertText('<h1>Heading 1</h1>');
+      }
+    }, tooltip: "Heading 1" },
+    { icon: Heading2, action: () => {
+      const selection = window.getSelection();
+      if (selection && selection.toString()) {
+        execCommand('formatBlock', 'h2');
+      } else {
+        insertText('<h2>Heading 2</h2>');
+      }
+    }, tooltip: "Heading 2" },
+    { icon: Heading3, action: () => {
+      const selection = window.getSelection();
+      if (selection && selection.toString()) {
+        execCommand('formatBlock', 'h3');
+      } else {
+        insertText('<h3>Heading 3</h3>');
+      }
+    }, tooltip: "Heading 3" },
   ];
 
   const alignmentToolbarItems = [
@@ -315,8 +358,22 @@ export function EnhancedContentEditor({
   ];
 
   const listToolbarItems = [
-    { icon: List, action: () => formatText('insertUnorderedList'), tooltip: "Bullet List" },
-    { icon: ListOrdered, action: () => formatText('insertOrderedList'), tooltip: "Numbered List" },
+    { icon: List, action: () => {
+      const selection = window.getSelection();
+      if (selection && selection.toString()) {
+        execCommand('insertUnorderedList');
+      } else {
+        insertText('<ul><li>List item 1</li><li>List item 2</li></ul>');
+      }
+    }, tooltip: "Bullet List" },
+    { icon: ListOrdered, action: () => {
+      const selection = window.getSelection();
+      if (selection && selection.toString()) {
+        execCommand('insertOrderedList');
+      } else {
+        insertText('<ol><li>List item 1</li><li>List item 2</li></ol>');
+      }
+    }, tooltip: "Numbered List" },
     { icon: Quote, action: () => {
       const selection = window.getSelection();
       if (selection && selection.toString()) {
@@ -332,7 +389,13 @@ export function EnhancedContentEditor({
     { icon: Link, action: insertLink, tooltip: "Insert Link" },
     { icon: Image, action: insertImage, tooltip: "Insert Image" },
     { icon: Youtube, action: insertYouTube, tooltip: "Insert YouTube Video" },
-    { icon: Table, action: () => insertTable(3, 3), tooltip: "Insert Table" },
+    { icon: Table, action: () => {
+      const rows = parseInt(prompt("Number of rows:") || "3");
+      const cols = parseInt(prompt("Number of columns:") || "3");
+      if (rows > 0 && cols > 0) {
+        insertTable(rows, cols);
+      }
+    }, tooltip: "Insert Table" },
     { 
       icon: () => (
         <div className="w-4 h-4 border-t-2 border-foreground"></div>
@@ -767,7 +830,7 @@ export function EnhancedContentEditor({
                                   fileUrl,
                                   fileName: file.name
                                 }]);
-                               setNewRecommendation({ title: '', url: '', description: '', type: 'link' });
+                            setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '' });
                                toast({
                                  title: "Added",
                                  description: "Recommended reading file added.",
@@ -782,7 +845,7 @@ export function EnhancedContentEditor({
                               description: newRecommendation.description,
                               type: 'link'
                             }]);
-                           setNewRecommendation({ title: '', url: '', description: '', type: 'link' });
+                           setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '' });
                            toast({
                              title: "Added",
                              description: "Recommended reading item added.",
@@ -792,7 +855,8 @@ export function EnhancedContentEditor({
                      }}
                      variant="outline"
                      size="sm"
-                     disabled={!newRecommendation.title || (newRecommendation.type === 'link' && !newRecommendation.url)}
+                      disabled={!newRecommendation.title || !newRecommendation.description || 
+                               (newRecommendation.type === 'link' ? !newRecommendation.url : !newRecommendation.fileName)}
                      className="flex items-center gap-2"
                    >
                      <FileText className="h-4 w-4" />
@@ -832,11 +896,33 @@ export function EnhancedContentEditor({
                          onChange={(e) => setNewRecommendation(prev => ({ ...prev, url: e.target.value }))}
                        />
                      )}
-                     {newRecommendation.type === 'file' && (
-                       <div className="text-sm text-muted-foreground flex items-center">
-                         Click "Add Reading" to select file
-                       </div>
-                     )}
+                      {newRecommendation.type === 'file' && (
+                        <div className="space-y-2">
+                          <input
+                            type="file"
+                            id="reading-file-upload"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const mockUrl = URL.createObjectURL(file);
+                                setNewRecommendation(prev => ({ ...prev, fileName: file.name, fileUrl: mockUrl }));
+                              }
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => document.getElementById('reading-file-upload')?.click()}
+                            className="w-full"
+                          >
+                            Upload File
+                          </Button>
+                          {newRecommendation.fileName && (
+                            <p className="text-sm text-muted-foreground">{newRecommendation.fileName}</p>
+                          )}
+                        </div>
+                      )}
                      <Input
                        placeholder="Description"
                        value={newRecommendation.description}

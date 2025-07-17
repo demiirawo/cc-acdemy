@@ -76,6 +76,7 @@ export function WhiteboardPage() {
 
     try {
       fabricCanvas.isDrawingMode = activeTool === 'draw';
+      fabricCanvas.selection = activeTool === 'select';
       
       if (activeTool === 'draw' && fabricCanvas.freeDrawingBrush) {
         fabricCanvas.freeDrawingBrush.color = activeColor;
@@ -118,16 +119,20 @@ export function WhiteboardPage() {
         fabricCanvas.setActiveObject(circle);
         fabricCanvas.renderAll();
       } else if (tool === 'text') {
-        const text = new FabricTextbox('Double click to edit', {
+        const text = new FabricTextbox('Click here to edit text', {
           left: 100,
           top: 100,
           fill: activeColor,
           fontSize: 20,
           fontFamily: 'Arial',
+          editable: true,
         });
         fabricCanvas.add(text);
         fabricCanvas.setActiveObject(text);
         fabricCanvas.renderAll();
+        // Immediately enter edit mode
+        text.enterEditing();
+        text.selectAll();
       }
     } catch (error) {
       console.error('Error adding shape:', error);
