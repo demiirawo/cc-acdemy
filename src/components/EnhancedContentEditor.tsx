@@ -274,28 +274,57 @@ export function EnhancedContentEditor({
     // Create a file input for local uploads
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
-    fileInput.accept = 'image/*';
+    fileInput.accept = 'image/*,video/*,.pdf,.doc,.docx';
     fileInput.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const result = e.target?.result as string;
-          insertText(`<img src="${result}" alt="${file.name}" style="max-width: 100%; height: auto;" />`);
-        };
-        reader.readAsDataURL(file);
+        if (file.type.startsWith('image/')) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const result = e.target?.result as string;
+            insertText(`<img src="${result}" alt="${file.name}" style="max-width: 100%; height: auto; border-radius: 8px; margin: 10px 0;" />`);
+            toast({
+              title: "Image inserted",
+              description: "Image has been added to your content",
+            });
+          };
+          reader.readAsDataURL(file);
+        } else if (file.type.startsWith('video/')) {
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const result = e.target?.result as string;
+            insertText(`<video controls style="max-width: 100%; height: auto; border-radius: 8px; margin: 10px 0;"><source src="${result}" type="${file.type}">Your browser does not support the video tag.</video>`);
+            toast({
+              title: "Video inserted",
+              description: "Video has been added to your content",
+            });
+          };
+          reader.readAsDataURL(file);
+        } else {
+          // For other file types, create a download link
+          const fileUrl = URL.createObjectURL(file);
+          insertText(`<div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin: 10px 0; background: #f9fafb;"><a href="${fileUrl}" download="${file.name}" style="color: #3b82f6; text-decoration: none; font-weight: 500;">📁 ${file.name}</a><br><small style="color: #6b7280;">Click to download</small></div>`);
+          toast({
+            title: "File attached",
+            description: "File has been added to your content",
+          });
+        }
       }
     };
     
     // Also provide option for URL
-    const choice = confirm("Upload local image? (Cancel for URL input)");
+    const choice = confirm("Upload local file? (Cancel for URL input)");
     if (choice) {
       fileInput.click();
     } else {
-      const url = prompt("Enter image URL:");
-      const alt = prompt("Enter alt text:") || "Image";
+      const url = prompt("Enter image/file URL:");
+      const alt = prompt("Enter alt text or description:") || "Media";
       if (url) {
-        insertText(`<img src="${url}" alt="${alt}" style="max-width: 100%; height: auto;" />`);
+        if (url.match(/\.(jpg|jpeg|png|gif|bmp|webp)$/i)) {
+          insertText(`<img src="${url}" alt="${alt}" style="max-width: 100%; height: auto; border-radius: 8px; margin: 10px 0;" />`);
+        } else {
+          insertText(`<a href="${url}" target="_blank" style="color: #3b82f6; text-decoration: underline;">${alt}</a>`);
+        }
       }
     }
   };

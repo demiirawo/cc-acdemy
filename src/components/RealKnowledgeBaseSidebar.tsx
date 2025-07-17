@@ -130,38 +130,35 @@ function SidebarTreeItem({
               <Plus className="h-3 w-3" />
             </Button>}
           
-          {/* Move page buttons for better nesting control */}
-          {item.type === 'page' && onMovePage && <div className="flex items-center gap-1">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="sm" onClick={e => e.stopPropagation()} className="h-6 w-6 p-0 hover:bg-sidebar-accent/50" title="Move to...">
-                    <Move className="h-3 w-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem onClick={e => {
-                e.stopPropagation();
-                if (confirm(`Move "${item.title}" to top level?`)) {
-                  onMovePage(item.id, null);
-                }
-              }}>
-                    <ArrowUp className="h-4 w-4 mr-2" />
-                    Move to top level
-                  </DropdownMenuItem>
-                  {hierarchyData?.filter(h => h.id !== item.id && (h.type === 'space' || h.type === 'page')).map(parent => (
-                    <DropdownMenuItem key={parent.id} onClick={e => {
+          {/* Move page dropdown for better nesting control */}
+          {item.type === 'page' && onMovePage && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" onClick={e => e.stopPropagation()} className="h-6 w-6 p-0 hover:bg-sidebar-accent/50" title="Move to...">
+                  <Move className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={e => {
                   e.stopPropagation();
-                  if (confirm(`Move "${item.title}" under "${parent.title}"?`)) {
-                    onMovePage(item.id, parent.id);
-                  }
+                  onMovePage(item.id, null);
                 }}>
-                      <Folder className="h-4 w-4 mr-2" />
-                      Move under "{parent.title}"
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>}
+                  <ArrowUp className="h-4 w-4 mr-2" />
+                  Move to top level
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {hierarchyData?.filter(h => h.id !== item.id && (h.type === 'space' || h.type === 'page')).map(parent => (
+                  <DropdownMenuItem key={parent.id} onClick={e => {
+                    e.stopPropagation();
+                    onMovePage(item.id, parent.id);
+                  }}>
+                    <Folder className="h-4 w-4 mr-2" />
+                    Move under "{parent.title.length > 20 ? parent.title.substring(0, 20) + '...' : parent.title}"
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           
           {/* Context menu for pages */}
           {item.type === 'page' && <DropdownMenu>
@@ -210,10 +207,6 @@ function SidebarTreeItem({
                   Duplicate
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => onArchivePage?.(item.id)}>
-                  <Archive className="h-4 w-4 mr-2" />
-                  Archive
-                </DropdownMenuItem>
                 <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={async () => {
               if (confirm("Are you sure you want to delete this page? This action cannot be undone.")) {
                 try {

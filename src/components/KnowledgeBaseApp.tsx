@@ -18,7 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy, FileText } from "lucide-react";
 import { UserManagement } from "./UserManagement";
-import { RecommendedReadingList } from "./RecommendedReadingList";
+import { RecommendedReadingSection } from "./RecommendedReadingSection";
 
 // Page view component
 function PageView({
