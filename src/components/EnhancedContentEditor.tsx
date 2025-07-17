@@ -228,7 +228,44 @@ export function EnhancedContentEditor({
   }, [pageId]);
 
   const execCommand = (command: string, value?: string) => {
-    document.execCommand(command, false, value);
+    // Handle text alignment commands manually for better browser support
+    if (command.includes('justify')) {
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const container = range.commonAncestorContainer;
+        
+        // Find the closest block element
+        let blockElement = container.nodeType === Node.TEXT_NODE 
+          ? container.parentElement 
+          : container as Element;
+          
+        while (blockElement && !['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI'].includes(blockElement.tagName)) {
+          blockElement = blockElement.parentElement;
+        }
+        
+        if (blockElement) {
+          const element = blockElement as HTMLElement;
+          switch (command) {
+            case 'justifyLeft':
+              element.style.textAlign = 'left';
+              break;
+            case 'justifyCenter':
+              element.style.textAlign = 'center';
+              break;
+            case 'justifyRight':
+              element.style.textAlign = 'right';
+              break;
+            case 'justifyFull':
+              element.style.textAlign = 'justify';
+              break;
+          }
+        }
+      }
+    } else {
+      // Use execCommand for other formatting
+      document.execCommand(command, false, value);
+    }
     editorRef.current?.focus();
     updateContent();
   };
