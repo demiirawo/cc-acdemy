@@ -511,6 +511,7 @@ export function EnhancedContentEditor({
     cell.dir = 'ltr';
   };
 
+  // Fixed functionality for cell deletion/editing to prevent re-appearing text
   const handleCellPaste = (e: ClipboardEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -540,7 +541,13 @@ export function EnhancedContentEditor({
         selection.addRange(range);
       }
       
+      // Update content and trigger a mutation observer to catch changes
       updateContent();
+      
+      // Force table to reapply resizable controls
+      setTimeout(() => {
+        makeTableResizable();
+      }, 100);
     }
   };
 
@@ -603,12 +610,22 @@ export function EnhancedContentEditor({
           htmlCell.addEventListener('paste', handleCellPaste);
           htmlCell.addEventListener('input', updateContent);
           htmlCell.setAttribute('data-listeners-added', 'true');
+          
+          // Add event listener to fix the reappearing text issue
+          htmlCell.addEventListener('keyup', (e) => {
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+              updateContent();
+            }
+          });
         }
         
         // Add hover effects
         htmlCell.addEventListener('mouseenter', showTableControls);
         htmlCell.addEventListener('mouseleave', hideTableControls);
       });
+      
+      // Make table resizable after setting up controls
+      makeTableResizable();
     });
   };
 
@@ -943,6 +960,8 @@ export function EnhancedContentEditor({
           header.appendChild(resizeHandle);
         }
       });
+      
+      // Don't make recursive call - already handled in setupTableControls
     });
   };
 
