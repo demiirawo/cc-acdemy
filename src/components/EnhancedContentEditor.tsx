@@ -374,7 +374,7 @@ export function EnhancedContentEditor({
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
     
-    for (let j = 0; j < cols; j++) {
+     for (let j = 0; j < cols; j++) {
        const th = document.createElement('th');
       th.contentEditable = 'true';
       th.style.cssText = `
@@ -382,7 +382,7 @@ export function EnhancedContentEditor({
         padding: 12px;
         background-color: #f8f9fa;
         vertical-align: top;
-        text-align: start;
+        text-align: left !important;
         min-width: 120px;
         word-wrap: break-word;
         overflow-wrap: break-word;
@@ -517,13 +517,28 @@ export function EnhancedContentEditor({
     if (table) {
       const firstRowCells = table.querySelectorAll('tr:first-child td, tr:first-child th');
       firstRowCells.forEach(firstCell => {
-        (firstCell as HTMLElement).style.cssText += `
-          direction: ltr !important;
+        // More aggressive styling to force horizontal text direction
+        const cellEl = firstCell as HTMLElement;
+        cellEl.style.cssText = `
+          border: 1px solid #ccc;
+          padding: 12px;
+          background-color: ${cellEl.tagName === 'TH' ? '#f8f9fa' : 'transparent'};
+          vertical-align: top;
           text-align: start !important;
+          min-width: 120px;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
+          font-size: 14px;
+          font-family: inherit;
+          height: auto;
+          box-sizing: border-box;
+          white-space: normal;
+          direction: ltr !important;
+          text-align: left !important;
           unicode-bidi: embed !important;
           writing-mode: horizontal-tb !important;
         `;
-        (firstCell as HTMLElement).dir = 'ltr';
+        cellEl.dir = 'ltr';
       });
     }
     
@@ -2684,11 +2699,7 @@ export function EnhancedContentEditor({
                               href={item.url} 
                               target="_blank" 
                               rel="noopener noreferrer" 
-                              className="text-sm text-primary hover:underline break-all cursor-pointer"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                window.open(item.url, '_blank', 'noopener,noreferrer');
-                              }}
+                              className="text-sm text-primary hover:underline break-all"
                             >
                               {item.url}
                             </a>
