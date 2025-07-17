@@ -937,11 +937,11 @@ export function EnhancedContentEditor({
       if (videoId) {
         const iframeId = `youtube-${Date.now()}`;
         insertText(`
-          <div class="youtube-container" style="text-align: left; margin: 10px 0;">
+          <div class="youtube-container" style="text-align: center; margin: 10px 0;">
             <iframe 
               id="${iframeId}"
-              width="560" 
-              height="315" 
+              width="720" 
+              height="405" 
               src="https://www.youtube.com/embed/${videoId}" 
               frameborder="0" 
               allowfullscreen 
@@ -2088,11 +2088,20 @@ export function EnhancedContentEditor({
                      <div className="flex items-start justify-between">
                        <div className="flex-1">
                          <h4 className="font-medium text-foreground">{item.title}</h4>
-                         {item.url && (
-                           <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline break-all">
-                             {item.url}
-                           </a>
-                         )}
+                          {item.url && (
+                            <a 
+                              href={item.url} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="text-sm text-primary hover:underline break-all cursor-pointer"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                window.open(item.url, '_blank', 'noopener,noreferrer');
+                              }}
+                            >
+                              {item.url}
+                            </a>
+                          )}
                          {item.fileUrl && (
                            <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline break-all">
                              📁 {item.fileName}
