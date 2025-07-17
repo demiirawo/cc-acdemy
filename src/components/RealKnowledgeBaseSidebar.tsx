@@ -96,7 +96,7 @@ function SidebarTreeItem({
   onMovePage,
   hierarchyData
 }: SidebarTreeItemProps) {
-  const [isExpanded, setIsExpanded] = useState(level < 2);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const hasChildren = item.children && item.children.length > 0;
   const isSelected = selectedId === item.id;
@@ -114,11 +114,13 @@ function SidebarTreeItem({
       if (currentError) throw currentError;
 
       // Get siblings with same parent
-      const { data: siblings, error: siblingsError } = await supabase
-        .from('pages')
-        .select('*')
-        .eq('parent_page_id', currentPage.parent_page_id || null)
-        .order('created_at', { ascending: true });
+      let query = supabase.from('pages').select('*');
+      if (currentPage.parent_page_id) {
+        query = query.eq('parent_page_id', currentPage.parent_page_id);
+      } else {
+        query = query.is('parent_page_id', null);
+      }
+      const { data: siblings, error: siblingsError } = await query.order('created_at', { ascending: true });
 
       if (siblingsError) throw siblingsError;
 
@@ -171,11 +173,13 @@ function SidebarTreeItem({
       if (currentError) throw currentError;
 
       // Get siblings with same parent
-      const { data: siblings, error: siblingsError } = await supabase
-        .from('pages')
-        .select('*')
-        .eq('parent_page_id', currentPage.parent_page_id || null)
-        .order('created_at', { ascending: true });
+      let query = supabase.from('pages').select('*');
+      if (currentPage.parent_page_id) {
+        query = query.eq('parent_page_id', currentPage.parent_page_id);
+      } else {
+        query = query.is('parent_page_id', null);
+      }
+      const { data: siblings, error: siblingsError } = await query.order('created_at', { ascending: true });
 
       if (siblingsError) throw siblingsError;
 
