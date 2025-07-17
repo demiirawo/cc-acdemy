@@ -1005,27 +1005,6 @@ export function EnhancedContentEditor({
     }
   };
 
-  // Code block functionality with proper deletion support
-  const insertCodeBlock = () => {
-    const codeBlock = `<pre style="background-color: #f5f5f5; border: 1px solid #ddd; border-radius: 4px; padding: 12px; margin: 10px 0; font-family: 'Courier New', monospace; white-space: pre-wrap; position: relative;" contenteditable="true" data-code-block="true"><code></code></pre>`;
-    insertText(codeBlock);
-    
-    // Add keydown event listener for backspace handling
-    setTimeout(() => {
-      const codeBlocks = editorRef.current?.querySelectorAll('[data-code-block="true"]');
-      codeBlocks?.forEach(block => {
-        block.addEventListener('keydown', (e: Event) => {
-          const keyEvent = e as KeyboardEvent;
-          if (keyEvent.key === 'Backspace' && (block as HTMLElement).textContent?.trim() === '') {
-            e.preventDefault();
-            block.remove();
-            updateContent();
-          }
-        });
-      });
-    }, 100);
-  };
-
   // Toolbar items
   const basicToolbarItems = [
     { icon: Bold, action: () => formatText('bold'), tooltip: "Bold (Ctrl+B)" },
@@ -1054,7 +1033,7 @@ export function EnhancedContentEditor({
   ];
 
   const advancedToolbarItems = [
-    { icon: Code, action: () => insertCodeBlock(), tooltip: "Code Block" },
+    { icon: Code, action: () => formatText('formatBlock', '<pre>'), tooltip: "Code Block" },
     { icon: Quote, action: () => formatText('formatBlock', '<blockquote>'), tooltip: "Quote" },
   ];
 
