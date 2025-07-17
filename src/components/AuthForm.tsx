@@ -108,7 +108,7 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
           <div className="w-12 h-12 bg-gradient-primary rounded-lg flex items-center justify-center mx-auto mb-4">
             <span className="text-2xl font-bold text-primary-foreground">KB</span>
           </div>
-          <CardTitle className="text-2xl">Care Cudde Academy</CardTitle>
+          <CardTitle className="text-2xl">Knowledge Base</CardTitle>
           <CardDescription>
             Access your team's collective knowledge
           </CardDescription>

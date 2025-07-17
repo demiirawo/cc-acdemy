@@ -269,7 +269,7 @@ export function RealDashboard({
           <div className="relative max-w-2xl">
             <Search className="absolute left-4 top-3 h-5 w-5 text-muted-foreground" />
             <Input 
-              placeholder="Search Care Cudde Academy..." 
+              placeholder="Search knowledge base..." 
               value={searchQuery} 
               onChange={e => setSearchQuery(e.target.value)} 
               className="pl-12 h-12 text-lg shadow-md" 
