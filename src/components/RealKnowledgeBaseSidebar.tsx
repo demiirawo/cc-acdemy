@@ -113,56 +113,81 @@ function SidebarTreeItem({
 
       if (currentError) throw currentError;
 
-      // Get siblings with same parent and space
+      // Build comprehensive query for siblings
       let query = supabase.from('pages').select('*');
+      
+      // Match parent context exactly
       if (currentPage.parent_page_id) {
         query = query.eq('parent_page_id', currentPage.parent_page_id);
       } else {
         query = query.is('parent_page_id', null);
       }
+      
+      // Match space context exactly  
       if (currentPage.space_id) {
         query = query.eq('space_id', currentPage.space_id);
       } else {
         query = query.is('space_id', null);
       }
-      const { data: siblings, error: siblingsError } = await query;
+
+      const { data: siblings, error: siblingsError } = await query.order('created_at', { ascending: true });
 
       if (siblingsError) throw siblingsError;
       
-      // Ensure siblings are sorted by creation date
-      const sortedSiblings = siblings?.sort((a, b) => 
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      ) || [];
+      console.log('Current page:', currentPage.title);
+      console.log('Found siblings:', siblings?.map(s => s.title));
 
-  const currentIndex = sortedSiblings.findIndex(p => p.id === pageId);
-      if (currentIndex > 0) {
-        // Swap timestamps with previous sibling
-        const prevSibling = sortedSiblings[currentIndex - 1];
-        
-        await supabase
-          .from('pages')
-          .update({ created_at: prevSibling.created_at })
-          .eq('id', pageId);
-          
-        await supabase
-          .from('pages')
-          .update({ created_at: currentPage.created_at })
-          .eq('id', prevSibling.id);
-
+      if (!siblings || siblings.length < 2) {
         toast({
-          title: "Moved up",
-          description: "Page moved up successfully"
+          title: "Cannot move up",
+          description: "Page is already at the top or no siblings found"
         });
-        
-        // Refresh the page list
-        window.location.reload();
-      } else {
+        return;
+      }
+
+      const currentIndex = siblings.findIndex(p => p.id === pageId);
+      console.log('Current index:', currentIndex);
+      
+      if (currentIndex <= 0) {
         toast({
           title: "Cannot move up",
           description: "Page is already at the top"
         });
+        return;
       }
+
+      // Get previous sibling
+      const prevSibling = siblings[currentIndex - 1];
+      console.log('Swapping with:', prevSibling.title);
+      
+      // Create new timestamps to ensure proper ordering
+      const now = new Date();
+      const prevTime = new Date(now.getTime() - 1000); // 1 second earlier
+      
+      // Update both pages with new timestamps
+      const { error: updateError1 } = await supabase
+        .from('pages')
+        .update({ created_at: prevTime.toISOString() })
+        .eq('id', pageId);
+        
+      if (updateError1) throw updateError1;
+        
+      const { error: updateError2 } = await supabase
+        .from('pages')
+        .update({ created_at: now.toISOString() })
+        .eq('id', prevSibling.id);
+        
+      if (updateError2) throw updateError2;
+
+      toast({
+        title: "Moved up",
+        description: "Page moved up successfully"
+      });
+      
+      // Trigger page refresh
+      window.location.reload();
     } catch (error) {
+      console.error('Move up error:', error);
       toast({
         title: "Error", 
         description: "Failed to move page up",
@@ -182,59 +207,84 @@ function SidebarTreeItem({
 
       if (currentError) throw currentError;
 
-      // Get siblings with same parent and space
+      // Build comprehensive query for siblings
       let query = supabase.from('pages').select('*');
+      
+      // Match parent context exactly
       if (currentPage.parent_page_id) {
         query = query.eq('parent_page_id', currentPage.parent_page_id);
       } else {
         query = query.is('parent_page_id', null);
       }
+      
+      // Match space context exactly  
       if (currentPage.space_id) {
         query = query.eq('space_id', currentPage.space_id);
       } else {
         query = query.is('space_id', null);
       }
-      const { data: siblings, error: siblingsError } = await query;
+
+      const { data: siblings, error: siblingsError } = await query.order('created_at', { ascending: true });
 
       if (siblingsError) throw siblingsError;
       
-      // Ensure siblings are sorted by creation date
-      const sortedSiblings = siblings?.sort((a, b) => 
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      ) || [];
+      console.log('Current page:', currentPage.title);
+      console.log('Found siblings:', siblings?.map(s => s.title));
 
-      const currentIndex = sortedSiblings.findIndex(p => p.id === pageId);
-      if (currentIndex < sortedSiblings.length - 1) {
-        // Swap timestamps with next sibling
-        const nextSibling = sortedSiblings[currentIndex + 1];
-        
-        await supabase
-          .from('pages')
-          .update({ created_at: nextSibling.created_at })
-          .eq('id', pageId);
-          
-        await supabase
-          .from('pages')
-          .update({ created_at: currentPage.created_at })
-          .eq('id', nextSibling.id);
-
+      if (!siblings || siblings.length < 2) {
         toast({
-          title: "Moved down",
-          description: "Page moved down successfully"
+          title: "Cannot move down",
+          description: "Page is already at the bottom or no siblings found"
         });
-        
-        // Refresh the page list
-        window.location.reload();
-      } else {
+        return;
+      }
+
+      const currentIndex = siblings.findIndex(p => p.id === pageId);
+      console.log('Current index:', currentIndex);
+      
+      if (currentIndex >= siblings.length - 1) {
         toast({
           title: "Cannot move down",
           description: "Page is already at the bottom"
         });
+        return;
       }
-    } catch (error) {
+
+      // Get next sibling
+      const nextSibling = siblings[currentIndex + 1];
+      console.log('Swapping with:', nextSibling.title);
+      
+      // Create new timestamps to ensure proper ordering
+      const now = new Date();
+      const nextTime = new Date(now.getTime() + 1000); // 1 second later
+      
+      // Update both pages with new timestamps
+      const { error: updateError1 } = await supabase
+        .from('pages')
+        .update({ created_at: nextTime.toISOString() })
+        .eq('id', pageId);
+        
+      if (updateError1) throw updateError1;
+        
+      const { error: updateError2 } = await supabase
+        .from('pages')
+        .update({ created_at: now.toISOString() })
+        .eq('id', nextSibling.id);
+        
+      if (updateError2) throw updateError2;
+
       toast({
-        title: "Error",
-        description: "Failed to move page down", 
+        title: "Moved down",
+        description: "Page moved down successfully"
+      });
+      
+      // Trigger page refresh
+      window.location.reload();
+    } catch (error) {
+      console.error('Move down error:', error);
+      toast({
+        title: "Error", 
+        description: "Failed to move page down",
         variant: "destructive"
       });
     }

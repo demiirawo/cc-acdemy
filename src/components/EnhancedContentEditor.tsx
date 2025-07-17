@@ -368,7 +368,7 @@ export function EnhancedContentEditor({
     const headerRow = document.createElement('tr');
     
     for (let j = 0; j < cols; j++) {
-      const th = document.createElement('th');
+       const th = document.createElement('th');
       th.contentEditable = 'true';
       th.style.cssText = `
         border: 1px solid #ccc;
@@ -384,6 +384,9 @@ export function EnhancedContentEditor({
         height: auto;
         box-sizing: border-box;
         white-space: normal;
+        direction: ltr !important;
+        unicode-bidi: embed !important;
+        writing-mode: horizontal-tb !important;
       `;
       
       // Force proper text direction
@@ -410,7 +413,7 @@ export function EnhancedContentEditor({
       const row = document.createElement('tr');
       
       for (let j = 0; j < cols; j++) {
-        const td = document.createElement('td');
+         const td = document.createElement('td');
         td.contentEditable = 'true';
         td.style.cssText = `
           border: 1px solid #ccc;
@@ -425,6 +428,9 @@ export function EnhancedContentEditor({
           height: auto;
           box-sizing: border-box;
           white-space: normal;
+          direction: ltr !important;
+          unicode-bidi: embed !important;
+          writing-mode: horizontal-tb !important;
         `;
         
         // Force proper text direction
@@ -481,22 +487,28 @@ export function EnhancedContentEditor({
   const handleCellFocus = (e: Event) => {
     const cell = e.target as HTMLElement;
     
-    // Force proper text direction and alignment
-    cell.style.direction = 'ltr';
-    cell.style.textAlign = 'start';
+    // Force proper text direction and alignment with !important to ensure it takes precedence
+    cell.style.cssText += `
+      direction: ltr !important;
+      text-align: start !important;
+      unicode-bidi: embed !important;
+      writing-mode: horizontal-tb !important;
+    `;
     cell.dir = 'ltr';
     
-    // Special handling for first cells which often have text direction issues
+    // Special handling for all cells in first row to fix direction issues
     const table = cell.closest('table');
     if (table) {
       const firstRowCells = table.querySelectorAll('tr:first-child td, tr:first-child th');
-      if (firstRowCells && firstRowCells.length > 0 && firstRowCells[0] === cell) {
-        cell.style.direction = 'ltr';
-        cell.style.textAlign = 'start';
-        cell.style.unicodeBidi = 'embed';
-        cell.style.writingMode = 'horizontal-tb';
-        cell.dir = 'ltr';
-      }
+      firstRowCells.forEach(firstCell => {
+        (firstCell as HTMLElement).style.cssText += `
+          direction: ltr !important;
+          text-align: start !important;
+          unicode-bidi: embed !important;
+          writing-mode: horizontal-tb !important;
+        `;
+        (firstCell as HTMLElement).dir = 'ltr';
+      });
     }
     
     // Set cursor to beginning if cell is empty
