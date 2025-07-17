@@ -155,7 +155,7 @@ export function Dashboard({ onCreatePage, onPageSelect }: DashboardProps) {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-4xl font-bold text-foreground mb-2">
-                Welcome to Knowledge Base
+                Welcome to Care Cudde Academy
               </h1>
               <p className="text-lg text-muted-foreground">
                 Your team's collective knowledge, organized and accessible
@@ -171,7 +171,7 @@ export function Dashboard({ onCreatePage, onPageSelect }: DashboardProps) {
           <div className="relative max-w-2xl">
             <Search className="absolute left-4 top-3 h-5 w-5 text-muted-foreground" />
             <Input
-              placeholder="Search knowledge base..."
+              placeholder="Search Care Cudde Academy..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-12 h-12 text-lg shadow-md"
