@@ -467,11 +467,36 @@ export function EnhancedContentEditor({
   };
 
   const insertLink = () => {
+    const selection = window.getSelection();
+    const selectedText = selection?.toString() || '';
+    
     const url = prompt("Enter URL:");
-    const text = prompt("Enter link text:") || url;
-    if (url) {
-      insertText(`<a href="${url}" target="_blank" style="color: #3b82f6; text-decoration: underline;">${text}</a>`);
+    if (!url) return;
+    
+    if (selectedText) {
+      // Use selected text as link text and make it bold
+      const range = selection!.getRangeAt(0);
+      range.deleteContents();
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.style.cssText = 'color: #3b82f6; text-decoration: underline; font-weight: bold;';
+      link.textContent = selectedText;
+      
+      range.insertNode(link);
+      
+      // Move cursor after link
+      const afterRange = document.createRange();
+      afterRange.setStartAfter(link);
+      afterRange.collapse(true);
+      selection!.removeAllRanges();
+      selection!.addRange(afterRange);
+    } else {
+      const linkText = prompt("Enter link text:") || url;
+      insertText(`<a href="${url}" target="_blank" style="color: #3b82f6; text-decoration: underline; font-weight: bold;">${linkText}</a>`);
     }
+    updateContent();
   };
 
   const insertImage = () => {
@@ -616,9 +641,32 @@ export function EnhancedContentEditor({
       const range = selection.getRangeAt(0);
       const selectedText = selection.toString();
       
-      // Create a span with the specified font size
+      // Get the parent element to preserve any existing styles
+      const parentElement = range.commonAncestorContainer.nodeType === Node.TEXT_NODE 
+        ? range.commonAncestorContainer.parentElement 
+        : range.commonAncestorContainer as Element;
+      
+      // Create a span with the new font size while preserving other styles
       const span = document.createElement('span');
       span.style.fontSize = size;
+      
+      // Preserve existing styles from parent if any
+      if (parentElement && (parentElement as HTMLElement).style) {
+        const computedStyle = window.getComputedStyle(parentElement);
+        if (computedStyle.textAlign && computedStyle.textAlign !== 'start') {
+          span.style.textAlign = computedStyle.textAlign;
+        }
+        if (computedStyle.fontWeight && computedStyle.fontWeight !== 'normal') {
+          span.style.fontWeight = computedStyle.fontWeight;
+        }
+        if (computedStyle.fontStyle && computedStyle.fontStyle !== 'normal') {
+          span.style.fontStyle = computedStyle.fontStyle;
+        }
+        if (computedStyle.textDecoration && computedStyle.textDecoration !== 'none') {
+          span.style.textDecoration = computedStyle.textDecoration;
+        }
+      }
+      
       span.textContent = selectedText;
       
       // Replace the selected text
@@ -665,11 +713,59 @@ export function EnhancedContentEditor({
 
   const listToolbarItems = [
     { icon: List, action: () => {
-      document.execCommand('insertUnorderedList', false);
+      const selection = window.getSelection();
+      if (selection && selection.toString()) {
+        // Apply bullet points to selected text
+        const selectedText = selection.toString();
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+        
+        const lines = selectedText.split('\n').filter(line => line.trim() !== '');
+        const listItems = lines.map(line => `<li>${line.trim()}</li>`).join('');
+        const ul = document.createElement('ul');
+        ul.innerHTML = listItems;
+        ul.style.cssText = 'margin: 16px 0; padding-left: 40px;';
+        
+        range.insertNode(ul);
+        
+        // Move cursor after list
+        const afterRange = document.createRange();
+        afterRange.setStartAfter(ul);
+        afterRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(afterRange);
+      } else {
+        // Insert empty bullet point
+        insertText('<ul style="margin: 16px 0; padding-left: 40px;"><li></li></ul>');
+      }
       updateContent();
     }, tooltip: "Bullet List" },
     { icon: ListOrdered, action: () => {
-      document.execCommand('insertOrderedList', false);
+      const selection = window.getSelection();
+      if (selection && selection.toString()) {
+        // Apply numbered list to selected text
+        const selectedText = selection.toString();
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+        
+        const lines = selectedText.split('\n').filter(line => line.trim() !== '');
+        const listItems = lines.map(line => `<li>${line.trim()}</li>`).join('');
+        const ol = document.createElement('ol');
+        ol.innerHTML = listItems;
+        ol.style.cssText = 'margin: 16px 0; padding-left: 40px;';
+        
+        range.insertNode(ol);
+        
+        // Move cursor after list
+        const afterRange = document.createRange();
+        afterRange.setStartAfter(ol);
+        afterRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(afterRange);
+      } else {
+        // Insert empty numbered list
+        insertText('<ol style="margin: 16px 0; padding-left: 40px;"><li></li></ol>');
+      }
       updateContent();
     }, tooltip: "Numbered List" },
     { icon: Quote, action: () => {
