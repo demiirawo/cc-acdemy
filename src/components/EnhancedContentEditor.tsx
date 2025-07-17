@@ -249,7 +249,7 @@ export function EnhancedContentEditor({
     // Header row
     tableHTML += '<thead><tr>';
     for (let j = 0; j < cols; j++) {
-      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; background-color: #f8f9fa; vertical-align: top; text-align: left; position: relative; min-width: 100px; word-wrap: break-word; overflow-wrap: break-word;" contenteditable="true"></th>`;
+      tableHTML += `<th style="border: 1px solid #ccc; padding: 8px; background-color: #f8f9fa; vertical-align: top; text-align: left; position: relative; min-width: 100px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit;" contenteditable="true"></th>`;
     }
     tableHTML += '</tr></thead>';
     
@@ -258,7 +258,7 @@ export function EnhancedContentEditor({
     for (let i = 0; i < rows - 1; i++) {
       tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left; min-width: 100px; word-wrap: break-word; overflow-wrap: break-word;" contenteditable="true"></td>`;
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 8px; vertical-align: top; text-align: left; min-width: 100px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit;" contenteditable="true"></td>`;
       }
       tableHTML += '</tr>';
     }
@@ -937,7 +937,7 @@ export function EnhancedContentEditor({
       if (videoId) {
         const iframeId = `youtube-${Date.now()}`;
         insertText(`
-          <div class="youtube-container" style="text-align: center; margin: 10px 0;">
+          <div class="youtube-container" style="text-align: center !important; margin: 10px 0;">
             <iframe 
               id="${iframeId}"
               width="720" 
@@ -945,7 +945,7 @@ export function EnhancedContentEditor({
               src="https://www.youtube.com/embed/${videoId}" 
               frameborder="0" 
               allowfullscreen 
-              style="max-width: 100%; cursor: pointer; border-radius: 8px;"
+              style="max-width: 100%; cursor: pointer; border-radius: 8px; display: block; margin: 0 auto;"
               onclick="showYouTubeControls('${iframeId}')"
             ></iframe>
           </div>
@@ -1183,10 +1183,22 @@ export function EnhancedContentEditor({
       const range = selection.getRangeAt(0);
       const selectedText = selection.toString();
       
-      // Get the parent element to preserve any existing styles
+      // Check if we're inside a table cell
       const parentElement = range.commonAncestorContainer.nodeType === Node.TEXT_NODE 
         ? range.commonAncestorContainer.parentElement 
         : range.commonAncestorContainer as Element;
+      
+      const isInTable = parentElement?.closest('table[data-editable-table="true"]');
+      
+      if (isInTable) {
+        // For table cells, apply font size to the entire cell to maintain table structure
+        const cell = parentElement?.closest('td, th') as HTMLElement;
+        if (cell) {
+          cell.style.fontSize = size;
+          updateContent();
+          return;
+        }
+      }
       
       // Create a span with the new font size while preserving other styles
       const span = document.createElement('span');
