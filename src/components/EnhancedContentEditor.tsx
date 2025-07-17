@@ -352,6 +352,13 @@ export function EnhancedContentEditor({
   };
 
   const insertTable = (rows: number, cols: number) => {
+    console.log('Inserting table:', rows, 'x', cols);
+    
+    // Ensure editor has focus
+    if (editorRef.current) {
+      editorRef.current.focus();
+    }
+    
     // Create table element programmatically for better control
     const table = document.createElement('table');
     table.setAttribute('data-editable-table', 'true');
@@ -452,36 +459,45 @@ export function EnhancedContentEditor({
     
     table.appendChild(tbody);
     
-    // Insert the table
-    const selection = window.getSelection();
-    if (selection && selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
-      range.deleteContents();
-      range.insertNode(table);
+    // Insert the table using execCommand for better compatibility
+    try {
+      const tableHTML = table.outerHTML + '<br>';
+      execCommand('insertHTML', tableHTML);
       
-      // Add a line break after the table
-      const br = document.createElement('br');
-      range.setStartAfter(table);
-      range.insertNode(br);
+      console.log('Table inserted successfully');
       
-      // Position cursor in first cell
-      const firstCell = table.querySelector('th') as HTMLElement;
-      if (firstCell) {
-        firstCell.focus();
-        const newRange = document.createRange();
-        newRange.setStart(firstCell, 0);
-        newRange.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(newRange);
+      // Position cursor in first cell after a short delay
+      setTimeout(() => {
+        const insertedTable = editorRef.current?.querySelector('table[data-editable-table]:last-of-type');
+        if (insertedTable) {
+          const firstCell = insertedTable.querySelector('th') as HTMLElement;
+          if (firstCell) {
+            firstCell.focus();
+            const selection = window.getSelection();
+            if (selection) {
+              selection.removeAllRanges();
+              const range = document.createRange();
+              range.setStart(firstCell, 0);
+              range.collapse(true);
+              selection.addRange(range);
+            }
+          }
+        }
+        
+        // Setup table controls
+        setupTableControls();
+      }, 100);
+      
+    } catch (error) {
+      console.error('Error inserting table:', error);
+      // Fallback: direct insertion
+      if (editorRef.current) {
+        editorRef.current.appendChild(table);
+        const br = document.createElement('br');
+        editorRef.current.appendChild(br);
+        updateContent();
       }
     }
-    
-    updateContent();
-    
-    // Setup table controls
-    setTimeout(() => {
-      setupTableControls();
-    }, 100);
   };
 
   const handleCellFocus = (e: Event) => {

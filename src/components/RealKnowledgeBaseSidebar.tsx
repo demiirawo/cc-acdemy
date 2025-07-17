@@ -301,7 +301,7 @@ function SidebarTreeItem({
           </Button>}
         {!hasChildren && <div className="w-4" />}
         
-        {item.type === 'space' || hasChildren ? isExpanded ? <FolderOpen className="h-4 w-4 text-pink-500 flex-shrink-0" /> : <Folder className="h-4 w-4 text-pink-500 flex-shrink-0" /> : <FileText className="h-4 w-4 text-white flex-shrink-0" />}
+        {item.type === 'space' || hasChildren || (!item.parent_page_id && item.type === 'page') ? isExpanded ? <FolderOpen className="h-4 w-4 text-pink-500 flex-shrink-0" /> : <Folder className="h-4 w-4 text-pink-500 flex-shrink-0" /> : <FileText className="h-4 w-4 text-white flex-shrink-0" />}
         
         <span className="truncate flex-1 text-neutral-50 font-medium">{item.title}</span>
         
