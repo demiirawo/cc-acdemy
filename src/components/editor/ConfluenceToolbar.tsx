@@ -192,7 +192,7 @@ export const ConfluenceToolbar: React.FC<ConfluenceToolbarProps> = ({
         </DropdownMenuTrigger>
         <DropdownMenuContent>
           <div className="p-2">
-            <ColorPicker onColorChange={setTextColor} />
+            <ColorPicker onColorSelect={setTextColor} />
           </div>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -205,7 +205,7 @@ export const ConfluenceToolbar: React.FC<ConfluenceToolbarProps> = ({
         </DropdownMenuTrigger>
         <DropdownMenuContent>
           <div className="p-2">
-            <ColorPicker onColorChange={setHighlight} />
+            <ColorPicker onColorSelect={setHighlight} />
           </div>
         </DropdownMenuContent>
       </DropdownMenu>

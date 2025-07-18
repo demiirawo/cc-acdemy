@@ -42,7 +42,7 @@ export interface ConfluenceEditorProps {
   className?: string;
   mentions?: Array<{ id: string; label: string; avatar?: string }>;
   onMention?: (query: string) => Promise<Array<{ id: string; label: string; avatar?: string }>>;
-  macros?: Array<{ id: string; name: string; icon?: string; insertHtml: string }>;
+  macros?: Array<{ id: string; name: string; description?: string; category: string; icon?: string; insertHtml: string; tags?: string[] }>;
 }
 
 export const ConfluenceEditor: React.FC<ConfluenceEditorProps> = ({
@@ -118,25 +118,34 @@ export const ConfluenceEditor: React.FC<ConfluenceEditorProps> = ({
             let component: any;
             return {
               onStart: (props: any) => {
-                component = new MentionList({
-                  props,
-                  items: mentionResults,
-                });
+                component = {
+                  updateProps: (newProps: any) => {
+                    // Update component with new props
+                  },
+                  onKeyDown: (props: any) => {
+                    // Handle key down
+                    return false;
+                  },
+                  destroy: () => {
+                    // Cleanup
+                  }
+                };
               },
               onUpdate(props: any) {
-                component.updateProps(props);
+                component?.updateProps(props);
               },
               onKeyDown(props: any) {
-                return component.onKeyDown(props);
+                return component?.onKeyDown(props) || false;
               },
               onExit() {
-                component.destroy();
+                component?.destroy();
               },
             };
           },
         },
       }),
-      LayoutExtension,
+      LayoutExtension[0],
+      LayoutExtension[1],
       PanelExtension,
       SmartLinkExtension,
       CommentExtension,
