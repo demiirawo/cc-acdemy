@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { EditableTitle } from "./EditableTitle";
 import { ColorPicker } from "./ColorPicker";
+import { EnhancedRecommendedReading } from "./EnhancedRecommendedReading";
 import { sanitizeHtml, validateText, validateRecommendedReading } from "@/lib/security";
 import {
   Bold,
@@ -122,11 +123,44 @@ export function EnhancedContentEditor({
       editorRef.current.innerHTML = cleanContent;
     }
     
-    // Setup image and video controls after content is set
+    // Setup all controls after content is set
     setTimeout(() => {
       setupImageControls();
       setupYouTubeControls();
+      setupTableControls(); // FIX: Ensure table controls are set up when content loads
     }, 100);
+
+    // FIX: Add MutationObserver to detect dynamic table changes
+    const observer = new MutationObserver((mutations) => {
+      let shouldSetupControls = false;
+      mutations.forEach(mutation => {
+        if (mutation.type === 'childList') {
+          mutation.addedNodes.forEach(node => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+              const element = node as Element;
+              if (element.tagName === 'TABLE' || element.querySelector('table')) {
+                shouldSetupControls = true;
+              }
+            }
+          });
+        }
+      });
+      
+      if (shouldSetupControls) {
+        setTimeout(() => setupTableControls(), 50);
+      }
+    });
+
+    if (editorRef.current) {
+      observer.observe(editorRef.current, {
+        childList: true,
+        subtree: true
+      });
+    }
+
+    return () => {
+      observer.disconnect();
+    };
 
     // Add keyboard shortcuts
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -324,6 +358,8 @@ export function EnhancedContentEditor({
     if (editorRef.current) {
       setCurrentContent(editorRef.current.innerHTML);
       triggerAutoSave();
+      // FIX: Re-setup table controls whenever content changes to handle dynamic tables
+      setTimeout(() => setupTableControls(), 50);
     }
   };
 
@@ -2430,202 +2466,26 @@ export function EnhancedContentEditor({
               data-placeholder="Start writing your content..."
             />
             
-            {/* Recommended Reading Section */}
-            <Card>
-              <CardHeader>
-                 <div className="flex items-center justify-between">
-                   <CardTitle className="text-lg">Recommended Reading</CardTitle>
-                    <Button
-                      onClick={() => {
-                        if (newRecommendation.title && newRecommendation.description) {
-                          if (newRecommendation.type === 'file') {
-                            // Check if file is already selected
-                            if (newRecommendation.fileUrl && newRecommendation.fileName) {
-                              setRecommendedReading(prev => [...prev, {
-                                title: newRecommendation.title,
-                                description: newRecommendation.description,
-                                type: 'file',
-                                fileUrl: newRecommendation.fileUrl,
-                                fileName: newRecommendation.fileName
-                              }]);
-                              setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '' });
-                              toast({
-                                title: "Added",
-                                description: "Recommended reading file added.",
-                              });
-                            } else {
-                              toast({
-                                title: "No file selected",
-                                description: "Please select a file first.",
-                                variant: "destructive"
-                              });
-                            }
-                          } else if (newRecommendation.url) {
-                            setRecommendedReading(prev => [...prev, {
-                              title: newRecommendation.title,
-                              url: newRecommendation.url,
-                              description: newRecommendation.description,
-                              type: 'link'
-                            }]);
-                            setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '' });
-                            toast({
-                              title: "Added",
-                              description: "Recommended reading item added.",
-                            });
-                          } else {
-                            toast({
-                              title: "Missing URL",
-                              description: "Please enter a URL for the link.",
-                              variant: "destructive"
-                            });
-                          }
-                        } else {
-                          toast({
-                            title: "Missing information",
-                            description: "Please fill in title and description.",
-                            variant: "destructive"
-                          });
-                        }
-                      }}
-                      variant="outline"
-                      size="sm"
-                      className="flex items-center gap-2"
-                    >
-                      <FileText className="h-4 w-4" />
-                      Add Reading
-                    </Button>
-                 </div>
-              </CardHeader>
-               <CardContent className="space-y-4">
-                 {/* Form for adding new recommendation */}
-                 <div className="space-y-3 p-3 border rounded-lg bg-muted/10">
-                   <div className="flex gap-2">
-                     <Button
-                       variant={newRecommendation.type === 'link' ? 'default' : 'outline'}
-                       size="sm"
-                       onClick={() => setNewRecommendation(prev => ({ ...prev, type: 'link' }))}
-                     >
-                       Link
-                     </Button>
-                     <Button
-                       variant={newRecommendation.type === 'file' ? 'default' : 'outline'}
-                       size="sm"
-                       onClick={() => setNewRecommendation(prev => ({ ...prev, type: 'file' }))}
-                     >
-                       File
-                     </Button>
-                   </div>
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                     <Input
-                       placeholder="Title"
-                       value={newRecommendation.title}
-                       onChange={(e) => setNewRecommendation(prev => ({ ...prev, title: e.target.value }))}
-                     />
-                     {newRecommendation.type === 'link' && (
-                       <Input
-                         placeholder="URL"
-                         value={newRecommendation.url}
-                         onChange={(e) => setNewRecommendation(prev => ({ ...prev, url: e.target.value }))}
-                       />
-                     )}
-                       {newRecommendation.type === 'file' && (
-                         <div className="space-y-2">
-                           <input
-                             type="file"
-                             id="reading-file-upload"
-                             className="hidden"
-                             accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.mp4,.mov,.avi"
-                             onChange={(e) => {
-                               const file = e.target.files?.[0];
-                               if (file) {
-                                 const reader = new FileReader();
-                                 reader.onload = (event) => {
-                                   const result = event.target?.result as string;
-                                   setNewRecommendation(prev => ({ 
-                                     ...prev, 
-                                     fileName: file.name, 
-                                     fileUrl: result 
-                                   }));
-                                 };
-                                 reader.readAsDataURL(file);
-                               }
-                             }}
-                           />
-                           <Button
-                             type="button"
-                             variant="outline"
-                             onClick={() => document.getElementById('reading-file-upload')?.click()}
-                             className="w-full"
-                           >
-                             {newRecommendation.fileName ? 'Change File' : 'Upload File'}
-                           </Button>
-                           {newRecommendation.fileName && (
-                             <p className="text-sm text-muted-foreground">📁 {newRecommendation.fileName}</p>
-                           )}
-                         </div>
-                       )}
-                     <Input
-                       placeholder="Description"
-                       value={newRecommendation.description}
-                       onChange={(e) => setNewRecommendation(prev => ({ ...prev, description: e.target.value }))}
-                     />
-                   </div>
-                 </div>
-
-                {/* Existing recommendations */}
-                 {recommendedReading.map((item, index) => (
-                   <div key={index} className="p-3 border rounded-lg bg-muted/20">
-                     <div className="flex items-start justify-between">
-                       <div className="flex-1">
-                         <h4 className="font-medium text-foreground">{item.title}</h4>
-                          {item.url && (
-                            <a 
-                              href={item.url} 
-                              target="_blank" 
-                              rel="noopener noreferrer" 
-                              className="text-sm text-primary hover:underline break-all"
-                              onClick={() => {
-                                // Add protocol if missing
-                                let url = item.url || '';
-                                if (url && !url.match(/^https?:\/\//i)) {
-                                  url = 'https://' + url;
-                                }
-                                window.open(url, '_blank', 'noopener,noreferrer');
-                              }}
-                            >
-                              {item.url}
-                            </a>
-                          )}
-                         {item.fileUrl && (
-                           <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline break-all">
-                             📁 {item.fileName}
-                           </a>
-                         )}
-                         {item.description && (
-                           <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
-                         )}
-                       </div>
-                       <Button
-                         variant="ghost"
-                         size="sm"
-                         onClick={() => setRecommendedReading(prev => prev.filter((_, i) => i !== index))}
-                         className="h-8 w-8 p-0 text-destructive"
-                       >
-                         <Trash2 className="h-3 w-3" />
-                       </Button>
-                     </div>
-                   </div>
-                 ))}
-                
-                {recommendedReading.length === 0 && (
-                  <div className="text-center py-4 text-muted-foreground">
-                    <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No recommended reading yet</p>
-                    <p className="text-xs">Add links to helpful resources for this page</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+            {/* Enhanced Recommended Reading Section */}
+            <EnhancedRecommendedReading 
+              items={recommendedReading.map(item => ({
+                ...item,
+                category: 'general' // Add default category
+              }))} 
+              onChange={(newItems) => {
+                // Convert back to the original format
+                const convertedItems = newItems.map(item => ({
+                  title: item.title,
+                  url: item.url,
+                  description: item.description,
+                  type: item.type,
+                  fileName: item.fileName,
+                  fileUrl: item.fileUrl
+                }));
+                setRecommendedReading(convertedItems);
+              }}
+              editable={true}
+            />
           </div>
         </div>
 
