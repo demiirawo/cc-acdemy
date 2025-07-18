@@ -1,0 +1,306 @@
+/* Confluence Editor Styles */
+.confluence-editor {
+  @apply w-full;
+}
+
+.confluence-editor-content {
+  @apply prose prose-slate dark:prose-invert max-w-none;
+  
+  /* Headings */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold text-foreground mt-6 mb-4 first:mt-0;
+  }
+  
+  h1 { @apply text-3xl; }
+  h2 { @apply text-2xl; }
+  h3 { @apply text-xl; }
+  h4 { @apply text-lg; }
+  h5 { @apply text-base; }
+  h6 { @apply text-sm; }
+
+  /* Paragraphs */
+  p {
+    @apply text-foreground leading-relaxed mb-4;
+  }
+
+  /* Lists */
+  ul, ol {
+    @apply mb-4 pl-6;
+  }
+  
+  ul {
+    @apply list-disc;
+  }
+  
+  ol {
+    @apply list-decimal;
+  }
+  
+  li {
+    @apply mb-1;
+  }
+
+  /* Task Lists */
+  ul[data-type="taskList"] {
+    @apply list-none pl-0;
+  }
+  
+  li[data-type="taskItem"] {
+    @apply flex items-start gap-2 mb-2;
+  }
+  
+  li[data-type="taskItem"] > label {
+    @apply flex items-center gap-2 cursor-pointer;
+  }
+  
+  li[data-type="taskItem"] > label > input[type="checkbox"] {
+    @apply mt-0.5;
+  }
+
+  /* Tables */
+  table {
+    @apply w-full border-collapse border border-border bg-background rounded-md overflow-hidden mb-4;
+  }
+  
+  th, td {
+    @apply border border-border p-3 text-left align-top;
+  }
+  
+  th {
+    @apply bg-muted font-semibold;
+  }
+  
+  tr:nth-child(even) {
+    @apply bg-muted/30;
+  }
+
+  /* Code */
+  code {
+    @apply bg-muted px-1.5 py-0.5 rounded text-sm font-mono;
+  }
+  
+  pre {
+    @apply bg-muted p-4 rounded-md overflow-x-auto mb-4;
+  }
+  
+  pre code {
+    @apply bg-transparent p-0;
+  }
+
+  /* Blockquotes */
+  blockquote {
+    @apply border-l-4 border-primary/50 pl-4 italic my-4 text-muted-foreground;
+  }
+
+  /* Links */
+  a {
+    @apply text-primary hover:text-primary/80 underline;
+  }
+
+  /* Images */
+  img {
+    @apply max-w-full h-auto rounded-md;
+  }
+
+  /* YouTube embeds */
+  .youtube-embed {
+    @apply relative w-full aspect-video mb-4 rounded-md overflow-hidden;
+  }
+}
+
+/* Layout Components */
+.layout-section {
+  @apply flex gap-4 mb-6;
+}
+
+.layout-column {
+  @apply flex-1 min-w-0;
+}
+
+.layout-section[data-columns="2"] .layout-column {
+  @apply w-1/2;
+}
+
+.layout-section[data-columns="3"] .layout-column {
+  @apply w-1/3;
+}
+
+.layout-section[data-columns="4"] .layout-column {
+  @apply w-1/4;
+}
+
+/* Panels */
+.panel {
+  @apply border rounded-md mb-4 overflow-hidden;
+}
+
+.panel-info {
+  @apply border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950;
+}
+
+.panel-warning {
+  @apply border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950;
+}
+
+.panel-error {
+  @apply border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950;
+}
+
+.panel-success {
+  @apply border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950;
+}
+
+.panel-header {
+  @apply px-4 py-2 font-semibold border-b;
+}
+
+.panel-info .panel-header {
+  @apply bg-blue-100 border-blue-200 text-blue-800 dark:bg-blue-900 dark:border-blue-800 dark:text-blue-200;
+}
+
+.panel-warning .panel-header {
+  @apply bg-yellow-100 border-yellow-200 text-yellow-800 dark:bg-yellow-900 dark:border-yellow-800 dark:text-yellow-200;
+}
+
+.panel-error .panel-header {
+  @apply bg-red-100 border-red-200 text-red-800 dark:bg-red-900 dark:border-red-800 dark:text-red-200;
+}
+
+.panel-success .panel-header {
+  @apply bg-green-100 border-green-200 text-green-800 dark:bg-green-900 dark:border-green-800 dark:text-green-200;
+}
+
+.panel-body {
+  @apply p-4;
+}
+
+/* Smart Links */
+.smart-link {
+  @apply text-primary hover:text-primary/80 underline;
+}
+
+.smart-link-preview {
+  @apply border border-border rounded-md p-3 mb-4 bg-muted/50;
+}
+
+.smart-link-title {
+  @apply font-medium text-foreground hover:text-primary;
+}
+
+.smart-link-url {
+  @apply text-sm text-muted-foreground mt-1;
+}
+
+/* Comments */
+.comment-marker {
+  @apply relative;
+}
+
+.comment-indicator {
+  @apply text-xs opacity-70 ml-1;
+}
+
+.comment-active .comment-indicator {
+  @apply text-blue-500;
+}
+
+.comment-resolved .comment-indicator {
+  @apply text-green-500 opacity-50;
+}
+
+/* Mentions */
+.mention {
+  @apply bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium;
+}
+
+.mention-list {
+  @apply z-50;
+}
+
+.mention-item {
+  @apply transition-colors;
+}
+
+/* Macros */
+.macro-toc {
+  @apply border border-border rounded-md p-4 mb-4 bg-muted/30;
+}
+
+.macro-toc h4 {
+  @apply text-lg font-semibold mb-2 mt-0;
+}
+
+.macro-toc ul {
+  @apply list-none pl-0;
+}
+
+.macro-toc li {
+  @apply py-1;
+}
+
+.macro-info-box {
+  @apply border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950 p-4 rounded-md mb-4;
+}
+
+.macro-warning-box {
+  @apply border border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950 p-4 rounded-md mb-4;
+}
+
+.macro-code {
+  @apply bg-muted border border-border rounded-md p-4 mb-4;
+}
+
+.macro-jira-issue {
+  @apply inline-flex items-center gap-2 px-3 py-1 bg-muted border border-border rounded-md;
+}
+
+.jira-key {
+  @apply font-mono text-sm font-semibold;
+}
+
+.jira-status {
+  @apply text-xs px-2 py-1 bg-primary/20 text-primary rounded;
+}
+
+.macro-roadmap {
+  @apply border border-border rounded-md p-4 mb-4;
+}
+
+.roadmap-item {
+  @apply flex items-center gap-3 py-2 border-b border-border last:border-b-0;
+}
+
+.roadmap-item .date {
+  @apply font-semibold text-primary;
+}
+
+.macro-calendar {
+  @apply border border-border rounded-md p-4 mb-4;
+}
+
+.calendar-event {
+  @apply py-2 px-3 bg-muted rounded-md mb-2;
+}
+
+.macro-chart {
+  @apply border border-border rounded-md p-4 mb-4;
+}
+
+.chart-placeholder {
+  @apply h-48 bg-muted rounded-md flex items-center justify-center text-muted-foreground;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .layout-section {
+    @apply flex-col gap-2;
+  }
+  
+  .layout-column {
+    @apply w-full;
+  }
+  
+  .confluence-toolbar {
+    @apply flex-wrap;
+  }
+}
