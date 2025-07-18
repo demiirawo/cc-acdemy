@@ -7,8 +7,6 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { EnhancedSidebarTreeItem } from "./EnhancedSidebarTreeItem";
-
 interface SidebarItem {
   id: string;
   title: string;
@@ -19,10 +17,7 @@ interface SidebarItem {
   is_public?: boolean;
   parent_page_id?: string | null;
   space_id?: string | null;
-  sort_order?: number;
-  version?: number;
 }
-
 interface Space {
   id: string;
   name: string;
@@ -30,7 +25,6 @@ interface Space {
   created_by: string;
   created_at: string;
 }
-
 interface Page {
   id: string;
   title: string;
@@ -40,19 +34,7 @@ interface Page {
   is_public: boolean | null;
   created_by: string;
   created_at: string;
-  sort_order: number | null;
-  version: number | null;
 }
-
-// Type for database function results
-interface DatabaseFunctionResult {
-  success: boolean;
-  message?: string;
-  error?: string;
-  code?: string;
-  new_version?: number;
-}
-
 const navigationItems = [{
   id: 'home',
   title: 'Home',
@@ -88,7 +70,349 @@ const navigationItems = [{
     </svg>,
   href: '/whiteboard'
 }];
+interface SidebarTreeItemProps {
+  item: SidebarItem;
+  level: number;
+  onSelect: (item: SidebarItem) => void;
+  selectedId?: string;
+  onCreateSubPage?: (parentId: string) => void;
+  onCreatePageInEditor?: (parentId?: string) => void;
+  onDuplicatePage?: (pageId: string) => void;
+  onArchivePage?: (pageId: string) => void;
+  onCopyLink?: (pageId: string) => void;
+  onMovePage?: (pageId: string, newParentId: string | null) => void;
+  hierarchyData?: SidebarItem[];
+}
+function SidebarTreeItem({
+  item,
+  level,
+  onSelect,
+  selectedId,
+  onCreateSubPage,
+  onCreatePageInEditor,
+  onDuplicatePage,
+  onArchivePage,
+  onCopyLink,
+  onMovePage,
+  hierarchyData
+}: SidebarTreeItemProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const hasChildren = item.children && item.children.length > 0;
+  const isSelected = selectedId === item.id;
+  const { toast } = useToast();
 
+  const handleMovePageUp = async (pageId: string) => {
+    try {
+      // Get all pages in the same context and sort them by creation date
+      const { data: currentPage } = await supabase
+        .from('pages')
+        .select('*')
+        .eq('id', pageId)
+        .single();
+
+      if (!currentPage) return;
+
+      // Find all sibling pages
+      let query = supabase.from('pages').select('*');
+      
+      if (currentPage.parent_page_id) {
+        query = query.eq('parent_page_id', currentPage.parent_page_id);
+      } else {
+        query = query.is('parent_page_id', null);
+      }
+      
+      if (currentPage.space_id) {
+        query = query.eq('space_id', currentPage.space_id);
+      } else {
+        query = query.is('space_id', null);
+      }
+
+      const { data: siblings } = await query.order('created_at', { ascending: true });
+      
+      if (!siblings || siblings.length < 2) {
+        toast({
+          title: "Cannot move",
+          description: "No other pages to reorder with"
+        });
+        return;
+      }
+
+      const currentIndex = siblings.findIndex(p => p.id === pageId);
+      
+      if (currentIndex <= 0) {
+        toast({
+          title: "Already at top",
+          description: "Page is already at the top position"
+        });
+        return;
+      }
+
+      // Swap with the previous page by swapping their created_at timestamps
+      const previousPage = siblings[currentIndex - 1];
+      const currentTimestamp = currentPage.created_at;
+      const previousTimestamp = previousPage.created_at;
+
+      // Update both pages in a transaction-like manner
+      await supabase
+        .from('pages')
+        .update({ created_at: previousTimestamp })
+        .eq('id', currentPage.id);
+        
+      await supabase
+        .from('pages')
+        .update({ created_at: currentTimestamp })
+        .eq('id', previousPage.id);
+
+      toast({
+        title: "Success",
+        description: "Page moved up successfully"
+      });
+
+      // Refresh the page list
+      window.location.reload();
+    } catch (error) {
+      console.error('Error moving page up:', error);
+      toast({
+        title: "Error",
+        description: "Failed to move page up",
+        variant: "destructive"
+      });
+    }
+  };
+  
+  const handleMovePageDown = async (pageId: string) => {
+    try {
+      // Get all pages in the same context and sort them by creation date
+      const { data: currentPage } = await supabase
+        .from('pages')
+        .select('*')
+        .eq('id', pageId)
+        .single();
+
+      if (!currentPage) return;
+
+      // Find all sibling pages
+      let query = supabase.from('pages').select('*');
+      
+      if (currentPage.parent_page_id) {
+        query = query.eq('parent_page_id', currentPage.parent_page_id);
+      } else {
+        query = query.is('parent_page_id', null);
+      }
+      
+      if (currentPage.space_id) {
+        query = query.eq('space_id', currentPage.space_id);
+      } else {
+        query = query.is('space_id', null);
+      }
+
+      const { data: siblings } = await query.order('created_at', { ascending: true });
+      
+      if (!siblings || siblings.length < 2) {
+        toast({
+          title: "Cannot move",
+          description: "No other pages to reorder with"
+        });
+        return;
+      }
+
+      const currentIndex = siblings.findIndex(p => p.id === pageId);
+      
+      if (currentIndex >= siblings.length - 1) {
+        toast({
+          title: "Already at bottom",
+          description: "Page is already at the bottom position"
+        });
+        return;
+      }
+
+      // Swap with the next page by swapping their created_at timestamps
+      const nextPage = siblings[currentIndex + 1];
+      const currentTimestamp = currentPage.created_at;
+      const nextTimestamp = nextPage.created_at;
+
+      // Update both pages in a transaction-like manner
+      await supabase
+        .from('pages')
+        .update({ created_at: nextTimestamp })
+        .eq('id', currentPage.id);
+        
+      await supabase
+        .from('pages')
+        .update({ created_at: currentTimestamp })
+        .eq('id', nextPage.id);
+
+      toast({
+        title: "Success",
+        description: "Page moved down successfully"
+      });
+
+      // Refresh the page list
+      window.location.reload();
+    } catch (error) {
+      console.error('Error moving page down:', error);
+      toast({
+        title: "Error",
+        description: "Failed to move page down",
+        variant: "destructive"
+      });
+    }
+  };
+  return <div>
+      <div className={cn("flex items-center gap-2 px-2 py-1.5 text-sm rounded-md cursor-pointer transition-all duration-200 group", "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground", isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium", level > 0 && "ml-2")} style={{
+      paddingLeft: `${level * 12 + 8}px`
+    }} onClick={() => onSelect(item)} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
+        {hasChildren && <Button variant="ghost" size="sm" className="h-4 w-4 p-0 hover:bg-transparent" onClick={e => {
+        e.stopPropagation();
+        setIsExpanded(!isExpanded);
+      }}>
+            {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+          </Button>}
+        {!hasChildren && <div className="w-4" />}
+        
+        {item.type === 'space' || hasChildren || (!item.parent_page_id && item.type === 'page') ? isExpanded ? <FolderOpen className="h-4 w-4 text-pink-500 flex-shrink-0" /> : <Folder className="h-4 w-4 text-pink-500 flex-shrink-0" /> : <FileText className="h-4 w-4 text-white flex-shrink-0" />}
+        
+        <span className="truncate flex-1 text-neutral-50 font-medium">{item.title}</span>
+        
+        
+        {/* Action buttons - show on hover */}
+        <div className={cn("flex items-center gap-1 transition-opacity duration-200", isHovered || isSelected ? "opacity-100" : "opacity-0")}>
+          {/* Add child page button */}
+          {(item.type === 'space' || item.type === 'page') && onCreatePageInEditor && <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-sidebar-accent/50" onClick={e => {
+          e.stopPropagation();
+          onCreatePageInEditor(item.id);
+        }} title="Add child page">
+              <Plus className="h-3 w-3" />
+            </Button>}
+          
+          {/* Move page dropdown for reordering pages */}
+          {item.type === 'page' && onMovePage && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" onClick={e => e.stopPropagation()} className="h-6 w-6 p-0 hover:bg-sidebar-accent/50" title="Move page">
+                  <Move className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem onClick={e => {
+                  e.stopPropagation();
+                  handleMovePageUp(item.id);
+                }}>
+                  <ArrowUp className="h-4 w-4 mr-2" />
+                  Move up
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={e => {
+                  e.stopPropagation();
+                  handleMovePageDown(item.id);
+                }}>
+                  <ArrowDown className="h-4 w-4 mr-2" />
+                  Move down
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={e => {
+                  e.stopPropagation();
+                  onMovePage(item.id, null);
+                }}>
+                  <ArrowUp className="h-4 w-4 mr-2" />
+                  Move to top level
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                {hierarchyData?.filter(h => h.id !== item.id && (h.type === 'space' || h.type === 'page')).map(parent => (
+                  <DropdownMenuItem key={parent.id} onClick={e => {
+                    e.stopPropagation();
+                    onMovePage(item.id, parent.id);
+                  }}>
+                    <Folder className="h-4 w-4 mr-2" />
+                    Move under "{parent.title.length > 20 ? parent.title.substring(0, 20) + '...' : parent.title}"
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          
+          {/* Context menu for pages */}
+          {item.type === 'page' && <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-sidebar-accent/50" onClick={e => e.stopPropagation()}>
+                  <MoreHorizontal className="h-3 w-3" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => onSelect(item)}>
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => onCopyLink?.(item.id)}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Copy public link
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={async () => {
+              try {
+                const {
+                  data,
+                  error
+                } = await supabase.from('pages').update({
+                  is_public: !item.is_public
+                }).eq('id', item.id).select().single();
+                if (error) throw error;
+                toast({
+                  title: item.is_public ? "Page made private" : "Page made public",
+                  description: item.is_public ? "Page is now private" : "Page is now public"
+                });
+                window.location.reload();
+              } catch (error) {
+                toast({
+                  title: "Error",
+                  description: "Failed to update page visibility",
+                  variant: "destructive"
+                });
+              }
+            }}>
+                  <Globe className="h-4 w-4 mr-2" />
+                  {item.is_public ? 'Make private' : 'Make public'}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => onDuplicatePage?.(item.id)}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Duplicate
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={async () => {
+              if (confirm("Are you sure you want to delete this page? This action cannot be undone.")) {
+                try {
+                  const {
+                    error
+                  } = await supabase.from('pages').delete().eq('id', item.id);
+                  if (error) throw error;
+                  toast({
+                    title: "Page deleted",
+                    description: "Page has been permanently deleted."
+                  });
+                  window.location.reload();
+                } catch (error) {
+                  console.error('Error deleting page:', error);
+                  toast({
+                    title: "Error",
+                    description: "Failed to delete page.",
+                    variant: "destructive"
+                  });
+                }
+              }
+            }}>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>}
+        </div>
+      </div>
+      
+      {hasChildren && isExpanded && <div className="ml-2">
+          {item.children?.map(child => <SidebarTreeItem key={child.id} item={child} level={level + 1} onSelect={onSelect} selectedId={selectedId} onCreateSubPage={onCreateSubPage} onCreatePageInEditor={onCreatePageInEditor} onDuplicatePage={onDuplicatePage} onArchivePage={onArchivePage} onCopyLink={onCopyLink} onMovePage={onMovePage} hierarchyData={hierarchyData} />)}
+        </div>}
+    </div>;
+}
 interface RealKnowledgeBaseSidebarProps {
   onItemSelect: (item: SidebarItem) => void;
   selectedId?: string;
@@ -96,7 +420,6 @@ interface RealKnowledgeBaseSidebarProps {
   onCreateSubPage?: (parentId: string) => void;
   onCreatePageInEditor?: (parentId?: string) => void;
 }
-
 export function RealKnowledgeBaseSidebar({
   onItemSelect,
   selectedId,
@@ -111,8 +434,9 @@ export function RealKnowledgeBaseSidebar({
   const [pages, setPages] = useState<Page[]>([]);
   const [hierarchyData, setHierarchyData] = useState<SidebarItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const { toast } = useToast();
-
+  const {
+    toast
+  } = useToast();
   useEffect(() => {
     fetchHierarchyData();
 
@@ -194,8 +518,7 @@ export function RealKnowledgeBaseSidebar({
           icon: FileText,
           parent_page_id: page.parent_page_id,
           space_id: page.space_id,
-          is_public: page.is_public,
-          version: page.version
+          is_public: page.is_public
         });
       });
 
@@ -218,21 +541,14 @@ export function RealKnowledgeBaseSidebar({
     setSearchResults(results);
     setShowSearchResults(true);
   }, [searchQuery, pages, spaces]);
-
   const fetchHierarchyData = async () => {
     setLoading(true);
     try {
-      const [spacesResponse, pagesResponse] = await Promise.all([
-        supabase.from('spaces').select('*').order('name'),
-        supabase.from('pages').select('*').order('sort_order', { ascending: true })
-      ]);
-
+      const [spacesResponse, pagesResponse] = await Promise.all([supabase.from('spaces').select('*').order('name'), supabase.from('pages').select('*').order('title')]);
       if (spacesResponse.error) throw spacesResponse.error;
       if (pagesResponse.error) throw pagesResponse.error;
-
       setSpaces(spacesResponse.data || []);
       setPages(pagesResponse.data || []);
-
       const hierarchy = buildHierarchy(spacesResponse.data || [], pagesResponse.data || []);
       setHierarchyData(hierarchy);
     } catch (error) {
@@ -246,10 +562,8 @@ export function RealKnowledgeBaseSidebar({
       setLoading(false);
     }
   };
-
   const buildHierarchy = (spacesData: Space[], pagesData: Page[]): SidebarItem[] => {
     const hierarchy: SidebarItem[] = [];
-
     spacesData.forEach(space => {
       const spaceItem: SidebarItem = {
         id: space.id,
@@ -258,32 +572,18 @@ export function RealKnowledgeBaseSidebar({
         icon: Folder,
         children: []
       };
-
-      const spacePages = pagesData
-        .filter(page => page.space_id === space.id && !page.parent_page_id)
-        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-      
+      const spacePages = pagesData.filter(page => page.space_id === space.id && !page.parent_page_id);
       spaceItem.children = spacePages.map(page => buildPageHierarchy(page, pagesData));
       hierarchy.push(spaceItem);
     });
-
-    const orphanedPages = pagesData
-      .filter(page => !page.space_id && !page.parent_page_id)
-      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-    
+    const orphanedPages = pagesData.filter(page => !page.space_id && !page.parent_page_id);
     orphanedPages.forEach(page => {
       hierarchy.push(buildPageHierarchy(page, pagesData));
     });
-
     return hierarchy;
   };
-
   const buildPageHierarchy = (page: Page, allPages: Page[]): SidebarItem => {
-    const children = allPages
-      .filter(p => p.parent_page_id === page.id)
-      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-      .map(childPage => buildPageHierarchy(childPage, allPages));
-
+    const children = allPages.filter(p => p.parent_page_id === page.id).map(childPage => buildPageHierarchy(childPage, allPages));
     return {
       id: page.id,
       title: page.title,
@@ -292,12 +592,9 @@ export function RealKnowledgeBaseSidebar({
       is_public: page.is_public || false,
       parent_page_id: page.parent_page_id,
       space_id: page.space_id,
-      sort_order: page.sort_order || 0,
-      version: page.version || 1,
       children: children.length > 0 ? children : undefined
     };
   };
-
   const handleItemSelect = (item: SidebarItem) => {
     if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people' || item.id === 'settings' || item.id === 'whiteboard' || item.id === 'user-management') {
       onItemSelect(item);
@@ -305,152 +602,15 @@ export function RealKnowledgeBaseSidebar({
       onItemSelect(item);
     }
   };
-
-  // Enhanced move page up/down with new safe functions
-  const handleMovePageUpDown = async (pageId: string, direction: 'up' | 'down', version: number) => {
-    try {
-      console.log('Moving page:', { pageId, direction, version });
-      
-      // Use enhanced functions with better error handling and auto-retry
-      const functionName = direction === 'up' ? 'move_page_up_enhanced' : 'move_page_down_enhanced';
-      const { data: result, error } = await supabase.rpc(functionName, {
-        p_page_id: pageId,
-        p_expected_version: version
-      });
-
-      if (error) {
-        console.error('Database error:', error);
-        toast({
-          title: "Database Error",
-          description: error.message,
-          variant: "destructive"
-        });
-        return { success: false };
-      }
-
-      // Type assertion for the database function result
-      const typedResult = result as unknown as DatabaseFunctionResult;
-      console.log('Move result:', typedResult);
-
-      if (typedResult.success) {
-        // Force immediate refresh for better UX
-        await fetchHierarchyData();
-        
-        toast({
-          title: "Success",
-          description: `Page moved ${direction} successfully`,
-          variant: "default"
-        });
-        
-        return { success: true, new_version: typedResult.new_version };
-      } else {
-        // Handle specific error codes gracefully
-        switch (typedResult.code) {
-          case 'VERSION_CONFLICT':
-          case 'RETRY_EXCEEDED':
-            // Auto-refresh data and don't show error - user can retry
-            await fetchHierarchyData();
-            toast({
-              title: "Please try again",
-              description: "Data was updated, please retry the move",
-              variant: "default"
-            });
-            break;
-          
-          case 'ALREADY_AT_TOP':
-          case 'ALREADY_AT_BOTTOM':
-            // Silent fail - these are expected behavior
-            break;
-            
-          case 'PAGE_NOT_FOUND':
-            await fetchHierarchyData();
-            toast({
-              title: "Page not found",
-              description: "The page may have been deleted",
-              variant: "destructive"
-            });
-            break;
-            
-          default:
-            toast({
-              title: "Cannot move page",
-              description: typedResult.error || "Unknown error occurred",
-              variant: "destructive"
-            });
-        }
-        
-        return { success: false };
-      }
-    } catch (error) {
-      console.error('Error in handleMovePageUpDown:', error);
-      toast({
-        title: "Error",
-        description: "Failed to move page. Please try again.",
-        variant: "destructive"
-      });
-      return { success: false };
-    }
-  };
-
-  // Enhanced move page to new parent
-  const handleMovePage = async (pageId: string, newParentId: string | null) => {
-    try {
-      const page = pages.find(p => p.id === pageId);
-      if (!page) {
-        return { success: false };
-      }
-
-      const { data: result, error } = await supabase.rpc('move_page_to_parent_safe', {
-        p_page_id: pageId,
-        p_new_parent_id: newParentId,
-        p_expected_version: page.version || 1
-      });
-
-      if (error) throw error;
-
-      // Type assertion for the database function result - convert through unknown for safety
-      const typedResult = result as unknown as DatabaseFunctionResult;
-
-      if (typedResult.success) {
-        toast({
-          title: "Success",
-          description: typedResult.message
-        });
-        fetchHierarchyData();
-        return { success: true };
-      } else {
-        if (typedResult.code === 'VERSION_CONFLICT') {
-          toast({
-            title: "Page was modified",
-            description: "Page was modified by another user. Please refresh and try again.",
-            variant: "destructive"
-          });
-          fetchHierarchyData();
-        } else {
-          toast({
-            title: "Cannot move",
-            description: typedResult.error,
-            variant: "destructive"
-          });
-        }
-        return { success: false };
-      }
-    } catch (error) {
-      console.error('Error moving page:', error);
-      toast({
-        title: "Error",
-        description: "Failed to move page.",
-        variant: "destructive"
-      });
-      return { success: false };
-    }
-  };
-
   const handleDuplicatePage = async (pageId: string) => {
     try {
-      const { data: originalPage } = await supabase.from('pages').select('*').eq('id', pageId).single();
+      const {
+        data: originalPage
+      } = await supabase.from('pages').select('*').eq('id', pageId).single();
       if (originalPage) {
-        const { error } = await supabase.from('pages').insert({
+        const {
+          error
+        } = await supabase.from('pages').insert({
           title: `${originalPage.title} (Copy)`,
           content: originalPage.content,
           created_by: originalPage.created_by,
@@ -473,10 +633,11 @@ export function RealKnowledgeBaseSidebar({
       });
     }
   };
-
   const handleArchivePage = async (pageId: string) => {
     try {
-      const { error } = await supabase.from('pages').update({
+      const {
+        error
+      } = await supabase.from('pages').update({
         tags: ['archived']
       }).eq('id', pageId);
       if (error) throw error;
@@ -494,7 +655,6 @@ export function RealKnowledgeBaseSidebar({
       });
     }
   };
-
   const handleCopyLink = (pageId: string) => {
     const url = `${window.location.origin}/?page=${pageId}`;
     navigator.clipboard.writeText(url);
@@ -503,7 +663,28 @@ export function RealKnowledgeBaseSidebar({
       description: "Page link copied to clipboard."
     });
   };
-
+  const handleMovePage = async (pageId: string, newParentId: string | null) => {
+    try {
+      const {
+        error
+      } = await supabase.from('pages').update({
+        parent_page_id: newParentId
+      }).eq('id', pageId);
+      if (error) throw error;
+      toast({
+        title: "Page moved",
+        description: "Page has been moved successfully."
+      });
+      fetchHierarchyData();
+    } catch (error) {
+      console.error('Error moving page:', error);
+      toast({
+        title: "Error",
+        description: "Failed to move page.",
+        variant: "destructive"
+      });
+    }
+  };
   const handleCreatePage = () => {
     if (onCreatePageInEditor) {
       onCreatePageInEditor();
@@ -511,16 +692,8 @@ export function RealKnowledgeBaseSidebar({
       onCreatePage();
     }
   };
-
-  const filteredHierarchy = hierarchyData.filter(item => 
-    item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (item.children && item.children.some(child => 
-      child.title.toLowerCase().includes(searchQuery.toLowerCase())
-    ))
-  );
-
-  return (
-    <div className="w-full border-r-0 flex flex-col h-full bg-purple-800">
+  const filteredHierarchy = hierarchyData.filter(item => item.title.toLowerCase().includes(searchQuery.toLowerCase()) || item.children && item.children.some(child => child.title.toLowerCase().includes(searchQuery.toLowerCase())));
+  return <div className="w-full border-r-0 flex flex-col h-full bg-purple-800">
       {/* Header */}
       <div className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2 mb-4">
@@ -616,7 +789,7 @@ export function RealKnowledgeBaseSidebar({
             {loading ? <div className="space-y-2">
                 {[...Array(5)].map((_, i) => <div key={i} className="h-8 bg-sidebar-accent/20 rounded animate-pulse" />)}
               </div> : <div className="space-y-1">
-                {filteredHierarchy.length > 0 ? filteredHierarchy.map(item => <EnhancedSidebarTreeItem key={item.id} item={item} level={0} onSelect={handleItemSelect} selectedId={selectedId} onCreateSubPage={onCreateSubPage} onCreatePageInEditor={onCreatePageInEditor} onDuplicatePage={handleDuplicatePage} onArchivePage={handleArchivePage} onCopyLink={handleCopyLink} onMovePage={handleMovePage} hierarchyData={hierarchyData} onRefreshData={fetchHierarchyData} siblings={filteredHierarchy} onMovePageUpDown={handleMovePageUpDown} />) : searchQuery ? <div className="text-center py-8 text-sidebar-foreground/50">
+                {filteredHierarchy.length > 0 ? filteredHierarchy.map(item => <SidebarTreeItem key={item.id} item={item} level={0} onSelect={handleItemSelect} selectedId={selectedId} onCreateSubPage={onCreateSubPage} onCreatePageInEditor={onCreatePageInEditor} onDuplicatePage={handleDuplicatePage} onArchivePage={handleArchivePage} onCopyLink={handleCopyLink} onMovePage={handleMovePage} hierarchyData={hierarchyData} />) : searchQuery ? <div className="text-center py-8 text-sidebar-foreground/50">
                     <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">No results found</p>
                   </div> : <div className="text-center py-8 text-sidebar-foreground/50">
@@ -643,6 +816,5 @@ export function RealKnowledgeBaseSidebar({
           Settings
         </Button>
       </div>
-    </div>
-  );
+    </div>;
 }

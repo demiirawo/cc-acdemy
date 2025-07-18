@@ -7,10 +7,6 @@ import NotFound from './pages/NotFound.tsx'
 import { PublicPageView } from './components/PublicPageView.tsx'
 import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "./hooks/useAuth";
-import { applyCSPMetaTag } from './lib/csp';
-
-// Apply Content Security Policy for additional XSS protection
-applyCSPMetaTag();
 
 const router = createBrowserRouter([
   {

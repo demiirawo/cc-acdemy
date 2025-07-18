@@ -13,14 +13,12 @@ import { AuthForm } from "./AuthForm";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { sanitizeHtml, validateText, validateRecommendedReading } from "@/lib/security";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy, FileText } from "lucide-react";
 import { UserManagement } from "./UserManagement";
 import { RecommendedReadingSection } from "./RecommendedReadingSection";
-import { EnhancedRecommendedReading } from "./EnhancedRecommendedReading";
 
 // Page view component
 function PageView({
@@ -160,17 +158,49 @@ function PageView({
         
         <div className="prose prose-lg max-w-none">
           <div className="text-foreground leading-relaxed" dangerouslySetInnerHTML={{
-          __html: sanitizeHtml(cleanContent.split('RECOMMENDED_READING:')[0])
+          __html: cleanContent.split('RECOMMENDED_READING:')[0]
         }} />
         </div>
 
-        {/* Enhanced Recommended Reading Section */}
-        <RecommendedReadingSection 
-          items={recommendedReading.map(item => ({
-            ...item,
-            type: item.type as any || 'link'
-          }))} 
-        />
+        {/* Recommended Reading Section */}
+        {recommendedReading.length > 0 && (
+          <div className="mt-8 pt-6 border-t border-border">
+            <h3 className="text-lg font-semibold text-foreground">Recommended reading</h3>
+            <div className="space-y-3 mt-4">
+              {recommendedReading.map((item, index) => (
+                <div 
+                  key={item.id || index} 
+                  className="flex items-center gap-3 p-4 border border-border rounded-lg bg-card hover:bg-muted/20 transition-colors cursor-pointer"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if (item.type === 'link' && item.url) {
+                      window.open(item.url, '_blank');
+                    } else if (item.type === 'file' && item.fileUrl) {
+                      const link = document.createElement('a');
+                      link.href = item.fileUrl;
+                      link.download = item.fileName || 'download';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    } else if (item.id) {
+                      onPageSelect(item.id);
+                    }
+                  }}
+                >
+                  <div className="flex-shrink-0">
+                    <FileText className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-medium text-foreground truncate">{item.title}</h4>
+                    <p className="text-sm text-muted-foreground truncate">
+                      {item.description}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Related Content Section */}
         {relatedPages.length > 0 && (
@@ -397,23 +427,6 @@ export function KnowledgeBaseApp() {
     type?: string;
   }>) => {
     if (!currentPage || !user) return;
-    
-    // Validate inputs
-    try {
-      validateText(title, 255);
-      validateText(content, 52428800); // 50MB limit
-      
-      if (recommendedReading && !validateRecommendedReading(recommendedReading as any[])) {
-        throw new Error('Invalid recommended reading data');
-      }
-    } catch (error: any) {
-      toast({
-        title: "Validation Error",
-        description: error.message,
-        variant: "destructive"
-      });
-      return;
-    }
     try {
       if (currentPage.id === 'new') {
         // Create new page
@@ -482,17 +495,6 @@ export function KnowledgeBaseApp() {
       type: 'page'
     });
   };
-
-  // Add handler for content changes
-  const handleContentChange = (content: string) => {
-    if (currentPage) {
-      setCurrentPage({
-        ...currentPage,
-        content
-      });
-    }
-  };
-
   return <div className="flex h-screen bg-background">
       <ResizableSidebar onItemSelect={handleItemSelect} selectedId={selectedItemId} onCreatePage={handleCreatePage} onCreateSubPage={handleCreateSubPage} onCreatePageInEditor={handleCreatePageInEditor} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
@@ -529,14 +531,7 @@ export function KnowledgeBaseApp() {
         {currentView === 'whiteboard' && <WhiteboardCanvas />}
         {currentView === 'user-management' && <UserManagement />}
         
-        {currentView === 'editor' && currentPage && <EnhancedContentEditor 
-          content={currentPage.content} 
-          onChange={handleContentChange}
-          onSave={handleSavePage} 
-          onPreview={handlePreview} 
-          isEditing={isEditing} 
-          pageId={currentPage.id} 
-        />}
+        {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} />}
         
         {currentView === 'page' && currentPage && <PageView currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
       </div>

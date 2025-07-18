@@ -51,33 +51,8 @@ export function RecommendedReadingSection({ items, onItemClick }: RecommendedRea
   const handleItemClick = (item: RecommendedReadingItem, e: React.MouseEvent) => {
     e.preventDefault();
     
-    // Enhanced URL handling with validation and user feedback
     if (item.url) {
-      let url = item.url;
-      // Add protocol if missing
-      if (!url.match(/^https?:\/\//i)) {
-        url = 'https://' + url;
-      }
-      
-      try {
-        // Validate URL before opening
-        new URL(url);
-        window.open(url, '_blank', 'noopener,noreferrer');
-        
-        // Visual feedback - temporarily highlight the clicked item
-        const target = e.currentTarget as HTMLElement;
-        const originalBg = target.style.backgroundColor;
-        target.style.backgroundColor = 'var(--primary)';
-        target.style.color = 'white';
-        setTimeout(() => {
-          target.style.backgroundColor = originalBg;
-          target.style.color = '';
-        }, 200);
-        
-      } catch (error) {
-        console.error('Invalid URL:', url);
-        // Could add toast notification here for invalid URLs
-      }
+      window.open(item.url, '_blank', 'noopener,noreferrer');
     } else if (item.fileUrl) {
       window.open(item.fileUrl, '_blank');
     }
