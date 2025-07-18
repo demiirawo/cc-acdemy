@@ -92,6 +92,39 @@ export type Database = {
           },
         ]
       }
+      page_audit_log: {
+        Row: {
+          created_at: string | null
+          error_message: string | null
+          id: string
+          new_values: Json | null
+          old_values: Json | null
+          operation_type: string
+          page_id: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          new_values?: Json | null
+          old_values?: Json | null
+          operation_type: string
+          page_id: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          new_values?: Json | null
+          old_values?: Json | null
+          operation_type?: string
+          page_id?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       page_permissions: {
         Row: {
           created_at: string
@@ -152,6 +185,7 @@ export type Database = {
           tags: string[] | null
           title: string
           updated_at: string
+          version: number | null
           view_count: number | null
         }
         Insert: {
@@ -168,6 +202,7 @@ export type Database = {
           tags?: string[] | null
           title: string
           updated_at?: string
+          version?: number | null
           view_count?: number | null
         }
         Update: {
@@ -184,6 +219,7 @@ export type Database = {
           tags?: string[] | null
           title?: string
           updated_at?: string
+          version?: number | null
           view_count?: number | null
         }
         Relationships: [
@@ -305,13 +341,39 @@ export type Database = {
         }
         Returns: boolean
       }
+      log_page_operation: {
+        Args: {
+          p_page_id: string
+          p_operation_type: string
+          p_old_values?: Json
+          p_new_values?: Json
+          p_error_message?: string
+        }
+        Returns: undefined
+      }
       move_page_down: {
         Args: { page_id: string }
         Returns: boolean
       }
+      move_page_down_safe: {
+        Args: { p_page_id: string; p_expected_version: number }
+        Returns: Json
+      }
+      move_page_to_parent_safe: {
+        Args: {
+          p_page_id: string
+          p_new_parent_id: string
+          p_expected_version: number
+        }
+        Returns: Json
+      }
       move_page_up: {
         Args: { page_id: string }
         Returns: boolean
+      }
+      move_page_up_safe: {
+        Args: { p_page_id: string; p_expected_version: number }
+        Returns: Json
       }
       user_has_page_permission: {
         Args: { page_id: string; permission_types: string[] }
