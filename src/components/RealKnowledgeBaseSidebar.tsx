@@ -7,6 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+
 interface SidebarItem {
   id: string;
   title: string;
@@ -17,7 +18,9 @@ interface SidebarItem {
   is_public?: boolean;
   parent_page_id?: string | null;
   space_id?: string | null;
+  sort_order?: number;
 }
+
 interface Space {
   id: string;
   name: string;
@@ -25,6 +28,7 @@ interface Space {
   created_by: string;
   created_at: string;
 }
+
 interface Page {
   id: string;
   title: string;
@@ -34,7 +38,9 @@ interface Page {
   is_public: boolean | null;
   created_by: string;
   created_at: string;
+  sort_order: number | null;
 }
+
 const navigationItems = [{
   id: 'home',
   title: 'Home',
@@ -70,6 +76,7 @@ const navigationItems = [{
     </svg>,
   href: '/whiteboard'
 }];
+
 interface SidebarTreeItemProps {
   item: SidebarItem;
   level: number;
@@ -83,7 +90,9 @@ interface SidebarTreeItemProps {
   onMovePage?: (pageId: string, newParentId: string | null) => void;
   hierarchyData?: SidebarItem[];
   onRefreshData?: () => void;
+  siblings?: SidebarItem[];
 }
+
 function SidebarTreeItem({
   item,
   level,
@@ -96,15 +105,25 @@ function SidebarTreeItem({
   onCopyLink,
   onMovePage,
   hierarchyData,
-  onRefreshData
+  onRefreshData,
+  siblings = []
 }: SidebarTreeItemProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [isMoving, setIsMoving] = useState(false);
   const hasChildren = item.children && item.children.length > 0;
   const isSelected = selectedId === item.id;
   const { toast } = useToast();
 
+  // Check if this page can be moved up or down
+  const currentIndex = siblings.findIndex(sibling => sibling.id === item.id);
+  const canMoveUp = currentIndex > 0;
+  const canMoveDown = currentIndex < siblings.length - 1;
+
   const handleMovePageUp = async (pageId: string) => {
+    if (!canMoveUp || isMoving) return;
+    
+    setIsMoving(true);
     try {
       const { data: result, error } = await supabase.rpc('move_page_up', {
         page_id: pageId
@@ -117,7 +136,6 @@ function SidebarTreeItem({
           title: "Success",
           description: "Page moved up successfully"
         });
-        // Trigger a refresh of the hierarchy data
         onRefreshData?.();
       } else {
         toast({
@@ -132,10 +150,15 @@ function SidebarTreeItem({
         description: "Failed to move page up",
         variant: "destructive"
       });
+    } finally {
+      setIsMoving(false);
     }
   };
   
   const handleMovePageDown = async (pageId: string) => {
+    if (!canMoveDown || isMoving) return;
+    
+    setIsMoving(true);
     try {
       const { data: result, error } = await supabase.rpc('move_page_down', {
         page_id: pageId
@@ -148,7 +171,6 @@ function SidebarTreeItem({
           title: "Success",
           description: "Page moved down successfully"
         });
-        // Trigger a refresh of the hierarchy data
         onRefreshData?.();
       } else {
         toast({
@@ -163,60 +185,132 @@ function SidebarTreeItem({
         description: "Failed to move page down",
         variant: "destructive"
       });
+    } finally {
+      setIsMoving(false);
     }
   };
-  return <div>
-      <div className={cn("flex items-center gap-2 px-2 py-1.5 text-sm rounded-md cursor-pointer transition-all duration-200 group", "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground", isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium", level > 0 && "ml-2")} style={{
-      paddingLeft: `${level * 12 + 8}px`
-    }} onClick={() => onSelect(item)} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
-        {hasChildren && <Button variant="ghost" size="sm" className="h-4 w-4 p-0 hover:bg-transparent" onClick={e => {
-        e.stopPropagation();
-        setIsExpanded(!isExpanded);
-      }}>
-            {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-          </Button>}
+
+  return (
+    <div>
+      <div
+        className={cn(
+          "flex items-center gap-2 px-2 py-1.5 text-sm rounded-md cursor-pointer transition-all duration-200 group",
+          "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+          isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
+          level > 0 && "ml-2",
+          isMoving && "opacity-50"
+        )}
+        style={{ paddingLeft: `${level * 12 + 8}px` }}
+        onClick={() => onSelect(item)}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {hasChildren && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-4 w-4 p-0 hover:bg-transparent"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsExpanded(!isExpanded);
+            }}
+          >
+            {isExpanded ? (
+              <ChevronDown className="h-3 w-3" />
+            ) : (
+              <ChevronRight className="h-3 w-3" />
+            )}
+          </Button>
+        )}
         {!hasChildren && <div className="w-4" />}
         
-        {item.type === 'space' || hasChildren || (!item.parent_page_id && item.type === 'page') ? isExpanded ? <FolderOpen className="h-4 w-4 text-pink-500 flex-shrink-0" /> : <Folder className="h-4 w-4 text-pink-500 flex-shrink-0" /> : <FileText className="h-4 w-4 text-white flex-shrink-0" />}
+        {item.type === 'space' || hasChildren || (!item.parent_page_id && item.type === 'page') ? (
+          isExpanded ? (
+            <FolderOpen className="h-4 w-4 text-pink-500 flex-shrink-0" />
+          ) : (
+            <Folder className="h-4 w-4 text-pink-500 flex-shrink-0" />
+          )
+        ) : (
+          <FileText className="h-4 w-4 text-white flex-shrink-0" />
+        )}
         
         <span className="truncate flex-1 text-neutral-50 font-medium">{item.title}</span>
         
-        
         {/* Action buttons - show on hover */}
-        <div className={cn("flex items-center gap-1 transition-opacity duration-200", isHovered || isSelected ? "opacity-100" : "opacity-0")}>
+        <div className={cn(
+          "flex items-center gap-1 transition-opacity duration-200",
+          isHovered || isSelected ? "opacity-100" : "opacity-0"
+        )}>
           {/* Add child page button */}
-          {(item.type === 'space' || item.type === 'page') && onCreatePageInEditor && <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-sidebar-accent/50" onClick={e => {
-          e.stopPropagation();
-          onCreatePageInEditor(item.id);
-        }} title="Add child page">
+          {(item.type === 'space' || item.type === 'page') && onCreatePageInEditor && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 hover:bg-sidebar-accent/50"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCreatePageInEditor(item.id);
+              }}
+              title="Add child page"
+            >
               <Plus className="h-3 w-3" />
-            </Button>}
+            </Button>
+          )}
           
-          {/* Move page dropdown for reordering pages */}
+          {/* Move page buttons for reordering pages */}
+          {item.type === 'page' && (
+            <div className="flex items-center gap-0.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-6 w-6 p-0 hover:bg-sidebar-accent/50",
+                  !canMoveUp && "opacity-30 cursor-not-allowed"
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleMovePageUp(item.id);
+                }}
+                disabled={!canMoveUp || isMoving}
+                title={canMoveUp ? "Move up" : "Already at top"}
+              >
+                <ArrowUp className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-6 w-6 p-0 hover:bg-sidebar-accent/50",
+                  !canMoveDown && "opacity-30 cursor-not-allowed"
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleMovePageDown(item.id);
+                }}
+                disabled={!canMoveDown || isMoving}
+                title={canMoveDown ? "Move down" : "Already at bottom"}
+              >
+                <ArrowDown className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+          
+          {/* Move page dropdown for changing parent */}
           {item.type === 'page' && onMovePage && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" onClick={e => e.stopPropagation()} className="h-6 w-6 p-0 hover:bg-sidebar-accent/50" title="Move page">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => e.stopPropagation()}
+                  className="h-6 w-6 p-0 hover:bg-sidebar-accent/50"
+                  title="Move to different parent"
+                >
                   <Move className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem onClick={e => {
-                  e.stopPropagation();
-                  handleMovePageUp(item.id);
-                }}>
-                  <ArrowUp className="h-4 w-4 mr-2" />
-                  Move up
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={e => {
-                  e.stopPropagation();
-                  handleMovePageDown(item.id);
-                }}>
-                  <ArrowDown className="h-4 w-4 mr-2" />
-                  Move down
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={e => {
+                <DropdownMenuItem onClick={(e) => {
                   e.stopPropagation();
                   onMovePage(item.id, null);
                 }}>
@@ -225,7 +319,7 @@ function SidebarTreeItem({
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 {hierarchyData?.filter(h => h.id !== item.id && (h.type === 'space' || h.type === 'page')).map(parent => (
-                  <DropdownMenuItem key={parent.id} onClick={e => {
+                  <DropdownMenuItem key={parent.id} onClick={(e) => {
                     e.stopPropagation();
                     onMovePage(item.id, parent.id);
                   }}>
@@ -238,9 +332,15 @@ function SidebarTreeItem({
           )}
           
           {/* Context menu for pages */}
-          {item.type === 'page' && <DropdownMenu>
+          {item.type === 'page' && (
+            <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-sidebar-accent/50" onClick={e => e.stopPropagation()}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 hover:bg-sidebar-accent/50"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <MoreHorizontal className="h-3 w-3" />
                 </Button>
               </DropdownMenuTrigger>
@@ -254,27 +354,29 @@ function SidebarTreeItem({
                   Copy public link
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={async () => {
-              try {
-                const {
-                  data,
-                  error
-                } = await supabase.from('pages').update({
-                  is_public: !item.is_public
-                }).eq('id', item.id).select().single();
-                if (error) throw error;
-                toast({
-                  title: item.is_public ? "Page made private" : "Page made public",
-                  description: item.is_public ? "Page is now private" : "Page is now public"
-                });
-                window.location.reload();
-              } catch (error) {
-                toast({
-                  title: "Error",
-                  description: "Failed to update page visibility",
-                  variant: "destructive"
-                });
-              }
-            }}>
+                  try {
+                    const { data, error } = await supabase
+                      .from('pages')
+                      .update({ is_public: !item.is_public })
+                      .eq('id', item.id)
+                      .select()
+                      .single();
+                    
+                    if (error) throw error;
+                    
+                    toast({
+                      title: item.is_public ? "Page made private" : "Page made public",
+                      description: item.is_public ? "Page is now private" : "Page is now public"
+                    });
+                    onRefreshData?.();
+                  } catch (error) {
+                    toast({
+                      title: "Error",
+                      description: "Failed to update page visibility",
+                      variant: "destructive"
+                    });
+                  }
+                }}>
                   <Globe className="h-4 w-4 mr-2" />
                   {item.is_public ? 'Make private' : 'Make public'}
                 </DropdownMenuItem>
@@ -284,41 +386,64 @@ function SidebarTreeItem({
                   Duplicate
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={async () => {
-              if (confirm("Are you sure you want to delete this page? This action cannot be undone.")) {
-                try {
-                  const {
-                    error
-                  } = await supabase.from('pages').delete().eq('id', item.id);
-                  if (error) throw error;
-                  toast({
-                    title: "Page deleted",
-                    description: "Page has been permanently deleted."
-                  });
-                  window.location.reload();
-                } catch (error) {
-                  console.error('Error deleting page:', error);
-                  toast({
-                    title: "Error",
-                    description: "Failed to delete page.",
-                    variant: "destructive"
-                  });
-                }
-              }
-            }}>
+                <DropdownMenuItem 
+                  className="text-destructive focus:text-destructive" 
+                  onClick={async () => {
+                    if (confirm("Are you sure you want to delete this page? This action cannot be undone.")) {
+                      try {
+                        const { error } = await supabase.from('pages').delete().eq('id', item.id);
+                        if (error) throw error;
+                        toast({
+                          title: "Page deleted",
+                          description: "Page has been permanently deleted."
+                        });
+                        onRefreshData?.();
+                      } catch (error) {
+                        console.error('Error deleting page:', error);
+                        toast({
+                          title: "Error",
+                          description: "Failed to delete page.",
+                          variant: "destructive"
+                        });
+                      }
+                    }
+                  }}
+                >
                   <Trash2 className="h-4 w-4 mr-2" />
                   Delete
                 </DropdownMenuItem>
               </DropdownMenuContent>
-            </DropdownMenu>}
+            </DropdownMenu>
+          )}
         </div>
       </div>
       
-      {hasChildren && isExpanded && <div className="ml-2">
-          {item.children?.map(child => <SidebarTreeItem key={child.id} item={child} level={level + 1} onSelect={onSelect} selectedId={selectedId} onCreateSubPage={onCreateSubPage} onCreatePageInEditor={onCreatePageInEditor} onDuplicatePage={onDuplicatePage} onArchivePage={onArchivePage} onCopyLink={onCopyLink} onMovePage={onMovePage} hierarchyData={hierarchyData} onRefreshData={onRefreshData} />)}
-        </div>}
-    </div>;
+      {hasChildren && isExpanded && (
+        <div className="ml-2">
+          {item.children?.map((child, index) => (
+            <SidebarTreeItem
+              key={child.id}
+              item={child}
+              level={level + 1}
+              onSelect={onSelect}
+              selectedId={selectedId}
+              onCreateSubPage={onCreateSubPage}
+              onCreatePageInEditor={onCreatePageInEditor}
+              onDuplicatePage={onDuplicatePage}
+              onArchivePage={onArchivePage}
+              onCopyLink={onCopyLink}
+              onMovePage={onMovePage}
+              hierarchyData={hierarchyData}
+              onRefreshData={onRefreshData}
+              siblings={item.children || []}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
+
 interface RealKnowledgeBaseSidebarProps {
   onItemSelect: (item: SidebarItem) => void;
   selectedId?: string;
@@ -326,6 +451,7 @@ interface RealKnowledgeBaseSidebarProps {
   onCreateSubPage?: (parentId: string) => void;
   onCreatePageInEditor?: (parentId?: string) => void;
 }
+
 export function RealKnowledgeBaseSidebar({
   onItemSelect,
   selectedId,
@@ -340,9 +466,8 @@ export function RealKnowledgeBaseSidebar({
   const [pages, setPages] = useState<Page[]>([]);
   const [hierarchyData, setHierarchyData] = useState<SidebarItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const {
-    toast
-  } = useToast();
+  const { toast } = useToast();
+
   useEffect(() => {
     fetchHierarchyData();
 
@@ -447,14 +572,21 @@ export function RealKnowledgeBaseSidebar({
     setSearchResults(results);
     setShowSearchResults(true);
   }, [searchQuery, pages, spaces]);
+
   const fetchHierarchyData = async () => {
     setLoading(true);
     try {
-      const [spacesResponse, pagesResponse] = await Promise.all([supabase.from('spaces').select('*').order('name'), supabase.from('pages').select('*').order('sort_order', { ascending: true })]);
+      const [spacesResponse, pagesResponse] = await Promise.all([
+        supabase.from('spaces').select('*').order('name'),
+        supabase.from('pages').select('*').order('sort_order', { ascending: true })
+      ]);
+
       if (spacesResponse.error) throw spacesResponse.error;
       if (pagesResponse.error) throw pagesResponse.error;
+
       setSpaces(spacesResponse.data || []);
       setPages(pagesResponse.data || []);
+
       const hierarchy = buildHierarchy(spacesResponse.data || [], pagesResponse.data || []);
       setHierarchyData(hierarchy);
     } catch (error) {
@@ -468,8 +600,10 @@ export function RealKnowledgeBaseSidebar({
       setLoading(false);
     }
   };
+
   const buildHierarchy = (spacesData: Space[], pagesData: Page[]): SidebarItem[] => {
     const hierarchy: SidebarItem[] = [];
+
     spacesData.forEach(space => {
       const spaceItem: SidebarItem = {
         id: space.id,
@@ -478,18 +612,32 @@ export function RealKnowledgeBaseSidebar({
         icon: Folder,
         children: []
       };
-      const spacePages = pagesData.filter(page => page.space_id === space.id && !page.parent_page_id);
+
+      const spacePages = pagesData
+        .filter(page => page.space_id === space.id && !page.parent_page_id)
+        .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+      
       spaceItem.children = spacePages.map(page => buildPageHierarchy(page, pagesData));
       hierarchy.push(spaceItem);
     });
-    const orphanedPages = pagesData.filter(page => !page.space_id && !page.parent_page_id);
+
+    const orphanedPages = pagesData
+      .filter(page => !page.space_id && !page.parent_page_id)
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    
     orphanedPages.forEach(page => {
       hierarchy.push(buildPageHierarchy(page, pagesData));
     });
+
     return hierarchy;
   };
+
   const buildPageHierarchy = (page: Page, allPages: Page[]): SidebarItem => {
-    const children = allPages.filter(p => p.parent_page_id === page.id).map(childPage => buildPageHierarchy(childPage, allPages));
+    const children = allPages
+      .filter(p => p.parent_page_id === page.id)
+      .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+      .map(childPage => buildPageHierarchy(childPage, allPages));
+
     return {
       id: page.id,
       title: page.title,
@@ -498,9 +646,11 @@ export function RealKnowledgeBaseSidebar({
       is_public: page.is_public || false,
       parent_page_id: page.parent_page_id,
       space_id: page.space_id,
+      sort_order: page.sort_order || 0,
       children: children.length > 0 ? children : undefined
     };
   };
+
   const handleItemSelect = (item: SidebarItem) => {
     if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people' || item.id === 'settings' || item.id === 'whiteboard' || item.id === 'user-management') {
       onItemSelect(item);
@@ -508,15 +658,12 @@ export function RealKnowledgeBaseSidebar({
       onItemSelect(item);
     }
   };
+
   const handleDuplicatePage = async (pageId: string) => {
     try {
-      const {
-        data: originalPage
-      } = await supabase.from('pages').select('*').eq('id', pageId).single();
+      const { data: originalPage } = await supabase.from('pages').select('*').eq('id', pageId).single();
       if (originalPage) {
-        const {
-          error
-        } = await supabase.from('pages').insert({
+        const { error } = await supabase.from('pages').insert({
           title: `${originalPage.title} (Copy)`,
           content: originalPage.content,
           created_by: originalPage.created_by,
@@ -539,11 +686,10 @@ export function RealKnowledgeBaseSidebar({
       });
     }
   };
+
   const handleArchivePage = async (pageId: string) => {
     try {
-      const {
-        error
-      } = await supabase.from('pages').update({
+      const { error } = await supabase.from('pages').update({
         tags: ['archived']
       }).eq('id', pageId);
       if (error) throw error;
@@ -561,6 +707,7 @@ export function RealKnowledgeBaseSidebar({
       });
     }
   };
+
   const handleCopyLink = (pageId: string) => {
     const url = `${window.location.origin}/?page=${pageId}`;
     navigator.clipboard.writeText(url);
@@ -569,11 +716,10 @@ export function RealKnowledgeBaseSidebar({
       description: "Page link copied to clipboard."
     });
   };
+
   const handleMovePage = async (pageId: string, newParentId: string | null) => {
     try {
-      const {
-        error
-      } = await supabase.from('pages').update({
+      const { error } = await supabase.from('pages').update({
         parent_page_id: newParentId
       }).eq('id', pageId);
       if (error) throw error;
@@ -591,6 +737,7 @@ export function RealKnowledgeBaseSidebar({
       });
     }
   };
+
   const handleCreatePage = () => {
     if (onCreatePageInEditor) {
       onCreatePageInEditor();
@@ -598,8 +745,16 @@ export function RealKnowledgeBaseSidebar({
       onCreatePage();
     }
   };
-  const filteredHierarchy = hierarchyData.filter(item => item.title.toLowerCase().includes(searchQuery.toLowerCase()) || item.children && item.children.some(child => child.title.toLowerCase().includes(searchQuery.toLowerCase())));
-  return <div className="w-full border-r-0 flex flex-col h-full bg-purple-800">
+
+  const filteredHierarchy = hierarchyData.filter(item => 
+    item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (item.children && item.children.some(child => 
+      child.title.toLowerCase().includes(searchQuery.toLowerCase())
+    ))
+  );
+
+  return (
+    <div className="w-full border-r-0 flex flex-col h-full bg-purple-800">
       {/* Header */}
       <div className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2 mb-4">
@@ -695,7 +850,7 @@ export function RealKnowledgeBaseSidebar({
             {loading ? <div className="space-y-2">
                 {[...Array(5)].map((_, i) => <div key={i} className="h-8 bg-sidebar-accent/20 rounded animate-pulse" />)}
               </div> : <div className="space-y-1">
-                {filteredHierarchy.length > 0 ? filteredHierarchy.map(item => <SidebarTreeItem key={item.id} item={item} level={0} onSelect={handleItemSelect} selectedId={selectedId} onCreateSubPage={onCreateSubPage} onCreatePageInEditor={onCreatePageInEditor} onDuplicatePage={handleDuplicatePage} onArchivePage={handleArchivePage} onCopyLink={handleCopyLink} onMovePage={handleMovePage} hierarchyData={hierarchyData} onRefreshData={fetchHierarchyData} />) : searchQuery ? <div className="text-center py-8 text-sidebar-foreground/50">
+                {filteredHierarchy.length > 0 ? filteredHierarchy.map(item => <SidebarTreeItem key={item.id} item={item} level={0} onSelect={handleItemSelect} selectedId={selectedId} onCreateSubPage={onCreateSubPage} onCreatePageInEditor={onCreatePageInEditor} onDuplicatePage={handleDuplicatePage} onArchivePage={handleArchivePage} onCopyLink={handleCopyLink} onMovePage={handleMovePage} hierarchyData={hierarchyData} onRefreshData={fetchHierarchyData} siblings={filteredHierarchy} />) : searchQuery ? <div className="text-center py-8 text-sidebar-foreground/50">
                     <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">No results found</p>
                   </div> : <div className="text-center py-8 text-sidebar-foreground/50">
@@ -722,5 +877,6 @@ export function RealKnowledgeBaseSidebar({
           Settings
         </Button>
       </div>
-    </div>;
+    </div>
+  );
 }
