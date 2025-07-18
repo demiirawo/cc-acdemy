@@ -1,5 +1,7 @@
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render } from '@testing-library/react';
+import { screen, fireEvent } from '@testing-library/dom';
+import '@testing-library/jest-dom';
 import { Editor } from '@tiptap/react';
 import { EditorToolbar } from '../EditorToolbar';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
