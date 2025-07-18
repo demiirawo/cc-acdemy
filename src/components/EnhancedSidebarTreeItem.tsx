@@ -114,12 +114,14 @@ export function EnhancedSidebarTreeItem({
     try {
       const result = await onMovePageUpDown(item.id, 'up', item.version || 1);
       console.log('Move up result:', result);
-      if (result?.success) {
-        // Always refresh data after successful move to ensure UI is updated
-        setTimeout(() => {
-          onRefreshData?.();
-        }, 100);
+      
+      // Update local version if provided to prevent stale state
+      if (result?.success && result.new_version) {
+        item.version = result.new_version;
       }
+      
+      // Always refresh data after attempt (success or failure for latest state)
+      onRefreshData?.();
     } catch (error) {
       console.error('Error moving page up:', error);
     } finally {
@@ -135,12 +137,14 @@ export function EnhancedSidebarTreeItem({
     try {
       const result = await onMovePageUpDown(item.id, 'down', item.version || 1);
       console.log('Move down result:', result);
-      if (result?.success) {
-        // Always refresh data after successful move to ensure UI is updated
-        setTimeout(() => {
-          onRefreshData?.();
-        }, 100);
+      
+      // Update local version if provided to prevent stale state
+      if (result?.success && result.new_version) {
+        item.version = result.new_version;
       }
+      
+      // Always refresh data after attempt (success or failure for latest state)
+      onRefreshData?.();
     } catch (error) {
       console.error('Error moving page down:', error);
     } finally {

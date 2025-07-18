@@ -309,49 +309,83 @@ export function RealKnowledgeBaseSidebar({
   // Enhanced move page up/down with new safe functions
   const handleMovePageUpDown = async (pageId: string, direction: 'up' | 'down', version: number) => {
     try {
-      const functionName = direction === 'up' ? 'move_page_up_safe' : 'move_page_down_safe';
+      console.log('Moving page:', { pageId, direction, version });
+      
+      // Use enhanced functions with better error handling and auto-retry
+      const functionName = direction === 'up' ? 'move_page_up_enhanced' : 'move_page_down_enhanced';
       const { data: result, error } = await supabase.rpc(functionName, {
         p_page_id: pageId,
         p_expected_version: version
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Database error:', error);
+        toast({
+          title: "Database Error",
+          description: error.message,
+          variant: "destructive"
+        });
+        return { success: false };
+      }
 
-      // Type assertion for the database function result - convert through unknown for safety
+      // Type assertion for the database function result
       const typedResult = result as unknown as DatabaseFunctionResult;
+      console.log('Move result:', typedResult);
 
       if (typedResult.success) {
+        // Force immediate refresh for better UX
+        await fetchHierarchyData();
+        
         toast({
           title: "Success",
-          description: typedResult.message
+          description: `Page moved ${direction} successfully`,
+          variant: "default"
         });
-        fetchHierarchyData();
+        
         return { success: true, new_version: typedResult.new_version };
       } else {
-        if (typedResult.code === 'VERSION_CONFLICT') {
-          toast({
-            title: "Page was modified",
-            description: "Page was modified by another user. Please refresh and try again.",
-            variant: "destructive"
-          });
-          fetchHierarchyData(); // Refresh to get latest version
-        } else if (typedResult.code === 'ALREADY_AT_TOP' || typedResult.code === 'ALREADY_AT_BOTTOM') {
-          // Don't show error for already at top/bottom - this is expected behavior
-          return { success: false };
-        } else {
-          toast({
-            title: "Cannot move",
-            description: typedResult.error,
-            variant: "destructive"
-          });
+        // Handle specific error codes gracefully
+        switch (typedResult.code) {
+          case 'VERSION_CONFLICT':
+          case 'RETRY_EXCEEDED':
+            // Auto-refresh data and don't show error - user can retry
+            await fetchHierarchyData();
+            toast({
+              title: "Please try again",
+              description: "Data was updated, please retry the move",
+              variant: "default"
+            });
+            break;
+          
+          case 'ALREADY_AT_TOP':
+          case 'ALREADY_AT_BOTTOM':
+            // Silent fail - these are expected behavior
+            break;
+            
+          case 'PAGE_NOT_FOUND':
+            await fetchHierarchyData();
+            toast({
+              title: "Page not found",
+              description: "The page may have been deleted",
+              variant: "destructive"
+            });
+            break;
+            
+          default:
+            toast({
+              title: "Cannot move page",
+              description: typedResult.error || "Unknown error occurred",
+              variant: "destructive"
+            });
         }
+        
         return { success: false };
       }
     } catch (error) {
-      console.error(`Error moving page ${direction}:`, error);
+      console.error('Error in handleMovePageUpDown:', error);
       toast({
         title: "Error",
-        description: `Failed to move page ${direction}`,
+        description: "Failed to move page. Please try again.",
         variant: "destructive"
       });
       return { success: false };

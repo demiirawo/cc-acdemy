@@ -128,13 +128,15 @@ export const useDragDrop = (
         newParentId
       });
       
-      // For now, disable drag and drop reordering to avoid conflicts with button-based reordering
-      // Users should use the up/down arrow buttons for reordering
+      // Completely disable drag and drop reordering to prevent conflicts
+      // All reordering should be done via the up/down arrow buttons
       toast({
-        title: "Use arrow buttons",
-        description: "Please use the up/down arrow buttons to reorder pages within the same parent.",
+        title: "Drag and drop disabled",
+        description: "Use the up/down arrow buttons on hover to reorder pages.",
         variant: "default"
       });
+      
+      return;
     } catch (error) {
       console.error('Error moving item:', error);
       toast({

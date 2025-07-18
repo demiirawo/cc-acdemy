@@ -355,6 +355,10 @@ export type Database = {
         Args: { page_id: string }
         Returns: boolean
       }
+      move_page_down_enhanced: {
+        Args: { p_page_id: string; p_expected_version: number }
+        Returns: Json
+      }
       move_page_down_safe: {
         Args: { p_page_id: string; p_expected_version: number }
         Returns: Json
@@ -370,6 +374,10 @@ export type Database = {
       move_page_up: {
         Args: { page_id: string }
         Returns: boolean
+      }
+      move_page_up_enhanced: {
+        Args: { p_page_id: string; p_expected_version: number }
+        Returns: Json
       }
       move_page_up_safe: {
         Args: { p_page_id: string; p_expected_version: number }
