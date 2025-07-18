@@ -104,8 +104,8 @@ const TableHead = React.forwardRef<
       )}
       style={{ 
         direction: "ltr",
-        textAlign: "start",
-        unicodeBidi: "isolate"
+        textAlign: "left",
+        unicodeBidi: "normal"
       }}
       onPaste={handlePaste}
       dir="ltr"
@@ -141,8 +141,8 @@ const TableCell = React.forwardRef<
       className={cn("p-4 align-middle [&:has([role=checkbox])]:pr-0 break-words whitespace-normal", className)}
       style={{ 
         direction: "ltr",
-        textAlign: "start", 
-        unicodeBidi: "isolate"
+        textAlign: "left", 
+        unicodeBidi: "normal"
       }}
       onPaste={handlePaste}
       dir="ltr"

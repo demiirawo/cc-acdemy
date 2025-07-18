@@ -426,7 +426,7 @@ export function EnhancedContentEditor({
     // Header row
     tableHTML += '<thead><tr>';
     for (let j = 0; j < cols; j++) {
-      tableHTML += `<th style="border: 1px solid #ccc; padding: 12px; background-color: #f8f9fa; text-align: left !important; direction: ltr !important; unicode-bidi: embed !important; writing-mode: horizontal-tb !important; min-width: 120px;" contenteditable="true" data-cell-type="header"></th>`;
+      tableHTML += `<th style="border: 1px solid #ccc; padding: 12px; background-color: #f8f9fa; text-align: left; direction: ltr; unicode-bidi: normal; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; white-space: normal;" contenteditable="true" dir="ltr"></th>`;
     }
     tableHTML += '</tr></thead>';
     
@@ -435,7 +435,7 @@ export function EnhancedContentEditor({
     for (let i = 0; i < rows - 1; i++) {
       tableHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        tableHTML += `<td style="border: 1px solid #ccc; padding: 12px; text-align: left !important; direction: ltr !important; unicode-bidi: embed !important; writing-mode: horizontal-tb !important; min-width: 120px;" contenteditable="true" data-cell-type="body"></td>`;
+        tableHTML += `<td style="border: 1px solid #ccc; padding: 12px; text-align: left; direction: ltr; unicode-bidi: normal; min-width: 120px; word-wrap: break-word; overflow-wrap: break-word; font-size: 14px; font-family: inherit; height: auto; box-sizing: border-box; white-space: normal;" contenteditable="true" dir="ltr"></td>`;
       }
       tableHTML += '</tr>';
     }
@@ -450,13 +450,10 @@ export function EnhancedContentEditor({
   const handleCellFocus = (e: Event) => {
     const cell = e.target as HTMLElement;
     
-    // Force proper text direction and alignment with !important to ensure it takes precedence
-    cell.style.cssText += `
-      direction: ltr !important;
-      text-align: left !important;
-      unicode-bidi: embed !important;
-      writing-mode: horizontal-tb !important;
-    `;
+    // Ensure proper text direction and alignment
+    cell.style.direction = 'ltr';
+    cell.style.textAlign = 'left';
+    cell.style.unicodeBidi = 'normal';
     cell.dir = 'ltr';
   };
 
@@ -466,8 +463,7 @@ export function EnhancedContentEditor({
     // Ensure proper text direction on click
     cell.style.direction = 'ltr';
     cell.style.textAlign = 'left';
-    cell.style.unicodeBidi = 'embed';
-    cell.style.writingMode = 'horizontal-tb';
+    cell.style.unicodeBidi = 'normal';
     cell.dir = 'ltr';
     cell.focus();
   };
@@ -562,7 +558,8 @@ export function EnhancedContentEditor({
         
         // Ensure proper direction and alignment
         htmlCell.style.direction = 'ltr';
-        htmlCell.style.textAlign = 'start';
+        htmlCell.style.textAlign = 'left';
+        htmlCell.style.unicodeBidi = 'normal';
         htmlCell.dir = 'ltr';
         
         // Add event listeners if not already added
@@ -636,12 +633,28 @@ export function EnhancedContentEditor({
       { text: 'Insert Row Below', action: () => insertRowBelow(cell, table) },
       { text: 'Insert Column Left', action: () => insertColumnLeft(cell, table) },
       { text: 'Insert Column Right', action: () => insertColumnRight(cell, table) },
+      { text: '---', action: null },
+      { text: 'Cell Background Color', action: () => showCellColorPicker(cell as HTMLElement, e) },
+      { text: 'Remove Cell Color', action: () => removeCellColor(cell as HTMLElement) },
+      { text: '---', action: null },
       { text: 'Delete Row', action: () => deleteRow(cell, table) },
       { text: 'Delete Column', action: () => deleteColumn(cell, table) },
       { text: 'Delete Table', action: () => deleteTable(table) },
     ];
     
     menuItems.forEach(item => {
+      if (item.text === '---') {
+        // Add separator
+        const separator = document.createElement('div');
+        separator.style.cssText = `
+          height: 1px;
+          background-color: #e0e0e0;
+          margin: 4px 0;
+        `;
+        menu.appendChild(separator);
+        return;
+      }
+      
       const menuItem = document.createElement('div');
       menuItem.textContent = item.text;
       menuItem.style.cssText = `
@@ -657,7 +670,9 @@ export function EnhancedContentEditor({
         menuItem.style.backgroundColor = 'transparent';
       });
       menuItem.addEventListener('click', () => {
-        item.action();
+        if (item.action) {
+          item.action();
+        }
         menu.remove();
         updateContent();
       });
@@ -690,7 +705,7 @@ export function EnhancedContentEditor({
         border: 1px solid #ccc;
         padding: 12px;
         vertical-align: top;
-        text-align: start;
+        text-align: left;
         min-width: 120px;
         word-wrap: break-word;
         overflow-wrap: break-word;
@@ -699,6 +714,7 @@ export function EnhancedContentEditor({
         height: auto;
         box-sizing: border-box;
         white-space: normal;
+        unicode-bidi: normal;
       `;
       newCell.dir = 'ltr';
       newCell.addEventListener('focus', handleCellFocus);
@@ -726,7 +742,7 @@ export function EnhancedContentEditor({
         border: 1px solid #ccc;
         padding: 12px;
         vertical-align: top;
-        text-align: start;
+        text-align: left;
         min-width: 120px;
         word-wrap: break-word;
         overflow-wrap: break-word;
@@ -735,6 +751,7 @@ export function EnhancedContentEditor({
         height: auto;
         box-sizing: border-box;
         white-space: normal;
+        unicode-bidi: normal;
       `;
       newCell.dir = 'ltr';
       newCell.addEventListener('focus', handleCellFocus);
@@ -764,7 +781,7 @@ export function EnhancedContentEditor({
         padding: 12px;
         ${rowIndex === 0 ? 'background-color: #f8f9fa;' : ''}
         vertical-align: top;
-        text-align: start;
+        text-align: left;
         min-width: 120px;
         word-wrap: break-word;
         overflow-wrap: break-word;
@@ -773,6 +790,7 @@ export function EnhancedContentEditor({
         height: auto;
         box-sizing: border-box;
         white-space: normal;
+        unicode-bidi: normal;
       `;
       newCell.dir = 'ltr';
       newCell.addEventListener('focus', handleCellFocus);
@@ -800,7 +818,7 @@ export function EnhancedContentEditor({
         padding: 12px;
         ${rowIndex === 0 ? 'background-color: #f8f9fa;' : ''}
         vertical-align: top;
-        text-align: start;
+        text-align: left;
         min-width: 120px;
         word-wrap: break-word;
         overflow-wrap: break-word;
@@ -809,6 +827,7 @@ export function EnhancedContentEditor({
         height: auto;
         box-sizing: border-box;
         white-space: normal;
+        unicode-bidi: normal;
       `;
       newCell.dir = 'ltr';
       newCell.addEventListener('focus', handleCellFocus);
