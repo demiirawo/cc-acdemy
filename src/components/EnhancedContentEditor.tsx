@@ -1,6 +1,20 @@
-
 import React, { useRef, useEffect } from 'react';
 import { ConfluenceEditor, ConfluenceEditorProps } from './editor/ConfluenceEditor';
+import { EditorToolbar } from './EditorToolbar';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import { Underline } from '@tiptap/extension-underline';
+import { TextAlign } from '@tiptap/extension-text-align';
+import { TextStyle } from '@tiptap/extension-text-style';
+import { Color } from '@tiptap/extension-color';
+import { Table } from '@tiptap/extension-table';
+import TableRow from '@tiptap/extension-table-row';
+import TableHeader from '@tiptap/extension-table-header';
+import TableCell from '@tiptap/extension-table-cell';
+import TaskList from '@tiptap/extension-task-list';
+import TaskItem from '@tiptap/extension-task-item';
+import Image from '@tiptap/extension-image';
+import Youtube from '@tiptap/extension-youtube';
 import { cn } from "@/lib/utils";
 
 interface EnhancedContentEditorProps {
@@ -86,6 +100,43 @@ export const EnhancedContentEditor: React.FC<EnhancedContentEditorProps> = ({
 }) => {
   const editorRef = useRef<HTMLDivElement>(null);
 
+  // Create editor instance with essential extensions for the toolbar
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Underline,
+      TextAlign.configure({
+        types: ['heading', 'paragraph'],
+      }),
+      TextStyle,
+      Color,
+      Table.configure({
+        resizable: true,
+        cellMinWidth: 100,
+      }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      TaskList,
+      TaskItem.configure({
+        nested: true,
+      }),
+      Image.configure({
+        inline: true,
+        allowBase64: true,
+      }),
+      Youtube.configure({
+        controls: false,
+        nocookie: true,
+      }),
+    ],
+    content,
+    onUpdate: ({ editor }) => {
+      onChange(editor.getHTML());
+    },
+    editable: true,
+  });
+
   // Handle save functionality
   const handleSave = () => {
     if (onSave && title) {
@@ -101,23 +152,31 @@ export const EnhancedContentEditor: React.FC<EnhancedContentEditorProps> = ({
     );
   };
 
-  const confluenceProps: ConfluenceEditorProps = {
-    content,
-    onChange,
-    onSave: handleSave,
-    placeholder,
-    editable: true,
-    showToolbar: true,
-    enableCollaboration: false,
-    className: cn("confluence-editor-wrapper", className),
-    mentions: defaultMentions,
-    onMention: handleMentionSearch,
-    macros: defaultMacros
-  };
+  // Use the simple toolbar with direct editor access for better reliability
+  if (!editor) {
+    return <div className="h-64 bg-muted animate-pulse rounded-md" />;
+  }
 
   return (
     <div ref={editorRef} className={cn("enhanced-content-editor", className)}>
-      <ConfluenceEditor {...confluenceProps} />
+      <EditorToolbar 
+        editor={editor} 
+        onMacroBrowser={() => {
+          // Optional: implement macro browser functionality
+          console.log('Macro browser requested');
+        }} 
+      />
+      <div className="min-h-[300px] border border-t-0 border-border rounded-b-md">
+        <EditorContent 
+          editor={editor} 
+          className="min-h-[300px] p-4 prose max-w-none focus:outline-none"
+        />
+        {placeholder && editor.isEmpty && (
+          <div className="absolute top-4 left-4 text-muted-foreground pointer-events-none">
+            {placeholder}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

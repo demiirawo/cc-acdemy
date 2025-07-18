@@ -5,6 +5,7 @@ import { TextAlign } from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
 import { Highlight } from '@tiptap/extension-highlight';
+import { Underline } from '@tiptap/extension-underline';
 import { Table } from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableHeader from '@tiptap/extension-table-header';
@@ -68,6 +69,7 @@ export const ConfluenceEditor: React.FC<ConfluenceEditorProps> = ({
       StarterKit.configure({
         codeBlock: false, // Disabled in favor of CodeBlockLowlight
       }),
+      Underline,
       TextAlign.configure({
         types: ['heading', 'paragraph'],
       }),
