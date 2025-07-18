@@ -1,7 +1,7 @@
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { EnhancedContentEditor } from '../EnhancedContentEditor';
-import { vi, describe, it, expect } from 'vitest';
+import { vi, describe, it, expect, beforeEach } from 'vitest';
 
 // Integration test with more realistic editor simulation
 describe('Editor Integration Tests', () => {
