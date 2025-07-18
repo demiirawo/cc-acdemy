@@ -1,3 +1,5 @@
+@import './enhanced-table-styles.css';
+
 /* Confluence Editor Styles */
 .confluence-editor {
   @apply w-full;
@@ -57,7 +59,7 @@
     @apply mt-0.5;
   }
 
-  /* Tables */
+  /* Tables - Basic fallback styles */
   table {
     @apply w-full border-collapse border border-border bg-background rounded-md overflow-hidden mb-4;
   }

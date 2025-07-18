@@ -1,6 +1,7 @@
 
 import React, { useRef } from 'react';
 import { EditorToolbar } from './EditorToolbar';
+import { TableContextMenu } from './TableContextMenu';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Underline } from '@tiptap/extension-underline';
@@ -48,17 +49,23 @@ export const EnhancedContentEditor: React.FC<EnhancedContentEditorProps> = ({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        // Disable conflicting extensions that we'll configure separately
-        heading: {
-          levels: [1, 2, 3, 4, 5, 6],
-        },
+        // Configure list extensions properly
         bulletList: {
           keepMarks: true,
           keepAttributes: false,
+          HTMLAttributes: {
+            class: 'bullet-list',
+          },
         },
         orderedList: {
           keepMarks: true,
           keepAttributes: false,
+          HTMLAttributes: {
+            class: 'ordered-list',
+          },
+        },
+        heading: {
+          levels: [1, 2, 3, 4, 5, 6],
         },
       }),
       Underline,
@@ -81,10 +88,25 @@ export const EnhancedContentEditor: React.FC<EnhancedContentEditorProps> = ({
       Table.configure({
         resizable: true,
         cellMinWidth: 100,
+        HTMLAttributes: {
+          class: 'enhanced-table',
+        },
       }),
-      TableRow,
-      TableHeader,
-      TableCell,
+      TableRow.configure({
+        HTMLAttributes: {
+          class: 'table-row',
+        },
+      }),
+      TableHeader.configure({
+        HTMLAttributes: {
+          class: 'table-header',
+        },
+      }),
+      TableCell.configure({
+        HTMLAttributes: {
+          class: 'table-cell',
+        },
+      }),
       TaskList,
       TaskItem.configure({
         nested: true,
@@ -106,6 +128,11 @@ export const EnhancedContentEditor: React.FC<EnhancedContentEditorProps> = ({
     },
     editable: true,
     immediatelyRender: false,
+    editorProps: {
+      attributes: {
+        class: 'enhanced-editor-content',
+      },
+    },
   });
 
   // Handle save functionality
@@ -122,17 +149,19 @@ export const EnhancedContentEditor: React.FC<EnhancedContentEditorProps> = ({
   return (
     <div ref={editorRef} className={cn("enhanced-content-editor border border-border rounded-md", className)}>
       <EditorToolbar editor={editor} />
-      <div className="relative min-h-[300px]">
-        <EditorContent 
-          editor={editor} 
-          className="min-h-[300px] p-4 prose prose-sm max-w-none focus:outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[250px]"
-        />
-        {placeholder && editor.isEmpty && (
-          <div className="absolute top-4 left-4 text-muted-foreground pointer-events-none">
-            {placeholder}
-          </div>
-        )}
-      </div>
+      <TableContextMenu editor={editor}>
+        <div className="relative min-h-[300px]">
+          <EditorContent 
+            editor={editor} 
+            className="min-h-[300px] p-4 prose prose-sm max-w-none focus:outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[250px]"
+          />
+          {placeholder && editor.isEmpty && (
+            <div className="absolute top-4 left-4 text-muted-foreground pointer-events-none">
+              {placeholder}
+            </div>
+          )}
+        </div>
+      </TableContextMenu>
     </div>
   );
 };

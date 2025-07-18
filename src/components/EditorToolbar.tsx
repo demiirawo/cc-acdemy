@@ -3,6 +3,7 @@ import React, { useCallback } from 'react';
 import { Editor } from '@tiptap/react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { TableGridSelector } from './TableGridSelector';
 import {
   Bold,
   Italic,
@@ -21,7 +22,6 @@ import {
   Link,
   Image,
   Video,
-  Table,
   Palette,
   Highlighter,
   Undo,
@@ -102,8 +102,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor }) => {
     editor.chain().focus().toggleBlockquote().run();
   }, [editor]);
 
-  const insertTable = useCallback(() => {
-    editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+  const insertTable = useCallback((rows: number, cols: number) => {
+    editor.chain().focus().insertTable({ rows, cols, withHeaderRow: true }).run();
   }, [editor]);
 
   const insertImage = useCallback(() => {
@@ -150,35 +150,6 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor }) => {
 
   const redo = useCallback(() => {
     editor.chain().focus().redo().run();
-  }, [editor]);
-
-  // Table commands
-  const addRowBefore = useCallback(() => {
-    editor.chain().focus().addRowBefore().run();
-  }, [editor]);
-
-  const addRowAfter = useCallback(() => {
-    editor.chain().focus().addRowAfter().run();
-  }, [editor]);
-
-  const deleteRow = useCallback(() => {
-    editor.chain().focus().deleteRow().run();
-  }, [editor]);
-
-  const addColumnBefore = useCallback(() => {
-    editor.chain().focus().addColumnBefore().run();
-  }, [editor]);
-
-  const addColumnAfter = useCallback(() => {
-    editor.chain().focus().addColumnAfter().run();
-  }, [editor]);
-
-  const deleteColumn = useCallback(() => {
-    editor.chain().focus().deleteColumn().run();
-  }, [editor]);
-
-  const deleteTable = useCallback(() => {
-    editor.chain().focus().deleteTable().run();
   }, [editor]);
 
   return (
@@ -337,7 +308,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor }) => {
 
       <Separator orientation="vertical" className="h-6" />
 
-      {/* Lists */}
+      {/* Lists - Fixed functionality */}
       <Button
         variant={editor.isActive('bulletList') ? 'default' : 'ghost'}
         size="sm"
@@ -427,64 +398,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor }) => {
 
       <Separator orientation="vertical" className="h-6" />
 
-      {/* Table */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" title="Table">
-            <Table className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuItem onClick={insertTable}>
-            Insert table
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem 
-            onClick={addRowBefore}
-            disabled={!editor.can().addRowBefore()}
-          >
-            Add row above
-          </DropdownMenuItem>
-          <DropdownMenuItem 
-            onClick={addRowAfter}
-            disabled={!editor.can().addRowAfter()}
-          >
-            Add row below
-          </DropdownMenuItem>
-          <DropdownMenuItem 
-            onClick={deleteRow}
-            disabled={!editor.can().deleteRow()}
-          >
-            Delete row
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem 
-            onClick={addColumnBefore}
-            disabled={!editor.can().addColumnBefore()}
-          >
-            Add column before
-          </DropdownMenuItem>
-          <DropdownMenuItem 
-            onClick={addColumnAfter}
-            disabled={!editor.can().addColumnAfter()}
-          >
-            Add column after
-          </DropdownMenuItem>
-          <DropdownMenuItem 
-            onClick={deleteColumn}
-            disabled={!editor.can().deleteColumn()}
-          >
-            Delete column
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem 
-            onClick={deleteTable}
-            disabled={!editor.can().deleteTable()}
-          >
-            Delete table
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {/* Table - Updated with grid selector */}
+      <TableGridSelector onInsertTable={insertTable} />
     </div>
   );
 };
