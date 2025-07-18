@@ -1,4 +1,3 @@
-
 import React, { useCallback } from 'react';
 import { Editor } from '@tiptap/react';
 import { Button } from '@/components/ui/button';
@@ -106,50 +105,31 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor }) => {
 
   const insertTable = useCallback((rows: number, cols: number) => {
     console.log('Inserting table with dimensions:', rows, 'x', cols);
+    
+    if (!editor) {
+      console.error('Editor not available');
+      return;
+    }
+
     try {
+      // Simple table insertion without complex styling
       const result = editor.chain().focus().insertTable({ 
         rows, 
         cols, 
         withHeaderRow: true 
       }).run();
+      
       console.log('Table insertion result:', result);
       
-      // Apply enhanced styling after a short delay
-      setTimeout(() => {
-        const tables = document.querySelectorAll('.ProseMirror table:last-of-type');
-        if (tables.length > 0) {
-          const table = tables[0] as HTMLTableElement;
-          console.log('Applying styles to table:', table);
-          applyTableStyling(table);
-        }
-      }, 100);
+      if (result) {
+        console.log('Table inserted successfully');
+      } else {
+        console.error('Table insertion failed');
+      }
     } catch (error) {
       console.error('Failed to insert table:', error);
     }
   }, [editor]);
-
-  const applyTableStyling = (table: HTMLTableElement) => {
-    // Apply enhanced table styling
-    table.style.borderCollapse = 'collapse';
-    table.style.width = '100%';
-    table.style.margin = '1rem 0';
-    table.style.border = '1px solid hsl(var(--border))';
-
-    const cells = table.querySelectorAll('td, th');
-    cells.forEach((cell) => {
-      const htmlCell = cell as HTMLElement;
-      htmlCell.style.border = '1px solid hsl(var(--border))';
-      htmlCell.style.padding = '8px 12px';
-      htmlCell.style.textAlign = 'left';
-      htmlCell.style.verticalAlign = 'top';
-      htmlCell.style.minWidth = '100px';
-      
-      if (cell.tagName === 'TH') {
-        htmlCell.style.backgroundColor = 'hsl(var(--muted))';
-        htmlCell.style.fontWeight = '600';
-      }
-    });
-  };
 
   const insertImage = useCallback(() => {
     const url = window.prompt('Enter image URL:');
