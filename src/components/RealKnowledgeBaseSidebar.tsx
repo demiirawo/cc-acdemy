@@ -335,6 +335,9 @@ export function RealKnowledgeBaseSidebar({
             variant: "destructive"
           });
           fetchHierarchyData(); // Refresh to get latest version
+        } else if (typedResult.code === 'ALREADY_AT_TOP' || typedResult.code === 'ALREADY_AT_BOTTOM') {
+          // Don't show error for already at top/bottom - this is expected behavior
+          return { success: false };
         } else {
           toast({
             title: "Cannot move",

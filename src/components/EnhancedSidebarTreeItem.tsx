@@ -67,9 +67,32 @@ export function EnhancedSidebarTreeItem({
   const canMoveDown = currentIndex < siblings.length - 1;
 
   // Drag and drop functionality
-  const handleItemMove = async (itemId: string, newParentId: string | null) => {
+  const handleItemMove = async (itemId: string, newParentId: string | null, targetIndex: number) => {
     if (!onMovePage) return { success: false };
-    return await onMovePage(itemId, newParentId);
+    
+    // If moving to the same parent, we should use the up/down movement functions
+    // for proper reordering based on the target index
+    const draggedItem = hierarchyData?.find(item => findItemById(item, itemId));
+    const targetItem = hierarchyData?.find(item => findItemById(item, newParentId || ''));
+    
+    // For now, just handle parent changes
+    if (draggedItem && draggedItem.parent_page_id !== newParentId) {
+      return await onMovePage(itemId, newParentId);
+    }
+    
+    return { success: false };
+  };
+
+  // Helper function to find item by ID in hierarchy
+  const findItemById = (item: SidebarItem, id: string): SidebarItem | null => {
+    if (item.id === id) return item;
+    if (item.children) {
+      for (const child of item.children) {
+        const found = findItemById(child, id);
+        if (found) return found;
+      }
+    }
+    return null;
   };
 
   const {
@@ -86,11 +109,16 @@ export function EnhancedSidebarTreeItem({
   const handleMovePageUp = async () => {
     if (!canMoveUp || isMoving || !onMovePageUpDown) return;
     
+    console.log('Moving page up:', { pageId: item.id, version: item.version, currentIndex, canMoveUp });
     setIsMoving(true);
     try {
       const result = await onMovePageUpDown(item.id, 'up', item.version || 1);
+      console.log('Move up result:', result);
       if (result?.success) {
-        onRefreshData?.();
+        // Always refresh data after successful move to ensure UI is updated
+        setTimeout(() => {
+          onRefreshData?.();
+        }, 100);
       }
     } catch (error) {
       console.error('Error moving page up:', error);
@@ -102,11 +130,16 @@ export function EnhancedSidebarTreeItem({
   const handleMovePageDown = async () => {
     if (!canMoveDown || isMoving || !onMovePageUpDown) return;
     
+    console.log('Moving page down:', { pageId: item.id, version: item.version, currentIndex, canMoveDown });
     setIsMoving(true);
     try {
       const result = await onMovePageUpDown(item.id, 'down', item.version || 1);
+      console.log('Move down result:', result);
       if (result?.success) {
-        onRefreshData?.();
+        // Always refresh data after successful move to ensure UI is updated
+        setTimeout(() => {
+          onRefreshData?.();
+        }, 100);
       }
     } catch (error) {
       console.error('Error moving page down:', error);

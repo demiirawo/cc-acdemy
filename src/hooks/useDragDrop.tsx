@@ -128,20 +128,13 @@ export const useDragDrop = (
         newParentId
       });
       
-      const result = await onItemMove(draggedItem.id, newParentId, targetIndex);
-      
-      if (result.success) {
-        toast({
-          title: "Success",
-          description: `"${draggedItem.title}" moved successfully`
-        });
-      } else {
-        toast({
-          title: "Move failed",
-          description: "Could not move the page. Please try again.",
-          variant: "destructive"
-        });
-      }
+      // For now, disable drag and drop reordering to avoid conflicts with button-based reordering
+      // Users should use the up/down arrow buttons for reordering
+      toast({
+        title: "Use arrow buttons",
+        description: "Please use the up/down arrow buttons to reorder pages within the same parent.",
+        variant: "default"
+      });
     } catch (error) {
       console.error('Error moving item:', error);
       toast({
