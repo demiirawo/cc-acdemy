@@ -304,7 +304,7 @@ export const EnhancedContentEditor: React.FC<EnhancedContentEditorProps> = ({
       </div>
       
       <TableContextMenu editor={editor}>
-        <div className="relative min-h-[300px]">
+        <div className="relative min-h-[300px] enhanced-editor-content">
           <EditorContent 
             editor={editor} 
             className="min-h-[300px] p-4 prose prose-sm max-w-none focus:outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[250px]"
