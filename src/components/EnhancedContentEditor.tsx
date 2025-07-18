@@ -1,5 +1,5 @@
-import React, { useRef, useEffect } from 'react';
-import { ConfluenceEditor, ConfluenceEditorProps } from './editor/ConfluenceEditor';
+
+import React, { useRef } from 'react';
 import { EditorToolbar } from './EditorToolbar';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -7,6 +7,7 @@ import { Underline } from '@tiptap/extension-underline';
 import { TextAlign } from '@tiptap/extension-text-align';
 import { TextStyle } from '@tiptap/extension-text-style';
 import { Color } from '@tiptap/extension-color';
+import { Highlight } from '@tiptap/extension-highlight';
 import { Table } from '@tiptap/extension-table';
 import TableRow from '@tiptap/extension-table-row';
 import TableHeader from '@tiptap/extension-table-header';
@@ -15,6 +16,7 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import Image from '@tiptap/extension-image';
 import Youtube from '@tiptap/extension-youtube';
+import Link from '@tiptap/extension-link';
 import { cn } from "@/lib/utils";
 
 interface EnhancedContentEditorProps {
@@ -29,64 +31,6 @@ interface EnhancedContentEditorProps {
   pageId?: string;
 }
 
-// Sample macros for demonstration
-const defaultMacros = [
-  {
-    id: 'info-panel',
-    name: 'Info Panel',
-    description: 'Insert an informational panel',
-    category: 'Content',
-    icon: '💡',
-    insertHtml: '<div class="panel panel-info"><p>Your info content here</p></div>',
-    tags: ['panel', 'info']
-  },
-  {
-    id: 'warning-panel',
-    name: 'Warning Panel',
-    description: 'Insert a warning panel',
-    category: 'Content',
-    icon: '⚠️',
-    insertHtml: '<div class="panel panel-warning"><p>Your warning content here</p></div>',
-    tags: ['panel', 'warning']
-  },
-  {
-    id: 'code-block',
-    name: 'Code Block',
-    description: 'Insert a syntax-highlighted code block',
-    category: 'Code',
-    icon: '💻',
-    insertHtml: '<pre class="language-javascript"><code>// Your code here\nconsole.log("Hello, World!");</code></pre>',
-    tags: ['code', 'syntax']
-  },
-  {
-    id: 'two-column-layout',
-    name: 'Two Column Layout',
-    description: 'Create a two-column section',
-    category: 'Layout',
-    icon: '📝',
-    insertHtml: '<div class="layout-two-column"><div class="column"><p>Left column content</p></div><div class="column"><p>Right column content</p></div></div>',
-    tags: ['layout', 'columns']
-  },
-  {
-    id: 'three-column-layout',
-    name: 'Three Column Layout',
-    description: 'Create a three-column section',
-    category: 'Layout',
-    icon: '📊',
-    insertHtml: '<div class="layout-three-column"><div class="column"><p>Column 1</p></div><div class="column"><p>Column 2</p></div><div class="column"><p>Column 3</p></div></div>',
-    tags: ['layout', 'columns']
-  }
-];
-
-// Sample mentions for demonstration
-const defaultMentions = [
-  { id: '1', label: 'John Doe', avatar: '👤' },
-  { id: '2', label: 'Jane Smith', avatar: '👩' },
-  { id: '3', label: 'Bob Johnson', avatar: '👨' },
-  { id: '4', label: 'Alice Brown', avatar: '👩‍💼' },
-  { id: '5', label: 'Charlie Wilson', avatar: '👨‍💻' }
-];
-
 export const EnhancedContentEditor: React.FC<EnhancedContentEditorProps> = ({
   content,
   onChange,
@@ -100,16 +44,40 @@ export const EnhancedContentEditor: React.FC<EnhancedContentEditorProps> = ({
 }) => {
   const editorRef = useRef<HTMLDivElement>(null);
 
-  // Create editor instance with essential extensions for the toolbar
+  // Create editor instance with properly configured extensions
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        // Disable conflicting extensions that we'll configure separately
+        heading: {
+          levels: [1, 2, 3, 4, 5, 6],
+        },
+        bulletList: {
+          keepMarks: true,
+          keepAttributes: false,
+        },
+        orderedList: {
+          keepMarks: true,
+          keepAttributes: false,
+        },
+      }),
       Underline,
       TextAlign.configure({
         types: ['heading', 'paragraph'],
       }),
       TextStyle,
-      Color,
+      Color.configure({
+        types: ['textStyle'],
+      }),
+      Highlight.configure({
+        multicolor: true,
+      }),
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          class: 'text-primary underline underline-offset-4',
+        },
+      }),
       Table.configure({
         resizable: true,
         cellMinWidth: 100,
@@ -128,6 +96,8 @@ export const EnhancedContentEditor: React.FC<EnhancedContentEditorProps> = ({
       Youtube.configure({
         controls: false,
         nocookie: true,
+        width: 640,
+        height: 480,
       }),
     ],
     content,
@@ -135,6 +105,7 @@ export const EnhancedContentEditor: React.FC<EnhancedContentEditorProps> = ({
       onChange(editor.getHTML());
     },
     editable: true,
+    immediatelyRender: false,
   });
 
   // Handle save functionality
@@ -144,32 +115,17 @@ export const EnhancedContentEditor: React.FC<EnhancedContentEditorProps> = ({
     }
   };
 
-  // Handle mention search
-  const handleMentionSearch = async (query: string) => {
-    // Filter mentions based on query
-    return defaultMentions.filter(mention =>
-      mention.label.toLowerCase().includes(query.toLowerCase())
-    );
-  };
-
-  // Use the simple toolbar with direct editor access for better reliability
   if (!editor) {
     return <div className="h-64 bg-muted animate-pulse rounded-md" />;
   }
 
   return (
-    <div ref={editorRef} className={cn("enhanced-content-editor", className)}>
-      <EditorToolbar 
-        editor={editor} 
-        onMacroBrowser={() => {
-          // Optional: implement macro browser functionality
-          console.log('Macro browser requested');
-        }} 
-      />
-      <div className="min-h-[300px] border border-t-0 border-border rounded-b-md">
+    <div ref={editorRef} className={cn("enhanced-content-editor border border-border rounded-md", className)}>
+      <EditorToolbar editor={editor} />
+      <div className="relative min-h-[300px]">
         <EditorContent 
           editor={editor} 
-          className="min-h-[300px] p-4 prose max-w-none focus:outline-none"
+          className="min-h-[300px] p-4 prose prose-sm max-w-none focus:outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[250px]"
         />
         {placeholder && editor.isEmpty && (
           <div className="absolute top-4 left-4 text-muted-foreground pointer-events-none">

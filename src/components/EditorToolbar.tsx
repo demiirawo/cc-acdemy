@@ -1,4 +1,5 @@
-import React from 'react';
+
+import React, { useCallback } from 'react';
 import { Editor } from '@tiptap/react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -21,12 +22,10 @@ import {
   Image,
   Video,
   Table,
-  Columns,
   Palette,
   Highlighter,
   Undo,
   Redo,
-  MoreHorizontal,
   Type,
   Heading1,
   Heading2,
@@ -43,81 +42,152 @@ import { ColorPicker } from '@/components/ColorPicker';
 
 interface EditorToolbarProps {
   editor: Editor | null;
-  onMacroBrowser?: () => void;
 }
 
-export const EditorToolbar: React.FC<EditorToolbarProps> = ({
-  editor,
-  onMacroBrowser,
-}) => {
-  // Return nothing if editor is not ready
+export const EditorToolbar: React.FC<EditorToolbarProps> = ({ editor }) => {
   if (!editor) {
     return null;
   }
 
-  const insertTable = () => {
-    editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
-  };
+  // Command handlers
+  const toggleBold = useCallback(() => {
+    editor.chain().focus().toggleBold().run();
+  }, [editor]);
 
-  const insertImage = () => {
+  const toggleItalic = useCallback(() => {
+    editor.chain().focus().toggleItalic().run();
+  }, [editor]);
+
+  const toggleUnderline = useCallback(() => {
+    editor.chain().focus().toggleUnderline().run();
+  }, [editor]);
+
+  const toggleStrike = useCallback(() => {
+    editor.chain().focus().toggleStrike().run();
+  }, [editor]);
+
+  const setHeading = useCallback((level: 1 | 2 | 3) => {
+    editor.chain().focus().toggleHeading({ level }).run();
+  }, [editor]);
+
+  const setParagraph = useCallback(() => {
+    editor.chain().focus().setParagraph().run();
+  }, [editor]);
+
+  const setTextAlign = useCallback((alignment: 'left' | 'center' | 'right' | 'justify') => {
+    editor.chain().focus().setTextAlign(alignment).run();
+  }, [editor]);
+
+  const toggleBulletList = useCallback(() => {
+    editor.chain().focus().toggleBulletList().run();
+  }, [editor]);
+
+  const toggleOrderedList = useCallback(() => {
+    editor.chain().focus().toggleOrderedList().run();
+  }, [editor]);
+
+  const toggleTaskList = useCallback(() => {
+    editor.chain().focus().toggleTaskList().run();
+  }, [editor]);
+
+  const toggleCode = useCallback(() => {
+    editor.chain().focus().toggleCode().run();
+  }, [editor]);
+
+  const toggleCodeBlock = useCallback(() => {
+    editor.chain().focus().toggleCodeBlock().run();
+  }, [editor]);
+
+  const toggleBlockquote = useCallback(() => {
+    editor.chain().focus().toggleBlockquote().run();
+  }, [editor]);
+
+  const insertTable = useCallback(() => {
+    editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+  }, [editor]);
+
+  const insertImage = useCallback(() => {
     const url = window.prompt('Enter image URL:');
     if (url) {
       editor.chain().focus().setImage({ src: url }).run();
     }
-  };
+  }, [editor]);
 
-  const insertYoutube = () => {
+  const insertYoutube = useCallback(() => {
     const url = window.prompt('Enter YouTube URL:');
     if (url) {
       editor.chain().focus().setYoutubeVideo({ src: url }).run();
     }
-  };
+  }, [editor]);
 
-  const insertLink = () => {
-    const url = window.prompt('Enter URL:');
-    if (url) {
-      editor.chain().focus().setLink({ href: url }).run();
+  const insertLink = useCallback(() => {
+    const previousUrl = editor.getAttributes('link').href;
+    const url = window.prompt('URL', previousUrl);
+
+    if (url === null) {
+      return;
     }
-  };
 
-  const setTextColor = (color: string) => {
+    if (url === '') {
+      editor.chain().focus().extendMarkRange('link').unsetLink().run();
+      return;
+    }
+
+    editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
+  }, [editor]);
+
+  const setTextColor = useCallback((color: string) => {
     editor.chain().focus().setColor(color).run();
-  };
+  }, [editor]);
 
-  const setHighlight = (color: string) => {
+  const setHighlight = useCallback((color: string) => {
     editor.chain().focus().setHighlight({ color }).run();
-  };
+  }, [editor]);
 
-  const insertLayout = (columns: number) => {
-    const layoutHtml = `
-      <div class="layout-section" data-columns="${columns}">
-        ${Array.from({ length: columns }, () => 
-          '<div class="layout-column"><p>Column content...</p></div>'
-        ).join('')}
-      </div>
-    `;
-    editor.chain().focus().insertContent(layoutHtml).run();
-  };
+  const undo = useCallback(() => {
+    editor.chain().focus().undo().run();
+  }, [editor]);
 
-  const insertPanel = (type: 'info' | 'warning' | 'error' | 'success') => {
-    const panelHtml = `
-      <div class="panel panel-${type}">
-        <div class="panel-header">${type.charAt(0).toUpperCase() + type.slice(1)}</div>
-        <div class="panel-body">
-          <p>Panel content...</p>
-        </div>
-      </div>
-    `;
-    editor.chain().focus().insertContent(panelHtml).run();
-  };
+  const redo = useCallback(() => {
+    editor.chain().focus().redo().run();
+  }, [editor]);
+
+  // Table commands
+  const addRowBefore = useCallback(() => {
+    editor.chain().focus().addRowBefore().run();
+  }, [editor]);
+
+  const addRowAfter = useCallback(() => {
+    editor.chain().focus().addRowAfter().run();
+  }, [editor]);
+
+  const deleteRow = useCallback(() => {
+    editor.chain().focus().deleteRow().run();
+  }, [editor]);
+
+  const addColumnBefore = useCallback(() => {
+    editor.chain().focus().addColumnBefore().run();
+  }, [editor]);
+
+  const addColumnAfter = useCallback(() => {
+    editor.chain().focus().addColumnAfter().run();
+  }, [editor]);
+
+  const deleteColumn = useCallback(() => {
+    editor.chain().focus().deleteColumn().run();
+  }, [editor]);
+
+  const deleteTable = useCallback(() => {
+    editor.chain().focus().deleteTable().run();
+  }, [editor]);
 
   return (
-    <div className="editor-toolbar border border-b-0 border-border rounded-t-md bg-background p-2 flex flex-wrap gap-1 items-center">
+    <div className="border-b border-border bg-background p-2 flex flex-wrap gap-1 items-center rounded-t-md">
       {/* Undo/Redo */}
       <Button
         variant="ghost"
         size="sm"
-        onClick={() => editor.chain().focus().undo().run()}
+        onClick={undo}
         disabled={!editor.can().undo()}
         title="Undo"
       >
@@ -126,7 +196,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <Button
         variant="ghost"
         size="sm"
-        onClick={() => editor.chain().focus().redo().run()}
+        onClick={redo}
         disabled={!editor.can().redo()}
         title="Redo"
       >
@@ -135,7 +205,7 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
 
       <Separator orientation="vertical" className="h-6" />
 
-      {/* Headings */}
+      {/* Text Styles */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="sm" title="Text style">
@@ -143,16 +213,16 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
-          <DropdownMenuItem onClick={() => editor.chain().focus().setParagraph().run()}>
+          <DropdownMenuItem onClick={setParagraph}>
             Normal text
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
+          <DropdownMenuItem onClick={() => setHeading(1)}>
             <Heading1 className="h-4 w-4 mr-2" /> Heading 1
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
+          <DropdownMenuItem onClick={() => setHeading(2)}>
             <Heading2 className="h-4 w-4 mr-2" /> Heading 2
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
+          <DropdownMenuItem onClick={() => setHeading(3)}>
             <Heading3 className="h-4 w-4 mr-2" /> Heading 3
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -164,8 +234,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <Button
         variant={editor.isActive('bold') ? 'default' : 'ghost'}
         size="sm"
-        onClick={() => editor.chain().focus().toggleBold().run()}
-        disabled={!editor.can().chain().focus().toggleBold().run()}
+        onClick={toggleBold}
+        disabled={!editor.can().toggleBold()}
         title="Bold"
       >
         <Bold className="h-4 w-4" />
@@ -173,8 +243,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <Button
         variant={editor.isActive('italic') ? 'default' : 'ghost'}
         size="sm"
-        onClick={() => editor.chain().focus().toggleItalic().run()}
-        disabled={!editor.can().chain().focus().toggleItalic().run()}
+        onClick={toggleItalic}
+        disabled={!editor.can().toggleItalic()}
         title="Italic"
       >
         <Italic className="h-4 w-4" />
@@ -182,8 +252,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <Button
         variant={editor.isActive('underline') ? 'default' : 'ghost'}
         size="sm"
-        onClick={() => editor.chain().focus().toggleUnderline().run()}
-        disabled={!editor.can().chain().focus().toggleUnderline().run()}
+        onClick={toggleUnderline}
+        disabled={!editor.can().toggleUnderline()}
         title="Underline"
       >
         <Underline className="h-4 w-4" />
@@ -191,8 +261,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <Button
         variant={editor.isActive('strike') ? 'default' : 'ghost'}
         size="sm"
-        onClick={() => editor.chain().focus().toggleStrike().run()}
-        disabled={!editor.can().chain().focus().toggleStrike().run()}
+        onClick={toggleStrike}
+        disabled={!editor.can().toggleStrike()}
         title="Strikethrough"
       >
         <Strikethrough className="h-4 w-4" />
@@ -231,8 +301,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <Button
         variant={editor.isActive({ textAlign: 'left' }) ? 'default' : 'ghost'}
         size="sm"
-        onClick={() => editor.chain().focus().setTextAlign('left').run()}
-        disabled={!editor.can().chain().focus().setTextAlign('left').run()}
+        onClick={() => setTextAlign('left')}
+        disabled={!editor.can().setTextAlign('left')}
         title="Align left"
       >
         <AlignLeft className="h-4 w-4" />
@@ -240,8 +310,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <Button
         variant={editor.isActive({ textAlign: 'center' }) ? 'default' : 'ghost'}
         size="sm"
-        onClick={() => editor.chain().focus().setTextAlign('center').run()}
-        disabled={!editor.can().chain().focus().setTextAlign('center').run()}
+        onClick={() => setTextAlign('center')}
+        disabled={!editor.can().setTextAlign('center')}
         title="Align center"
       >
         <AlignCenter className="h-4 w-4" />
@@ -249,8 +319,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <Button
         variant={editor.isActive({ textAlign: 'right' }) ? 'default' : 'ghost'}
         size="sm"
-        onClick={() => editor.chain().focus().setTextAlign('right').run()}
-        disabled={!editor.can().chain().focus().setTextAlign('right').run()}
+        onClick={() => setTextAlign('right')}
+        disabled={!editor.can().setTextAlign('right')}
         title="Align right"
       >
         <AlignRight className="h-4 w-4" />
@@ -258,8 +328,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <Button
         variant={editor.isActive({ textAlign: 'justify' }) ? 'default' : 'ghost'}
         size="sm"
-        onClick={() => editor.chain().focus().setTextAlign('justify').run()}
-        disabled={!editor.can().chain().focus().setTextAlign('justify').run()}
+        onClick={() => setTextAlign('justify')}
+        disabled={!editor.can().setTextAlign('justify')}
         title="Justify"
       >
         <AlignJustify className="h-4 w-4" />
@@ -271,8 +341,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <Button
         variant={editor.isActive('bulletList') ? 'default' : 'ghost'}
         size="sm"
-        onClick={() => editor.chain().focus().toggleBulletList().run()}
-        disabled={!editor.can().chain().focus().toggleBulletList().run()}
+        onClick={toggleBulletList}
+        disabled={!editor.can().toggleBulletList()}
         title="Bullet list"
       >
         <List className="h-4 w-4" />
@@ -280,8 +350,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <Button
         variant={editor.isActive('orderedList') ? 'default' : 'ghost'}
         size="sm"
-        onClick={() => editor.chain().focus().toggleOrderedList().run()}
-        disabled={!editor.can().chain().focus().toggleOrderedList().run()}
+        onClick={toggleOrderedList}
+        disabled={!editor.can().toggleOrderedList()}
         title="Numbered list"
       >
         <ListOrdered className="h-4 w-4" />
@@ -289,8 +359,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <Button
         variant={editor.isActive('taskList') ? 'default' : 'ghost'}
         size="sm"
-        onClick={() => editor.chain().focus().toggleTaskList().run()}
-        disabled={!editor.can().chain().focus().toggleTaskList().run()}
+        onClick={toggleTaskList}
+        disabled={!editor.can().toggleTaskList()}
         title="Task list"
       >
         <CheckSquare className="h-4 w-4" />
@@ -302,8 +372,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <Button
         variant={editor.isActive('code') ? 'default' : 'ghost'}
         size="sm"
-        onClick={() => editor.chain().focus().toggleCode().run()}
-        disabled={!editor.can().chain().focus().toggleCode().run()}
+        onClick={toggleCode}
+        disabled={!editor.can().toggleCode()}
         title="Inline code"
       >
         <Code className="h-4 w-4" />
@@ -311,8 +381,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <Button
         variant={editor.isActive('codeBlock') ? 'default' : 'ghost'}
         size="sm"
-        onClick={() => editor.chain().focus().toggleCodeBlock().run()}
-        disabled={!editor.can().chain().focus().toggleCodeBlock().run()}
+        onClick={toggleCodeBlock}
+        disabled={!editor.can().toggleCodeBlock()}
         title="Code block"
       >
         <Code2 className="h-4 w-4" />
@@ -320,8 +390,8 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
       <Button
         variant={editor.isActive('blockquote') ? 'default' : 'ghost'}
         size="sm"
-        onClick={() => editor.chain().focus().toggleBlockquote().run()}
-        disabled={!editor.can().chain().focus().toggleBlockquote().run()}
+        onClick={toggleBlockquote}
+        disabled={!editor.can().toggleBlockquote()}
         title="Quote"
       >
         <Quote className="h-4 w-4" />
@@ -370,103 +440,51 @@ export const EditorToolbar: React.FC<EditorToolbarProps> = ({
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem 
-            onClick={() => editor.chain().focus().addRowBefore().run()}
+            onClick={addRowBefore}
             disabled={!editor.can().addRowBefore()}
           >
             Add row above
           </DropdownMenuItem>
           <DropdownMenuItem 
-            onClick={() => editor.chain().focus().addRowAfter().run()}
+            onClick={addRowAfter}
             disabled={!editor.can().addRowAfter()}
           >
             Add row below
           </DropdownMenuItem>
           <DropdownMenuItem 
-            onClick={() => editor.chain().focus().deleteRow().run()}
+            onClick={deleteRow}
             disabled={!editor.can().deleteRow()}
           >
             Delete row
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem 
-            onClick={() => editor.chain().focus().addColumnBefore().run()}
+            onClick={addColumnBefore}
             disabled={!editor.can().addColumnBefore()}
           >
             Add column before
           </DropdownMenuItem>
           <DropdownMenuItem 
-            onClick={() => editor.chain().focus().addColumnAfter().run()}
+            onClick={addColumnAfter}
             disabled={!editor.can().addColumnAfter()}
           >
             Add column after
           </DropdownMenuItem>
           <DropdownMenuItem 
-            onClick={() => editor.chain().focus().deleteColumn().run()}
+            onClick={deleteColumn}
             disabled={!editor.can().deleteColumn()}
           >
             Delete column
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem 
-            onClick={() => editor.chain().focus().deleteTable().run()}
+            onClick={deleteTable}
             disabled={!editor.can().deleteTable()}
           >
             Delete table
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-
-      {/* Layouts */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" title="Layout">
-            <Columns className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuItem onClick={() => insertLayout(2)}>
-            Two columns
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => insertLayout(3)}>
-            Three columns
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => insertLayout(4)}>
-            Four columns
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => insertPanel('info')}>
-            Info panel
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => insertPanel('warning')}>
-            Warning panel
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => insertPanel('error')}>
-            Error panel
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => insertPanel('success')}>
-            Success panel
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      {/* More actions */}
-      {onMacroBrowser && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" title="More actions">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={onMacroBrowser}>
-              Browse macros
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => editor.chain().focus().setHorizontalRule().run()}>
-              Insert divider
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
     </div>
   );
 };
