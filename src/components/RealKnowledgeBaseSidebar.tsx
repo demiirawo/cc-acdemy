@@ -317,8 +317,8 @@ export function RealKnowledgeBaseSidebar({
 
       if (error) throw error;
 
-      // Type assertion for the database function result
-      const typedResult = result as DatabaseFunctionResult;
+      // Type assertion for the database function result - convert through unknown for safety
+      const typedResult = result as unknown as DatabaseFunctionResult;
 
       if (typedResult.success) {
         toast({
@@ -371,8 +371,8 @@ export function RealKnowledgeBaseSidebar({
 
       if (error) throw error;
 
-      // Type assertion for the database function result
-      const typedResult = result as DatabaseFunctionResult;
+      // Type assertion for the database function result - convert through unknown for safety
+      const typedResult = result as unknown as DatabaseFunctionResult;
 
       if (typedResult.success) {
         toast({
