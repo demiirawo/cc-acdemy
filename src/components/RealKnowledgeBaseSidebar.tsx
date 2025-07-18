@@ -44,6 +44,15 @@ interface Page {
   version: number | null;
 }
 
+// Type for database function results
+interface DatabaseFunctionResult {
+  success: boolean;
+  message?: string;
+  error?: string;
+  code?: string;
+  new_version?: number;
+}
+
 const navigationItems = [{
   id: 'home',
   title: 'Home',
@@ -308,15 +317,18 @@ export function RealKnowledgeBaseSidebar({
 
       if (error) throw error;
 
-      if (result.success) {
+      // Type assertion for the database function result
+      const typedResult = result as DatabaseFunctionResult;
+
+      if (typedResult.success) {
         toast({
           title: "Success",
-          description: result.message
+          description: typedResult.message
         });
         fetchHierarchyData();
-        return { success: true, new_version: result.new_version };
+        return { success: true, new_version: typedResult.new_version };
       } else {
-        if (result.code === 'VERSION_CONFLICT') {
+        if (typedResult.code === 'VERSION_CONFLICT') {
           toast({
             title: "Page was modified",
             description: "Page was modified by another user. Please refresh and try again.",
@@ -326,7 +338,7 @@ export function RealKnowledgeBaseSidebar({
         } else {
           toast({
             title: "Cannot move",
-            description: result.error,
+            description: typedResult.error,
             variant: "destructive"
           });
         }
@@ -359,15 +371,18 @@ export function RealKnowledgeBaseSidebar({
 
       if (error) throw error;
 
-      if (result.success) {
+      // Type assertion for the database function result
+      const typedResult = result as DatabaseFunctionResult;
+
+      if (typedResult.success) {
         toast({
           title: "Success",
-          description: result.message
+          description: typedResult.message
         });
         fetchHierarchyData();
         return { success: true };
       } else {
-        if (result.code === 'VERSION_CONFLICT') {
+        if (typedResult.code === 'VERSION_CONFLICT') {
           toast({
             title: "Page was modified",
             description: "Page was modified by another user. Please refresh and try again.",
@@ -377,7 +392,7 @@ export function RealKnowledgeBaseSidebar({
         } else {
           toast({
             title: "Cannot move",
-            description: result.error,
+            description: typedResult.error,
             variant: "destructive"
           });
         }

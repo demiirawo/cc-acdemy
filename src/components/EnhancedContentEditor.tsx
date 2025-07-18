@@ -19,13 +19,23 @@ interface EnhancedContentEditorProps {
   onChange: (content: string) => void;
   placeholder?: string;
   className?: string;
+  title?: string;
+  onSave?: (title: string, content: string, recommendedReading?: any[]) => Promise<void>;
+  onPreview?: () => void;
+  isEditing?: boolean;
+  pageId?: string;
 }
 
 export const EnhancedContentEditor: React.FC<EnhancedContentEditorProps> = ({
   content,
   onChange,
   placeholder = "Start writing...",
-  className
+  className,
+  title,
+  onSave,
+  onPreview,
+  isEditing,
+  pageId
 }) => {
   const [isFocused, setIsFocused] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
