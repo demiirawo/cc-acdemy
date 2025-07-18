@@ -482,6 +482,17 @@ export function KnowledgeBaseApp() {
       type: 'page'
     });
   };
+
+  // Add handler for content changes
+  const handleContentChange = (content: string) => {
+    if (currentPage) {
+      setCurrentPage({
+        ...currentPage,
+        content
+      });
+    }
+  };
+
   return <div className="flex h-screen bg-background">
       <ResizableSidebar onItemSelect={handleItemSelect} selectedId={selectedItemId} onCreatePage={handleCreatePage} onCreateSubPage={handleCreateSubPage} onCreatePageInEditor={handleCreatePageInEditor} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
@@ -518,7 +529,14 @@ export function KnowledgeBaseApp() {
         {currentView === 'whiteboard' && <WhiteboardCanvas />}
         {currentView === 'user-management' && <UserManagement />}
         
-        {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} />}
+        {currentView === 'editor' && currentPage && <EnhancedContentEditor 
+          content={currentPage.content} 
+          onChange={handleContentChange}
+          onSave={handleSavePage} 
+          onPreview={handlePreview} 
+          isEditing={isEditing} 
+          pageId={currentPage.id} 
+        />}
         
         {currentView === 'page' && currentPage && <PageView currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
       </div>
