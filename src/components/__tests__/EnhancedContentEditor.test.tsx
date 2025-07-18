@@ -1,6 +1,4 @@
-
-import { render } from '@testing-library/react';
-import { screen, fireEvent, waitFor } from '@testing-library/dom';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { EnhancedContentEditor } from '../EnhancedContentEditor';
 import { vi, describe, it, expect } from 'vitest';
