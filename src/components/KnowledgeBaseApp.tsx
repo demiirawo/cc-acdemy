@@ -127,7 +127,7 @@ function PageView({
   };
   const cleanContent = currentPage.content;
   return <div className="flex-1 overflow-auto">
-      <div className="max-w-4xl mx-auto p-6">
+      <div className="max-w-none mx-8 p-6">
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
