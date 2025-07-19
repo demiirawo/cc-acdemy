@@ -102,16 +102,13 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-hero p-4">
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#5E18EB' }}>
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="w-12 h-12 bg-gradient-primary rounded-lg flex items-center justify-center mx-auto mb-4">
-            <span className="text-2xl font-bold text-primary-foreground">KB</span>
+          <div className="w-20 h-16 flex items-center justify-center mx-auto mb-4">
+            <img src="/src/assets/care-cuddle-logo.png" alt="Care Cuddle" className="max-w-full max-h-full object-contain" />
           </div>
-          <CardTitle className="text-2xl">Care Cudde Academy</CardTitle>
-          <CardDescription>
-            Access your team's collective knowledge
-          </CardDescription>
+          <CardTitle className="text-2xl">Care Cuddle Academy</CardTitle>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="signin" className="w-full">
