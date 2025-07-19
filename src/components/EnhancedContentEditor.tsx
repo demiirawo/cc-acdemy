@@ -2542,12 +2542,14 @@ export function EnhancedContentEditor({
     const grouped: { [key: string]: any[] } = {};
     
     // Process items in the exact order they appear to capture first occurrence
-    items.forEach(item => {
+    items.forEach((item, index) => {
       const category = item.category || 'General';
+      console.log(`Item ${index}: "${item.title}" - Category: "${category}"`);
       
       // Only add category to the order list on first occurrence
       if (!categories.includes(category)) {
         categories.push(category);
+        console.log(`First occurrence of category "${category}" at index ${index}`);
       }
       
       // Initialize array if first item in this category
