@@ -29,6 +29,7 @@ import {
   Youtube,
   FileText,
   Trash2,
+  Edit,
   Globe,
   Lock,
   Copy,
@@ -108,6 +109,8 @@ export function EnhancedContentEditor({
   const [selectedFontSize, setSelectedFontSize] = useState("14");
   const [recommendedReading, setRecommendedReading] = useState<Array<{title: string, url?: string, description: string, type: 'link' | 'file', fileName?: string, fileUrl?: string, category?: string}>>([]);
   const [newRecommendation, setNewRecommendation] = useState({title: '', url: '', description: '', type: 'link' as 'link' | 'file', fileName: '', fileUrl: '', category: 'General'});
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingItem, setEditingItem] = useState({title: '', url: '', description: '', type: 'link' as 'link' | 'file', fileName: '', fileUrl: '', category: 'General'});
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -2444,6 +2447,94 @@ export function EnhancedContentEditor({
     }
   };
 
+  const startEditing = (index: number) => {
+    const item = recommendedReading[index];
+    setEditingIndex(index);
+    setEditingItem({
+      title: item.title,
+      url: item.url || '',
+      description: item.description,
+      type: item.type,
+      fileName: item.fileName || '',
+      fileUrl: item.fileUrl || '',
+      category: item.category || 'General'
+    });
+  };
+
+  const saveEdit = () => {
+    if (editingIndex !== null && editingItem.title && editingItem.description) {
+      if (editingItem.type === 'file') {
+        if (editingItem.fileUrl && editingItem.fileName) {
+          setRecommendedReading(prev => {
+            const newItems = [...prev];
+            newItems[editingIndex] = {
+              title: editingItem.title,
+              description: editingItem.description,
+              type: 'file',
+              fileUrl: editingItem.fileUrl,
+              fileName: editingItem.fileName,
+              category: editingItem.category
+            };
+            return newItems;
+          });
+          setEditingIndex(null);
+          toast({
+            title: "Updated",
+            description: "Recommended reading item updated.",
+          });
+        } else {
+          toast({
+            title: "Missing file",
+            description: "Please select a file.",
+            variant: "destructive"
+          });
+        }
+      } else if (editingItem.url) {
+        setRecommendedReading(prev => {
+          const newItems = [...prev];
+          newItems[editingIndex] = {
+            title: editingItem.title,
+            url: editingItem.url,
+            description: editingItem.description,
+            type: 'link',
+            category: editingItem.category
+          };
+          return newItems;
+        });
+        setEditingIndex(null);
+        toast({
+          title: "Updated",
+          description: "Recommended reading item updated.",
+        });
+      } else {
+        toast({
+          title: "Missing URL",
+          description: "Please enter a URL for the link.",
+          variant: "destructive"
+        });
+      }
+    } else {
+      toast({
+        title: "Missing information",
+        description: "Please fill in title and description.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditingIndex(null);
+    setEditingItem({
+      title: '',
+      url: '',
+      description: '',
+      type: 'link',
+      fileName: '',
+      fileUrl: '',
+      category: 'General'
+    });
+  };
+
   if (!isEditing) {
     return (
       <div className="flex-1 overflow-auto">
@@ -2796,14 +2887,14 @@ export function EnhancedContentEditor({
                             variant: "destructive"
                           });
                         }
-                      }}
-                      variant="outline"
-                      size="sm"
-                      className="flex items-center gap-2"
-                    >
-                      <FileText className="h-4 w-4" />
-                      Add Reading
-                    </Button>
+                       }}
+                       variant="outline"
+                       size="sm"
+                       className="flex items-center gap-2"
+                     >
+                       <FileText className="h-4 w-4" />
+                       Add Reading
+                     </Button>
                  </div>
               </CardHeader>
                <CardContent className="space-y-4">
@@ -2894,12 +2985,120 @@ export function EnhancedContentEditor({
                     </div>
                  </div>
 
-                 {/* Existing recommendations */}
-                  {recommendedReading.map((item, index) => (
-                    <div key={index} className="p-3 border rounded-lg bg-muted/20">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <h4 className="font-medium text-foreground">{item.title}</h4>
+                  {/* Existing recommendations */}
+                   {recommendedReading.map((item, index) => (
+                     <div key={index} className="p-3 border rounded-lg bg-muted/20">
+                       {editingIndex === index ? (
+                         // Edit form
+                         <div className="space-y-3">
+                           <div className="flex gap-2">
+                             <Button
+                               variant={editingItem.type === 'link' ? 'default' : 'outline'}
+                               size="sm"
+                               onClick={() => setEditingItem(prev => ({ ...prev, type: 'link' }))}
+                             >
+                               Link
+                             </Button>
+                             <Button
+                               variant={editingItem.type === 'file' ? 'default' : 'outline'}
+                               size="sm"
+                               onClick={() => setEditingItem(prev => ({ ...prev, type: 'file' }))}
+                             >
+                               File
+                             </Button>
+                           </div>
+                           
+                           {/* First row: Category, Title, Link/File in 3-column grid */}
+                           <div className="grid grid-cols-3 gap-3">
+                             <Input
+                               placeholder="Category"
+                               value={editingItem.category}
+                               onChange={(e) => setEditingItem(prev => ({ ...prev, category: e.target.value }))}
+                             />
+                             <Input
+                               placeholder="Title"
+                               value={editingItem.title}
+                               onChange={(e) => setEditingItem(prev => ({ ...prev, title: e.target.value }))}
+                             />
+                             {editingItem.type === 'link' ? (
+                               <Input
+                                 placeholder="URL"
+                                 value={editingItem.url}
+                                 onChange={(e) => setEditingItem(prev => ({ ...prev, url: e.target.value }))}
+                               />
+                             ) : (
+                               <div className="space-y-1">
+                                 <input
+                                   type="file"
+                                   id={`edit-file-upload-${index}`}
+                                   className="hidden"
+                                   accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.mp4,.mov,.avi"
+                                   onChange={(e) => {
+                                     const file = e.target.files?.[0];
+                                     if (file) {
+                                       const reader = new FileReader();
+                                       reader.onload = (event) => {
+                                         const result = event.target?.result as string;
+                                         setEditingItem(prev => ({ 
+                                           ...prev, 
+                                           fileName: file.name, 
+                                           fileUrl: result 
+                                         }));
+                                       };
+                                       reader.readAsDataURL(file);
+                                     }
+                                   }}
+                                 />
+                                 <Button
+                                   type="button"
+                                   variant="outline"
+                                   onClick={() => document.getElementById(`edit-file-upload-${index}`)?.click()}
+                                   className="w-full"
+                                   size="sm"
+                                 >
+                                   {editingItem.fileName ? 'Change File' : 'Upload File'}
+                                 </Button>
+                                 {editingItem.fileName && (
+                                   <p className="text-xs text-muted-foreground">📁 {editingItem.fileName}</p>
+                                 )}
+                               </div>
+                             )}
+                           </div>
+                           
+                           {/* Second row: Description (full width) */}
+                           <Textarea
+                             placeholder="Description"
+                             value={editingItem.description}
+                             onChange={(e) => setEditingItem(prev => ({ ...prev, description: e.target.value }))}
+                             rows={3}
+                             className="w-full"
+                           />
+                           
+                           {/* Action buttons */}
+                           <div className="flex gap-2 justify-end">
+                             <Button
+                               variant="outline"
+                               size="sm"
+                               onClick={cancelEdit}
+                             >
+                               Cancel
+                             </Button>
+                             <Button
+                               size="sm"
+                               onClick={saveEdit}
+                             >
+                               Save
+                             </Button>
+                           </div>
+                         </div>
+                       ) : (
+                         // Display mode
+                         <div className="flex items-start justify-between">
+                           <div className="flex-1">
+                             {item.category && item.category !== 'General' && (
+                               <Badge variant="outline" className="text-xs mb-1">{item.category}</Badge>
+                             )}
+                             <h4 className="font-medium text-foreground">{item.title}</h4>
                            {item.url && (
                              <a 
                                href={item.url} 
@@ -2974,18 +3173,28 @@ export function EnhancedContentEditor({
                           >
                             <ChevronDown className="h-3 w-3" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setRecommendedReading(prev => prev.filter((_, i) => i !== index))}
-                            className="h-8 w-8 p-0 text-destructive"
-                            title="Delete"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
+                           <Button
+                             variant="ghost"
+                             size="sm"
+                             onClick={() => startEditing(index)}
+                             className="h-8 w-8 p-0"
+                             title="Edit"
+                           >
+                             <Edit className="h-3 w-3" />
+                           </Button>
+                             <Button
+                             variant="ghost"
+                             size="sm"
+                             onClick={() => setRecommendedReading(prev => prev.filter((_, i) => i !== index))}
+                             className="h-8 w-8 p-0 text-destructive"
+                             title="Delete"
+                           >
+                             <Trash2 className="h-3 w-3" />
+                           </Button>
+                         </div>
+                       </div>
+                       )}
+                     </div>
                   ))}
                 
                 {recommendedReading.length === 0 && (
