@@ -18,6 +18,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy, FileText } from "lucide-react";
 import { UserManagement } from "./UserManagement";
+import { ChatPage } from "./ChatPage";
 import { RecommendedReadingSection } from "./RecommendedReadingSection";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 
@@ -162,7 +163,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'people' | 'settings' | 'whiteboard' | 'user-management';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'people' | 'settings' | 'whiteboard' | 'user-management' | 'chat';
 interface SidebarItem {
   id: string;
   title: string;
@@ -310,6 +311,10 @@ export function KnowledgeBaseApp() {
       setBreadcrumbs([]);
     } else if (item.id === 'user-management') {
       setCurrentView('user-management');
+      setCurrentPage(null);
+      setBreadcrumbs([]);
+    } else if (item.id === 'chat') {
+      setCurrentView('chat');
       setCurrentPage(null);
       setBreadcrumbs([]);
     } else if (item.type === 'page') {
@@ -561,6 +566,7 @@ export function KnowledgeBaseApp() {
                    currentView === 'settings' ? 'Settings' :
                    currentView === 'whiteboard' ? 'Whiteboard' :
                    currentView === 'user-management' ? 'User Management' :
+                   currentView === 'chat' ? 'AI Assistant' :
                    'Care Cuddle Academy'}
                 </h2>
               )}
@@ -588,6 +594,7 @@ export function KnowledgeBaseApp() {
 
         {currentView === 'whiteboard' && <WhiteboardCanvas />}
         {currentView === 'user-management' && <UserManagement />}
+        {currentView === 'chat' && <ChatPage />}
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} />}
         
