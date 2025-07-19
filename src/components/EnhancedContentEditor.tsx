@@ -1614,7 +1614,18 @@ export function EnhancedContentEditor({
           <label style="display: block; margin-bottom: 4px; font-size: 12px;">Size:</label>
           <button onclick="resizeIframe('${iframeId}', '100%', '300px')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Small</button>
           <button onclick="resizeIframe('${iframeId}', '100%', '400px')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Medium</button>
-          <button onclick="resizeIframe('${iframeId}', '100%', '600px')" style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Large</button>
+          <button onclick="resizeIframe('${iframeId}', '100%', '600px')" style="margin-bottom: 8px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Large</button>
+        </div>
+        <div style="margin-bottom: 12px;">
+          <label style="display: block; margin-bottom: 4px; font-size: 12px;">Custom Size:</label>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="number" id="iframe-width-${iframeId}" placeholder="Width %" min="10" max="100" step="1" style="width: 80px; padding: 4px; border: 1px solid #ccc; border-radius: 4px;" />
+            <span style="font-size: 12px;">%</span>
+            <span style="font-size: 12px;">×</span>
+            <input type="number" id="iframe-height-${iframeId}" placeholder="Height px" min="100" max="800" step="10" style="width: 90px; padding: 4px; border: 1px solid #ccc; border-radius: 4px;" />
+            <span style="font-size: 12px;">px</span>
+            <button onclick="applyCustomIframeSize('${iframeId}')" style="padding: 4px 8px; border: 1px solid #007acc; border-radius: 4px; cursor: pointer; background: #007acc; color: white;">Apply</button>
+          </div>
         </div>
         <button onclick="closeIframeControls()" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: #f5f5f5;">Close</button>
       `;
@@ -1649,6 +1660,27 @@ export function EnhancedContentEditor({
       iframe.style.width = width;
       iframe.style.height = height;
       updateContent();
+    };
+
+    (window as any).applyCustomIframeSize = (iframeId: string) => {
+      const iframe = document.getElementById(iframeId) as HTMLIFrameElement;
+      const widthInput = document.getElementById(`iframe-width-${iframeId}`) as HTMLInputElement;
+      const heightInput = document.getElementById(`iframe-height-${iframeId}`) as HTMLInputElement;
+      
+      if (!iframe || !widthInput || !heightInput) return;
+      
+      const width = widthInput.value ? `${widthInput.value}%` : '100%';
+      const height = heightInput.value ? `${heightInput.value}px` : '400px';
+      
+      iframe.style.width = width;
+      iframe.style.height = height;
+      updateContent();
+      
+      // Show feedback
+      toast({
+        title: "Iframe resized",
+        description: `Size set to ${width} × ${height}`,
+      });
     };
     
     (window as any).closeIframeControls = () => {
