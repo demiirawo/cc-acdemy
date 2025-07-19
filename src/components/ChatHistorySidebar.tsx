@@ -1,11 +1,12 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Plus, Folder, MessageSquare, MoreHorizontal, Trash2, FolderPlus } from "lucide-react";
+import { Plus, Folder, MessageSquare, MoreHorizontal, Trash2, FolderPlus, Edit } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, useDroppable } from '@dnd-kit/core';
@@ -173,6 +174,9 @@ const DroppableFolder = ({
   setFolders,
   toast
 }: DroppableFolderProps) => {
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [newName, setNewName] = useState(folder.name);
+  const navigate = useNavigate();
   const { isOver, setNodeRef } = useDroppable({
     id: folder.id,
     data: {
@@ -191,7 +195,7 @@ const DroppableFolder = ({
       <div className="flex items-center justify-between mb-2">
         <div 
           className="flex items-center gap-2 cursor-pointer hover:opacity-70 transition-opacity"
-          onClick={() => window.location.href = `/project/${folder.id}`}
+          onClick={() => navigate(`/project/${folder.id}`)}
         >
           <Folder 
             className="h-4 w-4 flex-shrink-0" 
@@ -210,6 +214,15 @@ const DroppableFolder = ({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={async () => {
+                setIsRenaming(true);
+                setNewName(folder.name);
+              }}
+            >
+              <Edit className="h-4 w-4 mr-2" />
+              Rename Project
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={async () => {
                 try {
@@ -249,38 +262,61 @@ const DroppableFolder = ({
         </DropdownMenu>
       </div>
       
+      {/* Rename input */}
+      {isRenaming && (
+        <div className="mb-3">
+          <Input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyPress={async (e) => {
+              if (e.key === 'Enter') {
+                try {
+                  const { error } = await supabase
+                    .from('chat_folders')
+                    .update({ name: newName.trim() })
+                    .eq('id', folder.id);
+
+                  if (error) throw error;
+
+                  setFolders(prev => prev.map(f => 
+                    f.id === folder.id ? { ...f, name: newName.trim() } : f
+                  ));
+                  setIsRenaming(false);
+                  
+                  toast({
+                    title: "Project renamed",
+                    description: `Project renamed to "${newName.trim()}".`,
+                  });
+                } catch (error) {
+                  toast({
+                    title: "Error",
+                    description: "Failed to rename project",
+                    variant: "destructive",
+                  });
+                }
+              }
+              if (e.key === 'Escape') {
+                setIsRenaming(false);
+                setNewName(folder.name);
+              }
+            }}
+            onBlur={() => {
+              setIsRenaming(false);
+              setNewName(folder.name);
+            }}
+            className="text-sm"
+            autoFocus
+          />
+        </div>
+      )}
+      
       {/* Project Stats */}
       <div className="text-xs text-muted-foreground mb-3">
         {folderConversations.length} chat{folderConversations.length !== 1 ? 's' : ''}
         {isOver && <span className="ml-2 text-primary">Drop here to add to project</span>}
       </div>
 
-      {/* Recent chats in project */}
-      <div className="space-y-1">
-        <SortableContext
-          items={folderConversations.map(c => c.id)}
-          strategy={verticalListSortingStrategy}
-        >
-          {folderConversations.slice(0, 3).map((conversation) => (
-            <DraggableConversation
-              key={conversation.id}
-              conversation={conversation}
-              currentConversationId={currentConversationId}
-              onConversationSelect={onConversationSelect}
-              formatDate={formatDate}
-              folders={folders}
-              moveConversationToFolder={moveConversationToFolder}
-              deleteConversation={deleteConversation}
-            />
-          ))}
-        </SortableContext>
-        
-        {folderConversations.length > 3 && (
-          <div className="text-xs text-muted-foreground text-center py-1">
-            +{folderConversations.length - 3} more chats
-          </div>
-        )}
-      </div>
+      {/* Recent chats in project - hidden for simplified view */}
     </div>
   );
 };
@@ -291,6 +327,7 @@ export const ChatHistorySidebar = ({
   onNewConversation,
   className = ""
 }: ChatHistorySidebarProps) => {
+  const navigate = useNavigate();
   const [folders, setFolders] = useState<ChatFolder[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isNewFolderDialogOpen, setIsNewFolderDialogOpen] = useState(false);
