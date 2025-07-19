@@ -98,7 +98,7 @@ export const ChatPage = () => {
   };
 
   return (
-    <div className="flex flex-col h-full max-w-4xl mx-auto p-6">
+    <div className="flex flex-col h-full w-full p-6" style={{ userSelect: 'text' }}>
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10">
@@ -125,7 +125,7 @@ export const ChatPage = () => {
                 </p>
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-4" style={{ userSelect: 'text' }}>
                 {messages.map((message) => (
                   <div
                     key={message.id}
@@ -152,7 +152,17 @@ export const ChatPage = () => {
                           ? 'bg-primary text-primary-foreground'
                           : 'bg-muted'
                       }`}>
-                        <p className="whitespace-pre-wrap">{message.content}</p>
+                        <p 
+                          className="whitespace-pre-wrap" 
+                          style={{ 
+                            userSelect: 'text', 
+                            WebkitUserSelect: 'text',
+                            MozUserSelect: 'text',
+                            msUserSelect: 'text'
+                          }}
+                        >
+                          {message.content}
+                        </p>
                       </div>
                       <p className="text-xs text-muted-foreground">
                         {message.timestamp.toLocaleTimeString()}
@@ -191,6 +201,12 @@ export const ChatPage = () => {
           placeholder="Type your message..."
           disabled={isLoading}
           className="flex-1"
+          style={{ 
+            userSelect: 'text', 
+            WebkitUserSelect: 'text',
+            MozUserSelect: 'text',
+            msUserSelect: 'text'
+          }}
         />
         <Button 
           onClick={sendMessage} 
