@@ -34,11 +34,6 @@ function PageView({
 }) {
   const [isPublic, setIsPublic] = useState(false);
   const [publicToken, setPublicToken] = useState('');
-  const [relatedPages, setRelatedPages] = useState<Array<{
-    id: string;
-    title: string;
-    content: string;
-  }>>([]);
   const [recommendedReading, setRecommendedReading] = useState<Array<{
     id?: string;
     title: string;
@@ -62,15 +57,6 @@ function PageView({
         if (data) {
           setIsPublic(data.is_public || false);
           setPublicToken(data.public_token || '');
-        }
-
-        // Fetch related pages (limit to 2)
-        const {
-          data: related,
-          error: relatedError
-        } = await supabase.from('pages').select('id, title, content').neq('id', currentPage.id).limit(2);
-        if (!relatedError && related) {
-          setRelatedPages(related);
         }
 
         // Fetch recommended reading from the page's recommended_reading field
@@ -168,32 +154,6 @@ function PageView({
             console.log('Recommended reading item clicked:', item);
           }}
         />
-
-        {/* Related Content Section */}
-        {relatedPages.length > 0 && (
-          <div className="mt-6 pt-6 border-t border-border">
-            <h3 className="text-lg font-semibold text-foreground">Related content</h3>
-            <div className="space-y-3 mt-4">
-              {relatedPages.map(page => (
-                <div 
-                  key={page.id} 
-                  className="flex items-center gap-3 p-4 border border-border rounded-lg bg-card hover:bg-muted/20 transition-colors cursor-pointer"
-                  onClick={() => onPageSelect(page.id)}
-                >
-                  <div className="flex-shrink-0">
-                    <FileText className="h-5 w-5 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-medium text-foreground truncate">{page.title}</h4>
-                    <p className="text-sm text-muted-foreground truncate">
-                      {page.content.replace(/<[^>]*>/g, '').substring(0, 100)}...
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
     </div>;
 }
