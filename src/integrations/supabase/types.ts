@@ -81,8 +81,11 @@ export type Database = {
         Row: {
           color: string | null
           created_at: string
+          description: string | null
           id: string
           name: string
+          project_type: string | null
+          settings: Json | null
           sort_order: number | null
           updated_at: string
           user_id: string
@@ -90,8 +93,11 @@ export type Database = {
         Insert: {
           color?: string | null
           created_at?: string
+          description?: string | null
           id?: string
           name: string
+          project_type?: string | null
+          settings?: Json | null
           sort_order?: number | null
           updated_at?: string
           user_id: string
@@ -99,8 +105,11 @@ export type Database = {
         Update: {
           color?: string | null
           created_at?: string
+          description?: string | null
           id?: string
           name?: string
+          project_type?: string | null
+          settings?: Json | null
           sort_order?: number | null
           updated_at?: string
           user_id?: string
@@ -408,6 +417,135 @@ export type Database = {
         }
         Relationships: []
       }
+      project_files: {
+        Row: {
+          created_at: string
+          description: string | null
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          id: string
+          project_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          file_name: string
+          file_path: string
+          file_size: number
+          file_type: string
+          id?: string
+          project_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          file_name?: string
+          file_path?: string
+          file_size?: number
+          file_type?: string
+          id?: string
+          project_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_files_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "chat_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_instructions: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          project_id: string
+          title: string
+          type: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          project_id: string
+          title: string
+          type?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          project_id?: string
+          title?: string
+          type?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_instructions_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "chat_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_research: {
+        Row: {
+          created_at: string
+          id: string
+          project_id: string
+          query: string
+          results: Json | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          project_id: string
+          query: string
+          results?: Json | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          project_id?: string
+          query?: string
+          results?: Json | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_research_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "chat_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       spaces: {
         Row: {
           created_at: string
@@ -520,6 +658,10 @@ export type Database = {
       }
       move_page_up_safe: {
         Args: { p_page_id: string; p_expected_version: number }
+        Returns: Json
+      }
+      update_project_memory: {
+        Args: { p_project_id: string }
         Returns: Json
       }
       user_has_page_permission: {
