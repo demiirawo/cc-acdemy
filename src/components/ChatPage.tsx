@@ -7,6 +7,7 @@ import { Send, MessageSquare, Bot, User, Paperclip, X, FileText } from "lucide-r
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { ChatHistorySidebar } from "./ChatHistorySidebar";
+import ReactMarkdown from "react-markdown";
 
 interface Message {
   id: string;
@@ -463,17 +464,37 @@ export const ChatPage = () => {
                              ? 'bg-primary text-primary-foreground'
                              : 'bg-muted'
                          }`}>
-                           <p 
-                             className="whitespace-pre-wrap" 
-                             style={{ 
-                               userSelect: 'text', 
-                               WebkitUserSelect: 'text',
-                               MozUserSelect: 'text',
-                               msUserSelect: 'text'
-                             }}
-                           >
-                             {message.content}
-                           </p>
+                            <div 
+                              className="prose prose-sm max-w-none dark:prose-invert" 
+                              style={{ 
+                                userSelect: 'text', 
+                                WebkitUserSelect: 'text',
+                                MozUserSelect: 'text',
+                                msUserSelect: 'text'
+                              }}
+                            >
+                              {message.role === 'assistant' ? (
+                                <ReactMarkdown
+                                  components={{
+                                    p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                                    ul: ({ children }) => <ul className="list-disc list-inside mb-2">{children}</ul>,
+                                    ol: ({ children }) => <ol className="list-decimal list-inside mb-2">{children}</ol>,
+                                    li: ({ children }) => <li className="mb-1">{children}</li>,
+                                    h1: ({ children }) => <h1 className="text-lg font-bold mb-2">{children}</h1>,
+                                    h2: ({ children }) => <h2 className="text-base font-bold mb-2">{children}</h2>,
+                                    h3: ({ children }) => <h3 className="text-sm font-bold mb-1">{children}</h3>,
+                                    strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                                    em: ({ children }) => <em className="italic">{children}</em>,
+                                    code: ({ children }) => <code className="bg-muted px-1 py-0.5 rounded text-sm">{children}</code>,
+                                    pre: ({ children }) => <pre className="bg-muted p-2 rounded text-sm overflow-x-auto mb-2">{children}</pre>
+                                  }}
+                                >
+                                  {message.content}
+                                </ReactMarkdown>
+                              ) : (
+                                <p className="whitespace-pre-wrap">{message.content}</p>
+                              )}
+                            </div>
                            {message.attachedFiles && message.attachedFiles.length > 0 && (
                              <div className="mt-2 space-y-1">
                                {message.attachedFiles.map((file) => (
