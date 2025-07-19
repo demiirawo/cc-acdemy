@@ -131,6 +131,11 @@ serve(async (req) => {
     let responseText = '';
     if (assistantMessage && assistantMessage.content && assistantMessage.content[0]) {
       responseText = assistantMessage.content[0].text.value;
+      
+      // Remove citation references like [4:7†source], 【4:2†source】, etc.
+      responseText = responseText.replace(/【[^】]*†[^】]*】/g, '');
+      responseText = responseText.replace(/\[[^\]]*†[^\]]*\]/g, '');
+      responseText = responseText.replace(/\[[^\]]*source[^\]]*\]/gi, '');
     }
 
     console.log('Assistant response:', responseText);
