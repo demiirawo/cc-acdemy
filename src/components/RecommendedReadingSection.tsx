@@ -97,7 +97,7 @@ export function RecommendedReadingSection({ items, onItemClick }: RecommendedRea
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <h4 className="font-semibold text-foreground group-hover:text-primary transition-colors">
-                        {item.title}
+                        {index + 1}. {item.title}
                       </h4>
                       {item.description && (
                         <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
