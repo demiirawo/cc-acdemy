@@ -111,10 +111,8 @@ When discussing care industry topics, always consider:
                   
                   if (delta) {
                     // Remove citation references
-                    let cleanDelta = delta;
-                    cleanDelta = cleanDelta.replace(/【[^】]*†[^】]*】/g, '');
-                    cleanDelta = cleanDelta.replace(/\[[^\]]*†[^\]]*\]/g, '');
-                    cleanDelta = cleanDelta.replace(/\[[^\]]*source[^\]]*\]/gi, '');
+                    // Send delta directly without formatting cleanup for plain text
+                    const cleanDelta = delta;
                     
                     fullResponse += cleanDelta;
                     

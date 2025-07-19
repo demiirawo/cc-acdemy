@@ -125,18 +125,18 @@ export const ChatHistorySidebar = ({
       console.log('Folder created successfully:', data);
 
       // Add the new folder to the state immediately
-      setFolders(prev => {
-        const newFolders = [...prev, data];
-        console.log('Updated folders state:', newFolders);
-        return newFolders;
-      });
+      const newFolders = [...folders, data];
+      setFolders(newFolders);
       setNewFolderName("");
       setIsNewFolderDialogOpen(false);
       
-      // Also trigger a full refresh to ensure consistency
+      console.log('Updated folders state:', newFolders);
+      
+      // Force a re-render by triggering a state update
       setTimeout(() => {
+        console.log('Forcing refresh after folder creation');
         loadFoldersAndConversations();
-      }, 100);
+      }, 200);
       
       toast({
         title: "Folder created",
