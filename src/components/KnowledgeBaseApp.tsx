@@ -43,7 +43,7 @@ function PageView({
     id?: string;
     title: string;
     description: string;
-    type: string;
+    type: 'link' | 'file' | 'document' | 'guide' | 'reference';
     url?: string;
     fileUrl?: string;
     fileName?: string;
@@ -75,15 +75,14 @@ function PageView({
 
         // Fetch recommended reading from the page's recommended_reading field
         if (currentPage.recommended_reading && Array.isArray(currentPage.recommended_reading)) {
-          setRecommendedReading(currentPage.recommended_reading as Array<{
-            id?: string;
-            title: string;
-            description: string;
-            type: string;
-            url?: string;
-            fileUrl?: string;
-            fileName?: string;
-          }>);
+          const validReading = currentPage.recommended_reading.map((item: any) => ({
+            ...item,
+            // Default to 'link' if type is not one of the expected values
+            type: ['link', 'file', 'document', 'guide', 'reference'].includes(item.type) 
+              ? item.type 
+              : 'link'
+          }));
+          setRecommendedReading(validReading);
         } else {
           setRecommendedReading([]);
         }
