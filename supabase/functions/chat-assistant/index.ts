@@ -76,7 +76,18 @@ serve(async (req) => {
         'OpenAI-Beta': 'assistants=v2'
       },
       body: JSON.stringify({
-        assistant_id: assistantId
+        assistant_id: assistantId,
+        additional_instructions: `Please provide comprehensive, detailed, and thorough responses. When answering questions:
+
+1. Give complete explanations with context and background information
+2. Include practical examples and scenarios where relevant
+3. Break down complex topics into clear, detailed steps
+4. Provide thorough analysis and reasoning
+5. Offer multiple perspectives or approaches when applicable
+6. Include relevant best practices and recommendations
+7. Be conversational but informative, ensuring responses are substantial and helpful
+
+Avoid brief or minimal responses. Aim for comprehensive answers that fully address the user's needs and provide valuable insights.`
       })
     });
 

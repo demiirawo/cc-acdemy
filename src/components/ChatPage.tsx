@@ -359,9 +359,9 @@ export const ChatPage = () => {
             <MessageSquare className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold">AI Assistant</h1>
+            <h1 className="text-2xl font-bold">Care Cuddle AI</h1>
             <p className="text-sm text-muted-foreground">
-              {currentConversation ? currentConversation.title : 'Chat with your personal AI assistant'}
+              {currentConversation ? currentConversation.title : 'Your comprehensive care industry AI assistant'}
             </p>
           </div>
         </div>
@@ -373,9 +373,9 @@ export const ChatPage = () => {
               {messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center">
                   <Bot className="h-12 w-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">Start a conversation</h3>
+                  <h3 className="text-lg font-semibold mb-2">Welcome to Care Cuddle AI</h3>
                   <p className="text-muted-foreground">
-                    Ask me anything! I'm here to help you.
+                    Your comprehensive AI assistant for the care industry. Ask detailed questions about care planning, regulations, best practices, and more!
                   </p>
                 </div>
               ) : (
@@ -497,7 +497,7 @@ export const ChatPage = () => {
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Type your message..."
+              placeholder="Ask detailed questions about care industry topics..."
               disabled={isLoading}
               className="flex-1"
               style={{ 
