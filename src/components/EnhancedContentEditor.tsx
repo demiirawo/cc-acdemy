@@ -2541,12 +2541,20 @@ export function EnhancedContentEditor({
     const categories: string[] = [];
     const grouped: { [key: string]: any[] } = {};
     
+    // Process items in the exact order they appear to capture first occurrence
     items.forEach(item => {
       const category = item.category || 'General';
+      
+      // Only add category to the order list on first occurrence
       if (!categories.includes(category)) {
         categories.push(category);
+      }
+      
+      // Initialize array if first item in this category
+      if (!grouped[category]) {
         grouped[category] = [];
       }
+      
       grouped[category].push(item);
     });
     
