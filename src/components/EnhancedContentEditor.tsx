@@ -36,7 +36,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { v4 as uuidv4 } from 'uuid';
+// Generate unique ID without external dependency
+const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
 
 interface RecommendedReadingItem {
   title: string;
@@ -60,6 +61,10 @@ interface ContentEditorProps {
 interface EnhancedContentEditorProps extends ContentEditorProps {
   initialRecommendedReading?: RecommendedReadingItem[];
   className?: string;
+  title?: string;
+  content?: string;
+  pageId?: string;
+  isEditing?: boolean;
 }
 
 const defaultTags = ['engineering', 'documentation'];
@@ -68,13 +73,17 @@ export function EnhancedContentEditor({
   initialTitle = "",
   initialContent = "",
   initialRecommendedReading = [],
+  title: propTitle = "",
+  content: propContent = "",
   onSave,
   onPreview,
   isPreview = false,
-  className = ""
+  className = "",
+  pageId,
+  isEditing
 }: EnhancedContentEditorProps) {
-  const [title, setTitle] = useState(initialTitle);
-  const [content, setContent] = useState(initialContent);
+  const [title, setTitle] = useState(propTitle || initialTitle);
+  const [content, setContent] = useState(propContent || initialContent);
   const [tags, setTags] = useState<string[]>(defaultTags);
   const [recommendedReading, setRecommendedReading] = useState<RecommendedReadingItem[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
