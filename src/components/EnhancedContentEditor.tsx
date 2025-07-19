@@ -1,60 +1,38 @@
-
-import { useState, useEffect, useRef, useCallback } from "react";
-import { 
-  Bold, 
-  Italic, 
-  Underline, 
-  List, 
-  ListOrdered,
-  Quote,
-  Code,
-  Link,
-  Image,
-  Heading1,
-  Heading2,
-  Heading3,
-  Save,
-  Eye,
-  MoreHorizontal,
-  Plus
-} from "lucide-react";
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
-import { RecommendedReadingSection } from "./RecommendedReadingSection";
+import { useToast } from "@/hooks/use-toast";
+import { Eye, Save, FileText, Plus, Trash2, Edit3 } from "lucide-react";
+import { RecommendedReadingForm } from "./RecommendedReadingForm";
+import { RecommendedReadingList } from "./RecommendedReadingList";
 
 interface EnhancedContentEditorProps {
+  title: string;
+  content: string;
+  onSave: (title: string, content: string, recommendedReading?: Array<{
+    title: string;
+    url?: string;
+    description: string;
+    fileUrl?: string;
+    fileName?: string;
+    type?: string;
+    category?: string;
+  }>, orderedCategories?: string[]) => void;
+  onPreview: () => void;
+  isEditing: boolean;
   pageId: string;
-  title?: string;
-  content?: string;
-  tags?: string[];
-  onSave?: (title: string, content: string, tags: string[]) => void;
-  onPreview?: () => void;
-  isEditing?: boolean;
 }
 
 export function EnhancedContentEditor({ 
-  pageId,
-  title: initialTitle = "", 
-  content: initialContent = "", 
-  tags: initialTags = [],
+  title, 
+  content, 
   onSave, 
-  onPreview,
-  isEditing = true 
+  onPreview, 
+  isEditing, 
+  pageId 
 }: EnhancedContentEditorProps) {
-  const [currentTitle, setCurrentTitle] = useState(initialTitle);
-  const [currentContent, setCurrentContent] = useState(initialContent);
-  const [tags, setTags] = useState<string[]>(initialTags);
-  const [isAutoSaving, setIsAutoSaving] = useState(false);
-  const [lastSavedContent, setLastSavedContent] = useState(initialContent);
-  const [lastSavedTitle, setLastSavedTitle] = useState(initialTitle);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [currentTitle, setCurrentTitle] = useState(title);
+  const [currentContent, setCurrentContent] = useState(content);
   const [recommendedReading, setRecommendedReading] = useState<Array<{
     id?: string;
     title: string;
@@ -65,111 +43,89 @@ export function EnhancedContentEditor({
     fileName?: string;
     category?: string;
   }>>([]);
+  const [orderedCategories, setOrderedCategories] = useState<string[]>([]);
+  const [showRecommendedForm, setShowRecommendedForm] = useState(false);
+  const [editingItem, setEditingItem] = useState<any>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
+  const [lastSavedContent, setLastSavedContent] = useState({ title, content });
   
+  const { toast } = useToast();
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout>();
-  const currentPageIdRef = useRef(pageId);
+  const contentRef = useRef<HTMLTextAreaElement>(null);
 
-  // Initialize content only when pageId changes or on first load
+  // Initialize content only once when component mounts or pageId changes
   useEffect(() => {
-    if (pageId !== currentPageIdRef.current || !isInitialized) {
-      console.log('Initializing editor with:', { 
-        title: initialTitle, 
-        content: initialContent, 
-        pageId 
-      });
-      
-      setCurrentTitle(initialTitle);
-      setCurrentContent(initialContent);
-      setTags(initialTags);
-      setLastSavedContent(initialContent);
-      setLastSavedTitle(initialTitle);
-      setHasUnsavedChanges(false);
-      setIsInitialized(true);
-      currentPageIdRef.current = pageId;
+    console.log('Initializing editor with:', { title, content, pageId });
+    setCurrentTitle(title);
+    setCurrentContent(content);
+    setLastSavedContent({ title, content });
+    setHasUnsavedChanges(false);
+  }, [pageId]); // Only depend on pageId, not title/content to avoid overwrites
 
-      // Fetch recommended reading for this page
-      fetchRecommendedReading();
-    }
-  }, [pageId, initialTitle, initialContent, initialTags, isInitialized]);
-
-  // Fetch recommended reading from database
-  const fetchRecommendedReading = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('pages')
-        .select('recommended_reading, category_order')
-        .eq('id', pageId)
-        .single();
-
-      if (error) throw error;
-
-      if (data?.recommended_reading && Array.isArray(data.recommended_reading)) {
-        const validReading = data.recommended_reading.map((item: any) => ({
-          ...item,
-          type: ['link', 'file', 'document', 'guide', 'reference'].includes(item.type) 
-            ? item.type 
-            : 'link',
-          category: item.category || 'General'
-        }));
-        setRecommendedReading(validReading);
-      }
-    } catch (error) {
-      console.error('Error fetching recommended reading:', error);
-    }
-  };
-
-  // Track content changes
+  // Track changes for auto-save
   useEffect(() => {
-    const hasChanges = currentContent !== lastSavedContent || currentTitle !== lastSavedTitle;
+    const titleChanged = currentTitle !== lastSavedContent.title;
+    const contentChanged = currentContent !== lastSavedContent.content;
+    const hasChanges = titleChanged || contentChanged;
+    
     setHasUnsavedChanges(hasChanges);
-  }, [currentContent, currentTitle, lastSavedContent, lastSavedTitle]);
 
-  // Auto-save functionality
-  useEffect(() => {
-    if (!hasUnsavedChanges || !isInitialized) return;
+    if (hasChanges) {
+      // Clear existing timeout
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
 
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
+      // Set new auto-save timeout
+      autoSaveTimeoutRef.current = setTimeout(() => {
+        if (currentTitle.trim() && (titleChanged || contentChanged)) {
+          handleAutoSave();
+        }
+      }, 2000);
     }
-
-    autoSaveTimeoutRef.current = setTimeout(() => {
-      handleAutoSave();
-    }, 2000);
 
     return () => {
       if (autoSaveTimeoutRef.current) {
         clearTimeout(autoSaveTimeoutRef.current);
       }
     };
-  }, [currentContent, currentTitle, hasUnsavedChanges, isInitialized]);
+  }, [currentTitle, currentContent, lastSavedContent]);
 
-  const handleAutoSave = async () => {
-    if (!hasUnsavedChanges || isAutoSaving) return;
-
+  const handleAutoSave = useCallback(async () => {
+    if (isAutoSaving) return;
+    
     setIsAutoSaving(true);
-    console.log('Auto-saving with content:', currentContent);
-
     try {
-      const { error } = await supabase
-        .from('pages')
-        .update({
-          title: currentTitle,
-          content: currentContent,
-          tags: tags,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', pageId);
-
-      if (error) throw error;
-
-      setLastSavedContent(currentContent);
-      setLastSavedTitle(currentTitle);
+      console.log('Auto-saving with content:', currentContent);
+      await onSave(currentTitle, currentContent, recommendedReading, orderedCategories);
+      setLastSavedContent({ title: currentTitle, content: currentContent });
       setHasUnsavedChanges(false);
       console.log('Auto-saved successfully');
     } catch (error) {
       console.error('Auto-save failed:', error);
     } finally {
       setIsAutoSaving(false);
+    }
+  }, [currentTitle, currentContent, recommendedReading, orderedCategories, onSave, isAutoSaving]);
+
+  const handleManualSave = async () => {
+    try {
+      console.log('Manual save with content:', currentContent);
+      await onSave(currentTitle, currentContent, recommendedReading, orderedCategories);
+      setLastSavedContent({ title: currentTitle, content: currentContent });
+      setHasUnsavedChanges(false);
+      toast({
+        title: "Page saved",
+        description: "Your changes have been saved successfully."
+      });
+    } catch (error) {
+      console.error('Manual save failed:', error);
+      toast({
+        title: "Save failed",
+        description: "There was an error saving your changes.",
+        variant: "destructive"
+      });
     }
   };
 
@@ -179,223 +135,176 @@ export function EnhancedContentEditor({
     setCurrentContent(newContent);
   };
 
-  const toolbarItems = [
-    { icon: Heading1, action: () => insertText('# '), label: 'Heading 1' },
-    { icon: Heading2, action: () => insertText('## '), label: 'Heading 2' },
-    { icon: Heading3, action: () => insertText('### '), label: 'Heading 3' },
-    { type: 'separator' },
-    { icon: Bold, action: () => wrapText('**', '**'), label: 'Bold' },
-    { icon: Italic, action: () => wrapText('*', '*'), label: 'Italic' },
-    { icon: Underline, action: () => wrapText('<u>', '</u>'), label: 'Underline' },
-    { type: 'separator' },
-    { icon: List, action: () => insertText('- '), label: 'Bullet List' },
-    { icon: ListOrdered, action: () => insertText('1. '), label: 'Numbered List' },
-    { icon: Quote, action: () => insertText('> '), label: 'Quote' },
-    { icon: Code, action: () => wrapText('`', '`'), label: 'Inline Code' },
-    { type: 'separator' },
-    { icon: Link, action: () => insertLink(), label: 'Link' },
-    { icon: Image, action: () => insertImage(), label: 'Image' },
-  ];
-
-  const insertText = (text: string) => {
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
-    if (!textarea) return;
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const newContent = currentContent.substring(0, start) + text + currentContent.substring(end);
-    setCurrentContent(newContent);
+  const addRecommendedReading = (item: {
+    title: string;
+    description: string;
+    type: 'link' | 'file' | 'document' | 'guide' | 'reference';
+    url?: string;
+    fileUrl?: string;
+    fileName?: string;
+    category?: string;
+  }) => {
+    const newItem = {
+      ...item,
+      id: Date.now().toString(),
+      category: item.category || 'General'
+    };
     
-    setTimeout(() => {
-      textarea.setSelectionRange(start + text.length, start + text.length);
-      textarea.focus();
-    }, 0);
-  };
-
-  const wrapText = (prefix: string, suffix: string) => {
-    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
-    if (!textarea) return;
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selectedText = currentContent.substring(start, end);
-    const newText = prefix + selectedText + suffix;
-    const newContent = currentContent.substring(0, start) + newText + currentContent.substring(end);
-    setCurrentContent(newContent);
+    setRecommendedReading(prev => [...prev, newItem]);
     
-    setTimeout(() => {
-      if (selectedText) {
-        textarea.setSelectionRange(start + prefix.length, end + prefix.length);
-      } else {
-        textarea.setSelectionRange(start + prefix.length, start + prefix.length);
-      }
-      textarea.focus();
-    }, 0);
-  };
-
-  const insertLink = () => {
-    const url = prompt('Enter URL:');
-    const text = prompt('Enter link text:') || url;
-    if (url) {
-      insertText(`[${text}](${url})`);
+    // Add category to ordered list if it's new
+    if (item.category && !orderedCategories.includes(item.category)) {
+      setOrderedCategories(prev => [...prev, item.category!]);
     }
+    
+    setShowRecommendedForm(false);
+    setEditingItem(null);
   };
 
-  const insertImage = () => {
-    const url = prompt('Enter image URL:');
-    const alt = prompt('Enter alt text:') || 'Image';
-    if (url) {
-      insertText(`![${alt}](${url})`);
+  const updateRecommendedReading = (id: string, updatedItem: {
+    title: string;
+    description: string;
+    type: 'link' | 'file' | 'document' | 'guide' | 'reference';
+    url?: string;
+    fileUrl?: string;
+    fileName?: string;
+    category?: string;
+  }) => {
+    setRecommendedReading(prev => 
+      prev.map(item => 
+        item.id === id 
+          ? { ...updatedItem, id, category: updatedItem.category || 'General' }
+          : item
+      )
+    );
+    
+    // Add category to ordered list if it's new
+    if (updatedItem.category && !orderedCategories.includes(updatedItem.category)) {
+      setOrderedCategories(prev => [...prev, updatedItem.category!]);
     }
+    
+    setShowRecommendedForm(false);
+    setEditingItem(null);
   };
 
-  const handleManualSave = async () => {
-    if (onSave) {
-      onSave(currentTitle, currentContent, tags);
-    } else {
-      await handleAutoSave();
-    }
-    toast.success("Page saved successfully!");
+  const removeRecommendedReading = (id: string) => {
+    setRecommendedReading(prev => prev.filter(item => item.id !== id));
   };
 
-  const addTag = (newTag: string) => {
-    if (newTag && !tags.includes(newTag)) {
-      setTags([...tags, newTag]);
-    }
+  const editRecommendedReading = (item: any) => {
+    setEditingItem(item);
+    setShowRecommendedForm(true);
   };
 
-  const removeTag = (tagToRemove: string) => {
-    setTags(tags.filter(tag => tag !== tagToRemove));
+  const reorderCategories = (categories: string[]) => {
+    setOrderedCategories(categories);
   };
 
   if (!isEditing) {
-    return (
-      <div className="flex-1 overflow-auto">
-        <div className="max-w-4xl mx-auto p-6">
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold text-foreground mb-2">{currentTitle}</h1>
-            <div className="flex gap-2">
-              {tags.map((tag) => (
-                <Badge key={tag} variant="secondary">{tag}</Badge>
-              ))}
-            </div>
-          </div>
-          
-          <Card className="p-6">
-            <div className="prose prose-lg max-w-none">
-              <pre className="whitespace-pre-wrap text-foreground">{currentContent}</pre>
-            </div>
-          </Card>
-        </div>
-      </div>
-    );
+    return null;
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Editor Header */}
-      <div className="border-b border-border p-4">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex-1 max-w-2xl">
+    <div className="flex-1 overflow-auto">
+      <div className="max-w-none mx-8 p-6">
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-4">
             <Input
-              placeholder="Page title..."
               value={currentTitle}
               onChange={(e) => setCurrentTitle(e.target.value)}
-              className="text-2xl font-bold border-none p-0 h-auto shadow-none focus-visible:ring-0"
+              className="text-2xl font-bold bg-transparent border-none px-0 focus:ring-0 focus:border-none"
+              placeholder="Page title..."
             />
+            <div className="flex gap-2 items-center">
+              {hasUnsavedChanges && (
+                <span className="text-sm text-amber-600 flex items-center gap-1">
+                  {isAutoSaving ? (
+                    <>
+                      <div className="w-2 h-2 bg-amber-600 rounded-full animate-pulse"></div>
+                      Auto-saving...
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-2 h-2 bg-amber-600 rounded-full"></div>
+                      Unsaved changes
+                    </>
+                  )}
+                </span>
+              )}
+              <Button onClick={handleManualSave} className="bg-gradient-primary">
+                <Save className="h-4 w-4 mr-2" />
+                Save
+              </Button>
+              <Button variant="outline" onClick={onPreview}>
+                <Eye className="h-4 w-4 mr-2" />
+                Preview
+              </Button>
+            </div>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Content</label>
+                <textarea
+                  ref={contentRef}
+                  value={currentContent}
+                  onChange={handleContentChange}
+                  className="w-full h-96 p-4 border border-border rounded-lg resize-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                  placeholder="Start writing your page content..."
+                />
+              </div>
+            </div>
           </div>
           
-          <div className="flex items-center gap-2">
-            {hasUnsavedChanges && (
-              <span className="text-sm text-muted-foreground">
-                {isAutoSaving ? 'Saving...' : 'Unsaved changes'}
-              </span>
-            )}
-            <Button variant="outline" size="sm" onClick={onPreview}>
-              <Eye className="h-4 w-4 mr-2" />
-              Preview
-            </Button>
-            <Button onClick={handleManualSave} className="bg-gradient-primary">
-              <Save className="h-4 w-4 mr-2" />
-              Save
-            </Button>
-            <Button variant="ghost" size="sm">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
+          <div className="space-y-6">
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Recommended Reading
+                </h3>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    setEditingItem(null);
+                    setShowRecommendedForm(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add
+                </Button>
+              </div>
+              
+              {showRecommendedForm && (
+                <div className="mb-4">
+                  <RecommendedReadingForm
+                    onSubmit={editingItem ? 
+                      (item) => updateRecommendedReading(editingItem.id, item) : 
+                      addRecommendedReading
+                    }
+                    initialData={editingItem}
+                    onCancel={() => {
+                      setShowRecommendedForm(false);
+                      setEditingItem(null);
+                    }}
+                  />
+                </div>
+              )}
+              
+              <RecommendedReadingList
+                items={recommendedReading}
+                orderedCategories={orderedCategories}
+                onEdit={editRecommendedReading}
+                onDelete={removeRecommendedReading}
+                onReorderCategories={reorderCategories}
+                isEditing={true}
+              />
+            </div>
           </div>
-        </div>
-
-        {/* Tags */}
-        <div className="flex gap-2 mb-4 flex-wrap">
-          {tags.map((tag) => (
-            <Badge 
-              key={tag} 
-              variant="secondary" 
-              className="cursor-pointer hover:bg-destructive hover:text-destructive-foreground"
-              onClick={() => removeTag(tag)}
-            >
-              {tag} ×
-            </Badge>
-          ))}
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="h-6 text-xs"
-            onClick={() => {
-              const newTag = prompt('Enter tag name:');
-              if (newTag) addTag(newTag.trim());
-            }}
-          >
-            <Plus className="h-3 w-3 mr-1" />
-            Add tag
-          </Button>
-        </div>
-
-        {/* Toolbar */}
-        <div className="flex items-center gap-1 p-2 bg-muted rounded-lg">
-          {toolbarItems.map((item, index) => {
-            if (item.type === 'separator') {
-              return <Separator key={index} orientation="vertical" className="h-6 mx-1" />;
-            }
-            
-            const Icon = item.icon!;
-            return (
-              <Button
-                key={index}
-                variant="ghost"
-                size="sm"
-                onClick={item.action}
-                className="h-8 w-8 p-0"
-                title={item.label}
-              >
-                <Icon className="h-4 w-4" />
-              </Button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Editor Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 p-4 overflow-hidden">
-          <Card className="h-full">
-            <Textarea
-              placeholder="Start writing your content here..."
-              value={currentContent}
-              onChange={handleContentChange}
-              className="h-full resize-none border-none shadow-none focus-visible:ring-0 text-base leading-relaxed"
-            />
-          </Card>
-        </div>
-
-        {/* Recommended Reading Section */}
-        <div className="border-t border-border">
-          <RecommendedReadingSection 
-            items={recommendedReading} 
-            onItemClick={(item) => {
-              console.log('Recommended reading item clicked:', item);
-            }}
-          />
         </div>
       </div>
     </div>
