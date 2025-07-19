@@ -115,7 +115,7 @@ export const ChatPage = () => {
       {/* Chat Messages */}
       <Card className="flex-1 mb-4">
         <CardContent className="p-0 h-full">
-          <ScrollArea className="h-[500px] p-4" ref={scrollAreaRef}>
+          <ScrollArea className="h-full p-4" ref={scrollAreaRef}>
             {messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center">
                 <Bot className="h-12 w-12 text-muted-foreground mb-4" />
