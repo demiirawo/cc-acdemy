@@ -569,7 +569,7 @@ export function KnowledgeBaseApp() {
               <span className="text-sm text-muted-foreground text-right">
                 {user?.user_metadata?.display_name || user?.email}
               </span>
-              <Button variant="ghost" size="sm" onClick={signOut}>
+              <Button variant="ghost" size="sm" onClick={signOut} className="ml-auto">
                 <LogOut className="h-4 w-4" />
               </Button>
             </div>
