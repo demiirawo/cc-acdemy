@@ -1552,7 +1552,7 @@ export function EnhancedContentEditor({
     const url = prompt("Enter the URL for the iframe (e.g., website, map, or embed):");
     if (url) {
       const width = prompt("Enter width (e.g., 100%, 800px):", "100%") || "100%";
-      const height = prompt("Enter height (e.g., 400px, 600px):", "400px") || "400px";
+      const height = prompt("Enter height (e.g., 800px, 1200px):", "800px") || "800px";
       
       // Validate URL format
       let validUrl = url;
@@ -1618,9 +1618,9 @@ export function EnhancedContentEditor({
         </div>
         <div style="margin-bottom: 8px;">
           <label style="display: block; margin-bottom: 4px; font-size: 12px;">Size:</label>
-          <button onclick="resizeIframe('${iframeId}', '100%', '300px')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Small</button>
-          <button onclick="resizeIframe('${iframeId}', '100%', '400px')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Medium</button>
-          <button onclick="resizeIframe('${iframeId}', '100%', '600px')" style="margin-bottom: 8px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Large</button>
+          <button onclick="resizeIframe('${iframeId}', '100%', '600px')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Small</button>
+          <button onclick="resizeIframe('${iframeId}', '100%', '800px')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Medium</button>
+          <button onclick="resizeIframe('${iframeId}', '100%', '1200px')" style="margin-bottom: 8px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Large</button>
         </div>
         <div style="margin-bottom: 12px;">
           <label style="display: block; margin-bottom: 4px; font-size: 12px;">Custom Size:</label>
@@ -1676,7 +1676,7 @@ export function EnhancedContentEditor({
       if (!iframe || !widthInput || !heightInput) return;
       
       const width = widthInput.value ? `${widthInput.value}%` : '100%';
-      const height = heightInput.value ? `${heightInput.value}px` : '400px';
+      const height = heightInput.value ? `${heightInput.value}px` : '800px';
       
       iframe.style.width = width;
       iframe.style.height = height;
