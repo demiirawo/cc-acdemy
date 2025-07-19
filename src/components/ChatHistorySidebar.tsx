@@ -189,7 +189,10 @@ const DroppableFolder = ({
       } ${isOver ? 'border-primary bg-primary/10 shadow-lg' : ''}`}
     >
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
+        <div 
+          className="flex items-center gap-2 cursor-pointer hover:opacity-70 transition-opacity"
+          onClick={() => window.location.href = `/project/${folder.id}`}
+        >
           <Folder 
             className="h-4 w-4 flex-shrink-0" 
             style={{ color: folder.color }} 
