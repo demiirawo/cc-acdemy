@@ -103,6 +103,7 @@ export const ChatHistorySidebar = ({
 
       if (error) throw error;
 
+      // Immediately update local state
       setFolders(prev => [...prev, data]);
       setNewFolderName("");
       setIsNewFolderDialogOpen(false);
@@ -111,6 +112,11 @@ export const ChatHistorySidebar = ({
         title: "Folder created",
         description: `Folder "${newFolderName}" has been created.`,
       });
+
+      // Force a refresh to ensure UI is updated
+      setTimeout(() => {
+        loadFoldersAndConversations();
+      }, 100);
     } catch (error) {
       console.error('Error creating folder:', error);
       toast({
@@ -341,7 +347,6 @@ export const ChatHistorySidebar = ({
             {/* Folders with their conversations */}
             {folders.map((folder) => {
               const folderConversations = getConversationsInFolder(folder.id);
-              if (folderConversations.length === 0) return null;
 
               return (
                 <div key={folder.id} className="space-y-1">
@@ -352,9 +357,11 @@ export const ChatHistorySidebar = ({
                     />
                     <span className="text-sm font-medium">{folder.name}</span>
                   </div>
-                  <div className="pl-6 space-y-1">
-                    {renderConversations(folderConversations)}
-                  </div>
+                  {folderConversations.length > 0 && (
+                    <div className="pl-6 space-y-1">
+                      {renderConversations(folderConversations)}
+                    </div>
+                  )}
                 </div>
               );
             })}

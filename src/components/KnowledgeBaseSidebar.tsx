@@ -10,7 +10,8 @@ import {
   Clock,
   Tag,
   Users,
-  Settings
+  Settings,
+  MessageSquare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,6 +75,7 @@ const navigationItems = [
   { id: 'recent', title: 'Recently Updated', icon: Clock, href: '/recent' },
   { id: 'tags', title: 'Tags', icon: Tag, href: '/tags' },
   { id: 'people', title: 'People', icon: Users, href: '/people' },
+  { id: 'ai-chat', title: 'Care Cuddle AI', icon: MessageSquare, href: '/chat' },
 ];
 
 interface SidebarTreeItemProps {

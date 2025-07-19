@@ -40,6 +40,7 @@ export const ChatPage = () => {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -56,6 +57,51 @@ export const ChatPage = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Auto-cleanup old conversations
+  useEffect(() => {
+    const cleanupOldConversations = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Get all conversations for the user, ordered by last_message_at
+        const { data: conversations, error } = await supabase
+          .from('conversations')
+          .select('id, last_message_at')
+          .eq('user_id', user.id)
+          .is('folder_id', null) // Only cleanup conversations not in folders
+          .order('last_message_at', { ascending: false });
+
+        if (error) throw error;
+
+        // If we have more than 30 conversations, delete the oldest ones
+        if (conversations && conversations.length > 30) {
+          const conversationsToDelete = conversations.slice(30);
+          const idsToDelete = conversationsToDelete.map(c => c.id);
+          
+          // Delete messages first
+          await supabase
+            .from('chat_messages')
+            .delete()
+            .in('conversation_id', idsToDelete);
+          
+          // Then delete conversations
+          await supabase
+            .from('conversations')
+            .delete()
+            .in('id', idsToDelete);
+
+          console.log(`Cleaned up ${conversationsToDelete.length} old conversations`);
+        }
+      } catch (error) {
+        console.error('Error cleaning up old conversations:', error);
+      }
+    };
+
+    // Run cleanup when component mounts
+    cleanupOldConversations();
+  }, []);
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -346,19 +392,112 @@ export const ChatPage = () => {
     }
   };
 
+  // Drag and drop functionality
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    
+    const files = Array.from(e.dataTransfer.files);
+    
+    // Process files directly instead of creating mock event
+    const allowedTypes = [
+      'text/plain',
+      'text/csv',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+
+    for (const file of files) {
+      if (!allowedTypes.includes(file.type)) {
+        toast({
+          title: "Unsupported file type",
+          description: `${file.name} is not a supported file type. Please upload text, CSV, PDF, or Office documents.`,
+          variant: "destructive",
+        });
+        continue;
+      }
+
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        toast({
+          title: "File too large",
+          description: `${file.name} is larger than 10MB. Please upload a smaller file.`,
+          variant: "destructive",
+        });
+        continue;
+      }
+
+      try {
+        let content = '';
+        if (file.type === 'text/plain' || file.type === 'text/csv') {
+          content = await file.text();
+        }
+        
+        const attachedFile: AttachedFile = {
+          id: `file-${Date.now()}-${Math.random()}`,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          content: content || undefined
+        };
+
+        setAttachedFiles(prev => [...prev, attachedFile]);
+        
+        toast({
+          title: "File attached",
+          description: `${file.name} has been attached to your message.`,
+        });
+      } catch (error) {
+        console.error('Error reading file:', error);
+        toast({
+          title: "Error reading file",
+          description: `Could not read ${file.name}. Please try again.`,
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
   return (
     <div className="flex h-full w-full p-6 gap-6" style={{ userSelect: 'text' }}>
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div 
+        className="flex-1 flex flex-col min-w-0 relative"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {/* Drag overlay */}
+        {isDragOver && (
+          <div className="absolute inset-0 bg-primary/10 border-2 border-dashed border-primary rounded-lg flex items-center justify-center z-50">
+            <div className="text-center">
+              <FileText className="h-12 w-12 mx-auto mb-2 text-primary" />
+              <p className="text-lg font-semibold text-primary">Drop files here</p>
+              <p className="text-sm text-muted-foreground">Supports text, CSV, PDF, and Office documents</p>
+            </div>
+          </div>
+        )}
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10">
             <MessageSquare className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold">AI Assistant</h1>
+            <h1 className="text-2xl font-bold">Care Cuddle AI</h1>
             <p className="text-sm text-muted-foreground">
-              {currentConversation ? currentConversation.title : 'Chat with your personal AI assistant'}
+              {currentConversation ? currentConversation.title : 'Chat with Care Cuddle AI assistant'}
             </p>
           </div>
         </div>
