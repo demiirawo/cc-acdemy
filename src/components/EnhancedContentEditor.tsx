@@ -209,7 +209,8 @@ export function EnhancedContentEditor({
                 description: item.description || '',
                 type: (item.type as 'link' | 'file') || 'link',
                 fileName: item.fileName,
-                fileUrl: item.fileUrl
+                fileUrl: item.fileUrl,
+                category: item.category || 'General'
               }));
               setRecommendedReading(typedReadings);
             } else {
@@ -3095,9 +3096,9 @@ export function EnhancedContentEditor({
                          // Display mode
                          <div className="flex items-start justify-between">
                            <div className="flex-1">
-                              {item.category && (
-                                <Badge variant="outline" className="text-xs mb-1">{item.category}</Badge>
-                              )}
+                              <Badge variant="outline" className="text-xs mb-1">
+                                {item.category || 'General'}
+                              </Badge>
                              <h4 className="font-medium text-foreground">{item.title}</h4>
                            {item.url && (
                              <a 
