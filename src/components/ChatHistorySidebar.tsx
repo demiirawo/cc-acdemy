@@ -29,7 +29,6 @@ interface ChatHistorySidebarProps {
   currentConversationId: string | null;
   onConversationSelect: (conversation: Conversation) => void;
   onNewConversation: () => void;
-  refreshTrigger?: number; // Add a trigger to refresh the sidebar
   className?: string;
 }
 
@@ -37,7 +36,6 @@ export const ChatHistorySidebar = ({
   currentConversationId, 
   onConversationSelect, 
   onNewConversation,
-  refreshTrigger = 0,
   className = ""
 }: ChatHistorySidebarProps) => {
   const [folders, setFolders] = useState<ChatFolder[]>([]);
@@ -50,13 +48,6 @@ export const ChatHistorySidebar = ({
   useEffect(() => {
     loadFoldersAndConversations();
   }, []);
-
-  // Refresh when the trigger changes (new conversation created)
-  useEffect(() => {
-    if (refreshTrigger > 0) {
-      loadFoldersAndConversations();
-    }
-  }, [refreshTrigger]);
 
   const loadFoldersAndConversations = async () => {
     try {
@@ -96,15 +87,8 @@ export const ChatHistorySidebar = ({
     if (!newFolderName.trim()) return;
 
     try {
-      console.log('Creating folder with name:', newFolderName.trim());
-      
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        console.error('No user found when creating folder');
-        throw new Error('User not authenticated');
-      }
-
-      console.log('User found:', user.id);
+      if (!user) throw new Error('User not authenticated');
 
       const { data, error } = await supabase
         .from('chat_folders')
@@ -117,36 +101,21 @@ export const ChatHistorySidebar = ({
         .select()
         .single();
 
-      if (error) {
-        console.error('Database error creating folder:', error);
-        throw error;
-      }
+      if (error) throw error;
 
-      console.log('Folder created successfully:', data);
-
-      // Add the new folder to the state immediately
-      const newFolders = [...folders, data];
-      setFolders(newFolders);
+      setFolders(prev => [...prev, data]);
       setNewFolderName("");
       setIsNewFolderDialogOpen(false);
       
-      console.log('Updated folders state:', newFolders);
-      
-      // Force a re-render by triggering a state update
-      setTimeout(() => {
-        console.log('Forcing refresh after folder creation');
-        loadFoldersAndConversations();
-      }, 200);
-      
       toast({
         title: "Folder created",
-        description: `Folder "${newFolderName.trim()}" has been created.`,
+        description: `Folder "${newFolderName}" has been created.`,
       });
     } catch (error) {
       console.error('Error creating folder:', error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create folder",
+        description: "Failed to create folder",
         variant: "destructive",
       });
     }

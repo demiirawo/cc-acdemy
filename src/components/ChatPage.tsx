@@ -7,7 +7,6 @@ import { Send, MessageSquare, Bot, User, Paperclip, X, FileText } from "lucide-r
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { ChatHistorySidebar } from "./ChatHistorySidebar";
-import ReactMarkdown from "react-markdown";
 
 interface Message {
   id: string;
@@ -41,7 +40,6 @@ export const ChatPage = () => {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
-  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -258,8 +256,6 @@ export const ChatPage = () => {
       conversation = await createNewConversation(inputMessage);
       if (!conversation) return;
       setCurrentConversation(conversation);
-      // Trigger sidebar refresh for new conversation
-      setRefreshTrigger(prev => prev + 1);
     }
 
     const userMessage: Message = {
@@ -293,100 +289,43 @@ export const ChatPage = () => {
         }
       }
 
-      // Create a placeholder assistant message that we'll update with streaming content
-      const assistantMessageId = `assistant-${Date.now()}`;
+      const { data, error } = await supabase.functions.invoke('chat-assistant', {
+        body: {
+          message: messageToSend,
+          threadId: threadId,
+          attachedFiles: currentAttachedFiles.length > 0 ? currentAttachedFiles : undefined
+        }
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
       const assistantMessage: Message = {
-        id: assistantMessageId,
+        id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content: '',
+        content: data.response,
         timestamp: new Date()
       };
 
       setMessages(prev => [...prev, assistantMessage]);
-
-      // Make the streaming request
-      const response = await fetch(`https://pavwwgfgpykakbqkxsal.supabase.co/functions/v1/chat-assistant`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhdnd3Z2ZncHlrYWticWt4c2FsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI2OTI0MTgsImV4cCI6MjA2ODI2ODQxOH0.P_bXEqMgMBY3gAb3XX-NXGkFeIhi6w8BFJBPx8Qx0mc`,
-        },
-        body: JSON.stringify({
-          message: messageToSend,
-          threadId: threadId,
-          attachedFiles: currentAttachedFiles.length > 0 ? currentAttachedFiles : undefined
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No reader available');
-      }
-
-      let accumulatedContent = '';
       
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = new TextDecoder().decode(value);
-        const lines = chunk.split('\n');
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              
-              if (data.type === 'delta' && data.content) {
-                accumulatedContent += data.content;
-                
-                // Update the assistant message in real-time
-                setMessages(prev => 
-                  prev.map(msg => 
-                    msg.id === assistantMessageId 
-                      ? { ...msg, content: accumulatedContent }
-                      : msg
-                  )
-                );
-              } else if (data.type === 'done') {
-                // Update thread ID if new
-                if (data.threadId && !threadId) {
-                  setThreadId(data.threadId);
-                  // Update conversation with thread ID
-                  if (conversation) {
-                    await supabase
-                      .from('conversations')
-                      .update({ thread_id: data.threadId })
-                      .eq('id', conversation.id);
-                  }
-                }
-
-                // Save the complete assistant message to database
-                const finalMessage: Message = {
-                  id: assistantMessageId,
-                  role: 'assistant',
-                  content: accumulatedContent,
-                  timestamp: new Date()
-                };
-                
-                if (conversation) {
-                  await saveMessageToDb(conversation.id, finalMessage);
-                }
-                break;
-              } else if (data.type === 'error') {
-                throw new Error(data.error);
-              }
-            } catch (e) {
-              // Ignore parsing errors for non-JSON lines
-              continue;
-            }
-          }
-        }
+      // Update thread ID if new
+      if (data.threadId && !threadId) {
+        setThreadId(data.threadId);
+        // Update conversation with thread ID
+        await supabase
+          .from('conversations')
+          .update({ thread_id: data.threadId })
+          .eq('id', conversation.id);
       }
+
+      // Save assistant message to database
+      await saveMessageToDb(conversation.id, assistantMessage);
 
     } catch (error) {
       console.error('Error sending message:', error);
@@ -417,9 +356,9 @@ export const ChatPage = () => {
             <MessageSquare className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold">Care Cuddle AI</h1>
+            <h1 className="text-2xl font-bold">AI Assistant</h1>
             <p className="text-sm text-muted-foreground">
-              {currentConversation ? currentConversation.title : 'Your comprehensive care industry AI assistant'}
+              {currentConversation ? currentConversation.title : 'Chat with your personal AI assistant'}
             </p>
           </div>
         </div>
@@ -431,9 +370,9 @@ export const ChatPage = () => {
               {messages.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-center">
                   <Bot className="h-12 w-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">Welcome to Care Cuddle AI</h3>
+                  <h3 className="text-lg font-semibold mb-2">Start a conversation</h3>
                   <p className="text-muted-foreground">
-                    Your comprehensive AI assistant for the care industry. Ask detailed questions about care planning, regulations, best practices, and more!
+                    Ask me anything! I'm here to help you.
                   </p>
                 </div>
               ) : (
@@ -464,37 +403,17 @@ export const ChatPage = () => {
                              ? 'bg-primary text-primary-foreground'
                              : 'bg-muted'
                          }`}>
-                            <div 
-                              className="prose prose-sm max-w-none dark:prose-invert" 
-                              style={{ 
-                                userSelect: 'text', 
-                                WebkitUserSelect: 'text',
-                                MozUserSelect: 'text',
-                                msUserSelect: 'text'
-                              }}
-                            >
-                              {message.role === 'assistant' ? (
-                                <ReactMarkdown
-                                  components={{
-                                    p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                                    ul: ({ children }) => <ul className="list-disc list-inside mb-2">{children}</ul>,
-                                    ol: ({ children }) => <ol className="list-decimal list-inside mb-2">{children}</ol>,
-                                    li: ({ children }) => <li className="mb-1">{children}</li>,
-                                    h1: ({ children }) => <h1 className="text-lg font-bold mb-2">{children}</h1>,
-                                    h2: ({ children }) => <h2 className="text-base font-bold mb-2">{children}</h2>,
-                                    h3: ({ children }) => <h3 className="text-sm font-bold mb-1">{children}</h3>,
-                                    strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                                    em: ({ children }) => <em className="italic">{children}</em>,
-                                    code: ({ children }) => <code className="bg-muted px-1 py-0.5 rounded text-sm">{children}</code>,
-                                    pre: ({ children }) => <pre className="bg-muted p-2 rounded text-sm overflow-x-auto mb-2">{children}</pre>
-                                  }}
-                                >
-                                  {message.content}
-                                </ReactMarkdown>
-                              ) : (
-                                <p className="whitespace-pre-wrap">{message.content}</p>
-                              )}
-                            </div>
+                           <p 
+                             className="whitespace-pre-wrap" 
+                             style={{ 
+                               userSelect: 'text', 
+                               WebkitUserSelect: 'text',
+                               MozUserSelect: 'text',
+                               msUserSelect: 'text'
+                             }}
+                           >
+                             {message.content}
+                           </p>
                            {message.attachedFiles && message.attachedFiles.length > 0 && (
                              <div className="mt-2 space-y-1">
                                {message.attachedFiles.map((file) => (
@@ -575,7 +494,7 @@ export const ChatPage = () => {
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Ask detailed questions about care industry topics..."
+              placeholder="Type your message..."
               disabled={isLoading}
               className="flex-1"
               style={{ 
@@ -619,7 +538,6 @@ export const ChatPage = () => {
         currentConversationId={currentConversation?.id || null}
         onConversationSelect={handleConversationSelect}
         onNewConversation={handleNewConversation}
-        refreshTrigger={refreshTrigger}
       />
     </div>
   );
