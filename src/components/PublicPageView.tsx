@@ -1,4 +1,5 @@
 
+
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Globe, Eye, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { RecommendedReadingSection } from "@/components/RecommendedReadingSection";
 
 interface PublicPage {
   id: string;
@@ -13,6 +15,7 @@ interface PublicPage {
   content: string;
   updated_at: string;
   view_count: number;
+  recommended_reading?: any[];
   profiles?: {
     display_name?: string;
   };
@@ -35,7 +38,7 @@ export function PublicPageView() {
     try {
       const { data, error } = await supabase
         .from('pages')
-        .select('id, title, content, updated_at, view_count, created_by')
+        .select('id, title, content, updated_at, view_count, created_by, recommended_reading')
         .eq('public_token', token)
         .eq('is_public', true)
         .single();
@@ -182,6 +185,16 @@ export function PublicPageView() {
           </CardContent>
         </Card>
 
+        {/* Recommended Reading Section */}
+        {page?.recommended_reading && page.recommended_reading.length > 0 && (
+          <RecommendedReadingSection
+            items={page.recommended_reading}
+            onItemClick={(item) => {
+              console.log('Recommended reading item clicked:', item);
+            }}
+          />
+        )}
+
         {/* Footer */}
         <div className="mt-8 text-center text-sm text-white/70">
           <p>
@@ -198,3 +211,4 @@ export function PublicPageView() {
     </div>
   );
 }
+
