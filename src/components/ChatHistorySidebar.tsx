@@ -124,13 +124,23 @@ export const ChatHistorySidebar = ({
 
       console.log('Folder created successfully:', data);
 
-      setFolders(prev => [...prev, data]);
+      // Add the new folder to the state immediately
+      setFolders(prev => {
+        const newFolders = [...prev, data];
+        console.log('Updated folders state:', newFolders);
+        return newFolders;
+      });
       setNewFolderName("");
       setIsNewFolderDialogOpen(false);
       
+      // Also trigger a full refresh to ensure consistency
+      setTimeout(() => {
+        loadFoldersAndConversations();
+      }, 100);
+      
       toast({
         title: "Folder created",
-        description: `Folder "${newFolderName}" has been created.`,
+        description: `Folder "${newFolderName.trim()}" has been created.`,
       });
     } catch (error) {
       console.error('Error creating folder:', error);

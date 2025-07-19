@@ -292,43 +292,100 @@ export const ChatPage = () => {
         }
       }
 
-      const { data, error } = await supabase.functions.invoke('chat-assistant', {
-        body: {
-          message: messageToSend,
-          threadId: threadId,
-          attachedFiles: currentAttachedFiles.length > 0 ? currentAttachedFiles : undefined
-        }
-      });
-
-      if (error) {
-        throw new Error(error.message);
-      }
-
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
+      // Create a placeholder assistant message that we'll update with streaming content
+      const assistantMessageId = `assistant-${Date.now()}`;
       const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
+        id: assistantMessageId,
         role: 'assistant',
-        content: data.response,
+        content: '',
         timestamp: new Date()
       };
 
       setMessages(prev => [...prev, assistantMessage]);
-      
-      // Update thread ID if new
-      if (data.threadId && !threadId) {
-        setThreadId(data.threadId);
-        // Update conversation with thread ID
-        await supabase
-          .from('conversations')
-          .update({ thread_id: data.threadId })
-          .eq('id', conversation.id);
+
+      // Make the streaming request
+      const response = await fetch(`https://pavwwgfgpykakbqkxsal.supabase.co/functions/v1/chat-assistant`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhdnd3Z2ZncHlrYWticWt4c2FsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI2OTI0MTgsImV4cCI6MjA2ODI2ODQxOH0.P_bXEqMgMBY3gAb3XX-NXGkFeIhi6w8BFJBPx8Qx0mc`,
+        },
+        body: JSON.stringify({
+          message: messageToSend,
+          threadId: threadId,
+          attachedFiles: currentAttachedFiles.length > 0 ? currentAttachedFiles : undefined
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Save assistant message to database
-      await saveMessageToDb(conversation.id, assistantMessage);
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No reader available');
+      }
+
+      let accumulatedContent = '';
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = new TextDecoder().decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.type === 'delta' && data.content) {
+                accumulatedContent += data.content;
+                
+                // Update the assistant message in real-time
+                setMessages(prev => 
+                  prev.map(msg => 
+                    msg.id === assistantMessageId 
+                      ? { ...msg, content: accumulatedContent }
+                      : msg
+                  )
+                );
+              } else if (data.type === 'done') {
+                // Update thread ID if new
+                if (data.threadId && !threadId) {
+                  setThreadId(data.threadId);
+                  // Update conversation with thread ID
+                  if (conversation) {
+                    await supabase
+                      .from('conversations')
+                      .update({ thread_id: data.threadId })
+                      .eq('id', conversation.id);
+                  }
+                }
+
+                // Save the complete assistant message to database
+                const finalMessage: Message = {
+                  id: assistantMessageId,
+                  role: 'assistant',
+                  content: accumulatedContent,
+                  timestamp: new Date()
+                };
+                
+                if (conversation) {
+                  await saveMessageToDb(conversation.id, finalMessage);
+                }
+                break;
+              } else if (data.type === 'error') {
+                throw new Error(data.error);
+              }
+            } catch (e) {
+              // Ignore parsing errors for non-JSON lines
+              continue;
+            }
+          }
+        }
+      }
 
     } catch (error) {
       console.error('Error sending message:', error);
