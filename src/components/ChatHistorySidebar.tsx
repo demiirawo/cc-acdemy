@@ -289,7 +289,7 @@ export const ChatHistorySidebar = ({
         <div className="flex items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <MessageSquare className="h-5 w-5" />
-            Chat History
+            Chat Projects
           </CardTitle>
           <div className="flex gap-1">
             <Dialog open={isNewFolderDialogOpen} onOpenChange={setIsNewFolderDialogOpen}>
@@ -300,11 +300,11 @@ export const ChatHistorySidebar = ({
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Create New Folder</DialogTitle>
+                  <DialogTitle>Create New Project</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4">
                   <Input
-                    placeholder="Folder name"
+                    placeholder="Project name (e.g., B2C Tenders, Care Plans)"
                     value={newFolderName}
                     onChange={(e) => setNewFolderName(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && createFolder()}
@@ -317,7 +317,7 @@ export const ChatHistorySidebar = ({
                       Cancel
                     </Button>
                     <Button onClick={createFolder} disabled={!newFolderName.trim()}>
-                      Create
+                      Create Project
                     </Button>
                   </div>
                 </div>
@@ -336,41 +336,211 @@ export const ChatHistorySidebar = ({
       </CardHeader>
       <CardContent className="p-0">
         <ScrollArea className="h-[calc(100vh-200px)]">
-          <div className="p-3 space-y-3">
-            {/* Root conversations (no folder) */}
-            {getConversationsInFolder(null).length > 0 && (
-              <div className="space-y-1">
-                {renderConversations(getConversationsInFolder(null))}
-              </div>
-            )}
-
-            {/* Folders with their conversations */}
+          <div className="p-3 space-y-2">
+            {/* Projects (Folders) - ChatGPT Style */}
             {folders.map((folder) => {
               const folderConversations = getConversationsInFolder(folder.id);
+              const isActive = folderConversations.some(c => c.id === currentConversationId);
 
               return (
-                <div key={folder.id} className="space-y-1">
-                  <div className="flex items-center gap-2 px-2 py-1">
-                    <Folder 
-                      className="h-4 w-4 flex-shrink-0" 
-                      style={{ color: folder.color }} 
-                    />
-                    <span className="text-sm font-medium">{folder.name}</span>
-                  </div>
-                  {folderConversations.length > 0 && (
-                    <div className="pl-6 space-y-1">
-                      {renderConversations(folderConversations)}
+                <div key={folder.id} className={`border rounded-lg p-3 transition-colors ${
+                  isActive ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/50'
+                }`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Folder 
+                        className="h-4 w-4 flex-shrink-0" 
+                        style={{ color: folder.color }} 
+                      />
+                      <span className="font-medium text-sm">{folder.name}</span>
                     </div>
-                  )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0"
+                        >
+                          <MoreHorizontal className="h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => onNewConversation()}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          New Chat in Project
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={async () => {
+                            try {
+                              const { error } = await supabase
+                                .from('chat_folders')
+                                .delete()
+                                .eq('id', folder.id);
+
+                              if (error) throw error;
+
+                              // Move conversations back to root
+                              await supabase
+                                .from('conversations')
+                                .update({ folder_id: null })
+                                .eq('folder_id', folder.id);
+
+                              setFolders(prev => prev.filter(f => f.id !== folder.id));
+                              
+                              toast({
+                                title: "Project deleted",
+                                description: "Project deleted and chats moved to root.",
+                              });
+                            } catch (error) {
+                              toast({
+                                title: "Error",
+                                description: "Failed to delete project",
+                                variant: "destructive",
+                              });
+                            }
+                          }}
+                          className="text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete Project
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  
+                  {/* Project Stats */}
+                  <div className="text-xs text-muted-foreground mb-3">
+                    {folderConversations.length} chat{folderConversations.length !== 1 ? 's' : ''}
+                  </div>
+
+                  {/* Recent chats in project */}
+                  <div className="space-y-1">
+                    {folderConversations.slice(0, 3).map((conversation) => (
+                      <div
+                        key={conversation.id}
+                        className={`group relative flex items-center gap-2 p-2 rounded-md cursor-pointer hover:bg-muted/50 ${
+                          currentConversationId === conversation.id ? 'bg-muted' : ''
+                        }`}
+                        onClick={() => onConversationSelect(conversation)}
+                      >
+                        <MessageSquare className="h-3 w-3 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs truncate">{conversation.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatDate(conversation.last_message_at)}
+                          </p>
+                        </div>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100"
+                            >
+                              <MoreHorizontal className="h-3 w-3" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                moveConversationToFolder(conversation.id, null);
+                              }}
+                            >
+                              <MessageSquare className="h-4 w-4 mr-2" />
+                              Move to root
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteConversation(conversation.id);
+                              }}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    ))}
+                    
+                    {folderConversations.length > 3 && (
+                      <div className="text-xs text-muted-foreground text-center py-1">
+                        +{folderConversations.length - 3} more chats
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
 
-            {conversations.length === 0 && (
+            {/* Recent Conversations (Root level) */}
+            {getConversationsInFolder(null).length > 0 && (
+              <div className="space-y-1">
+                <h4 className="text-xs font-medium text-muted-foreground mb-2 mt-4">Recent Chats</h4>
+                {getConversationsInFolder(null).slice(0, 5).map((conversation) => (
+                  <div
+                    key={conversation.id}
+                    className={`group relative flex items-center gap-2 p-2 rounded-md cursor-pointer hover:bg-muted/50 ${
+                      currentConversationId === conversation.id ? 'bg-muted' : ''
+                    }`}
+                    onClick={() => onConversationSelect(conversation)}
+                  >
+                    <MessageSquare className="h-4 w-4 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate">{conversation.title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {formatDate(conversation.last_message_at)}
+                      </p>
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
+                        >
+                          <MoreHorizontal className="h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {folders.map((folder) => (
+                          <DropdownMenuItem
+                            key={folder.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              moveConversationToFolder(conversation.id, folder.id);
+                            }}
+                          >
+                            <Folder className="h-4 w-4 mr-2" style={{ color: folder.color }} />
+                            Move to {folder.name}
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteConversation(conversation.id);
+                          }}
+                          className="text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {conversations.length === 0 && folders.length === 0 && (
               <div className="text-center py-8">
                 <MessageSquare className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">No conversations yet</p>
-                <p className="text-xs text-muted-foreground">Start a new chat to begin</p>
+                <p className="text-xs text-muted-foreground">Start a new chat or create a project</p>
               </div>
             )}
           </div>

@@ -566,7 +566,7 @@ export function KnowledgeBaseApp() {
                    currentView === 'settings' ? 'Settings' :
                    currentView === 'whiteboard' ? 'Whiteboard' :
                    currentView === 'user-management' ? 'User Management' :
-                   currentView === 'chat' ? 'AI Assistant' :
+                   currentView === 'chat' ? 'Care Cuddle AI' :
                    'Care Cuddle Academy'}
                 </h2>
               )}

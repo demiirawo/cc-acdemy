@@ -47,7 +47,7 @@ const navigationItems = [{
   href: '/'
 }, {
   id: 'chat',
-  title: 'AI Assistant',
+  title: 'Care Cuddle AI',
   icon: MessageSquare,
   href: '/chat'
 }, {
