@@ -108,19 +108,19 @@ export function RecommendedReadingForm({ items, onItemsChange }: RecommendedRead
         {/* Form fields for new item */}
         <div className="space-y-4 p-4 border border-border rounded-lg bg-muted/20">
           <div className="space-y-2">
-            <Label htmlFor="new-title">Title</Label>
+            <Label htmlFor="new-category">Category</Label>
             <Input
-              id="new-title"
-              placeholder="Enter title"
+              id="new-category"
+              placeholder="General"
               className="w-full"
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="new-category">Category</Label>
+            <Label htmlFor="new-title">Title</Label>
             <Input
-              id="new-category"
-              placeholder="General"
+              id="new-title"
+              placeholder="Enter title"
               className="w-full"
             />
           </div>
