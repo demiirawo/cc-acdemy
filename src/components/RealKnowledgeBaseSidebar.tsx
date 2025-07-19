@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Search, Plus, BookOpen, Folder, ChevronRight, ChevronDown, Home, Clock, Tag, Users, Settings, Globe, FolderOpen, FileText, MoreHorizontal, Edit, Copy, Share, Star, Archive, Trash2, ArrowUp, ArrowDown, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -324,7 +325,7 @@ function SidebarTreeItem({
                 <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={async () => {
                   if (confirm("Are you sure you want to delete this page? This action cannot be undone.")) {
                     try {
-                      const { error } } = await supabase
+                      const { error } = await supabase
                         .from('pages')
                         .delete()
                         .eq('id', item.id);
