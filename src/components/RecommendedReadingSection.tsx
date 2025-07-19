@@ -52,9 +52,14 @@ export function RecommendedReadingSection({ items, onItemClick }: RecommendedRea
     e.preventDefault();
     
     if (item.url) {
-      window.open(item.url, '_blank', 'noopener,noreferrer');
+      // Add protocol if missing
+      let url = item.url;
+      if (!url.match(/^https?:\/\//i)) {
+        url = 'https://' + url;
+      }
+      window.open(url, '_blank', 'noopener,noreferrer');
     } else if (item.fileUrl) {
-      window.open(item.fileUrl, '_blank');
+      window.open(item.fileUrl, '_blank', 'noopener,noreferrer');
     }
     
     onItemClick?.(item);

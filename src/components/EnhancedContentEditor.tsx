@@ -40,6 +40,7 @@ import {
   Palette,
   MoreHorizontal,
   ChevronDown,
+  ChevronUp,
   Smile,
   Calendar,
   AtSign,
@@ -2878,50 +2879,99 @@ export function EnhancedContentEditor({
                    </div>
                  </div>
 
-                {/* Existing recommendations */}
-                 {recommendedReading.map((item, index) => (
-                   <div key={index} className="p-3 border rounded-lg bg-muted/20">
-                     <div className="flex items-start justify-between">
-                       <div className="flex-1">
-                         <h4 className="font-medium text-foreground">{item.title}</h4>
-                          {item.url && (
+                 {/* Existing recommendations */}
+                  {recommendedReading.map((item, index) => (
+                    <div key={index} className="p-3 border rounded-lg bg-muted/20">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <h4 className="font-medium text-foreground">{item.title}</h4>
+                           {item.url && (
+                             <a 
+                               href={item.url} 
+                               target="_blank" 
+                               rel="noopener noreferrer" 
+                               className="text-sm text-primary hover:underline break-all"
+                               onClick={(e) => {
+                                 e.preventDefault();
+                                 // Add protocol if missing
+                                 let url = item.url || '';
+                                 if (url && !url.match(/^https?:\/\//i)) {
+                                   url = 'https://' + url;
+                                 }
+                                 window.open(url, '_blank', 'noopener,noreferrer');
+                               }}
+                             >
+                               {item.url}
+                             </a>
+                           )}
+                          {item.fileUrl && (
                             <a 
-                              href={item.url} 
+                              href={item.fileUrl} 
                               target="_blank" 
                               rel="noopener noreferrer" 
                               className="text-sm text-primary hover:underline break-all"
-                              onClick={() => {
-                                // Add protocol if missing
-                                let url = item.url || '';
-                                if (url && !url.match(/^https?:\/\//i)) {
-                                  url = 'https://' + url;
-                                }
-                                window.open(url, '_blank', 'noopener,noreferrer');
+                              onClick={(e) => {
+                                e.preventDefault();
+                                window.open(item.fileUrl, '_blank', 'noopener,noreferrer');
                               }}
                             >
-                              {item.url}
+                              📁 {item.fileName}
                             </a>
                           )}
-                         {item.fileUrl && (
-                           <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline break-all">
-                             📁 {item.fileName}
-                           </a>
-                         )}
-                         {item.description && (
-                           <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
-                         )}
-                       </div>
-                       <Button
-                         variant="ghost"
-                         size="sm"
-                         onClick={() => setRecommendedReading(prev => prev.filter((_, i) => i !== index))}
-                         className="h-8 w-8 p-0 text-destructive"
-                       >
-                         <Trash2 className="h-3 w-3" />
-                       </Button>
-                     </div>
-                   </div>
-                 ))}
+                          {item.description && (
+                            <p className="text-sm text-muted-foreground mt-1">{item.description}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (index > 0) {
+                                setRecommendedReading(prev => {
+                                  const newItems = [...prev];
+                                  [newItems[index - 1], newItems[index]] = [newItems[index], newItems[index - 1]];
+                                  return newItems;
+                                });
+                              }
+                            }}
+                            disabled={index === 0}
+                            className="h-8 w-8 p-0"
+                            title="Move up"
+                          >
+                            <ChevronUp className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              if (index < recommendedReading.length - 1) {
+                                setRecommendedReading(prev => {
+                                  const newItems = [...prev];
+                                  [newItems[index], newItems[index + 1]] = [newItems[index + 1], newItems[index]];
+                                  return newItems;
+                                });
+                              }
+                            }}
+                            disabled={index === recommendedReading.length - 1}
+                            className="h-8 w-8 p-0"
+                            title="Move down"
+                          >
+                            <ChevronDown className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setRecommendedReading(prev => prev.filter((_, i) => i !== index))}
+                            className="h-8 w-8 p-0 text-destructive"
+                            title="Delete"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 
                 {recommendedReading.length === 0 && (
                   <div className="text-center py-4 text-muted-foreground">
