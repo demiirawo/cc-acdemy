@@ -799,7 +799,7 @@ export function RealKnowledgeBaseSidebar({
           <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center overflow-hidden">
             <img src="/lovable-uploads/d434f96d-1ac3-4f74-a546-93f9f1b3c09b.png" alt="Care Cuddle Logo" className="h-6 w-6 object-contain" />
           </div>
-          <h1 className="font-semibold text-sidebar-foreground">Care Cuddle Academy</h1>
+          
         </div>
         
         {/* Enhanced Search */}
