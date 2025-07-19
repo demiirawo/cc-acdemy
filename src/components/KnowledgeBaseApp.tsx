@@ -66,7 +66,9 @@ function PageView({
           const validReading = currentPage.recommended_reading.map((item: any) => ({
             ...item,
             // Default to 'link' if type is not one of the expected values
-            type: ['link', 'file', 'document', 'guide', 'reference'].includes(item.type) ? item.type : 'link',
+            type: ['link', 'file', 'document', 'guide', 'reference'].includes(item.type) 
+              ? item.type 
+              : 'link',
             // Ensure category is included
             category: item.category || 'General'
           }));
@@ -150,9 +152,13 @@ function PageView({
         </div>
 
         {/* Recommended Reading Section */}
-        <RecommendedReadingSection items={recommendedReading} orderedCategories={currentPage.category_order} onItemClick={item => {
-        console.log('Recommended reading item clicked:', item);
-      }} />
+        <RecommendedReadingSection 
+          items={recommendedReading} 
+          orderedCategories={currentPage.category_order}
+          onItemClick={(item) => {
+            console.log('Recommended reading item clicked:', item);
+          }}
+        />
       </div>
     </div>;
 }
@@ -185,6 +191,7 @@ interface Page {
   }>;
   category_order?: string[];
 }
+
 interface BreadcrumbData {
   id: string;
   title: string;
@@ -212,15 +219,18 @@ export function KnowledgeBaseApp() {
   const buildBreadcrumbs = async (page: Page): Promise<BreadcrumbData[]> => {
     const breadcrumbPath: BreadcrumbData[] = [];
     let currentPageData = page;
+
     try {
       // Build path by following parent relationships
       while (currentPageData.parent_page_id || currentPageData.space_id) {
         if (currentPageData.parent_page_id) {
           // Get parent page
-          const {
-            data: parentPage,
-            error
-          } = await supabase.from('pages').select('id, title, parent_page_id, space_id').eq('id', currentPageData.parent_page_id).single();
+          const { data: parentPage, error } = await supabase
+            .from('pages')
+            .select('id, title, parent_page_id, space_id')
+            .eq('id', currentPageData.parent_page_id)
+            .single();
+          
           if (error) break;
           if (parentPage) {
             breadcrumbPath.unshift({
@@ -236,10 +246,12 @@ export function KnowledgeBaseApp() {
           }
         } else if (currentPageData.space_id) {
           // Get space
-          const {
-            data: space,
-            error
-          } = await supabase.from('spaces').select('id, name').eq('id', currentPageData.space_id).single();
+          const { data: space, error } = await supabase
+            .from('spaces')
+            .select('id, name')
+            .eq('id', currentPageData.space_id)
+            .single();
+          
           if (error) break;
           if (space) {
             breadcrumbPath.unshift({
@@ -254,6 +266,7 @@ export function KnowledgeBaseApp() {
     } catch (error) {
       console.error('Error building breadcrumbs:', error);
     }
+
     return breadcrumbPath;
   };
 
@@ -330,6 +343,7 @@ export function KnowledgeBaseApp() {
             recommended_reading: data.recommended_reading as any || [],
             category_order: data.category_order as string[] || []
           };
+          
           setCurrentPage(pageData);
           setCurrentView('page');
           setIsEditing(false);
@@ -509,7 +523,48 @@ export function KnowledgeBaseApp() {
         {/* Header with user info */}
         <div className="border-b border-border p-4 bg-background/95 backdrop-blur-sm">
           <div className="flex items-center justify-between">
-            
+            <div className="flex items-center gap-2">
+              {(currentView === 'page' || currentView === 'editor') && currentPage && breadcrumbs.length > 0 ? (
+                <Breadcrumb>
+                  <BreadcrumbList>
+                    {breadcrumbs.map((crumb, index) => (
+                      <div key={crumb.id} className="flex items-center">
+                        <BreadcrumbItem>
+                          <BreadcrumbLink 
+                            className="cursor-pointer text-muted-foreground hover:text-foreground"
+                            onClick={() => handleItemSelect({ 
+                              id: crumb.id, 
+                              title: crumb.title, 
+                              type: crumb.type === 'space' ? 'space' : 'page' 
+                            })}
+                          >
+                            {crumb.title}
+                          </BreadcrumbLink>
+                        </BreadcrumbItem>
+                        {index < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
+                      </div>
+                    ))}
+                    {breadcrumbs.length > 0 && <BreadcrumbSeparator />}
+                    <BreadcrumbItem>
+                      <BreadcrumbPage className="font-semibold text-foreground">
+                        {currentPage.title}
+                      </BreadcrumbPage>
+                    </BreadcrumbItem>
+                  </BreadcrumbList>
+                </Breadcrumb>
+              ) : (
+                <h2 className="text-lg font-semibold text-foreground">
+                  {currentView === 'dashboard' ? 'Dashboard' :
+                   currentView === 'recent' ? 'Recently Updated' :
+                   currentView === 'tags' ? 'Tags' :
+                   currentView === 'people' ? 'People' :
+                   currentView === 'settings' ? 'Settings' :
+                   currentView === 'whiteboard' ? 'Whiteboard' :
+                   currentView === 'user-management' ? 'User Management' :
+                   'Care Cuddle Academy'}
+                </h2>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">
                 {user?.user_metadata?.display_name || user?.email}
