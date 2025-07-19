@@ -172,6 +172,7 @@ export type Database = {
       }
       pages: {
         Row: {
+          category_order: string[] | null
           content: string
           created_at: string
           created_by: string
@@ -189,6 +190,7 @@ export type Database = {
           view_count: number | null
         }
         Insert: {
+          category_order?: string[] | null
           content?: string
           created_at?: string
           created_by: string
@@ -206,6 +208,7 @@ export type Database = {
           view_count?: number | null
         }
         Update: {
+          category_order?: string[] | null
           content?: string
           created_at?: string
           created_by?: string

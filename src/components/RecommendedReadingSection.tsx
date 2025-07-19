@@ -17,6 +17,7 @@ interface RecommendedReadingItem {
 interface RecommendedReadingSectionProps {
   items: RecommendedReadingItem[];
   onItemClick?: (item: RecommendedReadingItem) => void;
+  orderedCategories?: string[];
 }
 
 // Function to get clean text preview (strip HTML formatting)
@@ -46,7 +47,7 @@ const getCleanTextPreview = (htmlContent: string, maxLength: number = 150): stri
 };
 
 // Function to group items by category
-const groupItemsByCategory = (items: RecommendedReadingItem[]) => {
+const groupItemsByCategory = (items: RecommendedReadingItem[], orderedCategories?: string[]) => {
   const grouped = items.reduce((acc, item) => {
     const category = item.category || 'General';
     if (!acc[category]) {
@@ -56,12 +57,22 @@ const groupItemsByCategory = (items: RecommendedReadingItem[]) => {
     return acc;
   }, {} as Record<string, RecommendedReadingItem[]>);
 
-  // Sort categories alphabetically, but put 'General' last
-  const sortedCategories = Object.keys(grouped).sort((a, b) => {
-    if (a === 'General') return 1;
-    if (b === 'General') return -1;
-    return a.localeCompare(b);
-  });
+  // Use ordered categories if provided, otherwise fallback to alphabetical with General last
+  let sortedCategories: string[];
+  if (orderedCategories && orderedCategories.length > 0) {
+    // Start with ordered categories that exist in grouped data
+    sortedCategories = orderedCategories.filter(cat => grouped[cat]);
+    // Add any remaining categories not in the ordered list
+    const remainingCategories = Object.keys(grouped).filter(cat => !orderedCategories.includes(cat));
+    sortedCategories.push(...remainingCategories.sort());
+  } else {
+    // Fallback to alphabetical sorting with 'General' last
+    sortedCategories = Object.keys(grouped).sort((a, b) => {
+      if (a === 'General') return 1;
+      if (b === 'General') return -1;
+      return a.localeCompare(b);
+    });
+  }
 
   return sortedCategories.map(category => ({
     category,
@@ -69,7 +80,7 @@ const groupItemsByCategory = (items: RecommendedReadingItem[]) => {
   }));
 };
 
-export function RecommendedReadingSection({ items, onItemClick }: RecommendedReadingSectionProps) {
+export function RecommendedReadingSection({ items, onItemClick, orderedCategories }: RecommendedReadingSectionProps) {
   if (!items || items.length === 0) {
     return null;
   }
@@ -91,7 +102,7 @@ export function RecommendedReadingSection({ items, onItemClick }: RecommendedRea
     onItemClick?.(item);
   };
 
-  const groupedItems = groupItemsByCategory(items);
+  const groupedItems = groupItemsByCategory(items, orderedCategories);
 
   return (
     <Card className="mt-8">

@@ -153,6 +153,7 @@ function PageView({
         {/* Recommended Reading Section */}
         <RecommendedReadingSection 
           items={recommendedReading} 
+          orderedCategories={currentPage.category_order}
           onItemClick={(item) => {
             console.log('Recommended reading item clicked:', item);
           }}
@@ -185,6 +186,7 @@ interface Page {
     fileName?: string;
     category?: string;
   }>;
+  category_order?: string[];
 }
 export function KnowledgeBaseApp() {
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
@@ -251,7 +253,8 @@ export function KnowledgeBaseApp() {
             updated_at,
             view_count,
             created_by,
-            recommended_reading
+            recommended_reading,
+            category_order
           `).eq('id', item.id).single();
         if (error) throw error;
         if (data) {
@@ -261,7 +264,8 @@ export function KnowledgeBaseApp() {
             content: data.content,
             lastUpdated: data.updated_at,
             author: 'User',
-            recommended_reading: data.recommended_reading as any || []
+            recommended_reading: data.recommended_reading as any || [],
+            category_order: data.category_order as string[] || []
           });
           setCurrentView('page');
           setIsEditing(false);
@@ -357,7 +361,7 @@ export function KnowledgeBaseApp() {
     fileName?: string;
     type?: string;
     category?: string;
-  }>) => {
+  }>, orderedCategories?: string[]) => {
     if (!currentPage || !user) return;
     try {
       if (currentPage.id === 'new') {
@@ -369,6 +373,7 @@ export function KnowledgeBaseApp() {
           title,
           content,
           recommended_reading: recommendedReading || [],
+          category_order: orderedCategories || [],
           created_by: user.id
         }).select().single();
         if (error) throw error;
@@ -387,6 +392,7 @@ export function KnowledgeBaseApp() {
           title,
           content,
           recommended_reading: recommendedReading || [],
+          category_order: orderedCategories || [],
           updated_at: new Date().toISOString()
         }).eq('id', currentPage.id);
         if (error) throw error;
@@ -399,7 +405,8 @@ export function KnowledgeBaseApp() {
             ...item,
             type: item.type || (item.url ? 'link' : 'file'),
             category: item.category || 'General'
-          }))
+          })),
+          category_order: orderedCategories || []
         });
       }
       setIsEditing(false);

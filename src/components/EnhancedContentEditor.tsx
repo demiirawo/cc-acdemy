@@ -55,7 +55,7 @@ import {
 interface ContentEditorProps {
   title?: string;
   content?: string;
-  onSave: (title: string, content: string, recommendedReading?: Array<{title: string, url?: string, description: string, fileUrl?: string, fileName?: string}>) => void;
+  onSave: (title: string, content: string, recommendedReading?: Array<{title: string, url?: string, description: string, fileUrl?: string, fileName?: string}>, orderedCategories?: string[]) => void;
   onPreview?: () => void;
   isEditing?: boolean;
   pageId?: string;
@@ -70,7 +70,7 @@ interface ContentEditorProps {
     description: string;
     fileUrl?: string;
     fileName?: string;
-  }>) => void;
+  }>, orderedCategories?: string[]) => void;
   onPreview?: () => void;
   isEditing?: boolean;
   pageId?: string;
@@ -2356,9 +2356,21 @@ export function EnhancedContentEditor({
 
   const handleSave = async () => {
     try {
+      // Derive ordered categories from the first occurrence of each category
+      const orderedCategories: string[] = [];
+      const seenCategories = new Set<string>();
+      
+      recommendedReading.forEach(item => {
+        const category = item.category || 'General';
+        if (!seenCategories.has(category)) {
+          orderedCategories.push(category);
+          seenCategories.add(category);
+        }
+      });
+
       // Save content and recommended reading using the provided onSave function
       console.log('Saving with recommended reading:', recommendedReading);
-      await onSave(currentTitle, currentContent, recommendedReading);
+      await onSave(currentTitle, currentContent, recommendedReading, orderedCategories);
       
       toast({
         title: "Saved",
