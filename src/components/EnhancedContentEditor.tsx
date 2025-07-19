@@ -2593,7 +2593,10 @@ export function EnhancedContentEditor({
             <div className="mt-8 pt-8 border-t border-border">
               <h3 className="text-xl font-semibold mb-4 text-foreground">Recommended Reading</h3>
               {(() => {
+                console.log('Current recommendedReading:', recommendedReading);
                 const { categories, grouped } = groupRecommendedReadingByCategory(recommendedReading);
+                console.log('Grouped categories order:', categories);
+                console.log('Grouped data:', grouped);
                 return (
                   <div className="space-y-6">
                     {categories.map(category => (
