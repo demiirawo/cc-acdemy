@@ -107,24 +107,51 @@ export function RecommendedReadingForm({ items, onItemsChange }: RecommendedRead
 
         {/* Form fields for new item */}
         <div className="space-y-4 p-4 border border-border rounded-lg bg-muted/20">
-          <div className="space-y-2">
-            <Label htmlFor="new-category">Category</Label>
-            <Input
-              id="new-category"
-              placeholder="General"
-              className="w-full"
-            />
+          {/* First row: Category → Title → Link/File */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-category">Category</Label>
+              <Input
+                id="new-category"
+                placeholder="General"
+                className="w-full"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="new-title">Title</Label>
+              <Input
+                id="new-title"
+                placeholder="Enter title"
+                className="w-full"
+              />
+            </div>
+
+            {activeTab === 'link' && (
+              <div className="space-y-2">
+                <Label htmlFor="new-url">Link</Label>
+                <Input
+                  id="new-url"
+                  type="url"
+                  placeholder="https://example.com"
+                  className="w-full"
+                />
+              </div>
+            )}
+
+            {activeTab === 'file' && (
+              <div className="space-y-2">
+                <Label htmlFor="new-file">File</Label>
+                <Input
+                  id="new-file"
+                  type="file"
+                  className="w-full"
+                />
+              </div>
+            )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="new-title">Title</Label>
-            <Input
-              id="new-title"
-              placeholder="Enter title"
-              className="w-full"
-            />
-          </div>
-
+          {/* Second row: Description (full width) */}
           <div className="space-y-2">
             <Label htmlFor="new-description">Description</Label>
             <Textarea
@@ -134,29 +161,6 @@ export function RecommendedReadingForm({ items, onItemsChange }: RecommendedRead
               rows={3}
             />
           </div>
-
-          {activeTab === 'link' && (
-            <div className="space-y-2">
-              <Label htmlFor="new-url">URL</Label>
-              <Input
-                id="new-url"
-                type="url"
-                placeholder="https://example.com"
-                className="w-full"
-              />
-            </div>
-          )}
-
-          {activeTab === 'file' && (
-            <div className="space-y-2">
-              <Label htmlFor="new-file">File</Label>
-              <Input
-                id="new-file"
-                type="file"
-                className="w-full"
-              />
-            </div>
-          )}
 
           <Button
             type="button"
@@ -190,24 +194,62 @@ export function RecommendedReadingForm({ items, onItemsChange }: RecommendedRead
                 </div>
 
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Title</Label>
-                    <Input
-                      value={item.title}
-                      onChange={(e) => updateItem(index, 'title', e.target.value)}
-                      placeholder="Enter title"
-                    />
+                  {/* First row: Category → Title → Link/File */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>Category</Label>
+                      <Input
+                        value={item.category || 'General'}
+                        onChange={(e) => updateItem(index, 'category', e.target.value)}
+                        placeholder="General"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Title</Label>
+                      <Input
+                        value={item.title}
+                        onChange={(e) => updateItem(index, 'title', e.target.value)}
+                        placeholder="Enter title"
+                      />
+                    </div>
+
+                    {item.type === 'link' && (
+                      <div className="space-y-2">
+                        <Label>Link</Label>
+                        <Input
+                          type="url"
+                          value={item.url || ''}
+                          onChange={(e) => updateItem(index, 'url', e.target.value)}
+                          placeholder="https://example.com"
+                        />
+                      </div>
+                    )}
+
+                    {item.type === 'file' && (
+                      <div className="space-y-2">
+                        <Label>File</Label>
+                        {item.fileName ? (
+                          <div className="flex items-center gap-2 p-2 bg-muted rounded">
+                            <FileText className="h-4 w-4" />
+                            <span className="text-sm">{item.fileName}</span>
+                          </div>
+                        ) : (
+                          <Input
+                            type="file"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                handleFileUpload(index, file);
+                              }
+                            }}
+                          />
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  <div className="space-y-2">
-                    <Label>Category</Label>
-                    <Input
-                      value={item.category || 'General'}
-                      onChange={(e) => updateItem(index, 'category', e.target.value)}
-                      placeholder="General"
-                    />
-                  </div>
-
+                  {/* Second row: Description (full width) */}
                   <div className="space-y-2">
                     <Label>Description</Label>
                     <Textarea
@@ -217,40 +259,6 @@ export function RecommendedReadingForm({ items, onItemsChange }: RecommendedRead
                       rows={3}
                     />
                   </div>
-
-                  {item.type === 'link' && (
-                    <div className="space-y-2">
-                      <Label>URL</Label>
-                      <Input
-                        type="url"
-                        value={item.url || ''}
-                        onChange={(e) => updateItem(index, 'url', e.target.value)}
-                        placeholder="https://example.com"
-                      />
-                    </div>
-                  )}
-
-                  {item.type === 'file' && (
-                    <div className="space-y-2">
-                      <Label>File</Label>
-                      {item.fileName ? (
-                        <div className="flex items-center gap-2 p-2 bg-muted rounded">
-                          <FileText className="h-4 w-4" />
-                          <span className="text-sm">{item.fileName}</span>
-                        </div>
-                      ) : (
-                        <Input
-                          type="file"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              handleFileUpload(index, file);
-                            }
-                          }}
-                        />
-                      )}
-                    </div>
-                  )}
                 </div>
               </div>
             ))}
