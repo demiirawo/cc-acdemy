@@ -124,7 +124,7 @@ export function PublicPageView() {
     <div className="min-h-screen" style={{ backgroundColor: '#5E18EB' }}>
       {/* Header */}
       <div className="border-b border-white/20 bg-white/10 backdrop-blur-sm">
-        <div className="max-w-6xl mx-auto px-6 py-4">
+        <div className="w-4/5 min-w-[320px] max-w-none mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Globe className="h-6 w-6 text-white/80" />
@@ -147,7 +147,7 @@ export function PublicPageView() {
       </div>
 
       {/* Content */}
-      <div className="max-w-6xl mx-auto px-6 py-8">
+      <div className="w-4/5 min-w-[320px] max-w-none mx-auto px-6 py-8">
         <Card className="shadow-lg bg-white">
           <CardHeader>
             <div className="flex items-start justify-between">
