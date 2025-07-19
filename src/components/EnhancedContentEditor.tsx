@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -105,8 +106,8 @@ export function EnhancedContentEditor({
   const [publicToken, setPublicToken] = useState('');
   const [showAdvancedToolbar, setShowAdvancedToolbar] = useState(false);
   const [selectedFontSize, setSelectedFontSize] = useState("14");
-  const [recommendedReading, setRecommendedReading] = useState<Array<{title: string, url?: string, description: string, type: 'link' | 'file', fileName?: string, fileUrl?: string}>>([]);
-  const [newRecommendation, setNewRecommendation] = useState({title: '', url: '', description: '', type: 'link' as 'link' | 'file', fileName: '', fileUrl: ''});
+  const [recommendedReading, setRecommendedReading] = useState<Array<{title: string, url?: string, description: string, type: 'link' | 'file', fileName?: string, fileUrl?: string, category?: string}>>([]);
+  const [newRecommendation, setNewRecommendation] = useState({title: '', url: '', description: '', type: 'link' as 'link' | 'file', fileName: '', fileUrl: '', category: 'General'});
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -2753,9 +2754,10 @@ export function EnhancedContentEditor({
                                 description: newRecommendation.description,
                                 type: 'file',
                                 fileUrl: newRecommendation.fileUrl,
-                                fileName: newRecommendation.fileName
+                                fileName: newRecommendation.fileName,
+                                category: newRecommendation.category
                               }]);
-                              setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '' });
+                              setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '', category: 'General' });
                               toast({
                                 title: "Added",
                                 description: "Recommended reading file added.",
@@ -2772,9 +2774,10 @@ export function EnhancedContentEditor({
                               title: newRecommendation.title,
                               url: newRecommendation.url,
                               description: newRecommendation.description,
-                              type: 'link'
+                              type: 'link',
+                              category: newRecommendation.category
                             }]);
-                            setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '' });
+                            setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '', category: 'General' });
                             toast({
                               title: "Added",
                               description: "Recommended reading item added.",
@@ -2822,61 +2825,73 @@ export function EnhancedContentEditor({
                        File
                      </Button>
                    </div>
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                     <Input
-                       placeholder="Title"
-                       value={newRecommendation.title}
-                       onChange={(e) => setNewRecommendation(prev => ({ ...prev, title: e.target.value }))}
-                     />
-                     {newRecommendation.type === 'link' && (
-                       <Input
-                         placeholder="URL"
-                         value={newRecommendation.url}
-                         onChange={(e) => setNewRecommendation(prev => ({ ...prev, url: e.target.value }))}
-                       />
-                     )}
-                       {newRecommendation.type === 'file' && (
-                         <div className="space-y-2">
-                           <input
-                             type="file"
-                             id="reading-file-upload"
-                             className="hidden"
-                             accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.mp4,.mov,.avi"
-                             onChange={(e) => {
-                               const file = e.target.files?.[0];
-                               if (file) {
-                                 const reader = new FileReader();
-                                 reader.onload = (event) => {
-                                   const result = event.target?.result as string;
-                                   setNewRecommendation(prev => ({ 
-                                     ...prev, 
-                                     fileName: file.name, 
-                                     fileUrl: result 
-                                   }));
-                                 };
-                                 reader.readAsDataURL(file);
-                               }
-                             }}
-                           />
-                           <Button
-                             type="button"
-                             variant="outline"
-                             onClick={() => document.getElementById('reading-file-upload')?.click()}
-                             className="w-full"
-                           >
-                             {newRecommendation.fileName ? 'Change File' : 'Upload File'}
-                           </Button>
-                           {newRecommendation.fileName && (
-                             <p className="text-sm text-muted-foreground">📁 {newRecommendation.fileName}</p>
-                           )}
-                         </div>
-                       )}
-                     <Input
-                       placeholder="Description"
-                       value={newRecommendation.description}
-                       onChange={(e) => setNewRecommendation(prev => ({ ...prev, description: e.target.value }))}
-                     />
-                   </div>
+                    {/* First row: Category → Title → Link/File */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <Input
+                        placeholder="Category"
+                        value={newRecommendation.category}
+                        onChange={(e) => setNewRecommendation(prev => ({ ...prev, category: e.target.value }))}
+                      />
+                      <Input
+                        placeholder="Title"
+                        value={newRecommendation.title}
+                        onChange={(e) => setNewRecommendation(prev => ({ ...prev, title: e.target.value }))}
+                      />
+                      {newRecommendation.type === 'link' && (
+                        <Input
+                          placeholder="Link"
+                          value={newRecommendation.url}
+                          onChange={(e) => setNewRecommendation(prev => ({ ...prev, url: e.target.value }))}
+                        />
+                      )}
+                        {newRecommendation.type === 'file' && (
+                          <div className="space-y-2">
+                            <input
+                              type="file"
+                              id="reading-file-upload"
+                              className="hidden"
+                              accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.mp4,.mov,.avi"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const reader = new FileReader();
+                                  reader.onload = (event) => {
+                                    const result = event.target?.result as string;
+                                    setNewRecommendation(prev => ({ 
+                                      ...prev, 
+                                      fileName: file.name, 
+                                      fileUrl: result 
+                                    }));
+                                  };
+                                  reader.readAsDataURL(file);
+                                }
+                              }}
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={() => document.getElementById('reading-file-upload')?.click()}
+                              className="w-full"
+                            >
+                              {newRecommendation.fileName ? 'Change File' : 'Upload File'}
+                            </Button>
+                            {newRecommendation.fileName && (
+                              <p className="text-sm text-muted-foreground">📁 {newRecommendation.fileName}</p>
+                            )}
+                          </div>
+                        )}
+                    </div>
+                    
+                    {/* Second row: Description (full width) */}
+                    <div className="space-y-2">
+                      <Textarea
+                        placeholder="Description"
+                        value={newRecommendation.description}
+                        onChange={(e) => setNewRecommendation(prev => ({ ...prev, description: e.target.value }))}
+                        rows={3}
+                        className="w-full"
+                      />
+                    </div>
                  </div>
 
                  {/* Existing recommendations */}
