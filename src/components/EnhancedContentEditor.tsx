@@ -2536,6 +2536,23 @@ export function EnhancedContentEditor({
     });
   };
 
+  // Group recommended reading by category, preserving order of first occurrence
+  const groupRecommendedReadingByCategory = (items: any[]) => {
+    const categories: string[] = [];
+    const grouped: { [key: string]: any[] } = {};
+    
+    items.forEach(item => {
+      const category = item.category || 'General';
+      if (!categories.includes(category)) {
+        categories.push(category);
+        grouped[category] = [];
+      }
+      grouped[category].push(item);
+    });
+    
+    return { categories, grouped };
+  };
+
   if (!isEditing) {
     return (
       <div className="flex-1 overflow-auto">
@@ -2567,38 +2584,52 @@ export function EnhancedContentEditor({
           {recommendedReading.length > 0 && (
             <div className="mt-8 pt-8 border-t border-border">
               <h3 className="text-xl font-semibold mb-4 text-foreground">Recommended Reading</h3>
-              <div className="space-y-3">
-                 {recommendedReading.map((item, index) => (
-                   <div key={index} className="p-4 border rounded-lg bg-muted/20">
-                     <h4 className="font-medium text-foreground mb-1">{item.title}</h4>
-                      {item.url && (
-                        <a 
-                          href={item.url} 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
-                          className="text-primary hover:underline text-sm block mb-2"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            // Add protocol if missing
-                            let url = item.url || '';
-                            if (url && !url.match(/^https?:\/\//i)) {
-                              url = 'https://' + url;
-                            }
-                            window.open(url, '_blank', 'noopener,noreferrer');
-                          }}
-                        >
-                          {item.url}
-                        </a>
-                      )}
-                     {item.fileUrl && (
-                       <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm block mb-2">
-                         📁 {item.fileName}
-                       </a>
-                     )}
-                     <p className="text-sm text-muted-foreground">{item.description}</p>
-                   </div>
-                 ))}
-              </div>
+              {(() => {
+                const { categories, grouped } = groupRecommendedReadingByCategory(recommendedReading);
+                return (
+                  <div className="space-y-6">
+                    {categories.map(category => (
+                      <div key={category} className="space-y-3">
+                        <h4 className="text-lg font-medium text-foreground border-b border-border pb-1">
+                          {category}
+                        </h4>
+                        <div className="space-y-3">
+                          {grouped[category].map((item, index) => (
+                            <div key={`${category}-${index}`} className="p-4 border rounded-lg bg-muted/20">
+                              <h5 className="font-medium text-foreground mb-1">{item.title}</h5>
+                              {item.url && (
+                                <a 
+                                  href={item.url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  className="text-primary hover:underline text-sm block mb-2"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    // Add protocol if missing
+                                    let url = item.url || '';
+                                    if (url && !url.match(/^https?:\/\//i)) {
+                                      url = 'https://' + url;
+                                    }
+                                    window.open(url, '_blank', 'noopener,noreferrer');
+                                  }}
+                                >
+                                  {item.url}
+                                </a>
+                              )}
+                              {item.fileUrl && (
+                                <a href={item.fileUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-sm block mb-2">
+                                  📁 {item.fileName}
+                                </a>
+                              )}
+                              <p className="text-sm text-muted-foreground">{item.description}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
