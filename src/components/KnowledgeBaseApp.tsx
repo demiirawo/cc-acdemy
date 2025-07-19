@@ -19,7 +19,6 @@ import { Label } from "@/components/ui/label";
 import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy, FileText } from "lucide-react";
 import { UserManagement } from "./UserManagement";
 import { RecommendedReadingSection } from "./RecommendedReadingSection";
-import { RecommendedReadingItem } from '@/types/recommendedReading';
 
 // Page view component
 function PageView({
@@ -35,39 +34,43 @@ function PageView({
 }) {
   const [isPublic, setIsPublic] = useState(false);
   const [publicToken, setPublicToken] = useState('');
-  const [recommendedReading, setRecommendedReading] = useState<RecommendedReadingItem[]>([]);
+  const [recommendedReading, setRecommendedReading] = useState<Array<{
+    id?: string;
+    title: string;
+    description: string;
+    type: 'link' | 'file' | 'document' | 'guide' | 'reference';
+    url?: string;
+    fileUrl?: string;
+    fileName?: string;
+    category?: string;
+  }>>([]);
   const {
     toast
   } = useToast();
   useEffect(() => {
     const fetchPageSettings = async () => {
       try {
-        const { data, error } = await supabase
-          .from('pages')
-          .select('is_public, public_token')
-          .eq('id', currentPage.id)
-          .single();
-        
+        const {
+          data,
+          error
+        } = await supabase.from('pages').select('is_public, public_token').eq('id', currentPage.id).single();
         if (error) throw error;
         if (data) {
           setIsPublic(data.is_public || false);
           setPublicToken(data.public_token || '');
         }
 
-        // Properly handle recommended reading from the page data
+        // Fetch recommended reading from the page's recommended_reading field
         if (currentPage.recommended_reading && Array.isArray(currentPage.recommended_reading)) {
-          const validReading: RecommendedReadingItem[] = currentPage.recommended_reading
-            .filter((item: any) => item && typeof item === 'object')
-            .map((item: any): RecommendedReadingItem => ({
-              id: item.id,
-              title: item.title || '',
-              description: item.description || '',
-              type: ['link', 'file'].includes(item.type) ? item.type : 'link',
-              url: item.url,
-              fileUrl: item.fileUrl,
-              fileName: item.fileName,
-              category: item.category || 'General'
-            }));
+          const validReading = currentPage.recommended_reading.map((item: any) => ({
+            ...item,
+            // Default to 'link' if type is not one of the expected values
+            type: ['link', 'file', 'document', 'guide', 'reference'].includes(item.type) 
+              ? item.type 
+              : 'link',
+            // Ensure category is included
+            category: item.category || 'General'
+          }));
           setRecommendedReading(validReading);
         } else {
           setRecommendedReading([]);
@@ -78,7 +81,6 @@ function PageView({
     };
     fetchPageSettings();
   }, [currentPage.id]);
-
   const togglePublicAccess = async () => {
     try {
       const newIsPublic = !isPublic;
@@ -158,7 +160,6 @@ function PageView({
       </div>
     </div>;
 }
-
 type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'people' | 'settings' | 'whiteboard' | 'user-management';
 interface SidebarItem {
   id: string;
@@ -174,9 +175,17 @@ interface Page {
   content: string;
   lastUpdated: string;
   author: string;
-  recommended_reading?: RecommendedReadingItem[];
+  recommended_reading?: Array<{
+    id?: string;
+    title: string;
+    description: string;
+    type: string;
+    url?: string;
+    fileUrl?: string;
+    fileName?: string;
+    category?: string;
+  }>;
 }
-
 export function KnowledgeBaseApp() {
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
   const [selectedItemId, setSelectedItemId] = useState<string>('home');
@@ -206,7 +215,6 @@ export function KnowledgeBaseApp() {
   if (!user) {
     return <AuthForm onAuthStateChange={() => window.location.reload()} />;
   }
-
   const handleItemSelect = async (item: SidebarItem) => {
     setSelectedItemId(item.id);
     if (item.id === 'home') {
@@ -233,9 +241,10 @@ export function KnowledgeBaseApp() {
     } else if (item.type === 'page') {
       try {
         // Fetch real page data from Supabase
-        const { data, error } = await supabase
-          .from('pages')
-          .select(`
+        const {
+          data,
+          error
+        } = await supabase.from('pages').select(`
             id,
             title,
             content,
@@ -243,46 +252,24 @@ export function KnowledgeBaseApp() {
             view_count,
             created_by,
             recommended_reading
-          `)
-          .eq('id', item.id)
-          .single();
-        
+          `).eq('id', item.id).single();
         if (error) throw error;
-        
         if (data) {
-          // Properly handle recommended reading data from database
-          let processedRecommendedReading: RecommendedReadingItem[] = [];
-          if (data.recommended_reading && Array.isArray(data.recommended_reading)) {
-            processedRecommendedReading = (data.recommended_reading as any[])
-              .filter((item: any) => item && typeof item === 'object')
-              .map((item: any): RecommendedReadingItem => ({
-                id: item.id,
-                title: item.title || '',
-                description: item.description || '',
-                type: ['link', 'file'].includes(item.type) ? item.type : 'link',
-                url: item.url,
-                fileUrl: item.fileUrl,
-                fileName: item.fileName,
-                category: item.category || 'General'
-              }));
-          }
-
           setCurrentPage({
             id: data.id,
             title: data.title,
             content: data.content,
             lastUpdated: data.updated_at,
             author: 'User',
-            recommended_reading: processedRecommendedReading
+            recommended_reading: data.recommended_reading as any || []
           });
           setCurrentView('page');
           setIsEditing(false);
 
           // Increment view count
-          await supabase
-            .from('pages')
-            .update({ view_count: (data.view_count || 0) + 1 })
-            .eq('id', data.id);
+          await supabase.from('pages').update({
+            view_count: (data.view_count || 0) + 1
+          }).eq('id', data.id);
         }
       } catch (error) {
         console.error('Error fetching page:', error);
@@ -297,7 +284,6 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
     }
   };
-
   const handleCreatePage = () => {
     handleCreatePageInEditor();
   };
@@ -363,81 +349,64 @@ export function KnowledgeBaseApp() {
     setIsEditing(true);
     setCurrentView('editor');
   };
-
-  const handleSavePage = async (data: {
+  const handleSavePage = async (title: string, content: string, recommendedReading?: Array<{
     title: string;
-    content: string;
-    tags: string[];
-    recommendedReading: RecommendedReadingItem[];
-    isPublic: boolean;
-  }) => {
+    url?: string;
+    description: string;
+    fileUrl?: string;
+    fileName?: string;
+    type?: string;
+    category?: string;
+  }>) => {
     if (!currentPage || !user) return;
-    
     try {
-      // Convert RecommendedReadingItem[] to JSON-serializable format
-      const recommendedReadingJson = data.recommendedReading.map(item => ({
-        id: item.id,
-        title: item.title,
-        description: item.description,
-        type: item.type,
-        url: item.url,
-        fileUrl: item.fileUrl,
-        fileName: item.fileName,
-        category: item.category || 'General'
-      }));
-
       if (currentPage.id === 'new') {
         // Create new page
-        const { data: newPage, error } = await supabase
-          .from('pages')
-          .insert({
-            title: data.title,
-            content: data.content,
-            recommended_reading: recommendedReadingJson,
-            created_by: user.id,
-            is_public: data.isPublic
-          })
-          .select()
-          .single();
-        
+        const {
+          data,
+          error
+        } = await supabase.from('pages').insert({
+          title,
+          content,
+          recommended_reading: recommendedReading || [],
+          created_by: user.id
+        }).select().single();
         if (error) throw error;
-        
         setCurrentPage({
           ...currentPage,
-          id: newPage.id,
-          title: data.title,
-          content: data.content,
-          lastUpdated: newPage.updated_at
+          id: data.id,
+          title,
+          content,
+          lastUpdated: data.updated_at
         });
       } else {
         // Update existing page
-        const { error } = await supabase
-          .from('pages')
-          .update({
-            title: data.title,
-            content: data.content,
-            recommended_reading: recommendedReadingJson,
-            is_public: data.isPublic,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', currentPage.id);
-        
+        const {
+          error
+        } = await supabase.from('pages').update({
+          title,
+          content,
+          recommended_reading: recommendedReading || [],
+          updated_at: new Date().toISOString()
+        }).eq('id', currentPage.id);
         if (error) throw error;
-        
         setCurrentPage({
           ...currentPage,
-          title: data.title,
-          content: data.content,
+          title,
+          content,
           lastUpdated: new Date().toISOString(),
-          recommended_reading: data.recommendedReading
+          recommended_reading: (recommendedReading || []).map(item => ({
+            ...item,
+            type: item.type || (item.url ? 'link' : 'file'),
+            category: item.category || 'General'
+          }))
         });
       }
-      
       setIsEditing(false);
       setCurrentView('page');
       toast({
         title: "Page saved",
-        description: `"${data.title}" has been saved successfully.`
+        description: `"${title}" has been saved successfully.`
       });
     } catch (error) {
       console.error('Error saving page:', error);
@@ -448,7 +417,6 @@ export function KnowledgeBaseApp() {
       });
     }
   };
-
   const handlePreview = () => {
     setIsEditing(false);
     setCurrentView('page');
@@ -460,7 +428,6 @@ export function KnowledgeBaseApp() {
       type: 'page'
     });
   };
-
   return <div className="flex h-screen bg-background">
       <ResizableSidebar onItemSelect={handleItemSelect} selectedId={selectedItemId} onCreatePage={handleCreatePage} onCreateSubPage={handleCreateSubPage} onCreatePageInEditor={handleCreatePageInEditor} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
@@ -497,7 +464,7 @@ export function KnowledgeBaseApp() {
         {currentView === 'whiteboard' && <WhiteboardCanvas />}
         {currentView === 'user-management' && <UserManagement />}
         
-        {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} recommendedReading={currentPage.recommended_reading} />}
+        {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} />}
         
         {currentView === 'page' && currentPage && <PageView currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
       </div>

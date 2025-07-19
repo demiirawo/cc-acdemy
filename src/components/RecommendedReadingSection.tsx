@@ -1,7 +1,18 @@
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, FileText, Download } from "lucide-react";
-import { RecommendedReadingItem } from '@/types/recommendedReading';
+
+interface RecommendedReadingItem {
+  id?: string;
+  title: string;
+  description: string;
+  type: 'link' | 'file' | 'document' | 'guide' | 'reference';
+  url?: string;
+  fileUrl?: string;
+  fileName?: string;
+  category?: string;
+}
 
 interface RecommendedReadingSectionProps {
   items: RecommendedReadingItem[];
@@ -37,8 +48,7 @@ const getCleanTextPreview = (htmlContent: string, maxLength: number = 150): stri
 // Function to group items by category
 const groupItemsByCategory = (items: RecommendedReadingItem[]) => {
   const grouped = items.reduce((acc, item) => {
-    // Default to 'General' if category is missing or empty
-    const category = item.category?.trim() || 'General';
+    const category = item.category || 'General';
     if (!acc[category]) {
       acc[category] = [];
     }
