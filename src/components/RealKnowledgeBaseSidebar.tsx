@@ -159,16 +159,23 @@ function DraggableSidebarTreeItem({
 
   const handleMovePageUp = async (pageId: string) => {
     try {
-      // Get all pages in the same context and sort them by creation date
+      // Get all sibling pages to check if we're at the top
       const { data: currentPage } = await supabase
         .from('pages')
         .select('*')
         .eq('id', pageId)
         .single();
 
-      if (!currentPage) return;
+      if (!currentPage) {
+        toast({
+          title: "Error",
+          description: "Page not found",
+          variant: "destructive"
+        });
+        return;
+      }
 
-      // Find all sibling pages
+      // Find all sibling pages (same parent and space)
       let query = supabase.from('pages').select('*');
       
       if (currentPage.parent_page_id) {
@@ -203,12 +210,12 @@ function DraggableSidebarTreeItem({
         return;
       }
 
-      // Swap with the previous page by swapping their created_at timestamps
+      // Swap created_at timestamps with the previous page
       const previousPage = siblings[currentIndex - 1];
       const currentTimestamp = currentPage.created_at;
       const previousTimestamp = previousPage.created_at;
 
-      // Update both pages in a transaction-like manner
+      // Update both pages
       await supabase
         .from('pages')
         .update({ created_at: previousTimestamp })
@@ -238,16 +245,23 @@ function DraggableSidebarTreeItem({
   
   const handleMovePageDown = async (pageId: string) => {
     try {
-      // Get all pages in the same context and sort them by creation date
+      // Get all sibling pages to check if we're at the bottom
       const { data: currentPage } = await supabase
         .from('pages')
         .select('*')
         .eq('id', pageId)
         .single();
 
-      if (!currentPage) return;
+      if (!currentPage) {
+        toast({
+          title: "Error",
+          description: "Page not found",
+          variant: "destructive"
+        });
+        return;
+      }
 
-      // Find all sibling pages
+      // Find all sibling pages (same parent and space)
       let query = supabase.from('pages').select('*');
       
       if (currentPage.parent_page_id) {
@@ -282,12 +296,12 @@ function DraggableSidebarTreeItem({
         return;
       }
 
-      // Swap with the next page by swapping their created_at timestamps
+      // Swap created_at timestamps with the next page
       const nextPage = siblings[currentIndex + 1];
       const currentTimestamp = currentPage.created_at;
       const nextTimestamp = nextPage.created_at;
 
-      // Update both pages in a transaction-like manner
+      // Update both pages
       await supabase
         .from('pages')
         .update({ created_at: nextTimestamp })
