@@ -107,23 +107,22 @@ export function RecommendedReadingForm({ items, onItemsChange }: RecommendedRead
 
         {/* Form fields for new item */}
         <div className="space-y-4 p-4 border border-border rounded-lg bg-muted/20">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="new-title">Title</Label>
-              <Input
-                id="new-title"
-                placeholder="Enter title"
-                className="w-full"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="new-category">Category</Label>
-              <Input
-                id="new-category"
-                placeholder="General"
-                className="w-full"
-              />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="new-title">Title</Label>
+            <Input
+              id="new-title"
+              placeholder="Enter title"
+              className="w-full"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="new-category">Category</Label>
+            <Input
+              id="new-category"
+              placeholder="General"
+              className="w-full"
+            />
           </div>
 
           <div className="space-y-2">
@@ -191,23 +190,22 @@ export function RecommendedReadingForm({ items, onItemsChange }: RecommendedRead
                 </div>
 
                 <div className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Title</Label>
-                      <Input
-                        value={item.title}
-                        onChange={(e) => updateItem(index, 'title', e.target.value)}
-                        placeholder="Enter title"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Category</Label>
-                      <Input
-                        value={item.category || 'General'}
-                        onChange={(e) => updateItem(index, 'category', e.target.value)}
-                        placeholder="General"
-                      />
-                    </div>
+                  <div className="space-y-2">
+                    <Label>Title</Label>
+                    <Input
+                      value={item.title}
+                      onChange={(e) => updateItem(index, 'title', e.target.value)}
+                      placeholder="Enter title"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Category</Label>
+                    <Input
+                      value={item.category || 'General'}
+                      onChange={(e) => updateItem(index, 'category', e.target.value)}
+                      placeholder="General"
+                    />
                   </div>
 
                   <div className="space-y-2">
