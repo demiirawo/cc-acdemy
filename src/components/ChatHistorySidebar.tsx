@@ -29,6 +29,7 @@ interface ChatHistorySidebarProps {
   currentConversationId: string | null;
   onConversationSelect: (conversation: Conversation) => void;
   onNewConversation: () => void;
+  refreshTrigger?: number; // Add a trigger to refresh the sidebar
   className?: string;
 }
 
@@ -36,6 +37,7 @@ export const ChatHistorySidebar = ({
   currentConversationId, 
   onConversationSelect, 
   onNewConversation,
+  refreshTrigger = 0,
   className = ""
 }: ChatHistorySidebarProps) => {
   const [folders, setFolders] = useState<ChatFolder[]>([]);
@@ -48,6 +50,13 @@ export const ChatHistorySidebar = ({
   useEffect(() => {
     loadFoldersAndConversations();
   }, []);
+
+  // Refresh when the trigger changes (new conversation created)
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      loadFoldersAndConversations();
+    }
+  }, [refreshTrigger]);
 
   const loadFoldersAndConversations = async () => {
     try {
@@ -87,8 +96,15 @@ export const ChatHistorySidebar = ({
     if (!newFolderName.trim()) return;
 
     try {
+      console.log('Creating folder with name:', newFolderName.trim());
+      
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
+      if (!user) {
+        console.error('No user found when creating folder');
+        throw new Error('User not authenticated');
+      }
+
+      console.log('User found:', user.id);
 
       const { data, error } = await supabase
         .from('chat_folders')
@@ -101,7 +117,12 @@ export const ChatHistorySidebar = ({
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Database error creating folder:', error);
+        throw error;
+      }
+
+      console.log('Folder created successfully:', data);
 
       setFolders(prev => [...prev, data]);
       setNewFolderName("");
@@ -115,7 +136,7 @@ export const ChatHistorySidebar = ({
       console.error('Error creating folder:', error);
       toast({
         title: "Error",
-        description: "Failed to create folder",
+        description: error instanceof Error ? error.message : "Failed to create folder",
         variant: "destructive",
       });
     }

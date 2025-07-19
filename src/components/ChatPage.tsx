@@ -40,6 +40,7 @@ export const ChatPage = () => {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [currentConversation, setCurrentConversation] = useState<Conversation | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -256,6 +257,8 @@ export const ChatPage = () => {
       conversation = await createNewConversation(inputMessage);
       if (!conversation) return;
       setCurrentConversation(conversation);
+      // Trigger sidebar refresh for new conversation
+      setRefreshTrigger(prev => prev + 1);
     }
 
     const userMessage: Message = {
@@ -538,6 +541,7 @@ export const ChatPage = () => {
         currentConversationId={currentConversation?.id || null}
         onConversationSelect={handleConversationSelect}
         onNewConversation={handleNewConversation}
+        refreshTrigger={refreshTrigger}
       />
     </div>
   );
