@@ -1,5 +1,3 @@
-
-
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -15,7 +13,7 @@ interface PublicPage {
   content: string;
   updated_at: string;
   view_count: number;
-  recommended_reading?: any[];
+  recommended_reading?: any[] | null;
   profiles?: {
     display_name?: string;
   };
@@ -59,8 +57,9 @@ export function PublicPageView() {
         .eq('user_id', data.created_by)
         .single();
 
-      const enrichedPage = {
+      const enrichedPage: PublicPage = {
         ...data,
+        recommended_reading: Array.isArray(data.recommended_reading) ? data.recommended_reading : null,
         profiles: profileData
       };
 
@@ -211,4 +210,3 @@ export function PublicPageView() {
     </div>
   );
 }
-
