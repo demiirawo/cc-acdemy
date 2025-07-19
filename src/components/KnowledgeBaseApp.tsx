@@ -42,7 +42,7 @@ function PageView({
     url?: string;
     fileUrl?: string;
     fileName?: string;
-    category?: string;
+    category?: string; // Made optional to match database structure
   }>>([]);
   const {
     toast
@@ -68,7 +68,7 @@ function PageView({
             type: ['link', 'file', 'document', 'guide', 'reference'].includes(item.type) 
               ? item.type 
               : 'link',
-            // Ensure category is included
+            // Ensure category is included, default to 'General' if missing
             category: item.category || 'General'
           }));
           setRecommendedReading(validReading);
@@ -81,6 +81,7 @@ function PageView({
     };
     fetchPageSettings();
   }, [currentPage.id]);
+
   const togglePublicAccess = async () => {
     try {
       const newIsPublic = !isPublic;
@@ -160,6 +161,7 @@ function PageView({
       </div>
     </div>;
 }
+
 type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'people' | 'settings' | 'whiteboard' | 'user-management';
 interface SidebarItem {
   id: string;
@@ -186,6 +188,7 @@ interface Page {
     category?: string;
   }>;
 }
+
 export function KnowledgeBaseApp() {
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
   const [selectedItemId, setSelectedItemId] = useState<string>('home');
@@ -215,6 +218,7 @@ export function KnowledgeBaseApp() {
   if (!user) {
     return <AuthForm onAuthStateChange={() => window.location.reload()} />;
   }
+
   const handleItemSelect = async (item: SidebarItem) => {
     setSelectedItemId(item.id);
     if (item.id === 'home') {
@@ -284,6 +288,7 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
     }
   };
+
   const handleCreatePage = () => {
     handleCreatePageInEditor();
   };
@@ -349,53 +354,63 @@ export function KnowledgeBaseApp() {
     setIsEditing(true);
     setCurrentView('editor');
   };
-  const handleSavePage = async (title: string, content: string, recommendedReading?: Array<{
+
+  // Updated handleSavePage function to match new interface
+  const handleSavePage = async (data: {
     title: string;
-    url?: string;
-    description: string;
-    fileUrl?: string;
-    fileName?: string;
-    type?: string;
-    category?: string;
-  }>) => {
+    content: string;
+    tags: string[];
+    recommendedReading: Array<{
+      title: string;
+      description: string;
+      type: 'link' | 'file';
+      url?: string;
+      fileUrl?: string;
+      fileName?: string;
+      category?: string;
+    }>;
+    isPublic: boolean;
+  }) => {
     if (!currentPage || !user) return;
     try {
       if (currentPage.id === 'new') {
         // Create new page
         const {
-          data,
+          data: newPage,
           error
         } = await supabase.from('pages').insert({
-          title,
-          content,
-          recommended_reading: recommendedReading || [],
-          created_by: user.id
+          title: data.title,
+          content: data.content,
+          recommended_reading: data.recommendedReading || [],
+          created_by: user.id,
+          is_public: data.isPublic
         }).select().single();
         if (error) throw error;
         setCurrentPage({
           ...currentPage,
-          id: data.id,
-          title,
-          content,
-          lastUpdated: data.updated_at
+          id: newPage.id,
+          title: data.title,
+          content: data.content,
+          lastUpdated: newPage.updated_at
         });
       } else {
         // Update existing page
         const {
           error
         } = await supabase.from('pages').update({
-          title,
-          content,
-          recommended_reading: recommendedReading || [],
+          title: data.title,
+          content: data.content,
+          recommended_reading: data.recommendedReading || [],
+          is_public: data.isPublic,
           updated_at: new Date().toISOString()
         }).eq('id', currentPage.id);
         if (error) throw error;
         setCurrentPage({
           ...currentPage,
-          title,
-          content,
+          title: data.title,
+          content: data.content,
           lastUpdated: new Date().toISOString(),
-          recommended_reading: (recommendedReading || []).map(item => ({
+          recommended_reading: (data.recommendedReading || []).map(item => ({
             ...item,
             type: item.type || (item.url ? 'link' : 'file'),
             category: item.category || 'General'
@@ -406,7 +421,7 @@ export function KnowledgeBaseApp() {
       setCurrentView('page');
       toast({
         title: "Page saved",
-        description: `"${title}" has been saved successfully.`
+        description: `"${data.title}" has been saved successfully.`
       });
     } catch (error) {
       console.error('Error saving page:', error);
@@ -417,6 +432,7 @@ export function KnowledgeBaseApp() {
       });
     }
   };
+
   const handlePreview = () => {
     setIsEditing(false);
     setCurrentView('page');
@@ -428,6 +444,7 @@ export function KnowledgeBaseApp() {
       type: 'page'
     });
   };
+
   return <div className="flex h-screen bg-background">
       <ResizableSidebar onItemSelect={handleItemSelect} selectedId={selectedItemId} onCreatePage={handleCreatePage} onCreateSubPage={handleCreateSubPage} onCreatePageInEditor={handleCreatePageInEditor} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">

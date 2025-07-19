@@ -37,7 +37,7 @@ interface RecommendedReadingItem {
   url?: string;
   fileUrl?: string;
   fileName?: string;
-  category: string; // Added category field
+  category?: string; // Made optional to match database structure
 }
 
 interface EnhancedContentEditorProps {
@@ -55,6 +55,7 @@ interface EnhancedContentEditorProps {
   }) => void;
   onPreview?: () => void;
   isEditing?: boolean;
+  pageId?: string;
 }
 
 export function EnhancedContentEditor({ 
@@ -65,12 +66,18 @@ export function EnhancedContentEditor({
   isPublic = true,
   onSave, 
   onPreview,
-  isEditing = true 
+  isEditing = true,
+  pageId 
 }: EnhancedContentEditorProps) {
   const [currentTitle, setCurrentTitle] = useState(title);
   const [currentContent, setCurrentContent] = useState(content);
   const [currentTags, setCurrentTags] = useState<string[]>(tags);
-  const [currentRecommendedReading, setCurrentRecommendedReading] = useState<RecommendedReadingItem[]>(recommendedReading);
+  const [currentRecommendedReading, setCurrentRecommendedReading] = useState<RecommendedReadingItem[]>(
+    recommendedReading.map(item => ({
+      ...item,
+      category: item.category || 'General' // Default to 'General' if category is missing
+    }))
+  );
   const [currentIsPublic, setCurrentIsPublic] = useState(isPublic);
   const [newTag, setNewTag] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
