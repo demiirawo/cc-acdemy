@@ -566,7 +566,7 @@ export function KnowledgeBaseApp() {
               )}
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">
+              <span className="text-sm text-muted-foreground text-right">
                 {user?.user_metadata?.display_name || user?.email}
               </span>
               <Button variant="ghost" size="sm" onClick={signOut}>
