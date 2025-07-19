@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy, FileText } from "lucide-react";
 import { UserManagement } from "./UserManagement";
 import { RecommendedReadingSection } from "./RecommendedReadingSection";
+import { RecommendedReadingItem } from '@/types/recommendedReading';
 
 // Page view component
 function PageView({
@@ -34,16 +35,7 @@ function PageView({
 }) {
   const [isPublic, setIsPublic] = useState(false);
   const [publicToken, setPublicToken] = useState('');
-  const [recommendedReading, setRecommendedReading] = useState<Array<{
-    id?: string;
-    title: string;
-    description: string;
-    type: 'link' | 'file' | 'document' | 'guide' | 'reference';
-    url?: string;
-    fileUrl?: string;
-    fileName?: string;
-    category?: string; // Made optional to match database structure
-  }>>([]);
+  const [recommendedReading, setRecommendedReading] = useState<RecommendedReadingItem[]>([]);
   const {
     toast
   } = useToast();
@@ -177,16 +169,7 @@ interface Page {
   content: string;
   lastUpdated: string;
   author: string;
-  recommended_reading?: Array<{
-    id?: string;
-    title: string;
-    description: string;
-    type: string;
-    url?: string;
-    fileUrl?: string;
-    fileName?: string;
-    category?: string;
-  }>;
+  recommended_reading?: RecommendedReadingItem[];
 }
 
 export function KnowledgeBaseApp() {
@@ -265,7 +248,7 @@ export function KnowledgeBaseApp() {
             content: data.content,
             lastUpdated: data.updated_at,
             author: 'User',
-            recommended_reading: data.recommended_reading as any || []
+            recommended_reading: data.recommended_reading as RecommendedReadingItem[] || []
           });
           setCurrentView('page');
           setIsEditing(false);
@@ -360,15 +343,7 @@ export function KnowledgeBaseApp() {
     title: string;
     content: string;
     tags: string[];
-    recommendedReading: Array<{
-      title: string;
-      description: string;
-      type: 'link' | 'file';
-      url?: string;
-      fileUrl?: string;
-      fileName?: string;
-      category?: string;
-    }>;
+    recommendedReading: RecommendedReadingItem[];
     isPublic: boolean;
   }) => {
     if (!currentPage || !user) return;
@@ -410,11 +385,7 @@ export function KnowledgeBaseApp() {
           title: data.title,
           content: data.content,
           lastUpdated: new Date().toISOString(),
-          recommended_reading: (data.recommendedReading || []).map(item => ({
-            ...item,
-            type: item.type || (item.url ? 'link' : 'file'),
-            category: item.category || 'General'
-          }))
+          recommended_reading: data.recommendedReading || []
         });
       }
       setIsEditing(false);
@@ -481,7 +452,7 @@ export function KnowledgeBaseApp() {
         {currentView === 'whiteboard' && <WhiteboardCanvas />}
         {currentView === 'user-management' && <UserManagement />}
         
-        {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} />}
+        {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} recommendedReading={currentPage.recommended_reading} />}
         
         {currentView === 'page' && currentPage && <PageView currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
       </div>

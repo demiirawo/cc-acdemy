@@ -6,16 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, X, FileText } from "lucide-react";
-
-interface RecommendedReadingItem {
-  title: string;
-  description: string;
-  type: 'link' | 'file';
-  url?: string;
-  fileUrl?: string;
-  fileName?: string;
-  category: string;
-}
+import { RecommendedReadingItem } from '@/types/recommendedReading';
 
 interface RecommendedReadingFormProps {
   items: RecommendedReadingItem[];
@@ -32,7 +23,7 @@ export function RecommendedReadingForm({ items, onChange }: RecommendedReadingFo
   });
 
   const addItem = () => {
-    if (!newItem.title.trim() || !newItem.category.trim()) return;
+    if (!newItem.title.trim() || !newItem.category?.trim()) return;
     
     if (newItem.type === 'link' && !newItem.url?.trim()) return;
     if (newItem.type === 'file' && (!newItem.fileUrl?.trim() || !newItem.fileName?.trim())) return;
@@ -73,7 +64,7 @@ export function RecommendedReadingForm({ items, onChange }: RecommendedReadingFo
                 <div className="flex-1">
                   <div className="font-medium">{item.title}</div>
                   <div className="text-sm text-muted-foreground">
-                    Category: {item.category} • Type: {item.type}
+                    Category: {item.category || 'General'} • Type: {item.type}
                   </div>
                   {item.description && (
                     <div className="text-sm text-muted-foreground mt-1">{item.description}</div>
@@ -120,7 +111,7 @@ export function RecommendedReadingForm({ items, onChange }: RecommendedReadingFo
                   <Label htmlFor="category">Category *</Label>
                   <Input
                     id="category"
-                    value={newItem.category}
+                    value={newItem.category || ''}
                     onChange={(e) => updateNewItem('category', e.target.value)}
                     placeholder="e.g., Training, Policies, Resources"
                   />
@@ -163,7 +154,7 @@ export function RecommendedReadingForm({ items, onChange }: RecommendedReadingFo
                   <Label htmlFor="category-file">Category *</Label>
                   <Input
                     id="category-file"
-                    value={newItem.category}
+                    value={newItem.category || ''}
                     onChange={(e) => updateNewItem('category', e.target.value)}
                     placeholder="e.g., Training, Policies, Resources"
                   />
@@ -202,7 +193,7 @@ export function RecommendedReadingForm({ items, onChange }: RecommendedReadingFo
 
           <Button 
             onClick={addItem}
-            disabled={!newItem.title.trim() || !newItem.category.trim() || 
+            disabled={!newItem.title.trim() || !newItem.category?.trim() || 
               (newItem.type === 'link' && !newItem.url?.trim()) ||
               (newItem.type === 'file' && (!newItem.fileUrl?.trim() || !newItem.fileName?.trim()))}
             className="w-full"

@@ -29,16 +29,7 @@ import {
 } from "lucide-react";
 import { RecommendedReadingForm } from './RecommendedReadingForm';
 import { RecommendedReadingSection } from './RecommendedReadingSection';
-
-interface RecommendedReadingItem {
-  title: string;
-  description: string;
-  type: 'link' | 'file';
-  url?: string;
-  fileUrl?: string;
-  fileName?: string;
-  category?: string; // Made optional to match database structure
-}
+import { RecommendedReadingItem } from '@/types/recommendedReading';
 
 interface EnhancedContentEditorProps {
   title?: string;
