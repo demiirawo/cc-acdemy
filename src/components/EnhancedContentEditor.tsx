@@ -1548,60 +1548,6 @@ export function EnhancedContentEditor({
     };
   };
 
-  const insertIframe = () => {
-    const url = prompt("Enter the URL for the iframe (e.g., website, map, or embed):");
-    if (url) {
-      const width = prompt("Enter width (e.g., 100%, 800px):", "100%") || "100%";
-      const height = prompt("Enter height (e.g., 800px, 1200px):", "800px") || "800px";
-      
-      // Validate URL format
-      let validUrl = url;
-      if (!url.match(/^https?:\/\//i)) {
-        validUrl = 'https://' + url;
-      }
-      
-      const iframeId = `iframe-${Date.now()}`;
-      
-      // Create iframe element directly instead of inserting as text
-      const container = document.createElement('div');
-      container.className = 'iframe-container';
-      container.style.cssText = 'text-align: center; margin: 10px 0; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;';
-      
-      const iframe = document.createElement('iframe');
-      iframe.id = iframeId;
-      iframe.src = validUrl;
-      iframe.width = width;
-      iframe.height = height;
-      iframe.frameBorder = '0';
-      iframe.allowFullscreen = true;
-      iframe.style.cssText = 'max-width: 100%; border: none; display: block;';
-      iframe.onclick = () => (window as any).showIframeControls(iframeId);
-      
-      container.appendChild(iframe);
-      
-      // Insert the element at cursor position
-      const selection = window.getSelection();
-      if (selection && selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0);
-        range.deleteContents();
-        range.insertNode(container);
-        
-        // Move cursor after inserted element
-        range.setStartAfter(container);
-        range.setEndAfter(container);
-        selection.removeAllRanges();
-        selection.addRange(range);
-      }
-      
-      updateContent();
-      setTimeout(() => setupIframeControls(), 100);
-      
-      toast({
-        title: "Iframe embedded",
-        description: "Click the iframe to change alignment and size",
-      });
-    }
-  };
 
   const setupIframeControls = () => {
     (window as any).showIframeControls = (iframeId: string) => {
@@ -2123,7 +2069,6 @@ export function EnhancedContentEditor({
     { icon: Link, action: insertLink, tooltip: "Insert Link" },
     { icon: Image, action: insertImage, tooltip: "Insert Image" },
     { icon: Youtube, action: insertYouTube, tooltip: "Insert YouTube Video" },
-    { icon: Monitor, action: insertIframe, tooltip: "Embed Iframe" },
     { 
       icon: () => (
         <div className="w-4 h-4 border-t-2 border-foreground"></div>
@@ -2230,6 +2175,64 @@ export function EnhancedContentEditor({
           setupTableControls();
           makeTableResizable();
         }, 100);
+        return;
+      }
+      
+      // Check if it contains iframes and handle them specially
+      const iframes = doc.querySelectorAll('iframe');
+      if (iframes.length > 0) {
+        iframes.forEach(iframe => {
+          const iframeId = `iframe-${Date.now()}`;
+          
+          // Create wrapper container
+          const container = document.createElement('div');
+          container.className = 'iframe-container';
+          container.style.cssText = 'text-align: center; margin: 10px 0; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;';
+          
+          // Clone the iframe and add our properties
+          const newIframe = iframe.cloneNode(true) as HTMLIFrameElement;
+          newIframe.id = iframeId;
+          newIframe.style.cssText = 'max-width: 100%; border: none; display: block;';
+          newIframe.frameBorder = '0';
+          newIframe.allowFullscreen = true;
+          
+          // Set default dimensions if not specified
+          if (!newIframe.width || newIframe.width === '') {
+            newIframe.width = '100%';
+          }
+          if (!newIframe.height || newIframe.height === '') {
+            newIframe.height = '800px';
+          }
+          
+          newIframe.onclick = () => (window as any).showIframeControls(iframeId);
+          
+          container.appendChild(newIframe);
+          iframe.replaceWith(container);
+        });
+        
+        // Insert the modified HTML
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+          range.deleteContents();
+          
+          // Convert HTML string to actual DOM elements
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = doc.body.innerHTML;
+          
+          // Insert each child element
+          while (tempDiv.firstChild) {
+            range.insertNode(tempDiv.firstChild);
+          }
+        }
+        
+        updateContent();
+        setTimeout(() => setupIframeControls(), 100);
+        
+        toast({
+          title: "Iframe embedded",
+          description: "Iframe has been embedded successfully. Click it to adjust settings.",
+        });
         return;
       }
       
