@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, BookOpen, Folder, ChevronRight, ChevronDown, Home, Clock, Tag, Users, Settings, Globe, FolderOpen, FileText, MoreHorizontal, Edit, Copy, Share, Star, Archive, Trash2, Move, ArrowUp, ArrowDown } from "lucide-react";
+import { Search, Plus, BookOpen, Folder, ChevronRight, ChevronDown, Home, Clock, Tag, Users, Settings, Globe, FolderOpen, FileText, MoreHorizontal, Edit, Copy, Share, Star, Archive, Trash2, Move, ArrowUp, ArrowDown, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -7,6 +7,27 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  useDraggable,
+  useDroppable
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 interface SidebarItem {
   id: string;
   title: string;
@@ -83,7 +104,8 @@ interface SidebarTreeItemProps {
   onMovePage?: (pageId: string, newParentId: string | null) => void;
   hierarchyData?: SidebarItem[];
 }
-function SidebarTreeItem({
+// Draggable/Droppable SidebarTreeItem component
+function DraggableSidebarTreeItem({
   item,
   level,
   onSelect,
@@ -101,6 +123,39 @@ function SidebarTreeItem({
   const hasChildren = item.children && item.children.length > 0;
   const isSelected = selectedId === item.id;
   const { toast } = useToast();
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ 
+    id: item.id,
+    data: {
+      type: item.type,
+      item
+    }
+  });
+
+  const {
+    setNodeRef: setDroppableRef,
+    isOver,
+  } = useDroppable({
+    id: `droppable-${item.id}`,
+    data: {
+      type: item.type,
+      item,
+      accepts: ['page'] // Only pages can be dropped
+    }
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
 
   const handleMovePageUp = async (pageId: string) => {
     try {
@@ -259,32 +314,69 @@ function SidebarTreeItem({
       });
     }
   };
-  return <div>
-      <div className={cn("flex items-center gap-2 px-2 py-1.5 text-sm rounded-md cursor-pointer transition-all duration-200 group", "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground", isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium", level > 0 && "ml-2")} style={{
-      paddingLeft: `${level * 12 + 8}px`
-    }} onClick={() => onSelect(item)} onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "relative group",
+        isOver && "bg-sidebar-accent/20",
+        isDragging && "opacity-50"
+      )}
+    >
+      <div 
+        ref={setDroppableRef}
+        className={cn(
+          "flex items-center gap-2 px-2 py-1.5 text-sm rounded-md cursor-pointer transition-all duration-200",
+          "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+          isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
+          level > 0 && "ml-2"
+        )} 
+        style={{ paddingLeft: `${level * 12 + 8}px` }} 
+        onClick={() => onSelect(item)} 
+        onMouseEnter={() => setIsHovered(true)} 
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {/* Drag handle - only for pages */}
+        {item.type === 'page' && (
+          <div
+            {...attributes}
+            {...listeners}
+            className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <GripVertical className="h-3 w-3 text-sidebar-foreground/50" />
+          </div>
+        )}
+        
         {hasChildren && <Button variant="ghost" size="sm" className="h-4 w-4 p-0 hover:bg-transparent" onClick={e => {
-        e.stopPropagation();
-        setIsExpanded(!isExpanded);
-      }}>
-            {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-          </Button>}
+          e.stopPropagation();
+          setIsExpanded(!isExpanded);
+        }}>
+          {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        </Button>}
         {!hasChildren && <div className="w-4" />}
         
-        {item.type === 'space' || hasChildren || (!item.parent_page_id && item.type === 'page') ? isExpanded ? <FolderOpen className="h-4 w-4 text-pink-500 flex-shrink-0" /> : <Folder className="h-4 w-4 text-pink-500 flex-shrink-0" /> : <FileText className="h-4 w-4 text-white flex-shrink-0" />}
+        {item.type === 'space' || hasChildren || (!item.parent_page_id && item.type === 'page') ? 
+          isExpanded ? 
+            <FolderOpen className="h-4 w-4 text-pink-500 flex-shrink-0" /> : 
+            <Folder className="h-4 w-4 text-pink-500 flex-shrink-0" /> : 
+          <FileText className="h-4 w-4 text-white flex-shrink-0" />
+        }
         
         <span className="truncate flex-1 text-neutral-50 font-medium">{item.title}</span>
-        
         
         {/* Action buttons - show on hover */}
         <div className={cn("flex items-center gap-1 transition-opacity duration-200", isHovered || isSelected ? "opacity-100" : "opacity-0")}>
           {/* Add child page button */}
-          {(item.type === 'space' || item.type === 'page') && onCreatePageInEditor && <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-sidebar-accent/50" onClick={e => {
-          e.stopPropagation();
-          onCreatePageInEditor(item.id);
-        }} title="Add child page">
+          {(item.type === 'space' || item.type === 'page') && onCreatePageInEditor && (
+            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-sidebar-accent/50" onClick={e => {
+              e.stopPropagation();
+              onCreatePageInEditor(item.id);
+            }} title="Add child page">
               <Plus className="h-3 w-3" />
-            </Button>}
+            </Button>
+          )}
           
           {/* Move page dropdown for reordering pages */}
           {item.type === 'page' && onMovePage && (
@@ -408,10 +500,33 @@ function SidebarTreeItem({
         </div>
       </div>
       
-      {hasChildren && isExpanded && <div className="ml-2">
-          {item.children?.map(child => <SidebarTreeItem key={child.id} item={child} level={level + 1} onSelect={onSelect} selectedId={selectedId} onCreateSubPage={onCreateSubPage} onCreatePageInEditor={onCreatePageInEditor} onDuplicatePage={onDuplicatePage} onArchivePage={onArchivePage} onCopyLink={onCopyLink} onMovePage={onMovePage} hierarchyData={hierarchyData} />)}
-        </div>}
-    </div>;
+      {/* Drop zone indicator */}
+      {isOver && (
+        <div className="absolute -bottom-1 left-0 right-0 h-0.5 bg-primary rounded" />
+      )}
+      
+      {hasChildren && isExpanded && (
+        <div className="ml-2">
+          {item.children?.map(child => (
+            <DraggableSidebarTreeItem 
+              key={child.id} 
+              item={child} 
+              level={level + 1} 
+              onSelect={onSelect} 
+              selectedId={selectedId} 
+              onCreateSubPage={onCreateSubPage} 
+              onCreatePageInEditor={onCreatePageInEditor} 
+              onDuplicatePage={onDuplicatePage} 
+              onArchivePage={onArchivePage} 
+              onCopyLink={onCopyLink} 
+              onMovePage={onMovePage} 
+              hierarchyData={hierarchyData} 
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 interface RealKnowledgeBaseSidebarProps {
   onItemSelect: (item: SidebarItem) => void;
@@ -434,9 +549,20 @@ export function RealKnowledgeBaseSidebar({
   const [pages, setPages] = useState<Page[]>([]);
   const [hierarchyData, setHierarchyData] = useState<SidebarItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const {
-    toast
-  } = useToast();
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  // Configure drag sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // 8px
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
   useEffect(() => {
     fetchHierarchyData();
 
@@ -691,8 +817,81 @@ export function RealKnowledgeBaseSidebar({
     } else if (onCreatePage) {
       onCreatePage();
     }
+   };
+
+  // Drag and drop handlers
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
   };
-  const filteredHierarchy = hierarchyData.filter(item => item.title.toLowerCase().includes(searchQuery.toLowerCase()) || item.children && item.children.some(child => child.title.toLowerCase().includes(searchQuery.toLowerCase())));
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+
+    if (!over || active.id === over.id) {
+      return;
+    }
+
+    const activeId = active.id as string;
+    const overId = over.id as string;
+
+    // Handle different drop scenarios
+    if (overId.startsWith('droppable-')) {
+      // Dropping onto a parent item (for nesting)
+      const newParentId = overId.replace('droppable-', '');
+      await handleMovePage(activeId, newParentId);
+    } else {
+      // Reordering within the same level
+      await handleReorderPages(activeId, overId);
+    }
+  };
+
+  const handleReorderPages = async (activeId: string, overId: string) => {
+    try {
+      // Find the active and over items in the flat pages list
+      const activePage = pages.find(p => p.id === activeId);
+      const overPage = pages.find(p => p.id === overId);
+      
+      if (!activePage || !overPage) return;
+
+      // Only allow reordering if they're in the same context (same parent and space)
+      if (activePage.parent_page_id !== overPage.parent_page_id || 
+          activePage.space_id !== overPage.space_id) {
+        return;
+      }
+
+      // Swap their created_at timestamps
+      const activeTimestamp = activePage.created_at;
+      const overTimestamp = overPage.created_at;
+
+      await supabase
+        .from('pages')
+        .update({ created_at: overTimestamp })
+        .eq('id', activeId);
+        
+      await supabase
+        .from('pages')
+        .update({ created_at: activeTimestamp })
+        .eq('id', overId);
+
+      toast({
+        title: "Page reordered",
+        description: "Page has been moved successfully."
+      });
+      fetchHierarchyData();
+    } catch (error) {
+      console.error('Error reordering pages:', error);
+      toast({
+        title: "Error",
+        description: "Failed to reorder pages.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const activeItem = activeId ? pages.find(p => p.id === activeId) : null;
+
+   const filteredHierarchy = hierarchyData.filter(item => item.title.toLowerCase().includes(searchQuery.toLowerCase()) || item.children && item.children.some(child => child.title.toLowerCase().includes(searchQuery.toLowerCase())));
   return <div className="w-full border-r-0 flex flex-col h-full bg-purple-800">
       {/* Header */}
       <div className="p-4 border-b border-sidebar-border">
@@ -786,21 +985,74 @@ export function RealKnowledgeBaseSidebar({
         
         <ScrollArea className="h-full">
           <div className="pb-16">
-            {loading ? <div className="space-y-2">
-                {[...Array(5)].map((_, i) => <div key={i} className="h-8 bg-sidebar-accent/20 rounded animate-pulse" />)}
-              </div> : <div className="space-y-1">
-                {filteredHierarchy.length > 0 ? filteredHierarchy.map(item => <SidebarTreeItem key={item.id} item={item} level={0} onSelect={handleItemSelect} selectedId={selectedId} onCreateSubPage={onCreateSubPage} onCreatePageInEditor={onCreatePageInEditor} onDuplicatePage={handleDuplicatePage} onArchivePage={handleArchivePage} onCopyLink={handleCopyLink} onMovePage={handleMovePage} hierarchyData={hierarchyData} />) : searchQuery ? <div className="text-center py-8 text-sidebar-foreground/50">
-                    <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No results found</p>
-                  </div> : <div className="text-center py-8 text-sidebar-foreground/50">
-                    <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm mb-3">No content yet</p>
-                    {onCreatePage && <Button variant="outline" size="sm" onClick={handleCreatePage}>
-                        <Plus className="h-3 w-3 mr-1" />
-                        Create first page
-                      </Button>}
-                  </div>}
-              </div>}
+            {loading ? (
+              <div className="space-y-2">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-8 bg-sidebar-accent/20 rounded animate-pulse" />
+                ))}
+              </div>
+            ) : (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+              >
+                <div className="space-y-1">
+                  {filteredHierarchy.length > 0 ? (
+                    <SortableContext 
+                      items={filteredHierarchy.map(item => item.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {filteredHierarchy.map(item => (
+                        <DraggableSidebarTreeItem 
+                          key={item.id} 
+                          item={item} 
+                          level={0} 
+                          onSelect={handleItemSelect} 
+                          selectedId={selectedId} 
+                          onCreateSubPage={onCreateSubPage} 
+                          onCreatePageInEditor={onCreatePageInEditor} 
+                          onDuplicatePage={handleDuplicatePage} 
+                          onArchivePage={handleArchivePage} 
+                          onCopyLink={handleCopyLink} 
+                          onMovePage={handleMovePage} 
+                          hierarchyData={hierarchyData} 
+                        />
+                      ))}
+                    </SortableContext>
+                  ) : searchQuery ? (
+                    <div className="text-center py-8 text-sidebar-foreground/50">
+                      <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No results found</p>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-sidebar-foreground/50">
+                      <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm mb-3">No content yet</p>
+                      {onCreatePage && (
+                        <Button variant="outline" size="sm" onClick={handleCreatePage}>
+                          <Plus className="h-3 w-3 mr-1" />
+                          Create first page
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+                
+                {/* Drag overlay */}
+                <DragOverlay>
+                  {activeItem ? (
+                    <div className="bg-sidebar border border-sidebar-border rounded-md p-2 shadow-lg opacity-90">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-4 w-4 text-white" />
+                        <span className="text-sidebar-foreground font-medium">{activeItem.title}</span>
+                      </div>
+                    </div>
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
+            )}
           </div>
         </ScrollArea>
       </div>
