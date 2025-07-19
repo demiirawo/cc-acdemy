@@ -440,15 +440,8 @@ export function KnowledgeBaseApp() {
     setIsEditing(true);
     setCurrentView('editor');
   };
-  const handleSavePage = async (title: string, content: string, recommendedReading?: Array<{
-    title: string;
-    url?: string;
-    description: string;
-    fileUrl?: string;
-    fileName?: string;
-    type?: string;
-    category?: string;
-  }>, orderedCategories?: string[]) => {
+
+  const handleSavePage = async (title: string, content: string, tags: string[]) => {
     if (!currentPage || !user) return;
     try {
       if (currentPage.id === 'new') {
@@ -459,8 +452,7 @@ export function KnowledgeBaseApp() {
         } = await supabase.from('pages').insert({
           title,
           content,
-          recommended_reading: recommendedReading || [],
-          category_order: orderedCategories || [],
+          tags,
           created_by: user.id
         }).select().single();
         if (error) throw error;
@@ -478,8 +470,7 @@ export function KnowledgeBaseApp() {
         } = await supabase.from('pages').update({
           title,
           content,
-          recommended_reading: recommendedReading || [],
-          category_order: orderedCategories || [],
+          tags,
           updated_at: new Date().toISOString()
         }).eq('id', currentPage.id);
         if (error) throw error;
@@ -487,13 +478,7 @@ export function KnowledgeBaseApp() {
           ...currentPage,
           title,
           content,
-          lastUpdated: new Date().toISOString(),
-          recommended_reading: (recommendedReading || []).map(item => ({
-            ...item,
-            type: item.type || (item.url ? 'link' : 'file'),
-            category: item.category || 'General'
-          })),
-          category_order: orderedCategories || []
+          lastUpdated: new Date().toISOString()
         });
       }
       setIsEditing(false);
@@ -511,6 +496,7 @@ export function KnowledgeBaseApp() {
       });
     }
   };
+
   const handlePreview = () => {
     setIsEditing(false);
     setCurrentView('page');
@@ -522,6 +508,7 @@ export function KnowledgeBaseApp() {
       type: 'page'
     });
   };
+
   return <div className="flex h-screen bg-background">
       <ResizableSidebar onItemSelect={handleItemSelect} selectedId={selectedItemId} onCreatePage={handleCreatePage} onCreateSubPage={handleCreateSubPage} onCreatePageInEditor={handleCreatePageInEditor} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
@@ -596,7 +583,7 @@ export function KnowledgeBaseApp() {
         {currentView === 'user-management' && <UserManagement />}
         {currentView === 'chat' && <ChatPage />}
         
-        {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} />}
+        {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} tags={[]} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} />}
         
         {currentView === 'page' && currentPage && <PageView currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
       </div>

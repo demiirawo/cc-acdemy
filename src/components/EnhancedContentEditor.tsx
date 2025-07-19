@@ -55,6 +55,16 @@ export function EnhancedContentEditor({
   const [lastSavedTitle, setLastSavedTitle] = useState(initialTitle);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [recommendedReading, setRecommendedReading] = useState<Array<{
+    id?: string;
+    title: string;
+    description: string;
+    type: 'link' | 'file' | 'document' | 'guide' | 'reference';
+    url?: string;
+    fileUrl?: string;
+    fileName?: string;
+    category?: string;
+  }>>([]);
   
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout>();
   const currentPageIdRef = useRef(pageId);
@@ -76,8 +86,37 @@ export function EnhancedContentEditor({
       setHasUnsavedChanges(false);
       setIsInitialized(true);
       currentPageIdRef.current = pageId;
+
+      // Fetch recommended reading for this page
+      fetchRecommendedReading();
     }
   }, [pageId, initialTitle, initialContent, initialTags, isInitialized]);
+
+  // Fetch recommended reading from database
+  const fetchRecommendedReading = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('pages')
+        .select('recommended_reading, category_order')
+        .eq('id', pageId)
+        .single();
+
+      if (error) throw error;
+
+      if (data?.recommended_reading && Array.isArray(data.recommended_reading)) {
+        const validReading = data.recommended_reading.map((item: any) => ({
+          ...item,
+          type: ['link', 'file', 'document', 'guide', 'reference'].includes(item.type) 
+            ? item.type 
+            : 'link',
+          category: item.category || 'General'
+        }));
+        setRecommendedReading(validReading);
+      }
+    } catch (error) {
+      console.error('Error fetching recommended reading:', error);
+    }
+  };
 
   // Track content changes
   useEffect(() => {
@@ -351,7 +390,12 @@ export function EnhancedContentEditor({
 
         {/* Recommended Reading Section */}
         <div className="border-t border-border">
-          <RecommendedReadingSection pageId={pageId} />
+          <RecommendedReadingSection 
+            items={recommendedReading} 
+            onItemClick={(item) => {
+              console.log('Recommended reading item clicked:', item);
+            }}
+          />
         </div>
       </div>
     </div>
