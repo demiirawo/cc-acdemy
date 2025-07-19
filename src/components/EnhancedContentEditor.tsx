@@ -45,7 +45,8 @@ import {
   AtSign,
   Plus,
   Minus,
-  Settings
+  Settings,
+  Monitor
 } from "lucide-react";
 
 interface ContentEditorProps {
@@ -1541,6 +1542,120 @@ export function EnhancedContentEditor({
     };
   };
 
+  const insertIframe = () => {
+    const url = prompt("Enter the URL for the iframe (e.g., website, map, or embed):");
+    if (url) {
+      const width = prompt("Enter width (e.g., 100%, 800px):", "100%") || "100%";
+      const height = prompt("Enter height (e.g., 400px, 600px):", "400px") || "400px";
+      
+      // Validate URL format
+      let validUrl = url;
+      if (!url.match(/^https?:\/\//i)) {
+        validUrl = 'https://' + url;
+      }
+      
+      const iframeId = `iframe-${Date.now()}`;
+      insertText(`
+        <div class="iframe-container" style="text-align: center; margin: 10px 0; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+          <iframe 
+            id="${iframeId}"
+            src="${validUrl}" 
+            width="${width}" 
+            height="${height}" 
+            frameborder="0" 
+            allowfullscreen
+            style="max-width: 100%; border: none; display: block;"
+            onclick="showIframeControls('${iframeId}')"
+          ></iframe>
+        </div>
+      `);
+      
+      setTimeout(() => setupIframeControls(), 100);
+      
+      toast({
+        title: "Iframe embedded",
+        description: "Click the iframe to change alignment and size",
+      });
+    }
+  };
+
+  const setupIframeControls = () => {
+    (window as any).showIframeControls = (iframeId: string) => {
+      const iframe = document.getElementById(iframeId);
+      if (!iframe) return;
+      
+      // Remove existing controls
+      document.querySelectorAll('.iframe-controls').forEach(control => control.remove());
+      
+      const controls = document.createElement('div');
+      controls.className = 'iframe-controls';
+      controls.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: white;
+        border: 1px solid #ccc;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 1000;
+        padding: 12px;
+        min-width: 200px;
+      `;
+      
+      controls.innerHTML = `
+        <h4 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600;">Iframe Controls</h4>
+        <div style="margin-bottom: 8px;">
+          <label style="display: block; margin-bottom: 4px; font-size: 12px;">Alignment:</label>
+          <button onclick="alignIframe('${iframeId}', 'left')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Left</button>
+          <button onclick="alignIframe('${iframeId}', 'center')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Center</button>
+          <button onclick="alignIframe('${iframeId}', 'right')" style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Right</button>
+        </div>
+        <div style="margin-bottom: 8px;">
+          <label style="display: block; margin-bottom: 4px; font-size: 12px;">Size:</label>
+          <button onclick="resizeIframe('${iframeId}', '100%', '300px')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Small</button>
+          <button onclick="resizeIframe('${iframeId}', '100%', '400px')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Medium</button>
+          <button onclick="resizeIframe('${iframeId}', '100%', '600px')" style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Large</button>
+        </div>
+        <button onclick="closeIframeControls()" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: #f5f5f5;">Close</button>
+      `;
+      
+      document.body.appendChild(controls);
+      
+      // Click outside to close
+      setTimeout(() => {
+        document.addEventListener('click', (e) => {
+          if (!controls.contains(e.target as Node)) {
+            controls.remove();
+          }
+        }, { once: true });
+      }, 100);
+    };
+    
+    (window as any).alignIframe = (iframeId: string, alignment: string) => {
+      const iframe = document.getElementById(iframeId);
+      if (!iframe) return;
+      
+      const container = iframe.parentElement;
+      if (container) {
+        container.style.textAlign = alignment;
+        updateContent();
+      }
+    };
+    
+    (window as any).resizeIframe = (iframeId: string, width: string, height: string) => {
+      const iframe = document.getElementById(iframeId) as HTMLIFrameElement;
+      if (!iframe) return;
+      
+      iframe.style.width = width;
+      iframe.style.height = height;
+      updateContent();
+    };
+    
+    (window as any).closeIframeControls = () => {
+      document.querySelectorAll('.iframe-controls').forEach(control => control.remove());
+    };
+  };
+
   const basicToolbarItems = [
     { icon: Bold, action: () => formatText('bold'), tooltip: "Bold (Ctrl+B)" },
     { icon: Italic, action: () => formatText('italic'), tooltip: "Italic (Ctrl+I)" },
@@ -1952,6 +2067,7 @@ export function EnhancedContentEditor({
     { icon: Link, action: insertLink, tooltip: "Insert Link" },
     { icon: Image, action: insertImage, tooltip: "Insert Image" },
     { icon: Youtube, action: insertYouTube, tooltip: "Insert YouTube Video" },
+    { icon: Monitor, action: insertIframe, tooltip: "Embed Iframe" },
     { 
       icon: () => (
         <div className="w-4 h-4 border-t-2 border-foreground"></div>
