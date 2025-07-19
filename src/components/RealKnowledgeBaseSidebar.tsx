@@ -242,7 +242,7 @@ function DraggableSidebarTreeItem({
         e.stopPropagation();
         setIsExpanded(!isExpanded);
       }}>
-            {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {isExpanded ? <ChevronDown className="h-3 w-3 text-white hover:animate-pulse" /> : <ChevronRight className="h-3 w-3 text-white hover:animate-pulse" />}
           </Button>}
         {!hasChildren && <div className="w-4" />}
         
@@ -260,46 +260,6 @@ function DraggableSidebarTreeItem({
               <Plus className="h-3 w-3" />
             </Button>}
           
-          {/* Enhanced Move page dropdown */}
-          {item.type === 'page' && <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" onClick={e => e.stopPropagation()} className="h-6 w-6 p-0 hover:bg-sidebar-accent/50" title="Move page" disabled={isLoading}>
-                  <Move className="h-3 w-3" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem onClick={e => {
-              e.stopPropagation();
-              handleMovePageUp(item.id);
-            }} disabled={isLoading}>
-                  <ArrowUp className="h-4 w-4 mr-2" />
-                  Move up
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={e => {
-              e.stopPropagation();
-              handleMovePageDown(item.id);
-            }} disabled={isLoading}>
-                  <ArrowDown className="h-4 w-4 mr-2" />
-                  Move down
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={e => {
-              e.stopPropagation();
-              handleMoveToParent(item.id, null);
-            }} disabled={isLoading}>
-                  <ArrowUp className="h-4 w-4 mr-2" />
-                  Move to top level
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {hierarchyData?.filter(h => h.id !== item.id && (h.type === 'space' || h.type === 'page')).map(parent => <DropdownMenuItem key={parent.id} onClick={e => {
-              e.stopPropagation();
-              handleMoveToParent(item.id, parent.id);
-            }} disabled={isLoading}>
-                    <Folder className="h-4 w-4 mr-2" />
-                    Move under "{parent.title.length > 20 ? parent.title.substring(0, 20) + '...' : parent.title}"
-                  </DropdownMenuItem>)}
-              </DropdownMenuContent>
-            </DropdownMenu>}
           
           {/* Context menu for pages */}
           {item.type === 'page' && <DropdownMenu>
@@ -681,33 +641,20 @@ export function RealKnowledgeBaseSidebar({
       if (overId.startsWith('droppable-')) {
         const newParentId = overId.replace('droppable-', '');
         console.log('Nesting page:', activeId, 'under:', newParentId);
-        const {
-          data,
-          error
-        } = await supabase.rpc('move_page_to_parent_safe', {
-          p_page_id: activeId,
-          p_new_parent_id: newParentId,
-          p_expected_version: 0
-        });
+        
+        // Simple parent update for nesting
+        const { error } = await supabase
+          .from('pages')
+          .update({ parent_page_id: newParentId })
+          .eq('id', activeId);
+          
         if (error) throw error;
-        const result = data as {
-          success: boolean;
-          error?: string;
-          message?: string;
-        };
-        if (result.success) {
-          toast({
-            title: "Success",
-            description: result.message || "Page moved successfully"
-          });
-          fetchHierarchyData();
-        } else {
-          toast({
-            title: "Cannot nest page",
-            description: result.error || "Failed to nest page",
-            variant: "destructive"
-          });
-        }
+        
+        toast({
+          title: "Success",
+          description: "Page nested successfully"
+        });
+        fetchHierarchyData();
       } else {
         // Handle reordering within the same level
         console.log('Reordering pages:', activeId, 'with:', overId);
