@@ -796,8 +796,8 @@ export function RealKnowledgeBaseSidebar({
       {/* Header */}
       <div className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2 mb-4">
-          <div className="w-12 h-12 bg-[#5e18eb] rounded-lg flex items-center justify-center overflow-hidden">
-            <img src="/lovable-uploads/d434f96d-1ac3-4f74-a546-93f9f1b3c09b.png" alt="Care Cuddle Logo" className="h-8 w-8 object-contain" />
+          <div className="w-20 h-20 bg-[#5e18eb] rounded-lg flex items-center justify-center overflow-hidden mx-auto">
+            <img src="/lovable-uploads/d434f96d-1ac3-4f74-a546-93f9f1b3c09b.png" alt="Care Cuddle Logo" className="h-16 w-16 object-contain" />
           </div>
           
         </div>
