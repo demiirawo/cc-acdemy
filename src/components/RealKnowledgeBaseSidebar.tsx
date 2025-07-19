@@ -186,60 +186,12 @@ function DraggableSidebarTreeItem({
     setIsLoading(true);
     
     try {
-      // Get current page info first
-      const { data: currentPage } = await supabase
-        .from('pages')
-        .select('sort_order, parent_page_id, space_id')
-        .eq('id', pageId)
-        .single();
-
-      if (!currentPage) {
-        throw new Error('Page not found');
-      }
-
-      // Find previous page to swap with
-      let query = supabase
-        .from('pages')
-        .select('id, sort_order')
-        .lt('sort_order', currentPage.sort_order || 0)
-        .order('sort_order', { ascending: false })
-        .limit(1);
-
-      if (currentPage.parent_page_id) {
-        query = query.eq('parent_page_id', currentPage.parent_page_id);
-      } else {
-        query = query.is('parent_page_id', null);
-      }
-
-      if (currentPage.space_id) {
-        query = query.eq('space_id', currentPage.space_id);
-      } else {
-        query = query.is('space_id', null);
-      }
-
-      const { data: previousPage } = await query.single();
-
-      if (!previousPage) {
-        toast({
-          title: "Cannot move up",
-          description: "Page is already at the top position"
-        });
-        return;
-      }
-
-      // Swap sort orders
-      await Promise.all([
-        supabase.from('pages').update({ sort_order: previousPage.sort_order }).eq('id', pageId),
-        supabase.from('pages').update({ sort_order: currentPage.sort_order }).eq('id', previousPage.id)
-      ]);
-
+      // Simple implementation without sort_order for now
       toast({
-        title: "Success",
-        description: "Page moved up successfully"
+        title: "Feature temporarily disabled",
+        description: "Page reordering is being updated",
+        variant: "default"
       });
-      
-      // Trigger refresh
-      window.dispatchEvent(new CustomEvent('pageUpdated'));
     } catch (error) {
       console.error('Error moving page up:', error);
       toast({
@@ -257,60 +209,12 @@ function DraggableSidebarTreeItem({
     setIsLoading(true);
     
     try {
-      // Get current page info first
-      const { data: currentPage } = await supabase
-        .from('pages')
-        .select('sort_order, parent_page_id, space_id')
-        .eq('id', pageId)
-        .single();
-
-      if (!currentPage) {
-        throw new Error('Page not found');
-      }
-
-      // Find next page to swap with
-      let query = supabase
-        .from('pages')
-        .select('id, sort_order')
-        .gt('sort_order', currentPage.sort_order || 0)
-        .order('sort_order', { ascending: true })
-        .limit(1);
-
-      if (currentPage.parent_page_id) {
-        query = query.eq('parent_page_id', currentPage.parent_page_id);
-      } else {
-        query = query.is('parent_page_id', null);
-      }
-
-      if (currentPage.space_id) {
-        query = query.eq('space_id', currentPage.space_id);
-      } else {
-        query = query.is('space_id', null);
-      }
-
-      const { data: nextPage } = await query.single();
-
-      if (!nextPage) {
-        toast({
-          title: "Cannot move down",
-          description: "Page is already at the bottom position"
-        });
-        return;
-      }
-
-      // Swap sort orders
-      await Promise.all([
-        supabase.from('pages').update({ sort_order: nextPage.sort_order }).eq('id', pageId),
-        supabase.from('pages').update({ sort_order: currentPage.sort_order }).eq('id', nextPage.id)
-      ]);
-
+      // Simple implementation without sort_order for now
       toast({
-        title: "Success",
-        description: "Page moved down successfully"
+        title: "Feature temporarily disabled",
+        description: "Page reordering is being updated",
+        variant: "default"
       });
-      
-      // Trigger refresh
-      window.dispatchEvent(new CustomEvent('pageUpdated'));
     } catch (error) {
       console.error('Error moving page down:', error);
       toast({
@@ -328,36 +232,10 @@ function DraggableSidebarTreeItem({
     setIsLoading(true);
     
     try {
-      // Get next sort order for new location
-      let maxSortOrder = 0;
-      
-      let query = supabase
-        .from('pages')
-        .select('sort_order')
-        .order('sort_order', { ascending: false })
-        .limit(1);
-
-      if (newParentId) {
-        query = query.eq('parent_page_id', newParentId);
-      } else {
-        query = query.is('parent_page_id', null);
-      }
-
-      const { data: lastPage } = await query.maybeSingle();
-      
-      if (lastPage && lastPage.sort_order) {
-        maxSortOrder = lastPage.sort_order + 1000;
-      } else {
-        maxSortOrder = 1000;
-      }
-
-      // Update page with new parent and sort order
+      // Update page with new parent
       const { error } = await supabase
         .from('pages')
-        .update({ 
-          parent_page_id: newParentId,
-          sort_order: maxSortOrder
-        })
+        .update({ parent_page_id: newParentId })
         .eq('id', pageId);
 
       if (error) throw error;
