@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy, FileText } from "lucide-react";
 import { UserManagement } from "./UserManagement";
 import { RecommendedReadingSection } from "./RecommendedReadingSection";
+import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 
 // Page view component
 function PageView({
@@ -176,6 +177,8 @@ interface Page {
   content: string;
   lastUpdated: string;
   author: string;
+  parent_page_id?: string | null;
+  space_id?: string | null;
   recommended_reading?: Array<{
     id?: string;
     title: string;
@@ -188,6 +191,12 @@ interface Page {
   }>;
   category_order?: string[];
 }
+
+interface BreadcrumbData {
+  id: string;
+  title: string;
+  type: 'space' | 'page';
+}
 export function KnowledgeBaseApp() {
   const [currentView, setCurrentView] = useState<ViewMode>('dashboard');
   const [selectedItemId, setSelectedItemId] = useState<string>('home');
@@ -196,6 +205,7 @@ export function KnowledgeBaseApp() {
   const [createPageDialogOpen, setCreatePageDialogOpen] = useState(false);
   const [createPageParentId, setCreatePageParentId] = useState<string | null>(null);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
+  const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbData[]>([]);
   const {
     user,
     loading,
@@ -204,6 +214,61 @@ export function KnowledgeBaseApp() {
   const {
     toast
   } = useToast();
+
+  // Build breadcrumb hierarchy
+  const buildBreadcrumbs = async (page: Page): Promise<BreadcrumbData[]> => {
+    const breadcrumbPath: BreadcrumbData[] = [];
+    let currentPageData = page;
+
+    try {
+      // Build path by following parent relationships
+      while (currentPageData.parent_page_id || currentPageData.space_id) {
+        if (currentPageData.parent_page_id) {
+          // Get parent page
+          const { data: parentPage, error } = await supabase
+            .from('pages')
+            .select('id, title, parent_page_id, space_id')
+            .eq('id', currentPageData.parent_page_id)
+            .single();
+          
+          if (error) break;
+          if (parentPage) {
+            breadcrumbPath.unshift({
+              id: parentPage.id,
+              title: parentPage.title,
+              type: 'page'
+            });
+            currentPageData = {
+              ...currentPageData,
+              parent_page_id: parentPage.parent_page_id,
+              space_id: parentPage.space_id
+            };
+          }
+        } else if (currentPageData.space_id) {
+          // Get space
+          const { data: space, error } = await supabase
+            .from('spaces')
+            .select('id, name')
+            .eq('id', currentPageData.space_id)
+            .single();
+          
+          if (error) break;
+          if (space) {
+            breadcrumbPath.unshift({
+              id: space.id,
+              title: space.name,
+              type: 'space'
+            });
+          }
+          break; // Spaces are root level
+        }
+      }
+    } catch (error) {
+      console.error('Error building breadcrumbs:', error);
+    }
+
+    return breadcrumbPath;
+  };
 
   // Show auth form if not logged in
   if (loading) {
@@ -222,24 +287,31 @@ export function KnowledgeBaseApp() {
     if (item.id === 'home') {
       setCurrentView('dashboard');
       setCurrentPage(null);
+      setBreadcrumbs([]);
     } else if (item.id === 'recent') {
       setCurrentView('recent');
       setCurrentPage(null);
+      setBreadcrumbs([]);
     } else if (item.id === 'tags') {
       setCurrentView('tags');
       setCurrentPage(null);
+      setBreadcrumbs([]);
     } else if (item.id === 'people') {
       setCurrentView('people');
       setCurrentPage(null);
+      setBreadcrumbs([]);
     } else if (item.id === 'settings') {
       setCurrentView('settings');
       setCurrentPage(null);
+      setBreadcrumbs([]);
     } else if (item.id === 'whiteboard') {
       setCurrentView('whiteboard');
       setCurrentPage(null);
+      setBreadcrumbs([]);
     } else if (item.id === 'user-management') {
       setCurrentView('user-management');
       setCurrentPage(null);
+      setBreadcrumbs([]);
     } else if (item.type === 'page') {
       try {
         // Fetch real page data from Supabase
@@ -254,21 +326,31 @@ export function KnowledgeBaseApp() {
             view_count,
             created_by,
             recommended_reading,
-            category_order
+            category_order,
+            parent_page_id,
+            space_id
           `).eq('id', item.id).single();
         if (error) throw error;
         if (data) {
-          setCurrentPage({
+          const pageData = {
             id: data.id,
             title: data.title,
             content: data.content,
             lastUpdated: data.updated_at,
             author: 'User',
+            parent_page_id: data.parent_page_id,
+            space_id: data.space_id,
             recommended_reading: data.recommended_reading as any || [],
             category_order: data.category_order as string[] || []
-          });
+          };
+          
+          setCurrentPage(pageData);
           setCurrentView('page');
           setIsEditing(false);
+
+          // Build breadcrumbs for this page
+          const breadcrumbPath = await buildBreadcrumbs(pageData);
+          setBreadcrumbs(breadcrumbPath);
 
           // Increment view count
           await supabase.from('pages').update({
@@ -442,10 +524,46 @@ export function KnowledgeBaseApp() {
         <div className="border-b border-border p-4 bg-background/95 backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold text-foreground">Care Cuddle Academy</h2>
-              {(currentView === 'page' || currentView === 'editor') && currentPage && <span className="text-muted-foreground">
-                  / {currentPage.title}
-                </span>}
+              {(currentView === 'page' || currentView === 'editor') && currentPage && breadcrumbs.length > 0 ? (
+                <Breadcrumb>
+                  <BreadcrumbList>
+                    {breadcrumbs.map((crumb, index) => (
+                      <div key={crumb.id} className="flex items-center">
+                        <BreadcrumbItem>
+                          <BreadcrumbLink 
+                            className="cursor-pointer text-muted-foreground hover:text-foreground"
+                            onClick={() => handleItemSelect({ 
+                              id: crumb.id, 
+                              title: crumb.title, 
+                              type: crumb.type === 'space' ? 'space' : 'page' 
+                            })}
+                          >
+                            {crumb.title}
+                          </BreadcrumbLink>
+                        </BreadcrumbItem>
+                        {index < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
+                      </div>
+                    ))}
+                    {breadcrumbs.length > 0 && <BreadcrumbSeparator />}
+                    <BreadcrumbItem>
+                      <BreadcrumbPage className="font-semibold text-foreground">
+                        {currentPage.title}
+                      </BreadcrumbPage>
+                    </BreadcrumbItem>
+                  </BreadcrumbList>
+                </Breadcrumb>
+              ) : (
+                <h2 className="text-lg font-semibold text-foreground">
+                  {currentView === 'dashboard' ? 'Dashboard' :
+                   currentView === 'recent' ? 'Recently Updated' :
+                   currentView === 'tags' ? 'Tags' :
+                   currentView === 'people' ? 'People' :
+                   currentView === 'settings' ? 'Settings' :
+                   currentView === 'whiteboard' ? 'Whiteboard' :
+                   currentView === 'user-management' ? 'User Management' :
+                   'Care Cuddle Academy'}
+                </h2>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">
