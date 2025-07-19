@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Search, Plus, BookOpen, Folder, ChevronRight, ChevronDown, Home, Clock, Tag, Users, Settings, Globe, FolderOpen, FileText, MoreHorizontal, Edit, Copy, Share, Star, Archive, Trash2, Move, ArrowUp, ArrowDown, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -1028,8 +1027,12 @@ export function RealKnowledgeBaseSidebar({
       {/* Header */}
       <div className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2 mb-4">
-          <div className="w-8 h-8 bg-gradient-primary rounded-lg flex items-center justify-center">
-            <BookOpen className="h-4 w-4 text-primary-foreground" />
+          <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center overflow-hidden">
+            <img 
+              src="/lovable-uploads/d434f96d-1ac3-4f74-a546-93f9f1b3c09b.png" 
+              alt="Care Cuddle Logo" 
+              className="h-6 w-6 object-contain"
+            />
           </div>
           <h1 className="font-semibold text-sidebar-foreground">Care Cuddle Academy</h1>
         </div>
