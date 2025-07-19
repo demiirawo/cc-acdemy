@@ -105,8 +105,8 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
     <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#5E18EB' }}>
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="w-20 h-16 flex items-center justify-center mx-auto mb-4">
-            <img src="/src/assets/care-cuddle-logo.png" alt="Care Cuddle" className="max-w-full max-h-full object-contain" />
+          <div className="w-20 h-20 flex items-center justify-center mx-auto mb-4">
+            <img src="/lovable-uploads/260e3091-eda4-4cc2-a0c5-5483261cafd3.png" alt="Care Cuddle" className="max-w-full max-h-full object-contain" />
           </div>
           <CardTitle className="text-2xl">Care Cuddle Academy</CardTitle>
         </CardHeader>
