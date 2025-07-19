@@ -163,44 +163,12 @@ function PageView({
         </div>
 
         {/* Recommended Reading Section */}
-        {recommendedReading.length > 0 && (
-          <div className="mt-8 pt-6 border-t border-border">
-            <h3 className="text-lg font-semibold text-foreground">Recommended reading</h3>
-            <div className="space-y-3 mt-4">
-              {recommendedReading.map((item, index) => (
-                <div 
-                  key={item.id || index} 
-                  className="flex items-center gap-3 p-4 border border-border rounded-lg bg-card hover:bg-muted/20 transition-colors cursor-pointer"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    if (item.type === 'link' && item.url) {
-                      window.open(item.url, '_blank');
-                    } else if (item.type === 'file' && item.fileUrl) {
-                      const link = document.createElement('a');
-                      link.href = item.fileUrl;
-                      link.download = item.fileName || 'download';
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                    } else if (item.id) {
-                      onPageSelect(item.id);
-                    }
-                  }}
-                >
-                  <div className="flex-shrink-0">
-                    <FileText className="h-5 w-5 text-muted-foreground" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-medium text-foreground truncate">{item.title}</h4>
-                    <p className="text-sm text-muted-foreground truncate">
-                      {item.description}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        <RecommendedReadingSection 
+          items={recommendedReading} 
+          onItemClick={(item) => {
+            console.log('Recommended reading item clicked:', item);
+          }}
+        />
 
         {/* Related Content Section */}
         {relatedPages.length > 0 && (
