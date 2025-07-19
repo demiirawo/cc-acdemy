@@ -3095,9 +3095,9 @@ export function EnhancedContentEditor({
                          // Display mode
                          <div className="flex items-start justify-between">
                            <div className="flex-1">
-                             {item.category && item.category !== 'General' && (
-                               <Badge variant="outline" className="text-xs mb-1">{item.category}</Badge>
-                             )}
+                              {item.category && (
+                                <Badge variant="outline" className="text-xs mb-1">{item.category}</Badge>
+                              )}
                              <h4 className="font-medium text-foreground">{item.title}</h4>
                            {item.url && (
                              <a 
