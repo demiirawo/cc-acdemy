@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
-import { Send, MessageSquare, Bot, User } from "lucide-react";
+import { Send, MessageSquare, Bot, User, Paperclip, X, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -12,6 +12,15 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  attachedFiles?: AttachedFile[];
+}
+
+interface AttachedFile {
+  id: string;
+  name: string;
+  size: number;
+  type: string;
+  content?: string; // Text content for processing
 }
 
 export const ChatPage = () => {
@@ -19,7 +28,9 @@ export const ChatPage = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   const scrollToBottom = () => {
@@ -35,25 +46,123 @@ export const ChatPage = () => {
     scrollToBottom();
   }, [messages]);
 
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files) return;
+
+    const allowedTypes = [
+      'text/plain',
+      'text/csv',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+
+    for (const file of Array.from(files)) {
+      if (!allowedTypes.includes(file.type)) {
+        toast({
+          title: "Unsupported file type",
+          description: `${file.name} is not a supported file type. Please upload text, CSV, PDF, or Office documents.`,
+          variant: "destructive",
+        });
+        continue;
+      }
+
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        toast({
+          title: "File too large",
+          description: `${file.name} is larger than 10MB. Please upload a smaller file.`,
+          variant: "destructive",
+        });
+        continue;
+      }
+
+      try {
+        let content = '';
+        if (file.type === 'text/plain' || file.type === 'text/csv') {
+          content = await file.text();
+        }
+        
+        const attachedFile: AttachedFile = {
+          id: `file-${Date.now()}-${Math.random()}`,
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          content: content || undefined
+        };
+
+        setAttachedFiles(prev => [...prev, attachedFile]);
+        
+        toast({
+          title: "File attached",
+          description: `${file.name} has been attached to your message.`,
+        });
+      } catch (error) {
+        console.error('Error reading file:', error);
+        toast({
+          title: "Error reading file",
+          description: `Could not read ${file.name}. Please try again.`,
+          variant: "destructive",
+        });
+      }
+    }
+    
+    // Clear the input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removeAttachedFile = (fileId: string) => {
+    setAttachedFiles(prev => prev.filter(file => file.id !== fileId));
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
   const sendMessage = async () => {
-    if (!inputMessage.trim() || isLoading) return;
+    if ((!inputMessage.trim() && attachedFiles.length === 0) || isLoading) return;
 
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: 'user',
       content: inputMessage,
-      timestamp: new Date()
+      timestamp: new Date(),
+      attachedFiles: attachedFiles.length > 0 ? [...attachedFiles] : undefined
     };
 
     setMessages(prev => [...prev, userMessage]);
     setInputMessage('');
+    const currentAttachedFiles = [...attachedFiles];
+    setAttachedFiles([]);
     setIsLoading(true);
 
     try {
+      // Prepare the message with file content if available
+      let messageToSend = inputMessage;
+      if (currentAttachedFiles.length > 0) {
+        const fileContents = currentAttachedFiles
+          .filter(file => file.content)
+          .map(file => `**File: ${file.name}**\n${file.content}`)
+          .join('\n\n');
+        
+        if (fileContents) {
+          messageToSend = `${inputMessage}\n\n${fileContents}`;
+        }
+      }
+
       const { data, error } = await supabase.functions.invoke('chat-assistant', {
         body: {
-          message: inputMessage,
-          threadId: threadId
+          message: messageToSend,
+          threadId: threadId,
+          attachedFiles: currentAttachedFiles.length > 0 ? currentAttachedFiles : undefined
         }
       });
 
@@ -147,23 +256,34 @@ export const ChatPage = () => {
                     <div className={`flex-1 space-y-1 ${
                       message.role === 'user' ? 'text-right' : 'text-left'
                     }`}>
-                      <div className={`inline-block p-3 rounded-lg max-w-[80%] ${
-                        message.role === 'user'
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted'
-                      }`}>
-                        <p 
-                          className="whitespace-pre-wrap" 
-                          style={{ 
-                            userSelect: 'text', 
-                            WebkitUserSelect: 'text',
-                            MozUserSelect: 'text',
-                            msUserSelect: 'text'
-                          }}
-                        >
-                          {message.content}
-                        </p>
-                      </div>
+                       <div className={`inline-block p-3 rounded-lg max-w-[80%] ${
+                         message.role === 'user'
+                           ? 'bg-primary text-primary-foreground'
+                           : 'bg-muted'
+                       }`}>
+                         <p 
+                           className="whitespace-pre-wrap" 
+                           style={{ 
+                             userSelect: 'text', 
+                             WebkitUserSelect: 'text',
+                             MozUserSelect: 'text',
+                             msUserSelect: 'text'
+                           }}
+                         >
+                           {message.content}
+                         </p>
+                         {message.attachedFiles && message.attachedFiles.length > 0 && (
+                           <div className="mt-2 space-y-1">
+                             {message.attachedFiles.map((file) => (
+                               <div key={file.id} className="flex items-center gap-2 text-sm opacity-75">
+                                 <FileText className="h-3 w-3" />
+                                 <span>{file.name}</span>
+                                 <span>({formatFileSize(file.size)})</span>
+                               </div>
+                             ))}
+                           </div>
+                         )}
+                       </div>
                       <p className="text-xs text-muted-foreground">
                         {message.timestamp.toLocaleTimeString()}
                       </p>
@@ -192,29 +312,81 @@ export const ChatPage = () => {
         </CardContent>
       </Card>
 
+      {/* Attached Files */}
+      {attachedFiles.length > 0 && (
+        <div className="mb-4">
+          <Card>
+            <CardContent className="p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Paperclip className="h-4 w-4" />
+                <span className="text-sm font-medium">Attached Files</span>
+              </div>
+              <div className="space-y-2">
+                {attachedFiles.map((file) => (
+                  <div key={file.id} className="flex items-center justify-between bg-muted/50 rounded-md p-2">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <FileText className="h-4 w-4 flex-shrink-0" />
+                      <span className="text-sm truncate">{file.name}</span>
+                      <span className="text-xs text-muted-foreground">({formatFileSize(file.size)})</span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeAttachedFile(file.id)}
+                      className="h-6 w-6 p-0"
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Input Area */}
-      <div className="flex gap-2">
-        <Input
-          value={inputMessage}
-          onChange={(e) => setInputMessage(e.target.value)}
-          onKeyPress={handleKeyPress}
-          placeholder="Type your message..."
-          disabled={isLoading}
-          className="flex-1"
-          style={{ 
-            userSelect: 'text', 
-            WebkitUserSelect: 'text',
-            MozUserSelect: 'text',
-            msUserSelect: 'text'
-          }}
-        />
-        <Button 
-          onClick={sendMessage} 
-          disabled={!inputMessage.trim() || isLoading}
-          size="icon"
-        >
-          <Send className="h-4 w-4" />
-        </Button>
+      <div className="space-y-3">
+        <div className="flex gap-2">
+          <Input
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder="Type your message..."
+            disabled={isLoading}
+            className="flex-1"
+            style={{ 
+              userSelect: 'text', 
+              WebkitUserSelect: 'text',
+              MozUserSelect: 'text',
+              msUserSelect: 'text'
+            }}
+          />
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+            multiple
+            accept=".txt,.csv,.pdf,.doc,.docx,.xls,.xlsx"
+            className="hidden"
+          />
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isLoading}
+            title="Attach files"
+          >
+            <Paperclip className="h-4 w-4" />
+          </Button>
+          <Button 
+            onClick={sendMessage} 
+            disabled={(!inputMessage.trim() && attachedFiles.length === 0) || isLoading}
+            size="icon"
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </div>
   );
