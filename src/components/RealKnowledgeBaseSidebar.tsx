@@ -7,6 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { MovePageDialog } from "./MovePageDialog";
 
 interface SidebarItem {
   id: string;
@@ -403,6 +404,8 @@ export function RealKnowledgeBaseSidebar({
   const [pages, setPages] = useState<Page[]>([]);
   const [hierarchyData, setHierarchyData] = useState<SidebarItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [moveDialogOpen, setMoveDialogOpen] = useState(false);
+  const [pageToMove, setPageToMove] = useState<{ id: string; title: string } | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -674,6 +677,14 @@ export function RealKnowledgeBaseSidebar({
       onCreatePage();
     }
   };
+
+  const handleMovePage = (pageId: string) => {
+    const page = pages.find(p => p.id === pageId);
+    if (page) {
+      setPageToMove({ id: pageId, title: page.title });
+      setMoveDialogOpen(true);
+    }
+  };
   const filteredHierarchy = hierarchyData.filter((item) => 
     item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
     (item.children && item.children.some((child) => child.title.toLowerCase().includes(searchQuery.toLowerCase())))
@@ -811,7 +822,7 @@ export function RealKnowledgeBaseSidebar({
                       onDuplicatePage={handleDuplicatePage}
                       onArchivePage={handleArchivePage}
                       onCopyLink={handleCopyLink}
-                      onMovePage={onMovePage}
+                      onMovePage={handleMovePage}
                       hierarchyData={hierarchyData}
                     />
                   ))
@@ -849,6 +860,19 @@ export function RealKnowledgeBaseSidebar({
           Settings
         </Button>
       </div>
+
+      {/* Move Page Dialog */}
+      {pageToMove && (
+        <MovePageDialog
+          isOpen={moveDialogOpen}
+          onClose={() => {
+            setMoveDialogOpen(false);
+            setPageToMove(null);
+          }}
+          pageId={pageToMove.id}
+          currentPageTitle={pageToMove.title}
+        />
+      )}
     </div>
   );
 }
