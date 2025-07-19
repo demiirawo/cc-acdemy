@@ -42,27 +42,32 @@ function PageView({
   useEffect(() => {
     const fetchPageSettings = async () => {
       try {
-        const {
-          data,
-          error
-        } = await supabase.from('pages').select('is_public, public_token').eq('id', currentPage.id).single();
+        const { data, error } = await supabase
+          .from('pages')
+          .select('is_public, public_token')
+          .eq('id', currentPage.id)
+          .single();
+        
         if (error) throw error;
         if (data) {
           setIsPublic(data.is_public || false);
           setPublicToken(data.public_token || '');
         }
 
-        // Fetch recommended reading from the page's recommended_reading field
+        // Properly handle recommended reading from the page data
         if (currentPage.recommended_reading && Array.isArray(currentPage.recommended_reading)) {
-          const validReading = currentPage.recommended_reading.map((item: any) => ({
-            ...item,
-            // Default to 'link' if type is not one of the expected values
-            type: ['link', 'file', 'document', 'guide', 'reference'].includes(item.type) 
-              ? item.type 
-              : 'link',
-            // Ensure category is included, default to 'General' if missing
-            category: item.category || 'General'
-          }));
+          const validReading: RecommendedReadingItem[] = currentPage.recommended_reading
+            .filter((item: any) => item && typeof item === 'object')
+            .map((item: any): RecommendedReadingItem => ({
+              id: item.id,
+              title: item.title || '',
+              description: item.description || '',
+              type: ['link', 'file'].includes(item.type) ? item.type : 'link',
+              url: item.url,
+              fileUrl: item.fileUrl,
+              fileName: item.fileName,
+              category: item.category || 'General'
+            }));
           setRecommendedReading(validReading);
         } else {
           setRecommendedReading([]);
@@ -228,10 +233,9 @@ export function KnowledgeBaseApp() {
     } else if (item.type === 'page') {
       try {
         // Fetch real page data from Supabase
-        const {
-          data,
-          error
-        } = await supabase.from('pages').select(`
+        const { data, error } = await supabase
+          .from('pages')
+          .select(`
             id,
             title,
             content,
@@ -239,24 +243,46 @@ export function KnowledgeBaseApp() {
             view_count,
             created_by,
             recommended_reading
-          `).eq('id', item.id).single();
+          `)
+          .eq('id', item.id)
+          .single();
+        
         if (error) throw error;
+        
         if (data) {
+          // Properly handle recommended reading data from database
+          let processedRecommendedReading: RecommendedReadingItem[] = [];
+          if (data.recommended_reading && Array.isArray(data.recommended_reading)) {
+            processedRecommendedReading = (data.recommended_reading as any[])
+              .filter((item: any) => item && typeof item === 'object')
+              .map((item: any): RecommendedReadingItem => ({
+                id: item.id,
+                title: item.title || '',
+                description: item.description || '',
+                type: ['link', 'file'].includes(item.type) ? item.type : 'link',
+                url: item.url,
+                fileUrl: item.fileUrl,
+                fileName: item.fileName,
+                category: item.category || 'General'
+              }));
+          }
+
           setCurrentPage({
             id: data.id,
             title: data.title,
             content: data.content,
             lastUpdated: data.updated_at,
             author: 'User',
-            recommended_reading: data.recommended_reading as RecommendedReadingItem[] || []
+            recommended_reading: processedRecommendedReading
           });
           setCurrentView('page');
           setIsEditing(false);
 
           // Increment view count
-          await supabase.from('pages').update({
-            view_count: (data.view_count || 0) + 1
-          }).eq('id', data.id);
+          await supabase
+            .from('pages')
+            .update({ view_count: (data.view_count || 0) + 1 })
+            .eq('id', data.id);
         }
       } catch (error) {
         console.error('Error fetching page:', error);
@@ -338,7 +364,6 @@ export function KnowledgeBaseApp() {
     setCurrentView('editor');
   };
 
-  // Updated handleSavePage function to match new interface
   const handleSavePage = async (data: {
     title: string;
     content: string;
@@ -347,20 +372,36 @@ export function KnowledgeBaseApp() {
     isPublic: boolean;
   }) => {
     if (!currentPage || !user) return;
+    
     try {
+      // Convert RecommendedReadingItem[] to JSON-serializable format
+      const recommendedReadingJson = data.recommendedReading.map(item => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        type: item.type,
+        url: item.url,
+        fileUrl: item.fileUrl,
+        fileName: item.fileName,
+        category: item.category || 'General'
+      }));
+
       if (currentPage.id === 'new') {
         // Create new page
-        const {
-          data: newPage,
-          error
-        } = await supabase.from('pages').insert({
-          title: data.title,
-          content: data.content,
-          recommended_reading: data.recommendedReading || [],
-          created_by: user.id,
-          is_public: data.isPublic
-        }).select().single();
+        const { data: newPage, error } = await supabase
+          .from('pages')
+          .insert({
+            title: data.title,
+            content: data.content,
+            recommended_reading: recommendedReadingJson,
+            created_by: user.id,
+            is_public: data.isPublic
+          })
+          .select()
+          .single();
+        
         if (error) throw error;
+        
         setCurrentPage({
           ...currentPage,
           id: newPage.id,
@@ -370,24 +411,28 @@ export function KnowledgeBaseApp() {
         });
       } else {
         // Update existing page
-        const {
-          error
-        } = await supabase.from('pages').update({
-          title: data.title,
-          content: data.content,
-          recommended_reading: data.recommendedReading || [],
-          is_public: data.isPublic,
-          updated_at: new Date().toISOString()
-        }).eq('id', currentPage.id);
+        const { error } = await supabase
+          .from('pages')
+          .update({
+            title: data.title,
+            content: data.content,
+            recommended_reading: recommendedReadingJson,
+            is_public: data.isPublic,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', currentPage.id);
+        
         if (error) throw error;
+        
         setCurrentPage({
           ...currentPage,
           title: data.title,
           content: data.content,
           lastUpdated: new Date().toISOString(),
-          recommended_reading: data.recommendedReading || []
+          recommended_reading: data.recommendedReading
         });
       }
+      
       setIsEditing(false);
       setCurrentView('page');
       toast({

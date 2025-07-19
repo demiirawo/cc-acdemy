@@ -7,5 +7,5 @@ export interface RecommendedReadingItem {
   url?: string;
   fileUrl?: string;
   fileName?: string;
-  category?: string; // Optional to match database schema
+  category?: string; // Keep this optional to match database schema
 }

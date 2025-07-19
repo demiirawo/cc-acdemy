@@ -1,18 +1,7 @@
-
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ExternalLink, FileText, Download } from "lucide-react";
-
-interface RecommendedReadingItem {
-  id?: string;
-  title: string;
-  description: string;
-  type: 'link' | 'file' | 'document' | 'guide' | 'reference';
-  url?: string;
-  fileUrl?: string;
-  fileName?: string;
-  category: string; // Updated to be required
-}
+import { RecommendedReadingItem } from '@/types/recommendedReading';
 
 interface RecommendedReadingSectionProps {
   items: RecommendedReadingItem[];
