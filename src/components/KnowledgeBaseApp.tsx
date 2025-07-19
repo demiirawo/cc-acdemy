@@ -42,6 +42,7 @@ function PageView({
     url?: string;
     fileUrl?: string;
     fileName?: string;
+    category?: string;
   }>>([]);
   const {
     toast
@@ -66,7 +67,9 @@ function PageView({
             // Default to 'link' if type is not one of the expected values
             type: ['link', 'file', 'document', 'guide', 'reference'].includes(item.type) 
               ? item.type 
-              : 'link'
+              : 'link',
+            // Ensure category is included
+            category: item.category || 'General'
           }));
           setRecommendedReading(validReading);
         } else {
@@ -180,6 +183,7 @@ interface Page {
     url?: string;
     fileUrl?: string;
     fileName?: string;
+    category?: string;
   }>;
 }
 export function KnowledgeBaseApp() {
@@ -352,6 +356,7 @@ export function KnowledgeBaseApp() {
     fileUrl?: string;
     fileName?: string;
     type?: string;
+    category?: string;
   }>) => {
     if (!currentPage || !user) return;
     try {
@@ -392,7 +397,8 @@ export function KnowledgeBaseApp() {
           lastUpdated: new Date().toISOString(),
           recommended_reading: (recommendedReading || []).map(item => ({
             ...item,
-            type: item.type || (item.url ? 'link' : 'file')
+            type: item.type || (item.url ? 'link' : 'file'),
+            category: item.category || 'General'
           }))
         });
       }
