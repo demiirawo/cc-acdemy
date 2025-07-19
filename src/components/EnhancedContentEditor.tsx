@@ -1561,21 +1561,39 @@ export function EnhancedContentEditor({
       }
       
       const iframeId = `iframe-${Date.now()}`;
-      insertText(`
-        <div class="iframe-container" style="text-align: center; margin: 10px 0; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
-          <iframe 
-            id="${iframeId}"
-            src="${validUrl}" 
-            width="${width}" 
-            height="${height}" 
-            frameborder="0" 
-            allowfullscreen
-            style="max-width: 100%; border: none; display: block;"
-            onclick="showIframeControls('${iframeId}')"
-          ></iframe>
-        </div>
-      `);
       
+      // Create iframe element directly instead of inserting as text
+      const container = document.createElement('div');
+      container.className = 'iframe-container';
+      container.style.cssText = 'text-align: center; margin: 10px 0; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;';
+      
+      const iframe = document.createElement('iframe');
+      iframe.id = iframeId;
+      iframe.src = validUrl;
+      iframe.width = width;
+      iframe.height = height;
+      iframe.frameBorder = '0';
+      iframe.allowFullscreen = true;
+      iframe.style.cssText = 'max-width: 100%; border: none; display: block;';
+      iframe.onclick = () => (window as any).showIframeControls(iframeId);
+      
+      container.appendChild(iframe);
+      
+      // Insert the element at cursor position
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
+        range.insertNode(container);
+        
+        // Move cursor after inserted element
+        range.setStartAfter(container);
+        range.setEndAfter(container);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      
+      updateContent();
       setTimeout(() => setupIframeControls(), 100);
       
       toast({
