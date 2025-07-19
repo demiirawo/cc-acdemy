@@ -11,7 +11,7 @@ interface RecommendedReadingItem {
   url?: string;
   fileUrl?: string;
   fileName?: string;
-  category?: string;
+  category: string; // Updated to be required
 }
 
 interface RecommendedReadingSectionProps {
@@ -48,7 +48,8 @@ const getCleanTextPreview = (htmlContent: string, maxLength: number = 150): stri
 // Function to group items by category
 const groupItemsByCategory = (items: RecommendedReadingItem[]) => {
   const grouped = items.reduce((acc, item) => {
-    const category = item.category || 'General';
+    // Default to 'General' if category is missing or empty
+    const category = item.category?.trim() || 'General';
     if (!acc[category]) {
       acc[category] = [];
     }
