@@ -567,7 +567,7 @@ export function RealKnowledgeBaseSidebar({
     };
   };
   const handleItemSelect = (item: SidebarItem) => {
-    if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people' || item.id === 'settings' || item.id === 'whiteboard' || item.id === 'user-management') {
+    if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people' || item.id === 'settings' || item.id === 'whiteboard' || item.id === 'user-management' || item.id === 'chat') {
       onItemSelect(item);
     } else if (item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
       onItemSelect(item);
@@ -851,7 +851,7 @@ export function RealKnowledgeBaseSidebar({
           const isSelected = selectedId === item.id;
           return <div key={item.id} className={cn("flex items-center gap-3 px-2 py-2 text-sm rounded-md cursor-pointer transition-colors", "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground", isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium")} onClick={() => handleItemSelect({
             ...item,
-            type: 'page'
+            type: item.id === 'chat' ? 'space' : 'page' // Use 'space' for special pages like chat to avoid page fetch
           })}>
                 <Icon className="h-4 w-4 text-sidebar-foreground/70" />
                 <span className="text-zinc-50">{item.title}</span>
