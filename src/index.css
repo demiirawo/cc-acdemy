@@ -1,3 +1,4 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -18,11 +19,11 @@
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 3.9%;
 
-    /* Primary Brand Colors - Purple/Pink Theme */
-    --primary: 262 83% 58%;
+    /* Primary Brand Colors - Updated to #5E18EB */
+    --primary: 256 83% 51%;
     --primary-foreground: 0 0% 100%;
-    --primary-light: 280 80% 70%;
-    --primary-dark: 250 85% 48%;
+    --primary-light: 256 83% 61%;
+    --primary-dark: 256 83% 41%;
 
     /* Secondary Colors - Soft Purple */
     --secondary: 270 20% 95%;
@@ -51,11 +52,11 @@
     --ring: 212 96% 54%;
 
     /* Sidebar Colors */
-    --sidebar-background: 262 83% 58%;
+    --sidebar-background: 256 83% 51%;
     --sidebar-foreground: 0 0% 100%;
-    --sidebar-accent: 262 83% 68%;
+    --sidebar-accent: 256 83% 61%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 262 83% 48%;
+    --sidebar-border: 256 83% 41%;
 
     /* Layout */
     --radius: 0.75rem;
@@ -69,7 +70,7 @@
     --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-light)));
     --gradient-accent: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--accent-light)));
     --gradient-subtle: linear-gradient(180deg, hsl(var(--background)), hsl(var(--muted)));
-    --gradient-hero: linear-gradient(135deg, hsl(262 83% 58%), hsl(328 85% 70%));
+    --gradient-hero: linear-gradient(135deg, hsl(256 83% 51%), hsl(328 85% 70%));
 
     /* Animations */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -90,11 +91,11 @@
     --popover: 240 10% 3.9%;
     --popover-foreground: 0 0% 98%;
 
-    /* Primary Brand Colors */
-    --primary: 262 83% 68%;
+    /* Primary Brand Colors - Updated to #5E18EB */
+    --primary: 256 83% 61%;
     --primary-foreground: 0 0% 98%;
-    --primary-light: 280 80% 78%;
-    --primary-dark: 250 85% 58%;
+    --primary-light: 256 83% 71%;
+    --primary-dark: 256 83% 51%;
 
     /* Secondary Colors */
     --secondary: 240 3.7% 15.9%;
