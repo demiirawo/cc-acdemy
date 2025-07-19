@@ -324,7 +324,7 @@ function SidebarTreeItem({
                 <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={async () => {
                   if (confirm("Are you sure you want to delete this page? This action cannot be undone.")) {
                     try {
-                      const { error } = await supabase
+                      const { error } } = await supabase
                         .from('pages')
                         .delete()
                         .eq('id', item.id);
@@ -702,12 +702,12 @@ export function RealKnowledgeBaseSidebar({
         
         {/* Search */}
         <div className="relative">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-sidebar-foreground/50" />
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-black/50" />
           <Input 
             placeholder="Search..." 
             value={searchQuery} 
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 bg-sidebar border-sidebar-border text-sidebar-foreground placeholder:text-sidebar-foreground/50 h-9"
+            className="pl-9 bg-white border-gray-300 text-black placeholder:text-black/50 h-9"
           />
           
           {/* Search Results Dropdown */}
