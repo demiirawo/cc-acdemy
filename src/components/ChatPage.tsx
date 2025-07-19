@@ -339,6 +339,7 @@ export const ChatPage = () => {
         body: {
           message: messageToSend,
           threadId: threadId,
+          conversationId: conversation.id,
           attachedFiles: currentAttachedFiles.length > 0 ? currentAttachedFiles : undefined
         }
       });

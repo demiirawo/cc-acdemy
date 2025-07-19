@@ -5,7 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Plus, Folder, MessageSquare, MoreHorizontal, Trash2, FolderPlus, Upload, Search, FileText, Brain } from "lucide-react";
+import { Plus, Folder, MessageSquare, MoreHorizontal, Trash2, FolderPlus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent, useDroppable } from '@dnd-kit/core';
@@ -207,30 +207,6 @@ const DroppableFolder = ({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onClick={() => {
-                // Upload project files functionality placeholder
-                toast({
-                  title: "Coming Soon",
-                  description: "Project file upload will be available soon",
-                });
-              }}
-            >
-              <Upload className="h-4 w-4 mr-2" />
-              Upload Files
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => {
-                // Research functionality placeholder
-                toast({
-                  title: "Coming Soon", 
-                  description: "Deep research feature will be available soon",
-                });
-              }}
-            >
-              <Brain className="h-4 w-4 mr-2" />
-              Research Mode
-            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={async () => {
                 try {
