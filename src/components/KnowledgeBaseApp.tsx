@@ -434,7 +434,7 @@ export function KnowledgeBaseApp() {
     fileName?: string;
     type?: string;
     category?: string;
-  }>, orderedCategories?: string[]) => {
+  }>, orderedCategories?: string[], tags?: string[]) => {
     if (!currentPage || !user) return;
     try {
       if (currentPage.id === 'new') {
@@ -447,6 +447,7 @@ export function KnowledgeBaseApp() {
           content,
           recommended_reading: recommendedReading || [],
           category_order: orderedCategories || [],
+          tags: tags || [],
           created_by: user.id
         }).select().single();
         if (error) throw error;
@@ -457,6 +458,10 @@ export function KnowledgeBaseApp() {
           content,
           lastUpdated: data.updated_at
         });
+        toast({
+          title: "Page created and saved",
+          description: `"${title}" has been created with all content, tags, and recommended reading saved.`
+        });
       } else {
         // Update existing page
         const {
@@ -466,6 +471,7 @@ export function KnowledgeBaseApp() {
           content,
           recommended_reading: recommendedReading || [],
           category_order: orderedCategories || [],
+          tags: tags || [],
           updated_at: new Date().toISOString()
         }).eq('id', currentPage.id);
         if (error) throw error;
@@ -481,13 +487,13 @@ export function KnowledgeBaseApp() {
           })),
           category_order: orderedCategories || []
         });
+        toast({
+          title: "Page saved",
+          description: `"${title}" has been saved with all content, tags, and recommended reading preserved.`
+        });
       }
       setIsEditing(false);
       setCurrentView('page');
-      toast({
-        title: "Page saved",
-        description: `"${title}" has been saved successfully.`
-      });
     } catch (error) {
       console.error('Error saving page:', error);
       toast({

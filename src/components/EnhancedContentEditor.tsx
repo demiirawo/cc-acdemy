@@ -56,22 +56,15 @@ import {
 interface ContentEditorProps {
   title?: string;
   content?: string;
-  onSave: (title: string, content: string, recommendedReading?: Array<{title: string, url?: string, description: string, fileUrl?: string, fileName?: string}>, orderedCategories?: string[]) => void;
-  onPreview?: () => void;
-  isEditing?: boolean;
-  pageId?: string;
-}
-
-interface ContentEditorProps {
-  title?: string;
-  content?: string;
   onSave: (title: string, content: string, recommendedReading?: Array<{
     title: string;
     url?: string;
     description: string;
     fileUrl?: string;
     fileName?: string;
-  }>, orderedCategories?: string[]) => void;
+    type?: string;
+    category?: string;
+  }>, orderedCategories?: string[], tags?: string[]) => void;
   onPreview?: () => void;
   isEditing?: boolean;
   pageId?: string;
@@ -221,7 +214,7 @@ export function EnhancedContentEditor({
         try {
           const { data, error } = await supabase
             .from('pages')
-            .select('is_public, public_token, content, recommended_reading')
+            .select('is_public, public_token, content, recommended_reading, tags')
             .eq('id', pageId)
             .single();
 
@@ -251,6 +244,15 @@ export function EnhancedContentEditor({
             } else {
               console.log('No recommended reading found in database');
               setRecommendedReading([]);
+            }
+            
+            // Set tags from database
+            if (data.tags && Array.isArray(data.tags)) {
+              console.log('Found tags in database:', data.tags);
+              setTags(data.tags);
+            } else {
+              console.log('No tags found in database');
+              setTags([]);
               
               // Legacy: Try to extract recommended reading from content if it exists
               try {
@@ -397,13 +399,14 @@ export function EnhancedContentEditor({
     }
     
     try {
-      console.log('Auto-saving:', { title: currentTitle, content: currentContent });
+      console.log('Auto-saving:', { title: currentTitle, content: currentContent, tags, recommendedReading });
       
       const { error } = await supabase
         .from('pages')
         .update({ 
           title: currentTitle,
           content: currentContent,
+          tags: tags,
           recommended_reading: recommendedReading,
           updated_at: new Date().toISOString()
         })
@@ -412,7 +415,7 @@ export function EnhancedContentEditor({
       if (error) throw error;
       
       lastSavedContentRef.current = currentContent;
-      console.log('Auto-save successful');
+      console.log('Auto-save successful with all content preserved');
     } catch (error) {
       console.error('Auto-save failed:', error);
     }
@@ -424,13 +427,14 @@ export function EnhancedContentEditor({
     
     try {
       const currentContent = contentRef.current;
-      console.log('Saving now:', { title: currentTitle, content: currentContent });
+      console.log('Saving now:', { title: currentTitle, content: currentContent, tags, recommendedReading });
       
       const { error } = await supabase
         .from('pages')
         .update({ 
           title: currentTitle,
           content: currentContent,
+          tags: tags,
           recommended_reading: recommendedReading,
           updated_at: new Date().toISOString()
         })
@@ -438,7 +442,7 @@ export function EnhancedContentEditor({
 
       if (error) throw error;
       lastSavedContentRef.current = currentContent;
-      console.log('Save successful');
+      console.log('Save successful with all content preserved');
     } catch (error) {
       console.error('Save failed:', error);
     }
@@ -2477,12 +2481,12 @@ export function EnhancedContentEditor({
       });
 
       // Save content and recommended reading using the provided onSave function
-      console.log('Saving with recommended reading:', recommendedReading);
-      await onSave(currentTitle, contentRef.current, recommendedReading, orderedCategories);
+      console.log('Saving with recommended reading and tags:', { recommendedReading, tags });
+      await onSave(currentTitle, contentRef.current, recommendedReading, orderedCategories, tags);
       
       toast({
-        title: "Saved",
-        description: "Page saved successfully",
+        title: "Page saved",
+        description: "All content, tags, and recommended reading have been saved successfully.",
       });
     } catch (error) {
       console.error('Error saving page:', error);
