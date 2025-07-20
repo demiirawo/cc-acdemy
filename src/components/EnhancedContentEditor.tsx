@@ -2407,8 +2407,8 @@ export function EnhancedContentEditor({
           const originalHeight = iframe.getAttribute('height') || iframe.style.height;
           const originalWidth = iframe.getAttribute('width') || iframe.style.width;
           
-          // Build CSS preserving original dimensions
-          let cssStyles = 'max-width: 100%; border: none; display: block;';
+          // Build CSS preserving original dimensions but removing height limits
+          let cssStyles = 'border: none; display: block; width: 100%;';
           if (originalHeight) {
             cssStyles += ` height: ${originalHeight}${originalHeight.includes('px') || originalHeight.includes('%') ? '' : 'px'};`;
           }
@@ -3045,7 +3045,7 @@ export function EnhancedContentEditor({
               onInput={updateContent}
               onPaste={handlePaste}
               onKeyDown={handleKeyDown}
-              className="w-full p-4 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-background text-foreground min-h-[400px] prose prose-lg max-w-none"
+              className="w-full p-4 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-background text-foreground min-h-[800px] prose prose-lg max-w-none"
               style={{
                 fontFamily: 'system-ui, -apple-system, sans-serif',
                 fontSize: '16px',
