@@ -1,60 +1,42 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { useState, useEffect } from "react";
 import { 
-  Save, 
-  Eye, 
   Bold, 
   Italic, 
+  Underline, 
   List, 
-  ListOrdered, 
-  Quote, 
-  Code, 
-  Link, 
+  ListOrdered,
+  Quote,
+  Code,
+  Link,
   Image,
   Heading1,
   Heading2,
   Heading3,
-  Type,
-  FileText,
-  Strikethrough,
-  Underline as UnderlineIcon,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  Plus,
-  X
+  Save,
+  Eye,
+  MoreHorizontal
 } from "lucide-react";
-import { RecommendedReadingManager } from "./RecommendedReadingManager";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Card } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/use-toast"
+import { useNavigate } from "react-router-dom";
 
-interface EnhancedContentEditorProps {
+interface ContentEditorProps {
   title?: string;
   content?: string;
-  onSave: (
-    title: string, 
-    content: string, 
-    recommendedReading?: Array<{
-      title: string;
-      url?: string;
-      description: string;
-      fileUrl?: string;
-      fileName?: string;
-      type?: string;
-      category?: string;
-    }>,
-    orderedCategories?: string[]
-  ) => void;
+  onSave?: (title: string, content: string) => void;
   onPreview?: () => void;
   isEditing?: boolean;
+}
+
+interface EnhancedContentEditorProps extends ContentEditorProps {
   pageId?: string;
-  onContentChange?: () => void;
+  tags?: string[];
 }
 
 export function EnhancedContentEditor({ 
@@ -63,148 +45,14 @@ export function EnhancedContentEditor({
   onSave, 
   onPreview,
   isEditing = true,
-  pageId,
-  onContentChange
+  pageId = "",
+  tags: initialTags = []
 }: EnhancedContentEditorProps) {
   const [currentTitle, setCurrentTitle] = useState(title);
   const [currentContent, setCurrentContent] = useState(content);
-  const [tags, setTags] = useState<string[]>(['engineering', 'documentation']);
-  const [newTag, setNewTag] = useState('');
-  const [recommendedReading, setRecommendedReading] = useState<Array<{
-    id?: string;
-    title: string;
-    description: string;
-    type: 'link' | 'file' | 'document' | 'guide' | 'reference';
-    url?: string;
-    fileUrl?: string;
-    fileName?: string;
-    category?: string;
-  }>>([]);
-  const [orderedCategories, setOrderedCategories] = useState<string[]>([]);
-  const [isSaving, setIsSaving] = useState(false);
-  const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-
+  const [tags, setTags] = useState<string[]>(initialTags);
   const { toast } = useToast();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout>();
-
-  // Initialize data when props change
-  useEffect(() => {
-    console.log('EnhancedContentEditor: Props changed', { title, content, pageId });
-    setCurrentTitle(title);
-    setCurrentContent(content);
-    setHasUnsavedChanges(false);
-  }, [title, content, pageId]);
-
-  // Load recommended reading data
-  useEffect(() => {
-    const loadRecommendedReading = async () => {
-      if (!pageId || pageId === 'new') return;
-
-      try {
-        const { data, error } = await supabase
-          .from('pages')
-          .select('recommended_reading, category_order')
-          .eq('id', pageId)
-          .single();
-
-        if (error) throw error;
-
-        if (data) {
-          const reading = data.recommended_reading as any[] || [];
-          const validReading = reading.map((item: any) => ({
-            ...item,
-            type: ['link', 'file', 'document', 'guide', 'reference'].includes(item.type) ? item.type : 'link',
-            category: item.category || 'General'
-          }));
-          
-          setRecommendedReading(validReading);
-          setOrderedCategories(data.category_order as string[] || []);
-        }
-      } catch (error) {
-        console.error('Error loading recommended reading:', error);
-      }
-    };
-
-    loadRecommendedReading();
-  }, [pageId]);
-
-  // Auto-save functionality with improved error handling
-  const autoSave = useCallback(async () => {
-    if (!pageId || pageId === 'new' || !hasUnsavedChanges) return;
-
-    setIsSaving(true);
-    
-    try {
-      console.log('Auto-saving page:', { pageId, title: currentTitle, contentLength: currentContent.length });
-      
-      const { error } = await supabase
-        .from('pages')
-        .update({ 
-          title: currentTitle,
-          content: currentContent,
-          recommended_reading: recommendedReading,
-          category_order: orderedCategories,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', pageId);
-
-      if (error) {
-        console.error('Auto-save error:', error);
-        throw error;
-      }
-
-      setLastSaved(new Date());
-      setHasUnsavedChanges(false);
-      
-      // Call onContentChange to notify parent component
-      if (onContentChange) {
-        onContentChange();
-      }
-      
-      console.log('Auto-save successful');
-    } catch (error) {
-      console.error('Auto-save failed:', error);
-      toast({
-        title: "Auto-save failed",
-        description: "Your changes couldn't be saved automatically. Please save manually.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  }, [pageId, currentTitle, currentContent, recommendedReading, orderedCategories, hasUnsavedChanges, onContentChange, toast]);
-
-  // Auto-save trigger
-  useEffect(() => {
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-    }
-
-    if (hasUnsavedChanges && pageId && pageId !== 'new') {
-      autoSaveTimeoutRef.current = setTimeout(() => {
-        autoSave();
-      }, 3000); // Auto-save after 3 seconds of inactivity
-    }
-
-    return () => {
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
-      }
-    };
-  }, [hasUnsavedChanges, autoSave, pageId]);
-
-  // Track changes
-  const handleTitleChange = (value: string) => {
-    setCurrentTitle(value);
-    setHasUnsavedChanges(true);
-  };
-
-  const handleContentChange = (value: string) => {
-    setCurrentContent(value);
-    setHasUnsavedChanges(true);
-  };
+  const navigate = useNavigate();
 
   const toolbarItems = [
     { icon: Heading1, action: () => insertText('# '), label: 'Heading 1' },
@@ -213,8 +61,7 @@ export function EnhancedContentEditor({
     { type: 'separator' },
     { icon: Bold, action: () => wrapText('**', '**'), label: 'Bold' },
     { icon: Italic, action: () => wrapText('*', '*'), label: 'Italic' },
-    { icon: UnderlineIcon, action: () => wrapText('<u>', '</u>'), label: 'Underline' },
-    { icon: Strikethrough, action: () => wrapText('~~', '~~'), label: 'Strikethrough' },
+    { icon: Underline, action: () => wrapText('<u>', '</u>'), label: 'Underline' },
     { type: 'separator' },
     { icon: List, action: () => insertText('- '), label: 'Bullet List' },
     { icon: ListOrdered, action: () => insertText('1. '), label: 'Numbered List' },
@@ -226,14 +73,13 @@ export function EnhancedContentEditor({
   ];
 
   const insertText = (text: string) => {
-    const textarea = textareaRef.current;
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     if (!textarea) return;
 
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const newContent = currentContent.substring(0, start) + text + currentContent.substring(end);
-    
-    handleContentChange(newContent);
+    setCurrentContent(newContent);
     
     // Reset cursor position
     setTimeout(() => {
@@ -243,7 +89,7 @@ export function EnhancedContentEditor({
   };
 
   const wrapText = (prefix: string, suffix: string) => {
-    const textarea = textareaRef.current;
+    const textarea = document.querySelector('textarea') as HTMLTextAreaElement;
     if (!textarea) return;
 
     const start = textarea.selectionStart;
@@ -251,8 +97,7 @@ export function EnhancedContentEditor({
     const selectedText = currentContent.substring(start, end);
     const newText = prefix + selectedText + suffix;
     const newContent = currentContent.substring(0, start) + newText + currentContent.substring(end);
-    
-    handleContentChange(newContent);
+    setCurrentContent(newContent);
     
     // Reset cursor position
     setTimeout(() => {
@@ -281,123 +126,136 @@ export function EnhancedContentEditor({
     }
   };
 
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      console.log('Manual save triggered');
-      await onSave(currentTitle, currentContent, recommendedReading, orderedCategories);
-      setLastSaved(new Date());
-      setHasUnsavedChanges(false);
-    } catch (error) {
-      console.error('Manual save failed:', error);
-    } finally {
-      setIsSaving(false);
+  const handleSave = () => {
+    if (onSave) {
+      onSave(currentTitle, currentContent);
+      toast({
+        title: "Page saved!",
+        description: "Your changes have been saved.",
+      });
     }
   };
 
-  const addTag = () => {
-    if (newTag.trim() && !tags.includes(newTag.trim())) {
-      setTags([...tags, newTag.trim()]);
-      setNewTag('');
-    }
+  const processContent = (htmlContent: string): string => {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlContent, 'text/html');
+    
+    // Process iframes to make them responsive while preserving height
+    const iframes = doc.querySelectorAll('iframe');
+    iframes.forEach((iframe) => {
+      const newIframe = iframe.cloneNode(true) as HTMLIFrameElement;
+      
+      // Preserve existing height from attribute or inline style
+      const existingHeight = iframe.getAttribute('height') || 
+                           iframe.style.height || 
+                           getComputedStyle(iframe).height;
+      
+      // Preserve existing width
+      const existingWidth = iframe.getAttribute('width') || 
+                           iframe.style.width || 
+                           getComputedStyle(iframe).width;
+      
+      // Build styles additively instead of overwriting
+      const currentStyle = newIframe.style.cssText;
+      const additionalStyles = [
+        'max-width: 100%',
+        'border: none',
+        'display: block'
+      ];
+      
+      // Add height if it exists
+      if (existingHeight && existingHeight !== 'auto') {
+        additionalStyles.push(`height: ${existingHeight.includes('px') ? existingHeight : existingHeight + 'px'}`);
+      }
+      
+      // Add width if it exists and isn't already 100%
+      if (existingWidth && existingWidth !== '100%') {
+        additionalStyles.push(`width: ${existingWidth.includes('%') || existingWidth.includes('px') ? existingWidth : existingWidth + 'px'}`);
+      }
+      
+      // Combine existing styles with new ones
+      const newStyleText = currentStyle + (currentStyle ? '; ' : '') + additionalStyles.join('; ');
+      newIframe.style.cssText = newStyleText;
+      
+      iframe.parentNode?.replaceChild(newIframe, iframe);
+    });
+
+    // Process images to make them responsive
+    const images = doc.querySelectorAll('img');
+    images.forEach((img) => {
+      img.style.maxWidth = '100%';
+      img.style.height = 'auto';
+      img.style.display = 'block';
+    });
+
+    return doc.body.innerHTML;
   };
 
-  const removeTag = (tagToRemove: string) => {
-    setTags(tags.filter(tag => tag !== tagToRemove));
-  };
-
-  const handleRecommendedReadingChange = (
-    newReading: Array<{
-      id?: string;
-      title: string;
-      description: string;
-      type: 'link' | 'file' | 'document' | 'guide' | 'reference';
-      url?: string;
-      fileUrl?: string;
-      fileName?: string;
-      category?: string;
-    }>,
-    newOrderedCategories: string[]
-  ) => {
-    setRecommendedReading(newReading);
-    setOrderedCategories(newOrderedCategories);
-    setHasUnsavedChanges(true);
-  };
+  if (!isEditing) {
+    return (
+      <div className="flex-1 overflow-auto">
+        <div className="max-w-4xl mx-auto p-6">
+          <div className="mb-6">
+            <h1 className="text-3xl font-bold text-foreground mb-2">{currentTitle}</h1>
+            <div className="flex gap-2">
+              {tags.map((tag) => (
+                <Badge key={tag} variant="secondary">{tag}</Badge>
+              ))}
+            </div>
+          </div>
+          
+          <Card className="p-6">
+            <div 
+              className="prose prose-lg max-w-none overflow-visible"
+              dangerouslySetInnerHTML={{ __html: processContent(currentContent) }}
+            />
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Editor Header */}
-      <div className="border-b border-border p-4 bg-background/95 backdrop-blur-sm">
+      <div className="border-b border-border p-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex-1 max-w-2xl">
             <Input
               placeholder="Page title..."
               value={currentTitle}
-              onChange={(e) => handleTitleChange(e.target.value)}
+              onChange={(e) => setCurrentTitle(e.target.value)}
               className="text-2xl font-bold border-none p-0 h-auto shadow-none focus-visible:ring-0"
             />
           </div>
           
           <div className="flex items-center gap-2">
-            {hasUnsavedChanges && (
-              <span className="text-sm text-amber-600 flex items-center gap-1">
-                <div className="w-2 h-2 bg-amber-600 rounded-full animate-pulse"></div>
-                Unsaved changes
-              </span>
-            )}
-            
-            {isSaving && (
-              <span className="text-sm text-blue-600 flex items-center gap-1">
-                <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
-                Saving...
-              </span>
-            )}
-            
-            {lastSaved && !hasUnsavedChanges && !isSaving && (
-              <span className="text-sm text-green-600 flex items-center gap-1">
-                <div className="w-2 h-2 bg-green-600 rounded-full"></div>
-                Saved {lastSaved.toLocaleTimeString()}
-              </span>
-            )}
-
             <Button variant="outline" size="sm" onClick={onPreview}>
               <Eye className="h-4 w-4 mr-2" />
               Preview
             </Button>
-            <Button onClick={handleSave} className="bg-gradient-primary" disabled={isSaving}>
+            <Button onClick={handleSave} className="bg-gradient-primary">
               <Save className="h-4 w-4 mr-2" />
-              {isSaving ? 'Saving...' : 'Save'}
+              Save
+            </Button>
+            <Button variant="ghost" size="sm">
+              <MoreHorizontal className="h-4 w-4" />
             </Button>
           </div>
         </div>
 
         {/* Tags */}
-        <div className="flex gap-2 mb-4 flex-wrap">
+        <div className="flex gap-2 mb-4">
           {tags.map((tag) => (
-            <Badge key={tag} variant="secondary" className="flex items-center gap-1">
-              {tag}
-              <X 
-                className="h-3 w-3 cursor-pointer hover:text-red-500" 
-                onClick={() => removeTag(tag)}
-              />
-            </Badge>
+            <Badge key={tag} variant="secondary">{tag}</Badge>
           ))}
-          <div className="flex items-center gap-2">
-            <Input
-              placeholder="Add tag..."
-              value={newTag}
-              onChange={(e) => setNewTag(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && addTag()}
-              className="h-6 text-xs w-24"
-            />
-            <Button variant="outline" size="sm" className="h-6 text-xs px-2" onClick={addTag}>
-              <Plus className="h-3 w-3" />
-            </Button>
-          </div>
+          <Button variant="outline" size="sm" className="h-6 text-xs">
+            + Add tag
+          </Button>
         </div>
 
         {/* Toolbar */}
-        <div className="flex items-center gap-1 p-2 bg-muted rounded-lg flex-wrap">
+        <div className="flex items-center gap-1 p-2 bg-muted rounded-lg">
           {toolbarItems.map((item, index) => {
             if (item.type === 'separator') {
               return <Separator key={index} orientation="vertical" className="h-6 mx-1" />;
@@ -421,39 +279,15 @@ export function EnhancedContentEditor({
       </div>
 
       {/* Editor Content */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Main Editor */}
-        <div className="flex-1 p-4 overflow-hidden">
-          <Card className="h-full">
-            <Textarea
-              ref={textareaRef}
-              placeholder="Start writing your content here..."
-              value={currentContent}
-              onChange={(e) => handleContentChange(e.target.value)}
-              className="h-full resize-none border-none shadow-none focus-visible:ring-0 text-base leading-relaxed"
-            />
-          </Card>
-        </div>
-
-        {/* Recommended Reading Panel */}
-        <div className="w-96 border-l border-border">
-          <div className="p-4 border-b border-border">
-            <h3 className="font-semibold flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              Recommended Reading
-            </h3>
-          </div>
-          <ScrollArea className="h-[calc(100vh-12rem)]">
-            <div className="p-4">
-              <RecommendedReadingManager
-                items={recommendedReading}
-                orderedCategories={orderedCategories}
-                onChange={handleRecommendedReadingChange}
-                pageId={pageId}
-              />
-            </div>
-          </ScrollArea>
-        </div>
+      <div className="flex-1 p-4 overflow-hidden">
+        <Card className="h-full">
+          <Textarea
+            placeholder="Start writing your content here..."
+            value={currentContent}
+            onChange={(e) => setCurrentContent(e.target.value)}
+            className="h-full resize-none border-none shadow-none focus-visible:ring-0 text-base leading-relaxed"
+          />
+        </Card>
       </div>
     </div>
   );
