@@ -97,6 +97,9 @@ export function EnhancedContentEditor({
   // Direct DOM content tracking - no React state
   const contentRef = useRef(content);
   const lastSavedContentRef = useRef(content);
+  const lastSavedTitleRef = useRef(title);
+  const lastSavedTagsRef = useRef<string[]>([]);
+  const lastSavedRecommendedReadingRef = useRef<Array<{title: string, url?: string, description: string, type: 'link' | 'file', fileName?: string, fileUrl?: string, category?: string}>>([]);
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
@@ -112,10 +115,102 @@ export function EnhancedContentEditor({
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [currentTableCell, setCurrentTableCell] = useState<HTMLElement | null>(null);
   const { toast } = useToast();
   
   // Initialize audit logging for recommended reading
   const { createSnapshot, logChange } = useRecommendedReadingAudit(pageId || '');
+
+  // Auto-save scheduler
+  const scheduleAutoSave = () => {
+    if (!pageId) return;
+    
+    if (saveIntervalRef.current) {
+      clearTimeout(saveIntervalRef.current);
+    }
+    
+    saveIntervalRef.current = setTimeout(() => {
+      performAutoSave();
+    }, 2000); // 2 second delay
+  };
+
+  // Auto-save function
+  const performAutoSave = async () => {
+    if (!pageId) return;
+    
+    const currentContent = contentRef.current;
+    
+    // Check if any field has changed
+    const contentChanged = currentContent !== lastSavedContentRef.current;
+    const titleChanged = currentTitle !== lastSavedTitleRef.current;
+    const tagsChanged = JSON.stringify(tags) !== JSON.stringify(lastSavedTagsRef.current);
+    const recommendedReadingChanged = JSON.stringify(recommendedReading) !== JSON.stringify(lastSavedRecommendedReadingRef.current);
+    
+    // Don't save if nothing has changed
+    if (!contentChanged && !titleChanged && !tagsChanged && !recommendedReadingChanged) {
+      return;
+    }
+    
+    try {
+      console.log('Auto-saving:', { title: currentTitle, content: currentContent, tags, recommendedReading });
+      
+      const { error } = await supabase
+        .from('pages')
+        .update({ 
+          title: currentTitle,
+          content: currentContent,
+          tags: tags,
+          recommended_reading: recommendedReading,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', pageId);
+
+      if (error) throw error;
+      
+      // Update all last saved refs
+      lastSavedContentRef.current = currentContent;
+      lastSavedTitleRef.current = currentTitle;
+      lastSavedTagsRef.current = [...tags];
+      lastSavedRecommendedReadingRef.current = [...recommendedReading];
+      
+      console.log('Auto-save successful with all content preserved');
+    } catch (error) {
+      console.error('Auto-save failed:', error);
+    }
+  };
+
+  // Manual save function for navigation events
+  const saveNow = async () => {
+    if (!pageId) return;
+    
+    try {
+      const currentContent = contentRef.current;
+      console.log('Saving now:', { title: currentTitle, content: currentContent, tags, recommendedReading });
+      
+      const { error } = await supabase
+        .from('pages')
+        .update({ 
+          title: currentTitle,
+          content: currentContent,
+          tags: tags,
+          recommended_reading: recommendedReading,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', pageId);
+
+      if (error) throw error;
+      
+      // Update all last saved refs
+      lastSavedContentRef.current = currentContent;
+      lastSavedTitleRef.current = currentTitle;
+      lastSavedTagsRef.current = [...tags];
+      lastSavedRecommendedReadingRef.current = [...recommendedReading];
+      
+      console.log('Save successful with all content preserved');
+    } catch (error) {
+      console.error('Save failed:', error);
+    }
+  };
 
   useEffect(() => {
     setCurrentTitle(title);
@@ -124,6 +219,7 @@ export function EnhancedContentEditor({
     const cleanContent = content.split('RECOMMENDED_READING:')[0];
     contentRef.current = cleanContent;
     lastSavedContentRef.current = cleanContent;
+    lastSavedTitleRef.current = title;
     
     if (editorRef.current) {
       editorRef.current.innerHTML = cleanContent;
@@ -205,7 +301,26 @@ export function EnhancedContentEditor({
     };
   }, [title, content]);
 
-  const [currentTableCell, setCurrentTableCell] = useState<HTMLElement | null>(null);
+  // Auto-save when title changes
+  useEffect(() => {
+    if (pageId && currentTitle !== lastSavedTitleRef.current) {
+      scheduleAutoSave();
+    }
+  }, [currentTitle, pageId]);
+
+  // Auto-save when tags change
+  useEffect(() => {
+    if (pageId && JSON.stringify(tags) !== JSON.stringify(lastSavedTagsRef.current)) {
+      scheduleAutoSave();
+    }
+  }, [tags, pageId]);
+
+  // Auto-save when recommended reading changes
+  useEffect(() => {
+    if (pageId && JSON.stringify(recommendedReading) !== JSON.stringify(lastSavedRecommendedReadingRef.current)) {
+      scheduleAutoSave();
+    }
+  }, [recommendedReading, pageId]);
 
   // Load page settings if editing existing page
   useEffect(() => {
@@ -241,18 +356,21 @@ export function EnhancedContentEditor({
                 category: item.category || 'General'
               }));
               setRecommendedReading(typedReadings);
+              lastSavedRecommendedReadingRef.current = typedReadings;
             } else {
               console.log('No recommended reading found in database');
               setRecommendedReading([]);
-            }
+              lastSavedRecommendedReadingRef.current = [];
             
             // Set tags from database
             if (data.tags && Array.isArray(data.tags)) {
               console.log('Found tags in database:', data.tags);
               setTags(data.tags);
+              lastSavedTagsRef.current = data.tags;
             } else {
               console.log('No tags found in database');
               setTags([]);
+              lastSavedTagsRef.current = [];
               
               // Legacy: Try to extract recommended reading from content if it exists
               try {
@@ -369,84 +487,16 @@ export function EnhancedContentEditor({
   const updateContent = () => {
     if (editorRef.current) {
       contentRef.current = editorRef.current.innerHTML;
-      // Trigger auto-save with new approach
       scheduleAutoSave();
     }
   };
 
-  // Auto-save scheduler
-  const scheduleAutoSave = () => {
-    if (!pageId) return;
-    
-    if (saveIntervalRef.current) {
-      clearTimeout(saveIntervalRef.current);
+  // Auto-save when title, tags, or recommended reading changes
+  useEffect(() => {
+    if (pageId) {
+      scheduleAutoSave();
     }
-    
-    saveIntervalRef.current = setTimeout(() => {
-      performAutoSave();
-    }, 2000); // 2 second delay
-  };
-
-  // Auto-save function
-  const performAutoSave = async () => {
-    if (!pageId) return;
-    
-    const currentContent = contentRef.current;
-    
-    // Don't save if content hasn't changed
-    if (currentContent === lastSavedContentRef.current) {
-      return;
-    }
-    
-    try {
-      console.log('Auto-saving:', { title: currentTitle, content: currentContent, tags, recommendedReading });
-      
-      const { error } = await supabase
-        .from('pages')
-        .update({ 
-          title: currentTitle,
-          content: currentContent,
-          tags: tags,
-          recommended_reading: recommendedReading,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', pageId);
-
-      if (error) throw error;
-      
-      lastSavedContentRef.current = currentContent;
-      console.log('Auto-save successful with all content preserved');
-    } catch (error) {
-      console.error('Auto-save failed:', error);
-    }
-  };
-
-  // Manual save function for navigation events
-  const saveNow = async () => {
-    if (!pageId) return;
-    
-    try {
-      const currentContent = contentRef.current;
-      console.log('Saving now:', { title: currentTitle, content: currentContent, tags, recommendedReading });
-      
-      const { error } = await supabase
-        .from('pages')
-        .update({ 
-          title: currentTitle,
-          content: currentContent,
-          tags: tags,
-          recommended_reading: recommendedReading,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', pageId);
-
-      if (error) throw error;
-      lastSavedContentRef.current = currentContent;
-      console.log('Save successful with all content preserved');
-    } catch (error) {
-      console.error('Save failed:', error);
-    }
-  };
+  }, [currentTitle, tags, recommendedReading, pageId]);
 
   // Disabled auto-save completely - save only on manual save and navigation
   // (No more auto-save on content changes)
