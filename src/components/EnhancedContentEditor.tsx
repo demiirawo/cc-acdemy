@@ -2211,20 +2211,34 @@ export function EnhancedContentEditor({
           // Create wrapper container
           const container = document.createElement('div');
           container.className = 'iframe-container';
-          container.style.cssText = 'text-align: center; margin: 10px 0; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;';
+          container.style.cssText = 'text-align: center; margin: 10px 0; border: 1px solid #e5e7eb; border-radius: 8px;';
           
           // Clone the iframe and add our properties
           const newIframe = iframe.cloneNode(true) as HTMLIFrameElement;
           newIframe.id = iframeId;
-          newIframe.style.cssText = 'max-width: 100%; border: none; display: block;';
+          
+          // Preserve existing height from original iframe
+          const originalHeight = iframe.getAttribute('height') || iframe.style.height;
+          const originalWidth = iframe.getAttribute('width') || iframe.style.width;
+          
+          // Build CSS preserving original dimensions
+          let cssStyles = 'max-width: 100%; border: none; display: block;';
+          if (originalHeight) {
+            cssStyles += ` height: ${originalHeight}${originalHeight.includes('px') || originalHeight.includes('%') ? '' : 'px'};`;
+          }
+          if (originalWidth) {
+            cssStyles += ` width: ${originalWidth}${originalWidth.includes('px') || originalWidth.includes('%') ? '' : '%'};`;
+          }
+          
+          newIframe.style.cssText = cssStyles;
           newIframe.frameBorder = '0';
           newIframe.allowFullscreen = true;
           
-          // Set default dimensions if not specified
-          if (!newIframe.width || newIframe.width === '') {
+          // Set default dimensions only if not specified anywhere
+          if (!originalWidth && (!newIframe.width || newIframe.width === '')) {
             newIframe.width = '100%';
           }
-          if (!newIframe.height || newIframe.height === '') {
+          if (!originalHeight && (!newIframe.height || newIframe.height === '')) {
             newIframe.height = '800px';
           }
           
