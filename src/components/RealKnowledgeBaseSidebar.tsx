@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { MovePageDialog } from "./MovePageDialog";
+import { useUserRole } from "@/hooks/useUserRole";
 
 interface SidebarItem {
   id: string;
@@ -408,6 +409,7 @@ export function RealKnowledgeBaseSidebar({
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [pageToMove, setPageToMove] = useState<{ id: string; title: string } | null>(null);
   const { toast } = useToast();
+  const { isAdmin } = useUserRole();
 
   useEffect(() => {
     fetchHierarchyData();
@@ -755,7 +757,15 @@ export function RealKnowledgeBaseSidebar({
       {/* Navigation */}
       <div className="p-4 border-b border-sidebar-border">
         <div className="space-y-1">
-          {navigationItems.map((item) => {
+          {navigationItems
+            .filter((item) => {
+              // Filter navigation items based on user role
+              if (item.id === 'people' || item.id === 'user-management') {
+                return isAdmin;
+              }
+              return true;
+            })
+            .map((item) => {
             const Icon = item.icon;
             const isSelected = selectedId === item.id;
             return (

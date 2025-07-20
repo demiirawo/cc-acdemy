@@ -10,6 +10,7 @@ import { Trash2, Plus, Users, Shield, Globe, Copy, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useUserRole } from "@/hooks/useUserRole";
 
 interface Permission {
   id: string;
@@ -58,9 +59,11 @@ export function PagePermissionsDialog({
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [publicLinkCopied, setPublicLinkCopied] = useState(false);
+  const [visibilityType, setVisibilityType] = useState<'public' | 'domain' | 'admin'>('public');
   
   const { user } = useAuth();
   const { toast } = useToast();
+  const { isAdmin } = useUserRole();
 
   useEffect(() => {
     if (open && pageId) {
@@ -334,29 +337,65 @@ export function PagePermissionsDialog({
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Public Access */}
+          {/* Visibility Settings */}
           <div className="border rounded-lg p-4">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Globe className="h-5 w-5 text-muted-foreground" />
+            <div className="flex items-center gap-2 mb-4">
+              <Globe className="h-5 w-5 text-muted-foreground" />
+              <h3 className="font-semibold">Page Visibility</h3>
+            </div>
+            
+            <div className="space-y-3">
+              <div className="flex items-center justify-between p-3 border rounded-md">
                 <div>
-                  <h3 className="font-semibold">Public Access</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Allow anyone with the link to view this page
-                  </p>
+                  <div className="font-medium">Public</div>
+                  <div className="text-sm text-muted-foreground">Anyone with the link can view</div>
                 </div>
+                <input
+                  type="radio"
+                  name="visibility"
+                  value="public"
+                  checked={visibilityType === 'public'}
+                  onChange={(e) => setVisibilityType(e.target.value as 'public' | 'domain' | 'admin')}
+                  disabled={!isAdmin}
+                  className="h-4 w-4"
+                />
               </div>
-              <Button
-                variant={page?.is_public ? "default" : "outline"}
-                onClick={handleTogglePublic}
-                disabled={loading}
-              >
-                {page?.is_public ? "Public" : "Private"}
-              </Button>
+              
+              <div className="flex items-center justify-between p-3 border rounded-md">
+                <div>
+                  <div className="font-medium">Care-cuddle.co.uk domain only</div>
+                  <div className="text-sm text-muted-foreground">Only users with care-cuddle.co.uk email addresses</div>
+                </div>
+                <input
+                  type="radio"
+                  name="visibility"
+                  value="domain"
+                  checked={visibilityType === 'domain'}
+                  onChange={(e) => setVisibilityType(e.target.value as 'public' | 'domain' | 'admin')}
+                  disabled={!isAdmin}
+                  className="h-4 w-4"
+                />
+              </div>
+              
+              <div className="flex items-center justify-between p-3 border rounded-md">
+                <div>
+                  <div className="font-medium">Admin only</div>
+                  <div className="text-sm text-muted-foreground">Only administrators can access</div>
+                </div>
+                <input
+                  type="radio"
+                  name="visibility"
+                  value="admin"
+                  checked={visibilityType === 'admin'}
+                  onChange={(e) => setVisibilityType(e.target.value as 'public' | 'domain' | 'admin')}
+                  disabled={!isAdmin}
+                  className="h-4 w-4"
+                />
+              </div>
             </div>
 
-            {page?.is_public && page?.public_token && (
-              <div className="flex items-center gap-2 p-3 bg-muted rounded-md">
+            {visibilityType === 'public' && page?.public_token && (
+              <div className="flex items-center gap-2 p-3 bg-muted rounded-md mt-4">
                 <Input
                   value={`${window.location.origin}/public/${page.public_token}`}
                   readOnly
@@ -385,61 +424,63 @@ export function PagePermissionsDialog({
               <h3 className="font-semibold">User Permissions</h3>
             </div>
 
-            {/* Add New Permission */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-4">
-              <Select 
-                value={selectedUserId} 
-                onValueChange={setSelectedUserId}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select user" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableUsers.map((profile) => (
-                    <SelectItem key={profile.user_id} value={profile.user_id}>
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-6 w-6">
-                          <AvatarFallback className="text-xs">
-                            {profile.display_name?.charAt(0) || profile.email?.charAt(0) || 'U'}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="text-left">
-                          <div className="font-medium">
-                            {profile.display_name || 'Unknown User'}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {profile.email}
+            {/* Add New Permission - Only for admins */}
+            {isAdmin && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-4">
+                <Select 
+                  value={selectedUserId} 
+                  onValueChange={setSelectedUserId}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableUsers.map((profile) => (
+                      <SelectItem key={profile.user_id} value={profile.user_id}>
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-6 w-6">
+                            <AvatarFallback className="text-xs">
+                              {profile.display_name?.charAt(0) || profile.email?.charAt(0) || 'U'}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="text-left">
+                            <div className="font-medium">
+                              {profile.display_name || 'Unknown User'}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {profile.email}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-              <Select 
-                value={selectedPermissionType} 
-                onValueChange={setSelectedPermissionType}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Permission type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="read">Read Only</SelectItem>
-                  <SelectItem value="write">Read & Write</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                </SelectContent>
-              </Select>
+                <Select 
+                  value={selectedPermissionType} 
+                  onValueChange={setSelectedPermissionType}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Permission type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="read">Read Only</SelectItem>
+                    <SelectItem value="write">Read & Write</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
 
-              <Button
-                onClick={handleAddPermission}
-                disabled={loading || !selectedUserId}
-                className="w-full"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add
-              </Button>
-            </div>
+                <Button
+                  onClick={handleAddPermission}
+                  disabled={loading || !selectedUserId}
+                  className="w-full"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add
+                </Button>
+              </div>
+            )}
 
             {/* Existing Permissions */}
             <div className="space-y-2">
@@ -469,14 +510,16 @@ export function PagePermissionsDialog({
                       <Badge variant={getPermissionColor(permission.permission_type)}>
                         {permission.permission_type}
                       </Badge>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemovePermission(permission.id)}
-                        disabled={loading}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      {isAdmin && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemovePermission(permission.id)}
+                          disabled={loading}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 ))
