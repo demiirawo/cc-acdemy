@@ -368,7 +368,32 @@ export function KnowledgeBaseApp() {
     handleCreatePageInEditor(parentId);
   };
   const handleCreatePageInEditor = async (parentId?: string) => {
-    if (!user) return;
+    if (!user) {
+      console.error('No user found when trying to create page');
+      toast({
+        title: "Authentication required",
+        description: "Please log in to create pages.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    console.log('Creating page for user:', user.id);
+    
+    // Check current session
+    const { data: session } = await supabase.auth.getSession();
+    console.log('Current session:', session);
+    
+    if (!session?.session) {
+      console.error('No valid session found');
+      toast({
+        title: "Session expired",
+        description: "Please log in again.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     try {
       // Validate parentId if provided
       if (parentId) {
@@ -379,6 +404,16 @@ export function KnowledgeBaseApp() {
           parentId = null; // Reset if parent doesn't exist
         }
       }
+      
+      // Test if we can insert into pages table first
+      console.log('Testing page creation with:', {
+        title: 'Untitled Page',
+        content: '',
+        tags: [],
+        created_by: user.id,
+        parent_page_id: parentId || null
+      });
+      
       const {
         data,
         error
@@ -389,7 +424,13 @@ export function KnowledgeBaseApp() {
         created_by: user.id,
         parent_page_id: parentId || null
       }).select().single();
-      if (error) throw error;
+      
+      if (error) {
+        console.error('Database error:', error);
+        throw error;
+      }
+
+      console.log('Page created successfully:', data);
 
       // Navigate directly to editor
       setCurrentPage({
@@ -410,7 +451,7 @@ export function KnowledgeBaseApp() {
       console.error('Error creating page:', error);
       toast({
         title: "Error creating page",
-        description: "Failed to create page. Please try again.",
+        description: `Failed to create page: ${error.message || 'Unknown error'}`,
         variant: "destructive"
       });
     }
