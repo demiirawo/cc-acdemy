@@ -1,4 +1,5 @@
-import { useState } from "react";
+
+import { useState, useEffect } from "react";
 import { 
   Bold, 
   Italic, 
@@ -42,6 +43,33 @@ export function ContentEditor({
   const [currentTitle, setCurrentTitle] = useState(title);
   const [currentContent, setCurrentContent] = useState(content);
   const [tags, setTags] = useState<string[]>(['engineering', 'documentation']);
+
+  // Auto-save when leaving the page
+  useEffect(() => {
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      // Save the current state before leaving
+      onSave(currentTitle, currentContent);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        // Save when tab becomes hidden (user switches tabs or minimizes)
+        onSave(currentTitle, currentContent);
+      }
+    };
+
+    // Add event listeners
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Cleanup event listeners on component unmount
+    return () => {
+      // Save one final time when component unmounts
+      onSave(currentTitle, currentContent);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [currentTitle, currentContent, onSave]);
 
   const toolbarItems = [
     { icon: Heading1, action: () => insertText('# '), label: 'Heading 1' },
