@@ -552,6 +552,13 @@ export function KnowledgeBaseApp() {
       setIsEditing(false);
       setCurrentView('page');
       
+      // Refresh the page content from database to ensure latest data is displayed
+      await handleItemSelect({
+        id: currentPage.id,
+        title: currentPage.title,
+        type: 'page'
+      });
+      
       // Trigger a window event to refresh the sidebar
       window.dispatchEvent(new CustomEvent('pagesChanged'));
       
