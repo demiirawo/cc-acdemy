@@ -512,8 +512,8 @@ export function KnowledgeBaseApp() {
           lastUpdated: data.updated_at
         });
         toast({
-          title: "Page created and saved",
-          description: `"${title}" has been created with all content, tags, and recommended reading saved.`
+          title: "Page saved",
+          description: ""
         });
       } else {
         // Update existing page
@@ -546,7 +546,7 @@ export function KnowledgeBaseApp() {
         
         toast({
           title: "Page saved",
-          description: `"${title}" has been saved with all content, tags, and recommended reading preserved.`
+          description: ""
         });
       }
       
@@ -639,7 +639,7 @@ export function KnowledgeBaseApp() {
         {currentView === 'user-management' && <UserManagement />}
         {currentView === 'chat' && <ChatPage />}
         
-        {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} />}
+        {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} tags={currentPage.tags} recommendedReading={currentPage.recommended_reading} categoryOrder={currentPage.category_order} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} />}
         
         {currentView === 'page' && currentPage && <PageView currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
       </div>

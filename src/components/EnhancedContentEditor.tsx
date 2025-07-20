@@ -56,6 +56,18 @@ import {
 interface ContentEditorProps {
   title?: string;
   content?: string;
+  tags?: string[];
+  recommendedReading?: Array<{
+    id?: string;
+    title: string;
+    url?: string;
+    description: string;
+    fileUrl?: string;
+    fileName?: string;
+    type?: string;
+    category?: string;
+  }>;
+  categoryOrder?: string[];
   onSave: (title: string, content: string, recommendedReading?: Array<{
     title: string;
     url?: string;
@@ -87,6 +99,9 @@ interface MediaFile {
 export function EnhancedContentEditor({
   title = "",
   content = "",
+  tags: initialTags = [],
+  recommendedReading: initialRecommendedReading = [],
+  categoryOrder = [],
   onSave,
   onPreview,
   isEditing = true,
@@ -98,14 +113,17 @@ export function EnhancedContentEditor({
   const contentRef = useRef(content);
   const lastSavedContentRef = useRef(content);
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const [tags, setTags] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>(initialTags || []);
   const [tagInput, setTagInput] = useState("");
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
   const [isPublic, setIsPublic] = useState(false);
   const [publicToken, setPublicToken] = useState('');
   const [showAdvancedToolbar, setShowAdvancedToolbar] = useState(false);
   const [selectedFontSize, setSelectedFontSize] = useState("14");
-  const [recommendedReading, setRecommendedReading] = useState<Array<{title: string, url?: string, description: string, type: 'link' | 'file', fileName?: string, fileUrl?: string, category?: string}>>([]);
+  const [recommendedReading, setRecommendedReading] = useState<Array<{title: string, url?: string, description: string, type: 'link' | 'file', fileName?: string, fileUrl?: string, category?: string}>>(initialRecommendedReading?.map(item => ({
+    ...item,
+    type: (item.type as 'link' | 'file') || (item.url ? 'link' : 'file')
+  })) || []);
   const [newRecommendation, setNewRecommendation] = useState({title: '', url: '', description: '', type: 'link' as 'link' | 'file', fileName: '', fileUrl: '', category: 'General'});
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingItem, setEditingItem] = useState({title: '', url: '', description: '', type: 'link' as 'link' | 'file', fileName: '', fileUrl: '', category: 'General'});
@@ -2486,7 +2504,7 @@ export function EnhancedContentEditor({
       
       toast({
         title: "Page saved",
-        description: "All content, tags, and recommended reading have been saved successfully.",
+        description: "",
       });
     } catch (error) {
       console.error('Error saving page:', error);
