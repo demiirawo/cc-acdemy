@@ -179,16 +179,16 @@ export function EnhancedContentEditor({
 
     document.addEventListener('keydown', handleKeyDown);
     
-    // Add navigation-based saving
+    // Add navigation-based saving (ONLY way to save now)
     const handleBeforeUnload = () => {
       if (pageId) {
-        autoSave(); // Save immediately when leaving
+        saveNow(); // Save immediately when leaving
       }
     };
     
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden' && pageId) {
-        autoSave(); // Save immediately when tab becomes hidden
+        saveNow(); // Save immediately when tab becomes hidden
       }
     };
     
@@ -202,7 +202,7 @@ export function EnhancedContentEditor({
       
       // Save one final time when component unmounts
       if (pageId) {
-        autoSave();
+        saveNow();
       }
     };
   }, [title, content]);
@@ -356,62 +356,16 @@ export function EnhancedContentEditor({
   const updateContent = () => {
     if (editorRef.current) {
       setCurrentContent(editorRef.current.innerHTML);
-      triggerAutoSave();
+      // Removed auto-save trigger
     }
   };
 
-  // Trigger auto-save when title changes
-  useEffect(() => {
-    if (pageId) {
-      triggerAutoSave();
-    }
-  }, [currentTitle, pageId]);
-
-  // Auto-save functionality
-  const triggerAutoSave = () => {
-    if (!pageId) return; // Only auto-save for existing pages
-    
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-    }
-    
-    autoSaveTimeoutRef.current = setTimeout(() => {
-      autoSave();
-    }, 3000); // Increased from 1.5 to 3 seconds to prevent character truncation
-  };
-
-  // Trigger auto-save when recommended reading changes
-  useEffect(() => {
-    if (pageId && recommendedReading.length > 0) {
-      triggerAutoSave();
-    }
-  }, [recommendedReading, pageId]);
-
-  const autoSave = async () => {
-    if (!pageId) return; // Remove the !currentContent check to allow saving empty content
+  // Manual save function for navigation events
+  const saveNow = async () => {
+    if (!pageId) return;
     
     try {
-      // Get current page data for comparison
-      const { data: currentPage } = await supabase
-        .from('pages')
-        .select('recommended_reading')
-        .eq('id', pageId)
-        .single();
-
-      // Create snapshot if significant changes detected
-      if (currentPage && JSON.stringify(currentPage.recommended_reading) !== JSON.stringify(recommendedReading)) {
-        if (recommendedReading.length > 0) {
-          await createSnapshot('auto');
-        }
-        
-        // Log the auto-save change
-        await logChange('auto_save', currentPage.recommended_reading, recommendedReading, {
-          items_count: recommendedReading.length,
-          content_length: currentContent.length
-        });
-      }
-      
-      console.log('Auto-saving:', { title: currentTitle, content: currentContent, recommendedReading });
+      console.log('Saving now:', { title: currentTitle, content: currentContent });
       
       const { error } = await supabase
         .from('pages')
@@ -424,12 +378,14 @@ export function EnhancedContentEditor({
         .eq('id', pageId);
 
       if (error) throw error;
-      
-      console.log('Auto-saved successfully');
+      console.log('Save successful');
     } catch (error) {
-      console.error('Auto-save failed:', error);
+      console.error('Save failed:', error);
     }
   };
+
+  // Disabled auto-save completely - save only on manual save and navigation
+  // (No more auto-save on content changes)
 
   const formatText = (command: string, value?: string) => {
     execCommand(command, value);
