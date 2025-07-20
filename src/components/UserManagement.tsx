@@ -134,7 +134,10 @@ export function UserManagement() {
     <div className="flex-1 p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">User Management</h1>
+          <Button onClick={() => {}} size="lg" className="mb-2">
+            <Plus className="h-5 w-5 mr-2" />
+            Create Page
+          </Button>
           <p className="text-muted-foreground">Manage user profiles and permissions</p>
         </div>
         <div className="flex items-center gap-2">
