@@ -1,348 +1,559 @@
-
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
-  Plus, 
-  Trash2, 
-  Edit, 
-  ExternalLink, 
-  FileText, 
-  Upload,
-  GripVertical,
-  Book,
-  BookOpen
+  Plus, X, Link as LinkIcon, FileText, History, 
+  AlertTriangle, Save, Undo2, Shield, Clock
 } from "lucide-react";
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { SortableItem } from "./ui/sortable-item";
-import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
+import { 
+  useRecommendedReadingAudit, 
+  RecommendedReadingItem, 
+  AuditLogEntry, 
+  ContentSnapshot 
+} from "@/hooks/useRecommendedReadingAudit";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
-export interface RecommendedReadingManagerProps {
-  items: Array<{
-    id?: string;
-    title: string;
-    description: string;
-    type: 'link' | 'file' | 'document' | 'guide' | 'reference';
-    url?: string;
-    fileUrl?: string;
-    fileName?: string;
-    category?: string;
-  }>;
-  onChange: (
-    newReading: Array<{
-      id?: string;
-      title: string;
-      description: string;
-      type: 'link' | 'file' | 'document' | 'guide' | 'reference';
-      url?: string;
-      fileUrl?: string;
-      fileName?: string;
-      category?: string;
-    }>,
-    newOrderedCategories: string[]
-  ) => void;
+interface RecommendedReadingManagerProps {
   pageId: string;
+  items: RecommendedReadingItem[];
+  onItemsChange: (items: RecommendedReadingItem[]) => void;
+  autoSave?: boolean;
 }
 
 export function RecommendedReadingManager({ 
+  pageId, 
   items, 
-  onChange, 
-  pageId 
+  onItemsChange, 
+  autoSave = false 
 }: RecommendedReadingManagerProps) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [newItem, setNewItem] = useState({
-    title: '',
-    description: '',
-    type: 'link' as const,
-    url: '',
-    category: 'General'
-  });
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [categories, setCategories] = useState<string[]>(['General']);
+  const [activeTab, setActiveTab] = useState<'link' | 'file'>('link');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [snapshots, setSnapshots] = useState<ContentSnapshot[]>([]);
+  const [lastSavedItems, setLastSavedItems] = useState<RecommendedReadingItem[]>(items);
+  
   const { toast } = useToast();
+  const { 
+    createSnapshot, 
+    logChange, 
+    getAuditLogs, 
+    getSnapshots, 
+    restoreFromSnapshot,
+    isLoading 
+  } = useRecommendedReadingAudit(pageId);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  // Extract unique categories from items
+  // Track changes for unsaved indicator
   useEffect(() => {
-    const uniqueCategories = Array.from(new Set([
-      'General',
-      ...items.map(item => item.category || 'General')
-    ]));
-    setCategories(uniqueCategories);
-  }, [items]);
+    const hasChanges = JSON.stringify(items) !== JSON.stringify(lastSavedItems);
+    setHasUnsavedChanges(hasChanges);
+  }, [items, lastSavedItems]);
 
-  const handleAddItem = () => {
-    if (!newItem.title.trim() || !newItem.description.trim()) {
-      toast({
-        title: "Missing information",
-        description: "Please fill in both title and description.",
-        variant: "destructive"
-      });
-      return;
+  // Load audit logs and snapshots
+  const loadAuditData = useCallback(async () => {
+    try {
+      const [logs, snaps] = await Promise.all([
+        getAuditLogs(),
+        getSnapshots()
+      ]);
+      setAuditLogs(logs);
+      setSnapshots(snaps);
+    } catch (error) {
+      console.error('Error loading audit data:', error);
     }
+  }, [getAuditLogs, getSnapshots]);
 
-    const itemToAdd = {
-      id: Date.now().toString(),
-      ...newItem,
-      category: newItem.category || 'General'
-    };
+  useEffect(() => {
+    loadAuditData();
+  }, [loadAuditData]);
 
-    const updatedItems = [...items, itemToAdd];
-    const updatedCategories = Array.from(new Set([
-      ...categories,
-      itemToAdd.category
-    ]));
-
-    onChange(updatedItems, updatedCategories);
-    
-    setNewItem({
+  // Enhanced add item with audit logging
+  const addItem = useCallback(async () => {
+    const newItem: RecommendedReadingItem = {
+      id: crypto.randomUUID(),
       title: '',
       description: '',
-      type: 'link',
-      url: '',
-      category: 'General'
+      type: activeTab === 'link' ? 'link' : 'file',
+      category: 'General',
+      ...(activeTab === 'link' ? { url: '' } : { fileUrl: '', fileName: '' })
+    };
+    
+    const newItems = [...items, newItem];
+    onItemsChange(newItems);
+    
+    // Log the addition
+    await logChange('add', null, newItem, {
+      item_count: newItems.length,
+      item_type: newItem.type
     });
-    setShowAddForm(false);
+    
+    if (autoSave) {
+      await saveChanges(newItems);
+    }
+  }, [items, activeTab, onItemsChange, logChange, autoSave]);
 
-    toast({
-      title: "Item added",
-      description: "Recommended reading item has been added."
+  // Enhanced update item with audit logging
+  const updateItem = useCallback(async (
+    index: number, 
+    field: keyof RecommendedReadingItem, 
+    value: string
+  ) => {
+    const oldItem = { ...items[index] };
+    const updatedItems = [...items];
+    (updatedItems[index] as any)[field] = value;
+    onItemsChange(updatedItems);
+    
+    // Log the update with specific field change
+    await logChange('edit', oldItem, updatedItems[index], {
+      field_changed: field,
+      old_value: oldItem[field],
+      new_value: value,
+      item_index: index
     });
-  };
+    
+    if (autoSave) {
+      await saveChanges(updatedItems);
+    }
+  }, [items, onItemsChange, logChange, autoSave]);
 
-  const handleRemoveItem = (id: string) => {
-    const updatedItems = items.filter(item => item.id !== id);
-    onChange(updatedItems, categories);
+  // Enhanced remove item with confirmation and audit logging
+  const removeItem = useCallback(async (index: number) => {
+    const itemToRemove = items[index];
+    const updatedItems = items.filter((_, i) => i !== index);
+    
+    onItemsChange(updatedItems);
+    
+    // Log the deletion
+    await logChange('delete', itemToRemove, null, {
+      item_count: updatedItems.length,
+      deleted_title: itemToRemove.title
+    });
+    
+    if (autoSave) {
+      await saveChanges(updatedItems);
+    }
     
     toast({
-      title: "Item removed",
-      description: "Recommended reading item has been removed."
+      title: "Item Removed",
+      description: `"${itemToRemove.title || 'Untitled item'}" has been removed.`,
     });
-  };
+  }, [items, onItemsChange, logChange, autoSave, toast]);
 
-  const handleEditItem = (id: string, updates: Partial<typeof newItem>) => {
-    const updatedItems = items.map(item => 
-      item.id === id ? { ...item, ...updates } : item
-    );
-    onChange(updatedItems, categories);
-    setEditingId(null);
-  };
-
-  const handleDragEnd = (event: any) => {
-    const { active, over } = event;
-
-    if (active.id !== over.id) {
-      const oldIndex = items.findIndex(item => item.id === active.id);
-      const newIndex = items.findIndex(item => item.id === over.id);
-
-      const reorderedItems = arrayMove(items, oldIndex, newIndex);
-      onChange(reorderedItems, categories);
+  // Save changes and create snapshot
+  const saveChanges = useCallback(async (itemsToSave = items) => {
+    try {
+      // Create snapshot before saving if there are significant changes
+      if (itemsToSave.length !== lastSavedItems.length || 
+          itemsToSave.some((item, i) => 
+            !lastSavedItems[i] || 
+            item.title !== lastSavedItems[i]?.title ||
+            item.description !== lastSavedItems[i]?.description
+          )) {
+        await createSnapshot('pre_save');
+      }
+      
+      setLastSavedItems([...itemsToSave]);
+      setHasUnsavedChanges(false);
+      
+      // Log bulk save operation
+      await logChange('bulk_update', lastSavedItems, itemsToSave, {
+        items_count: itemsToSave.length,
+        save_type: autoSave ? 'auto' : 'manual'
+      });
+      
+      toast({
+        title: "Changes Saved",
+        description: `${itemsToSave.length} recommended reading items saved.`,
+      });
+      
+    } catch (error) {
+      console.error('Error saving changes:', error);
+      toast({
+        title: "Save Failed",
+        description: "Failed to save changes. Please try again.",
+        variant: "destructive",
+      });
     }
-  };
+  }, [items, lastSavedItems, createSnapshot, logChange, autoSave, toast]);
 
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'document': return <FileText className="h-4 w-4" />;
-      case 'guide': return <Book className="h-4 w-4" />;
-      case 'reference': return <BookOpen className="h-4 w-4" />;
-      case 'file': return <Upload className="h-4 w-4" />;
-      default: return <ExternalLink className="h-4 w-4" />;
+  // Undo changes
+  const undoChanges = useCallback(() => {
+    onItemsChange([...lastSavedItems]);
+    setHasUnsavedChanges(false);
+    toast({
+      title: "Changes Reverted",
+      description: "All unsaved changes have been reverted.",
+    });
+  }, [lastSavedItems, onItemsChange, toast]);
+
+  // Handle bulk operations with confirmation
+  const handleBulkDelete = useCallback(async () => {
+    await logChange('bulk_delete', items, [], {
+      deleted_count: items.length
+    });
+    onItemsChange([]);
+    if (autoSave) {
+      await saveChanges([]);
     }
-  };
-
-  const groupedItems = categories.reduce((acc, category) => {
-    acc[category] = items.filter(item => (item.category || 'General') === category);
-    return acc;
-  }, {} as Record<string, typeof items>);
+  }, [items, logChange, onItemsChange, autoSave, saveChanges]);
 
   return (
-    <div className="space-y-4">
-      {/* Add New Item Form */}
-      {showAddForm && (
-        <Card>
-          <CardContent className="p-4 space-y-3">
-            <Input
-              placeholder="Title"
-              value={newItem.title}
-              onChange={(e) => setNewItem(prev => ({ ...prev, title: e.target.value }))}
-            />
-            <Textarea
-              placeholder="Description"
-              value={newItem.description}
-              onChange={(e) => setNewItem(prev => ({ ...prev, description: e.target.value }))}
-              rows={2}
-            />
-            <div className="flex gap-2">
-              <Select value={newItem.type} onValueChange={(value: any) => setNewItem(prev => ({ ...prev, type: value }))}>
-                <SelectTrigger className="w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="link">Link</SelectItem>
-                  <SelectItem value="file">File</SelectItem>
-                  <SelectItem value="document">Document</SelectItem>
-                  <SelectItem value="guide">Guide</SelectItem>
-                  <SelectItem value="reference">Reference</SelectItem>
-                </SelectContent>
-              </Select>
-              <Input
-                placeholder="Category"
-                value={newItem.category}
-                onChange={(e) => setNewItem(prev => ({ ...prev, category: e.target.value }))}
-                className="flex-1"
-              />
-            </div>
-            {newItem.type === 'link' && (
-              <Input
-                placeholder="URL"
-                value={newItem.url}
-                onChange={(e) => setNewItem(prev => ({ ...prev, url: e.target.value }))}
-              />
-            )}
-            <div className="flex gap-2">
-              <Button onClick={handleAddItem} size="sm">
-                Add Item
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setShowAddForm(false)}>
-                Cancel
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Add Button */}
-      {!showAddForm && (
-        <Button 
-          variant="outline" 
-          onClick={() => setShowAddForm(true)}
-          className="w-full"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Add Recommended Reading
-        </Button>
-      )}
-
-      {/* Grouped Items */}
-      {categories.map(category => {
-        const categoryItems = groupedItems[category];
-        if (categoryItems.length === 0) return null;
-
-        return (
-          <div key={category} className="space-y-2">
-            <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
-              {category}
-            </h4>
-            
-            <DndContext 
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext 
-                items={categoryItems.map(item => item.id!)}
-                strategy={verticalListSortingStrategy}
+    <div className="space-y-6">
+      {/* Header with save status and actions */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FileText className="h-5 w-5" />
+          <h3 className="text-lg font-semibold">Recommended Reading</h3>
+          {hasUnsavedChanges && (
+            <Badge variant="secondary" className="flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              Unsaved Changes
+            </Badge>
+          )}
+        </div>
+        
+        <div className="flex items-center gap-2">
+          {hasUnsavedChanges && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={undoChanges}
+                className="flex items-center gap-2"
               >
-                <div className="space-y-2">
-                  {categoryItems.map((item) => (
-                    <SortableItem key={item.id} id={item.id!}>
-                      <Card className="group hover:shadow-sm transition-shadow">
-                        <CardContent className="p-3">
-                          {editingId === item.id ? (
-                            <div className="space-y-2">
-                              <Input
-                                defaultValue={item.title}
-                                onBlur={(e) => handleEditItem(item.id!, { title: e.target.value })}
-                                className="font-medium"
-                              />
-                              <Textarea
-                                defaultValue={item.description}
-                                onBlur={(e) => handleEditItem(item.id!, { description: e.target.value })}
-                                rows={2}
-                              />
-                              <Button 
-                                size="sm" 
-                                onClick={() => setEditingId(null)}
+                <Undo2 className="h-4 w-4" />
+                Undo
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => saveChanges()}
+                className="flex items-center gap-2"
+              >
+                <Save className="h-4 w-4" />
+                Save Changes
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <Tabs defaultValue="editor" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="editor">Editor</TabsTrigger>
+          <TabsTrigger value="history" className="flex items-center gap-2">
+            <History className="h-4 w-4" />
+            History
+          </TabsTrigger>
+          <TabsTrigger value="recovery" className="flex items-center gap-2">
+            <Shield className="h-4 w-4" />
+            Recovery
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="editor" className="space-y-4">
+          <Card>
+            <CardContent className="pt-6 space-y-4">
+              {/* Tab buttons for adding new items */}
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant={activeTab === 'link' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setActiveTab('link')}
+                  className="flex items-center gap-2"
+                >
+                  <LinkIcon className="h-4 w-4" />
+                  Add Link
+                </Button>
+                <Button
+                  type="button"
+                  variant={activeTab === 'file' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setActiveTab('file')}
+                  className="flex items-center gap-2"
+                >
+                  <FileText className="h-4 w-4" />
+                  Add File
+                </Button>
+              </div>
+
+              <Button
+                type="button"
+                onClick={addItem}
+                className="w-full"
+                size="sm"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add {activeTab === 'link' ? 'Link' : 'File'}
+              </Button>
+
+              {/* Existing items */}
+              {items.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">{items.length} Items</span>
+                    {items.length > 1 && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="outline" size="sm" className="text-destructive">
+                            Clear All
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Clear All Items</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This will remove all {items.length} recommended reading items. This action cannot be undone.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={handleBulkDelete}>
+                              Clear All
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+                  </div>
+
+                  {items.map((item, index) => (
+                    <Card key={item.id || index} className="border-l-4 border-l-primary/20">
+                      <CardContent className="pt-4">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">
+                              {item.type === 'link' ? 'LINK' : 'FILE'}
+                            </Badge>
+                            <span className="text-sm text-muted-foreground">Item {index + 1}</span>
+                          </div>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive/80"
                               >
-                                Done
+                                <X className="h-4 w-4" />
                               </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Remove Item</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Remove "{item.title || 'Untitled item'}"? This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => removeItem(index)}>
+                                  Remove
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="space-y-2">
+                              <Label>Category</Label>
+                              <Input
+                                value={item.category || 'General'}
+                                onChange={(e) => updateItem(index, 'category', e.target.value)}
+                                placeholder="General"
+                              />
                             </div>
-                          ) : (
-                            <div className="flex items-start gap-3">
-                              <GripVertical className="h-4 w-4 text-muted-foreground mt-1 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab" />
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  {getTypeIcon(item.type)}
-                                  <h5 className="font-medium text-sm truncate">{item.title}</h5>
-                                  <Badge variant="secondary" className="text-xs">
-                                    {item.type}
-                                  </Badge>
-                                </div>
-                                <p className="text-xs text-muted-foreground line-clamp-2">
-                                  {item.description}
-                                </p>
-                                {item.url && (
-                                  <a 
-                                    href={item.url} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    className="text-xs text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 mt-1"
-                                  >
-                                    Open <ExternalLink className="h-3 w-3" />
-                                  </a>
+
+                            <div className="space-y-2">
+                              <Label>Title</Label>
+                              <Input
+                                value={item.title}
+                                onChange={(e) => updateItem(index, 'title', e.target.value)}
+                                placeholder="Enter title"
+                              />
+                            </div>
+
+                            {item.type === 'link' && (
+                              <div className="space-y-2">
+                                <Label>Link</Label>
+                                <Input
+                                  type="url"
+                                  value={item.url || ''}
+                                  onChange={(e) => updateItem(index, 'url', e.target.value)}
+                                  placeholder="https://example.com"
+                                />
+                              </div>
+                            )}
+
+                            {item.type === 'file' && (
+                              <div className="space-y-2">
+                                <Label>File</Label>
+                                {item.fileName ? (
+                                  <div className="flex items-center gap-2 p-2 bg-muted rounded">
+                                    <FileText className="h-4 w-4" />
+                                    <span className="text-sm">{item.fileName}</span>
+                                  </div>
+                                ) : (
+                                  <Input
+                                    type="file"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file) {
+                                        updateItem(index, 'fileName', file.name);
+                                        updateItem(index, 'fileUrl', `mock://files/${file.name}`);
+                                      }
+                                    }}
+                                  />
                                 )}
                               </div>
-                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setEditingId(item.id!)}
-                                  className="h-6 w-6 p-0"
-                                >
-                                  <Edit className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleRemoveItem(item.id!)}
-                                  className="h-6 w-6 p-0 text-destructive hover:text-destructive"
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    </SortableItem>
+                            )}
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Description</Label>
+                            <Textarea
+                              value={item.description}
+                              onChange={(e) => updateItem(index, 'description', e.target.value)}
+                              placeholder="Enter description"
+                              rows={3}
+                            />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
                   ))}
                 </div>
-              </SortableContext>
-            </DndContext>
-          </div>
-        );
-      })}
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      {items.length === 0 && !showAddForm && (
-        <div className="text-center py-8 text-muted-foreground">
-          <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
-          <p className="text-sm">No recommended reading items yet.</p>
-          <p className="text-xs">Click "Add Recommended Reading" to get started.</p>
-        </div>
-      )}
+        <TabsContent value="history">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Change History
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-96">
+                {auditLogs.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-8">No changes recorded yet</p>
+                ) : (
+                  <div className="space-y-4">
+                    {auditLogs.map((log) => (
+                      <div key={log.id} className="flex items-start gap-3 p-3 border rounded-lg">
+                        <div className="flex-shrink-0 mt-1">
+                          <div className="w-2 h-2 bg-primary rounded-full" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge variant="outline" className="text-xs">
+                              {log.operation_type.replace('_', ' ').toUpperCase()}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(log.created_at).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="text-sm">
+                            {log.change_details && JSON.stringify(log.change_details)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="recovery">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                Content Recovery
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-96">
+                {snapshots.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-8">No snapshots available</p>
+                ) : (
+                  <div className="space-y-4">
+                    {snapshots.map((snapshot) => (
+                      <Card key={snapshot.id} className="border-l-4 border-l-blue-500/20">
+                        <CardContent className="pt-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Clock className="h-4 w-4" />
+                              <span className="text-sm font-medium">
+                                {new Date(snapshot.created_at).toLocaleString()}
+                              </span>
+                              <Badge variant="outline">{snapshot.snapshot_type}</Badge>
+                            </div>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="outline" size="sm">
+                                  Restore
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Restore Content</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This will restore the content and recommended reading from {new Date(snapshot.created_at).toLocaleString()}. 
+                                    Current changes will be backed up automatically.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction 
+                                    onClick={() => restoreFromSnapshot(snapshot.id)}
+                                    disabled={isLoading}
+                                  >
+                                    Restore
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                          <p className="text-sm text-muted-foreground mb-2">
+                            <strong>{snapshot.title}</strong>
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {snapshot.recommended_reading?.length || 0} recommended reading items
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
