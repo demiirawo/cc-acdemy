@@ -436,40 +436,58 @@ export function KnowledgeBaseApp() {
     category?: string;
   }>, orderedCategories?: string[]) => {
     if (!currentPage || !user) return;
+
     try {
+      console.log('Saving page:', currentPage.id, { title: title.substring(0, 30) + '...' });
+      
       if (currentPage.id === 'new') {
         // Create new page
-        const {
-          data,
-          error
-        } = await supabase.from('pages').insert({
-          title,
-          content,
-          recommended_reading: recommendedReading || [],
-          category_order: orderedCategories || [],
-          created_by: user.id
-        }).select().single();
+        const { data, error } = await supabase
+          .from('pages')
+          .insert({
+            title,
+            content,
+            recommended_reading: recommendedReading || [],
+            category_order: orderedCategories || [],
+            created_by: user.id
+          })
+          .select()
+          .single();
+
         if (error) throw error;
-        setCurrentPage({
+
+        const newPage = {
           ...currentPage,
           id: data.id,
           title,
           content,
-          lastUpdated: data.updated_at
-        });
+          lastUpdated: data.updated_at,
+          recommended_reading: (recommendedReading || []).map(item => ({
+            ...item,
+            type: item.type || (item.url ? 'link' : 'file'),
+            category: item.category || 'General'
+          })),
+          category_order: orderedCategories || []
+        };
+        
+        setCurrentPage(newPage);
       } else {
         // Update existing page
-        const {
-          error
-        } = await supabase.from('pages').update({
-          title,
-          content,
-          recommended_reading: recommendedReading || [],
-          category_order: orderedCategories || [],
-          updated_at: new Date().toISOString()
-        }).eq('id', currentPage.id);
+        const { error } = await supabase
+          .from('pages')
+          .update({
+            title,
+            content,
+            recommended_reading: recommendedReading || [],
+            category_order: orderedCategories || [],
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', currentPage.id);
+
         if (error) throw error;
-        setCurrentPage({
+
+        // Update local state with the saved data
+        const updatedPage = {
           ...currentPage,
           title,
           content,
@@ -480,10 +498,15 @@ export function KnowledgeBaseApp() {
             category: item.category || 'General'
           })),
           category_order: orderedCategories || []
-        });
+        };
+        
+        setCurrentPage(updatedPage);
+        console.log('Page saved successfully:', currentPage.id);
       }
+
       setIsEditing(false);
       setCurrentView('page');
+      
       toast({
         title: "Page saved",
         description: `"${title}" has been saved successfully.`
