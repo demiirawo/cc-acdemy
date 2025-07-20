@@ -179,8 +179,31 @@ export function EnhancedContentEditor({
 
     document.addEventListener('keydown', handleKeyDown);
     
+    // Add navigation-based saving
+    const handleBeforeUnload = () => {
+      if (pageId) {
+        autoSave(); // Save immediately when leaving
+      }
+    };
+    
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && pageId) {
+        autoSave(); // Save immediately when tab becomes hidden
+      }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      
+      // Save one final time when component unmounts
+      if (pageId) {
+        autoSave();
+      }
     };
   }, [title, content]);
 
@@ -354,7 +377,7 @@ export function EnhancedContentEditor({
     
     autoSaveTimeoutRef.current = setTimeout(() => {
       autoSave();
-    }, 1500); // Auto-save after 1.5 seconds of inactivity
+    }, 3000); // Increased from 1.5 to 3 seconds to prevent character truncation
   };
 
   // Trigger auto-save when recommended reading changes
@@ -365,7 +388,7 @@ export function EnhancedContentEditor({
   }, [recommendedReading, pageId]);
 
   const autoSave = async () => {
-    if (!pageId || !currentContent) return;
+    if (!pageId) return; // Remove the !currentContent check to allow saving empty content
     
     try {
       // Get current page data for comparison
@@ -387,6 +410,8 @@ export function EnhancedContentEditor({
           content_length: currentContent.length
         });
       }
+      
+      console.log('Auto-saving:', { title: currentTitle, content: currentContent, recommendedReading });
       
       const { error } = await supabase
         .from('pages')
