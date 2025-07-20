@@ -528,125 +528,21 @@ export function KnowledgeBaseApp() {
         }).eq('id', currentPage.id);
         if (error) throw error;
         
-        console.log('Page saved successfully, fetching fresh data...');
-        
-        // Fetch fresh page data from database to ensure we have the latest content
-        const { data: freshPageData, error: fetchError } = await supabase
-          .from('pages')
-          .select(`
-            id,
-            title,
-            content,
-            updated_at,
-            view_count,
-            created_by,
-            recommended_reading,
-            category_order,
-            parent_page_id,
-            space_id
-          `)
-          .eq('id', currentPage.id)
-          .single();
-          
-        if (fetchError) {
-          console.error('Error fetching fresh page data:', fetchError);
-          throw fetchError;
-        }
-        
-        // Update state with fresh data from database
-        const updatedPageData = {
-          id: freshPageData.id,
-          title: freshPageData.title,
-          content: freshPageData.content,
-          lastUpdated: freshPageData.updated_at,
-          author: 'User',
-          parent_page_id: freshPageData.parent_page_id,
-          space_id: freshPageData.space_id,
-          recommended_reading: freshPageData.recommended_reading as any || [],
-          category_order: freshPageData.category_order as string[] || []
-        };
-        
-        setCurrentPage(updatedPageData);
-        
-        console.log('Fresh page data loaded:', {
-          id: updatedPageData.id,
-          title: updatedPageData.title,
-          contentLength: updatedPageData.content.length,
-          lastUpdated: updatedPageData.lastUpdated
-        });
-        
         toast({
           title: "Page saved",
-          description: `"${title}" has been saved with all content, tags, and recommended reading preserved.`
+          description: `"${title}" has been saved successfully.`
         });
       }
       
-      // Instead of trying to sync state, completely reload the page data
-      // This simulates what happens when you navigate away and back
-      console.log('Save completed, reloading page data...');
+      // After saving, simulate exactly what happens when you click on a page
+      // This is the exact same flow as clicking the page in the sidebar
+      console.log('Save completed, reloading page with fresh data...');
       
-      // Clear current page to force a clean reload
-      setCurrentPage(null);
-      setCurrentView('dashboard');
-      
-      // Short delay to ensure state is cleared, then reload the page
-      setTimeout(async () => {
-        try {
-          const { data: reloadedPage, error: reloadError } = await supabase
-            .from('pages')
-            .select(`
-              id,
-              title,
-              content,
-              updated_at,
-              view_count,
-              created_by,
-              recommended_reading,
-              category_order,
-              parent_page_id,
-              space_id
-            `)
-            .eq('id', currentPage.id)
-            .single();
-            
-          if (reloadError) throw reloadError;
-          
-          const reloadedPageData = {
-            id: reloadedPage.id,
-            title: reloadedPage.title,
-            content: reloadedPage.content,
-            lastUpdated: reloadedPage.updated_at,
-            author: 'User',
-            parent_page_id: reloadedPage.parent_page_id,
-            space_id: reloadedPage.space_id,
-            recommended_reading: reloadedPage.recommended_reading as any || [],
-            category_order: reloadedPage.category_order as string[] || []
-          };
-          
-          setCurrentPage(reloadedPageData);
-          setCurrentView('page');
-          setIsEditing(false);
-          
-          console.log('Page data reloaded successfully:', {
-            id: reloadedPageData.id,
-            title: reloadedPageData.title,
-            contentLength: reloadedPageData.content.length,
-            lastUpdated: reloadedPageData.lastUpdated
-          });
-          
-          // Build breadcrumbs for the reloaded page
-          const breadcrumbPath = await buildBreadcrumbs(reloadedPageData);
-          setBreadcrumbs(breadcrumbPath);
-          
-        } catch (error) {
-          console.error('Error reloading page data:', error);
-          toast({
-            title: "Error",
-            description: "Failed to reload page after saving.",
-            variant: "destructive"
-          });
-        }
-      }, 100);
+      await handleItemSelect({
+        id: currentPage.id,
+        title: currentPage.title,
+        type: 'page'
+      });
       
       // Trigger sidebar refresh
       window.dispatchEvent(new CustomEvent('pagesChanged'));
