@@ -9,8 +9,7 @@ import {
   Type,
   Minus,
   Download,
-  Trash2,
-  Plus
+  Trash2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -203,10 +202,7 @@ export function WhiteboardCanvas() {
       {/* Header */}
       <div className="border-b border-border p-4 bg-background">
         <div className="flex items-center justify-between mb-4">
-          <Button onClick={() => {}} size="lg">
-            <Plus className="h-5 w-5 mr-2" />
-            Create Page
-          </Button>
+          <h1 className="text-2xl font-bold text-foreground">Whiteboard</h1>
           <div className="flex items-center gap-2">
             <Button onClick={handleDownload} variant="outline" size="sm">
               <Download className="h-4 w-4 mr-2" />
