@@ -32,7 +32,7 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
     e.preventDefault();
     setIsLoading(true);
 
-    // Check if email domain is care-cuddle.co.uk
+    // Client-side email domain validation (server-side validation also enforced)
     if (!formData.email.endsWith('@care-cuddle.co.uk')) {
       toast({
         title: "Registration restricted",

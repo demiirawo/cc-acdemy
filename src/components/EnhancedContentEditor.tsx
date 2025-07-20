@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { sanitizeHtml } from "@/lib/security";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -2796,7 +2797,7 @@ export function EnhancedContentEditor({
           <div className="prose prose-lg max-w-none">
             <div 
               className="text-foreground leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: contentRef.current.split('RECOMMENDED_READING:')[0] }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(contentRef.current.split('RECOMMENDED_READING:')[0]) }}
             />
           </div>
           
