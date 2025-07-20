@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +6,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
-import { Folder, BookOpen } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Folder, BookOpen, Plus, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -45,6 +45,8 @@ export function CreatePageDialog({
   const [selectedSpaceId, setSelectedSpaceId] = useState<string | null>(initialSpaceId);
   const [selectedParentId, setSelectedParentId] = useState<string | null>(initialParentId);
   const [isPublic, setIsPublic] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
+  const [newTag, setNewTag] = useState("");
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [pages, setPages] = useState<Page[]>([]);
   const [loading, setLoading] = useState(false);
@@ -95,6 +97,24 @@ export function CreatePageDialog({
     }
   };
 
+  const handleAddTag = () => {
+    if (newTag.trim() && !tags.includes(newTag.trim())) {
+      setTags([...tags, newTag.trim()]);
+      setNewTag("");
+    }
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    setTags(tags.filter(tag => tag !== tagToRemove));
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAddTag();
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -127,6 +147,7 @@ export function CreatePageDialog({
           space_id: selectedSpaceId,
           parent_page_id: selectedParentId,
           is_public: isPublic,
+          tags: tags.length > 0 ? tags : null,
           created_by: user.id
         })
         .select()
@@ -145,6 +166,8 @@ export function CreatePageDialog({
       setSelectedSpaceId(null);
       setSelectedParentId(null);
       setIsPublic(false);
+      setTags([]);
+      setNewTag("");
       
       onPageCreated(data.id);
       onOpenChange(false);
@@ -256,6 +279,45 @@ export function CreatePageDialog({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          {/* Tags */}
+          <div className="space-y-2">
+            <Label>Tags</Label>
+            <div className="flex flex-wrap gap-2 mb-2">
+              {tags.map((tag) => (
+                <Badge key={tag} variant="secondary" className="flex items-center gap-1">
+                  {tag}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-4 w-4 p-0 hover:bg-transparent"
+                    onClick={() => handleRemoveTag(tag)}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </Badge>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Input
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Add tag..."
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleAddTag}
+                disabled={!newTag.trim()}
+              >
+                <Plus className="h-3 w-3" />
+              </Button>
             </div>
           </div>
 

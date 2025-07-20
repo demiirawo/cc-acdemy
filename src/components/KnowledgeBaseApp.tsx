@@ -1,8 +1,8 @@
-
 import { useState, useEffect } from "react";
 import { ResizableSidebar } from "./ResizableSidebar";
 import { RealDashboard } from "./RealDashboard";
 import { RecentlyUpdatedPage } from "./RecentlyUpdatedPage";
+import { TagsPage } from "./TagsPage";
 import { PeoplePage } from "./PeoplePage";
 import { EnhancedContentEditor } from "./EnhancedContentEditor";
 import { CreatePageDialog } from "./CreatePageDialog";
@@ -21,37 +21,6 @@ import { UserManagement } from "./UserManagement";
 import { ChatPage } from "./ChatPage";
 import { RecommendedReadingSection } from "./RecommendedReadingSection";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
-
-// Utility function to extract meaningful preview text from content
-const extractPreviewText = (content: string, maxLength: number = 150): string => {
-  if (!content) return '';
-  
-  // Remove HTML tags
-  const withoutHtml = content.replace(/<[^>]*>/g, '');
-  
-  // Remove markdown formatting
-  let cleaned = withoutHtml
-    .replace(/#+\s*/g, '') // Remove headings
-    .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold
-    .replace(/\*([^*]+)\*/g, '$1') // Remove italic
-    .replace(/`([^`]+)`/g, '$1') // Remove inline code
-    .replace(/```[\s\S]*?```/g, '') // Remove code blocks
-    .replace(/>\s*/g, '') // Remove quotes
-    .replace(/[-*+]\s+/g, '') // Remove list markers
-    .replace(/\d+\.\s+/g, '') // Remove numbered lists
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Extract link text
-    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1') // Extract image alt text
-    .replace(/RECOMMENDED_READING:[\s\S]*$/g, '') // Remove recommended reading section
-    .replace(/\s+/g, ' ') // Normalize whitespace
-    .trim();
-  
-  // If the cleaned content is too short or mostly formatting, return empty
-  if (cleaned.length < 10 || cleaned.match(/^[\s\-_=|<>{}[\]().,;:!?]*$/)) {
-    return '';
-  }
-  
-  return cleaned.length > maxLength ? cleaned.substring(0, maxLength) + '...' : cleaned;
-};
 
 // Page view component
 function PageView({
@@ -188,7 +157,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'people' | 'settings' | 'whiteboard' | 'user-management' | 'chat';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'people' | 'settings' | 'whiteboard' | 'user-management' | 'chat';
 interface SidebarItem {
   id: string;
   title: string;
@@ -309,6 +278,10 @@ export function KnowledgeBaseApp() {
       setBreadcrumbs([]);
     } else if (item.id === 'recent') {
       setCurrentView('recent');
+      setCurrentPage(null);
+      setBreadcrumbs([]);
+    } else if (item.id === 'tags') {
+      setCurrentView('tags');
       setCurrentPage(null);
       setBreadcrumbs([]);
     } else if (item.id === 'people') {
@@ -564,7 +537,7 @@ export function KnowledgeBaseApp() {
                     </BreadcrumbItem>
                   </BreadcrumbList>
                 </Breadcrumb> : <h2 className="text-lg font-semibold text-black/0">
-                  {currentView === 'dashboard' ? 'Dashboard' : currentView === 'recent' ? 'Recently Updated' : currentView === 'people' ? 'People' : currentView === 'settings' ? 'Settings' : currentView === 'whiteboard' ? 'Whiteboard' : currentView === 'user-management' ? 'User Management' : currentView === 'chat' ? 'Care Cuddle AI' : 'Care Cuddle Academy'}
+                  {currentView === 'dashboard' ? 'Dashboard' : currentView === 'recent' ? 'Recently Updated' : currentView === 'tags' ? 'Tags' : currentView === 'people' ? 'People' : currentView === 'settings' ? 'Settings' : currentView === 'whiteboard' ? 'Whiteboard' : currentView === 'user-management' ? 'User Management' : currentView === 'chat' ? 'Care Cuddle AI' : 'Care Cuddle Academy'}
                 </h2>}
             </div>
             <div className="flex items-center gap-2">
@@ -587,6 +560,8 @@ export function KnowledgeBaseApp() {
 
         {currentView === 'recent' && <RecentlyUpdatedPage onPageSelect={handlePageSelect} />}
 
+        {currentView === 'tags' && <TagsPage onPageSelect={handlePageSelect} />}
+
         {currentView === 'people' && <PeoplePage onPageSelect={handlePageSelect} />}
 
         {currentView === 'settings' && <SettingsPage onClose={() => setCurrentView('dashboard')} />}
@@ -607,6 +582,3 @@ export function KnowledgeBaseApp() {
       {currentPage && <PagePermissionsDialog open={permissionsDialogOpen} onOpenChange={setPermissionsDialogOpen} pageId={currentPage.id} pageTitle={currentPage.title} />}
     </div>;
 }
-
-// Export the utility function for use in other components
-export { extractPreviewText };
