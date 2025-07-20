@@ -528,18 +528,51 @@ export function KnowledgeBaseApp() {
         }).eq('id', currentPage.id);
         if (error) throw error;
         
-        // Update the current page state with the new data
-        setCurrentPage({
-          ...currentPage,
-          title,
-          content,
-          lastUpdated: new Date().toISOString(),
-          recommended_reading: (recommendedReading || []).map(item => ({
-            ...item,
-            type: item.type || (item.url ? 'link' : 'file'),
-            category: item.category || 'General'
-          })),
-          category_order: orderedCategories || []
+        console.log('Page saved successfully, fetching fresh data...');
+        
+        // Fetch fresh page data from database to ensure we have the latest content
+        const { data: freshPageData, error: fetchError } = await supabase
+          .from('pages')
+          .select(`
+            id,
+            title,
+            content,
+            updated_at,
+            view_count,
+            created_by,
+            recommended_reading,
+            category_order,
+            parent_page_id,
+            space_id
+          `)
+          .eq('id', currentPage.id)
+          .single();
+          
+        if (fetchError) {
+          console.error('Error fetching fresh page data:', fetchError);
+          throw fetchError;
+        }
+        
+        // Update state with fresh data from database
+        const updatedPageData = {
+          id: freshPageData.id,
+          title: freshPageData.title,
+          content: freshPageData.content,
+          lastUpdated: freshPageData.updated_at,
+          author: 'User',
+          parent_page_id: freshPageData.parent_page_id,
+          space_id: freshPageData.space_id,
+          recommended_reading: freshPageData.recommended_reading as any || [],
+          category_order: freshPageData.category_order as string[] || []
+        };
+        
+        setCurrentPage(updatedPageData);
+        
+        console.log('Fresh page data loaded:', {
+          id: updatedPageData.id,
+          title: updatedPageData.title,
+          contentLength: updatedPageData.content.length,
+          lastUpdated: updatedPageData.lastUpdated
         });
         
         toast({
