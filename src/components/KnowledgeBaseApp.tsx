@@ -185,7 +185,6 @@ interface Page {
     category?: string;
   }>;
   category_order?: string[];
-  tags?: string[];
 }
 interface BreadcrumbData {
   id: string;
@@ -201,9 +200,16 @@ export function KnowledgeBaseApp() {
   const [createPageParentId, setCreatePageParentId] = useState<string | null>(null);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbData[]>([]);
-  const { user, loading, signOut } = useAuth();
-  const { toast } = useToast();
+  const {
+    user,
+    loading,
+    signOut
+  } = useAuth();
+  const {
+    toast
+  } = useToast();
 
+  // Build breadcrumb hierarchy
   const buildBreadcrumbs = async (page: Page): Promise<BreadcrumbData[]> => {
     const breadcrumbPath: BreadcrumbData[] = [];
     let currentPageData = page;
@@ -264,7 +270,6 @@ export function KnowledgeBaseApp() {
   if (!user) {
     return <AuthForm onAuthStateChange={() => window.location.reload()} />;
   }
-
   const handleItemSelect = async (item: SidebarItem) => {
     setSelectedItemId(item.id);
     if (item.id === 'home') {
@@ -302,9 +307,10 @@ export function KnowledgeBaseApp() {
     } else if (item.type === 'page') {
       try {
         // Fetch real page data from Supabase
-        const { data, error } = await supabase
-          .from('pages')
-          .select(`
+        const {
+          data,
+          error
+        } = await supabase.from('pages').select(`
             id,
             title,
             content,
@@ -314,14 +320,9 @@ export function KnowledgeBaseApp() {
             recommended_reading,
             category_order,
             parent_page_id,
-            space_id,
-            tags
-          `)
-          .eq('id', item.id)
-          .single();
-
+            space_id
+          `).eq('id', item.id).single();
         if (error) throw error;
-
         if (data) {
           const pageData = {
             id: data.id,
@@ -332,8 +333,7 @@ export function KnowledgeBaseApp() {
             parent_page_id: data.parent_page_id,
             space_id: data.space_id,
             recommended_reading: data.recommended_reading as any || [],
-            category_order: data.category_order as string[] || [],
-            tags: data.tags || []
+            category_order: data.category_order as string[] || []
           };
           setCurrentPage(pageData);
           setCurrentView('page');
@@ -361,85 +361,53 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
     }
   };
-
   const handleCreatePage = () => {
     handleCreatePageInEditor();
   };
-
   const handleCreateSubPage = (parentId: string) => {
     handleCreatePageInEditor(parentId);
   };
-
   const handleCreatePageInEditor = async (parentId?: string) => {
     if (!user) return;
-    
     try {
-      console.log('Creating new page with parent:', parentId);
-      
       // Validate parentId if provided
       if (parentId) {
-        const { data: parentExists } = await supabase
-          .from('pages')
-          .select('id')
-          .eq('id', parentId)
-          .single();
-        
+        const {
+          data: parentExists
+        } = await supabase.from('pages').select('id').eq('id', parentId).single();
         if (!parentExists) {
-          console.log('Parent page not found, creating without parent');
-          parentId = undefined;
+          parentId = null; // Reset if parent doesn't exist
         }
       }
+      const {
+        data,
+        error
+      } = await supabase.from('pages').insert({
+        title: 'Untitled Page',
+        content: '',
+        created_by: user.id,
+        parent_page_id: parentId || null,
+        tags: [] // Initialize with empty tags array
+      }).select().single();
+      if (error) throw error;
 
-      // Create the page in the database
-      const { data, error } = await supabase
-        .from('pages')
-        .insert({
-          title: 'Untitled Page',
-          content: '',
-          created_by: user.id,
-          parent_page_id: parentId || null,
-          tags: [] // Initialize empty tags array
-        })
-        .select()
-        .single();
+      // Note: Sidebar will refresh automatically through its own data fetching
 
-      if (error) {
-        console.error('Error creating page:', error);
-        throw error;
-      }
-
-      console.log('Page created successfully:', data);
-
-      // Create the page object
-      const newPage = {
+      // Navigate directly to editor
+      setCurrentPage({
         id: data.id,
         title: data.title,
         content: data.content,
         lastUpdated: data.updated_at,
-        author: 'User',
-        parent_page_id: data.parent_page_id,
-        space_id: data.space_id,
-        recommended_reading: [],
-        category_order: [],
-        tags: data.tags || []
-      };
-
-      // Navigate directly to editor
-      setCurrentPage(newPage);
+        author: 'User'
+      });
       setIsEditing(true);
       setCurrentView('editor');
       setSelectedItemId(data.id);
-
-      // Trigger hierarchy refresh
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('pageUpdated'));
-      }, 100);
-
       toast({
         title: "Page created",
         description: "New page created. Start editing!"
       });
-
     } catch (error) {
       console.error('Error creating page:', error);
       toast({
@@ -449,7 +417,6 @@ export function KnowledgeBaseApp() {
       });
     }
   };
-
   const handlePageCreated = (pageId: string) => {
     // Navigate to the newly created page
     handleItemSelect({
@@ -458,73 +425,55 @@ export function KnowledgeBaseApp() {
       type: 'page'
     });
   };
-
   const handleEditPage = () => {
     setIsEditing(true);
     setCurrentView('editor');
   };
-
-  const handleSavePage = async (
-    title: string,
-    content: string,
-    recommendedReading?: Array<{
-      title: string;
-      url?: string;
-      description: string;
-      fileUrl?: string;
-      fileName?: string;
-      type?: string;
-      category?: string;
-    }>,
-    orderedCategories?: string[],
-    tags?: string[]
-  ) => {
+  const handleSavePage = async (title: string, content: string, recommendedReading?: Array<{
+    title: string;
+    url?: string;
+    description: string;
+    fileUrl?: string;
+    fileName?: string;
+    type?: string;
+    category?: string;
+  }>, orderedCategories?: string[], tags?: string[]) => {
     if (!currentPage || !user) return;
-    
     try {
-      console.log('Saving page:', { title, content: content.length, tags });
-      
       if (currentPage.id === 'new') {
         // Create new page
-        const { data, error } = await supabase
-          .from('pages')
-          .insert({
-            title,
-            content,
-            recommended_reading: recommendedReading || [],
-            category_order: orderedCategories || [],
-            created_by: user.id,
-            tags: tags || []
-          })
-          .select()
-          .single();
-
+        const {
+          data,
+          error
+        } = await supabase.from('pages').insert({
+          title,
+          content,
+          recommended_reading: recommendedReading || [],
+          category_order: orderedCategories || [],
+          tags: tags || [],
+          created_by: user.id
+        }).select().single();
         if (error) throw error;
-
         setCurrentPage({
           ...currentPage,
           id: data.id,
           title,
           content,
-          lastUpdated: data.updated_at,
-          tags: tags || []
+          lastUpdated: data.updated_at
         });
       } else {
         // Update existing page
-        const { error } = await supabase
-          .from('pages')
-          .update({
-            title,
-            content,
-            recommended_reading: recommendedReading || [],
-            category_order: orderedCategories || [],
-            updated_at: new Date().toISOString(),
-            tags: tags || []
-          })
-          .eq('id', currentPage.id);
-
+        const {
+          error
+        } = await supabase.from('pages').update({
+          title,
+          content,
+          recommended_reading: recommendedReading || [],
+          category_order: orderedCategories || [],
+          tags: tags || [],
+          updated_at: new Date().toISOString()
+        }).eq('id', currentPage.id);
         if (error) throw error;
-
         setCurrentPage({
           ...currentPage,
           title,
@@ -535,19 +484,11 @@ export function KnowledgeBaseApp() {
             type: item.type || (item.url ? 'link' : 'file'),
             category: item.category || 'General'
           })),
-          category_order: orderedCategories || [],
-          tags: tags || []
+          category_order: orderedCategories || []
         });
       }
-
-      // Trigger hierarchy refresh
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('pageUpdated'));
-      }, 100);
-
       setIsEditing(false);
       setCurrentView('page');
-      
       toast({
         title: "Page saved",
         description: `"${title}" has been saved successfully.`
@@ -561,12 +502,10 @@ export function KnowledgeBaseApp() {
       });
     }
   };
-
   const handlePreview = () => {
     setIsEditing(false);
     setCurrentView('page');
   };
-
   const handlePageSelect = (pageId: string) => {
     handleItemSelect({
       id: pageId,
@@ -574,42 +513,27 @@ export function KnowledgeBaseApp() {
       type: 'page'
     });
   };
-
-  return (
-    <div className="flex h-screen bg-background">
-      <ResizableSidebar
-        onItemSelect={handleItemSelect}
-        selectedId={selectedItemId}
-        onCreatePage={handleCreatePage}
-        onCreateSubPage={handleCreateSubPage}
-        onCreatePageInEditor={handleCreatePageInEditor}
-      />
-      
+  return <div className="flex h-screen bg-background">
+      <ResizableSidebar onItemSelect={handleItemSelect} selectedId={selectedItemId} onCreatePage={handleCreatePage} onCreateSubPage={handleCreateSubPage} onCreatePageInEditor={handleCreatePageInEditor} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         {/* Header with user info */}
         <div className="border-b border-border p-4 bg-background/95 backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              {(currentView === 'page' || currentView === 'editor') && currentPage && breadcrumbs.length > 0 ? (
-                <Breadcrumb>
+              {(currentView === 'page' || currentView === 'editor') && currentPage && breadcrumbs.length > 0 ? <Breadcrumb>
                   <BreadcrumbList>
-                    {breadcrumbs.map((crumb, index) => (
-                      <div key={crumb.id} className="flex items-center">
+                    {breadcrumbs.map((crumb, index) => <div key={crumb.id} className="flex items-center">
                         <BreadcrumbItem>
-                          <BreadcrumbLink
-                            className="cursor-pointer text-muted-foreground hover:text-foreground"
-                            onClick={() => handleItemSelect({
-                              id: crumb.id,
-                              title: crumb.title,
-                              type: crumb.type === 'space' ? 'space' : 'page'
-                            })}
-                          >
+                          <BreadcrumbLink className="cursor-pointer text-muted-foreground hover:text-foreground" onClick={() => handleItemSelect({
+                      id: crumb.id,
+                      title: crumb.title,
+                      type: crumb.type === 'space' ? 'space' : 'page'
+                    })}>
                             {crumb.title}
                           </BreadcrumbLink>
                         </BreadcrumbItem>
                         {index < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
-                      </div>
-                    ))}
+                      </div>)}
                     {breadcrumbs.length > 0 && <BreadcrumbSeparator />}
                     <BreadcrumbItem>
                       <BreadcrumbPage className="font-semibold text-foreground">
@@ -617,19 +541,9 @@ export function KnowledgeBaseApp() {
                       </BreadcrumbPage>
                     </BreadcrumbItem>
                   </BreadcrumbList>
-                </Breadcrumb>
-              ) : (
-                <h2 className="text-lg font-semibold text-black/0">
-                  {currentView === 'dashboard' ? 'Dashboard' :
-                   currentView === 'recent' ? 'Recently Updated' :
-                   currentView === 'tags' ? 'Tags' :
-                   currentView === 'people' ? 'People' :
-                   currentView === 'settings' ? 'Settings' :
-                   currentView === 'whiteboard' ? 'Whiteboard' :
-                   currentView === 'user-management' ? 'User Management' :
-                   currentView === 'chat' ? 'Care Cuddle AI' : 'Care Cuddle Academy'}
-                </h2>
-              )}
+                </Breadcrumb> : <h2 className="text-lg font-semibold text-black/0">
+                  {currentView === 'dashboard' ? 'Dashboard' : currentView === 'recent' ? 'Recently Updated' : currentView === 'tags' ? 'Tags' : currentView === 'people' ? 'People' : currentView === 'settings' ? 'Settings' : currentView === 'whiteboard' ? 'Whiteboard' : currentView === 'user-management' ? 'User Management' : currentView === 'chat' ? 'Care Cuddle AI' : 'Care Cuddle Academy'}
+                </h2>}
             </div>
             <div className="flex items-center gap-2">
               <Button 
@@ -647,70 +561,29 @@ export function KnowledgeBaseApp() {
           </div>
         </div>
 
-        {/* Content Views */}
-        {currentView === 'dashboard' && (
-          <RealDashboard onCreatePage={handleCreatePage} onPageSelect={handlePageSelect} />
-        )}
+        {currentView === 'dashboard' && <RealDashboard onCreatePage={handleCreatePage} onPageSelect={handlePageSelect} />}
 
-        {currentView === 'recent' && (
-          <RecentlyUpdatedPage onPageSelect={handlePageSelect} />
-        )}
+        {currentView === 'recent' && <RecentlyUpdatedPage onPageSelect={handlePageSelect} />}
 
-        {currentView === 'tags' && (
-          <TagsPage onPageSelect={handlePageSelect} />
-        )}
+        {currentView === 'tags' && <TagsPage onPageSelect={handlePageSelect} />}
 
-        {currentView === 'people' && (
-          <PeoplePage onPageSelect={handlePageSelect} />
-        )}
+        {currentView === 'people' && <PeoplePage onPageSelect={handlePageSelect} />}
 
-        {currentView === 'settings' && (
-          <SettingsPage onClose={() => setCurrentView('dashboard')} />
-        )}
+        {currentView === 'settings' && <SettingsPage onClose={() => setCurrentView('dashboard')} />}
 
         {currentView === 'whiteboard' && <WhiteboardCanvas />}
         {currentView === 'user-management' && <UserManagement />}
         {currentView === 'chat' && <ChatPage />}
         
-        {currentView === 'editor' && currentPage && (
-          <EnhancedContentEditor
-            title={currentPage.title}
-            content={currentPage.content}
-            tags={currentPage.tags}
-            onSave={handleSavePage}
-            onPreview={handlePreview}
-            isEditing={isEditing}
-            pageId={currentPage.id}
-          />
-        )}
+        {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} />}
         
-        {currentView === 'page' && currentPage && (
-          <PageView
-            currentPage={currentPage}
-            onEditPage={handleEditPage}
-            setPermissionsDialogOpen={setPermissionsDialogOpen}
-            onPageSelect={handlePageSelect}
-          />
-        )}
+        {currentView === 'page' && currentPage && <PageView currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
       </div>
 
       {/* Create Page Dialog */}
-      <CreatePageDialog
-        open={createPageDialogOpen}
-        onOpenChange={setCreatePageDialogOpen}
-        onPageCreated={handlePageCreated}
-        initialParentId={createPageParentId}
-      />
+      <CreatePageDialog open={createPageDialogOpen} onOpenChange={setCreatePageDialogOpen} onPageCreated={handlePageCreated} initialParentId={createPageParentId} />
 
       {/* Page Permissions Dialog */}
-      {currentPage && (
-        <PagePermissionsDialog
-          open={permissionsDialogOpen}
-          onOpenChange={setPermissionsDialogOpen}
-          pageId={currentPage.id}
-          pageTitle={currentPage.title}
-        />
-      )}
-    </div>
-  );
+      {currentPage && <PagePermissionsDialog open={permissionsDialogOpen} onOpenChange={setPermissionsDialogOpen} pageId={currentPage.id} pageTitle={currentPage.title} />}
+    </div>;
 }

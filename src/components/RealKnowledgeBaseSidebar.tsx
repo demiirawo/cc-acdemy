@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Search, Plus, BookOpen, Folder, ChevronRight, ChevronDown, Home, Clock, Tag, Users, Settings, Globe, FolderOpen, FileText, MoreHorizontal, Edit, Copy, Share, Star, Archive, Trash2, ArrowUp, ArrowDown, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -407,67 +408,20 @@ export function RealKnowledgeBaseSidebar({
   const [loading, setLoading] = useState(true);
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [pageToMove, setPageToMove] = useState<{ id: string; title: string } | null>(null);
-  const [refreshCounter, setRefreshCounter] = useState(0);
   const { toast } = useToast();
   const { isAdmin } = useUserRole();
-
-  const fetchHierarchyData = async () => {
-    console.log('Fetching hierarchy data...');
-    setLoading(true);
-    try {
-      const [spacesResponse, pagesResponse] = await Promise.all([
-        supabase.from('spaces').select('*').order('name'),
-        supabase.from('pages').select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
-      ]);
-
-      if (spacesResponse.error) {
-        console.error('Error fetching spaces:', spacesResponse.error);
-        throw spacesResponse.error;
-      }
-      if (pagesResponse.error) {
-        console.error('Error fetching pages:', pagesResponse.error);
-        throw pagesResponse.error;
-      }
-
-      console.log('Fetched', pagesResponse.data?.length, 'pages');
-      console.log('Fetched', spacesResponse.data?.length, 'spaces');
-
-      setSpaces(spacesResponse.data || []);
-      setPages(pagesResponse.data || []);
-
-      const hierarchy = buildHierarchy(spacesResponse.data || [], pagesResponse.data || []);
-      setHierarchyData(hierarchy);
-      console.log('Built hierarchy with', hierarchy.length, 'root items');
-    } catch (error) {
-      console.error('Error fetching hierarchy data:', error);
-      toast({
-        title: "Error loading sidebar",
-        description: "Failed to load spaces and pages.",
-        variant: "destructive"
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
     fetchHierarchyData();
 
-    // Enhanced event listener for page updates with debouncing
-    let timeoutId: NodeJS.Timeout;
+    // Event listener for page updates
     const handlePageUpdated = () => {
-      console.log('Page updated event received, scheduling refresh...');
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        console.log('Executing hierarchy refresh');
-        fetchHierarchyData();
-        setRefreshCounter(prev => prev + 1);
-      }, 200); // 200ms debounce
+      console.log('Page updated event received, refreshing hierarchy...');
+      fetchHierarchyData();
     };
-    
     window.addEventListener('pageUpdated', handlePageUpdated);
 
-    // Set up real-time subscriptions with better error handling
+    // Set up real-time subscriptions
     const pagesChannel = supabase
       .channel('pages-changes')
       .on('postgres_changes', { 
@@ -475,12 +429,10 @@ export function RealKnowledgeBaseSidebar({
         schema: 'public', 
         table: 'pages' 
       }, (payload) => {
-        console.log('Real-time page change:', payload.eventType, payload.new?.title || payload.old?.title);
-        handlePageUpdated();
+        console.log('Real-time page change:', payload);
+        fetchHierarchyData();
       })
-      .subscribe((status) => {
-        console.log('Pages channel subscription status:', status);
-      });
+      .subscribe();
 
     const spacesChannel = supabase
       .channel('spaces-changes')
@@ -489,15 +441,12 @@ export function RealKnowledgeBaseSidebar({
         schema: 'public', 
         table: 'spaces' 
       }, (payload) => {
-        console.log('Real-time space change:', payload.eventType, payload.new?.name || payload.old?.name);
-        handlePageUpdated();
+        console.log('Real-time space change:', payload);
+        fetchHierarchyData();
       })
-      .subscribe((status) => {
-        console.log('Spaces channel subscription status:', status);
-      });
+      .subscribe();
 
     return () => {
-      clearTimeout(timeoutId);
       window.removeEventListener('pageUpdated', handlePageUpdated);
       supabase.removeChannel(pagesChannel);
       supabase.removeChannel(spacesChannel);
@@ -559,6 +508,36 @@ export function RealKnowledgeBaseSidebar({
     setShowSearchResults(true);
   }, [searchQuery, pages, spaces]);
 
+  const fetchHierarchyData = async () => {
+    setLoading(true);
+    try {
+      const [spacesResponse, pagesResponse] = await Promise.all([
+        supabase.from('spaces').select('*').order('name'),
+        supabase.from('pages').select('*').order('sort_order', { ascending: true }).order('created_at', { ascending: true })
+      ]);
+
+      if (spacesResponse.error) throw spacesResponse.error;
+      if (pagesResponse.error) throw pagesResponse.error;
+
+      console.log('Fetched pages with sort_order:', pagesResponse.data?.map(p => ({ title: p.title, sort_order: p.sort_order })));
+
+      setSpaces(spacesResponse.data || []);
+      setPages(pagesResponse.data || []);
+
+      const hierarchy = buildHierarchy(spacesResponse.data || [], pagesResponse.data || []);
+      setHierarchyData(hierarchy);
+    } catch (error) {
+      console.error('Error fetching hierarchy data:', error);
+      toast({
+        title: "Error loading sidebar",
+        description: "Failed to load spaces and pages.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Hierarchy building with proper sort_order handling
   const buildHierarchy = (spacesData: Space[], pagesData: Page[]): SidebarItem[] => {
     const hierarchy: SidebarItem[] = [];
@@ -615,7 +594,6 @@ export function RealKnowledgeBaseSidebar({
   };
 
   const handleItemSelect = (item: SidebarItem) => {
-    console.log('Sidebar item selected:', item.id, item.type);
     if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people' || item.id === 'settings' || item.id === 'whiteboard' || item.id === 'user-management' || item.id === 'chat') {
       onItemSelect(item);
     } else if (item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
@@ -696,7 +674,6 @@ export function RealKnowledgeBaseSidebar({
   };
 
   const handleCreatePage = () => {
-    console.log('Create page button clicked');
     if (onCreatePageInEditor) {
       onCreatePageInEditor();
     } else if (onCreatePage) {
@@ -711,7 +688,6 @@ export function RealKnowledgeBaseSidebar({
       setMoveDialogOpen(true);
     }
   };
-
   const filteredHierarchy = hierarchyData.filter((item) => 
     item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
     (item.children && item.children.some((child) => child.title.toLowerCase().includes(searchQuery.toLowerCase())))
@@ -802,7 +778,7 @@ export function RealKnowledgeBaseSidebar({
                 )}
                 onClick={() => handleItemSelect({
                   ...item,
-                  type: item.id === 'chat' ? 'space' : 'page'
+                  type: item.id === 'chat' ? 'space' : 'page' // Use 'space' for special pages like chat to avoid page fetch
                 })}
               >
                 <Icon className="h-4 w-4 text-sidebar-foreground/70" />
@@ -847,7 +823,7 @@ export function RealKnowledgeBaseSidebar({
                 {filteredHierarchy.length > 0 ? (
                   filteredHierarchy.map((item) => (
                     <SidebarTreeItem
-                      key={`${item.id}-${refreshCounter}`}
+                      key={item.id}
                       item={item}
                       level={0}
                       onSelect={handleItemSelect}
@@ -883,6 +859,7 @@ export function RealKnowledgeBaseSidebar({
           </div>
         </ScrollArea>
       </div>
+
 
       {/* Move Page Dialog */}
       {pageToMove && (
