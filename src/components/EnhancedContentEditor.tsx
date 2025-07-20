@@ -24,7 +24,9 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/use-toast"
-import { useNavigate } from "react-router-dom";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { createPage, updatePage } from "@/lib/api";
+import { useRouter } from "next/navigation";
 
 interface ContentEditorProps {
   title?: string;
@@ -52,7 +54,8 @@ export function EnhancedContentEditor({
   const [currentContent, setCurrentContent] = useState(content);
   const [tags, setTags] = useState<string[]>(initialTags);
   const { toast } = useToast();
-  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const router = useRouter();
 
   const toolbarItems = [
     { icon: Heading1, action: () => insertText('# '), label: 'Heading 1' },
@@ -126,13 +129,45 @@ export function EnhancedContentEditor({
     }
   };
 
+  const createPageMutation = useMutation(createPage, {
+    onSuccess: () => {
+      toast({
+        title: "Page created!",
+        description: "Your page has been created.",
+      })
+      queryClient.invalidateQueries({ queryKey: ['pages'] });
+      router.push('/');
+    },
+  });
+
+  const updatePageMutation = useMutation(updatePage, {
+    onSuccess: () => {
+      toast({
+        title: "Page updated!",
+        description: "Your page has been updated.",
+      })
+      queryClient.invalidateQueries({ queryKey: ['pages'] });
+    },
+  });
+
   const handleSave = () => {
     if (onSave) {
       onSave(currentTitle, currentContent);
-      toast({
-        title: "Page saved!",
-        description: "Your changes have been saved.",
-      });
+    } else {
+      if (pageId) {
+        updatePageMutation.mutate({ 
+          id: pageId, 
+          title: currentTitle, 
+          content: currentContent,
+          tags: tags
+        });
+      } else {
+        createPageMutation.mutate({ 
+          title: currentTitle, 
+          content: currentContent,
+          tags: tags
+        });
+      }
     }
   };
 
