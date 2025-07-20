@@ -237,10 +237,9 @@ export function EnhancedContentEditor({
   const handleManualSave = async () => {
     if (pageId) {
       await performSave(true);
-      // For existing pages, redirect to the page view (non-editing mode)
-      if (window.location.pathname.includes('/pages/')) {
-        // Already on the page, just refresh to show saved version
-        window.location.reload();
+      // For existing pages, call onPageSaved to navigate back to view mode
+      if (onPageSaved) {
+        onPageSaved();
       }
     } else {
       // For new pages, use the onSave prop
