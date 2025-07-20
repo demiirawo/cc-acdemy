@@ -56,13 +56,22 @@ import {
 interface ContentEditorProps {
   title?: string;
   content?: string;
+  onSave: (title: string, content: string, recommendedReading?: Array<{title: string, url?: string, description: string, fileUrl?: string, fileName?: string}>, orderedCategories?: string[]) => void;
+  onPreview?: () => void;
+  isEditing?: boolean;
+  pageId?: string;
+}
+
+interface ContentEditorProps {
+  title?: string;
+  content?: string;
   onSave: (title: string, content: string, recommendedReading?: Array<{
     title: string;
     url?: string;
     description: string;
     fileUrl?: string;
     fileName?: string;
-  }>, orderedCategories?: string[], tags?: string[]) => void;
+  }>, orderedCategories?: string[]) => void;
   onPreview?: () => void;
   isEditing?: boolean;
   pageId?: string;
@@ -212,7 +221,7 @@ export function EnhancedContentEditor({
         try {
           const { data, error } = await supabase
             .from('pages')
-            .select('is_public, public_token, content, recommended_reading, tags')
+            .select('is_public, public_token, content, recommended_reading')
             .eq('id', pageId)
             .single();
 
@@ -224,11 +233,6 @@ export function EnhancedContentEditor({
             contentRef.current = data.content;
             if (editorRef.current) {
               editorRef.current.innerHTML = data.content;
-            }
-            
-            // Load tags from database
-            if (data.tags && Array.isArray(data.tags)) {
-              setTags(data.tags);
             }
             
             // Set recommended reading from database
@@ -401,7 +405,6 @@ export function EnhancedContentEditor({
           title: currentTitle,
           content: currentContent,
           recommended_reading: recommendedReading,
-          tags: tags, // Save tags
           updated_at: new Date().toISOString()
         })
         .eq('id', pageId);
@@ -429,7 +432,6 @@ export function EnhancedContentEditor({
           title: currentTitle,
           content: currentContent,
           recommended_reading: recommendedReading,
-          tags: tags, // Save tags
           updated_at: new Date().toISOString()
         })
         .eq('id', pageId);
@@ -2476,7 +2478,7 @@ export function EnhancedContentEditor({
 
       // Save content and recommended reading using the provided onSave function
       console.log('Saving with recommended reading:', recommendedReading);
-      await onSave(currentTitle, contentRef.current, recommendedReading, orderedCategories, tags);
+      await onSave(currentTitle, contentRef.current, recommendedReading, orderedCategories);
       
       toast({
         title: "Saved",
