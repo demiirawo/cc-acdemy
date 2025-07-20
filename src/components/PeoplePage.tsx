@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Users, User, FileText, Crown, ChevronRight, Plus } from "lucide-react";
+import { Users, User, FileText, Crown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -169,10 +169,7 @@ export function PeoplePage({ onPageSelect }: PeoplePageProps) {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
             <Users className="h-8 w-8 text-primary" />
-            <Button onClick={() => {}} size="lg">
-              <Plus className="h-5 w-5 mr-2" />
-              Create Page
-            </Button>
+            <h1 className="text-3xl font-bold text-foreground">People</h1>
           </div>
           <p className="text-muted-foreground mb-6">
             Team members and their contributions to Care Cudde Academy

@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
-import { Send, MessageSquare, Bot, User, Paperclip, X, FileText, Plus } from "lucide-react";
+import { Send, MessageSquare, Bot, User, Paperclip, X, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { ChatHistorySidebar } from "./ChatHistorySidebar";
@@ -496,10 +496,7 @@ export const ChatPage = () => {
             <MessageSquare className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <Button onClick={() => {}} size="lg">
-              <Plus className="h-5 w-5 mr-2" />
-              Create Page
-            </Button>
+            <h1 className="text-2xl font-bold">Care Cuddle AI</h1>
             <p className="text-sm text-muted-foreground">
               {currentConversation ? currentConversation.title : 'Chat with Care Cuddle AI assistant'}
             </p>
