@@ -200,7 +200,6 @@ export function KnowledgeBaseApp() {
   const [createPageParentId, setCreatePageParentId] = useState<string | null>(null);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbData[]>([]);
-  const [pageVersion, setPageVersion] = useState<number>(1);
   const {
     user,
     loading,
@@ -209,66 +208,6 @@ export function KnowledgeBaseApp() {
   const {
     toast
   } = useToast();
-
-  // Function to fetch fresh page data with version tracking
-  const fetchPageData = async (pageId: string, forceRefresh = false) => {
-    try {
-      console.log(`Fetching page data for: ${pageId}${forceRefresh ? ' (forced refresh)' : ''}`);
-      
-      const { data, error } = await supabase
-        .from('pages')
-        .select(`
-          id,
-          title,
-          content,
-          updated_at,
-          view_count,
-          created_by,
-          recommended_reading,
-          category_order,
-          parent_page_id,
-          space_id,
-          version
-        `)
-        .eq('id', pageId)
-        .single();
-      
-      if (error) {
-        console.error('Error fetching page:', error);
-        throw error;
-      }
-      
-      if (data) {
-        const pageData = {
-          id: data.id,
-          title: data.title,
-          content: data.content,
-          lastUpdated: data.updated_at,
-          author: 'User',
-          parent_page_id: data.parent_page_id,
-          space_id: data.space_id,
-          recommended_reading: data.recommended_reading as any || [],
-          category_order: data.category_order as string[] || []
-        };
-        
-        // Update version tracking
-        setPageVersion(data.version || 1);
-        
-        console.log('Successfully fetched fresh page data:', {
-          id: pageData.id,
-          title: pageData.title,
-          contentLength: pageData.content.length,
-          lastUpdated: pageData.lastUpdated,
-          version: data.version
-        });
-        
-        return pageData;
-      }
-    } catch (error) {
-      console.error('Error fetching page data:', error);
-      throw error;
-    }
-  };
 
   // Build breadcrumb hierarchy
   const buildBreadcrumbs = async (page: Page): Promise<BreadcrumbData[]> => {
@@ -331,14 +270,11 @@ export function KnowledgeBaseApp() {
   if (!user) {
     return <AuthForm onAuthStateChange={() => window.location.reload()} />;
   }
-
   const handleItemSelect = async (item: SidebarItem) => {
-    console.log('Selecting item:', item);
     setSelectedItemId(item.id);
-    
     if (item.id === 'home') {
       setCurrentView('dashboard');
-      setCurrentPage(null);  
+      setCurrentPage(null);
       setBreadcrumbs([]);
     } else if (item.id === 'recent') {
       setCurrentView('recent');
@@ -370,9 +306,35 @@ export function KnowledgeBaseApp() {
       setBreadcrumbs([]);
     } else if (item.type === 'page') {
       try {
-        // Always fetch fresh page data
-        const pageData = await fetchPageData(item.id, true);
-        if (pageData) {
+        // Fetch real page data from Supabase
+        const {
+          data,
+          error
+        } = await supabase.from('pages').select(`
+            id,
+            title,
+            content,
+            updated_at,
+            view_count,
+            created_by,
+            recommended_reading,
+            category_order,
+            parent_page_id,
+            space_id
+          `).eq('id', item.id).single();
+        if (error) throw error;
+        if (data) {
+          const pageData = {
+            id: data.id,
+            title: data.title,
+            content: data.content,
+            lastUpdated: data.updated_at,
+            author: 'User',
+            parent_page_id: data.parent_page_id,
+            space_id: data.space_id,
+            recommended_reading: data.recommended_reading as any || [],
+            category_order: data.category_order as string[] || []
+          };
           setCurrentPage(pageData);
           setCurrentView('page');
           setIsEditing(false);
@@ -383,8 +345,8 @@ export function KnowledgeBaseApp() {
 
           // Increment view count
           await supabase.from('pages').update({
-            view_count: (pageData as any).view_count ? (pageData as any).view_count + 1 : 1
-          }).eq('id', pageData.id);
+            view_count: (data.view_count || 0) + 1
+          }).eq('id', data.id);
         }
       } catch (error) {
         console.error('Error fetching page:', error);
@@ -399,7 +361,6 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
     }
   };
-
   const handleCreatePage = () => {
     handleCreatePageInEditor();
   };
@@ -461,12 +422,10 @@ export function KnowledgeBaseApp() {
       type: 'page'
     });
   };
-
   const handleEditPage = () => {
     setIsEditing(true);
     setCurrentView('editor');
   };
-
   const handleSavePage = async (title: string, content: string, recommendedReading?: Array<{
     title: string;
     url?: string;
@@ -477,16 +436,10 @@ export function KnowledgeBaseApp() {
     category?: string;
   }>, orderedCategories?: string[]) => {
     if (!currentPage || !user) return;
-    
-    console.log('Saving page with enhanced persistence:', {
-      id: currentPage.id,
-      title,
-      contentLength: content.length,
-      recommendedReadingCount: recommendedReading?.length || 0,
-      currentVersion: pageVersion
-    });
-    
+
     try {
+      console.log('Saving page:', currentPage.id, { title: title.substring(0, 30) + '...' });
+      
       if (currentPage.id === 'new') {
         // Create new page
         const { data, error } = await supabase
@@ -500,10 +453,10 @@ export function KnowledgeBaseApp() {
           })
           .select()
           .single();
-          
+
         if (error) throw error;
-        
-        const updatedPage = {
+
+        const newPage = {
           ...currentPage,
           id: data.id,
           title,
@@ -517,71 +470,40 @@ export function KnowledgeBaseApp() {
           category_order: orderedCategories || []
         };
         
-        setCurrentPage(updatedPage);
-        setPageVersion(data.version || 1);
-        console.log('New page created with version tracking');
-        
+        setCurrentPage(newPage);
       } else {
-        // Update existing page with optimistic concurrency control
-        const { data, error } = await supabase
+        // Update existing page
+        const { error } = await supabase
           .from('pages')
           .update({
             title,
             content,
             recommended_reading: recommendedReading || [],
             category_order: orderedCategories || [],
-            updated_at: new Date().toISOString(),
-            version: pageVersion + 1
+            updated_at: new Date().toISOString()
           })
-          .eq('id', currentPage.id)
-          .eq('version', pageVersion) // Optimistic locking
-          .select()
-          .single();
-        
-        if (error) {
-          if (error.code === 'PGRST116') {
-            // Version conflict - fetch latest and retry
-            console.log('Version conflict detected, fetching latest version');
-            const latestPage = await fetchPageData(currentPage.id, true);
-            if (latestPage) {
-              setCurrentPage(latestPage);
-              toast({
-                title: "Page updated by another user",
-                description: "The page has been updated with the latest version. Please review and save again.",
-                variant: "destructive"
-              });
-              return;
-            }
-          }
-          throw error;
-        }
-        
-        // Immediately update local state with confirmed database state
+          .eq('id', currentPage.id);
+
+        if (error) throw error;
+
+        // Update local state with the saved data
         const updatedPage = {
           ...currentPage,
-          title: data.title,
-          content: data.content,
-          lastUpdated: data.updated_at,
-          recommended_reading: (data.recommended_reading as any || []).map((item: any) => ({
+          title,
+          content,
+          lastUpdated: new Date().toISOString(),
+          recommended_reading: (recommendedReading || []).map(item => ({
             ...item,
             type: item.type || (item.url ? 'link' : 'file'),
             category: item.category || 'General'
           })),
-          category_order: data.category_order as string[] || []
+          category_order: orderedCategories || []
         };
         
         setCurrentPage(updatedPage);
-        setPageVersion(data.version || pageVersion + 1);
-        
-        console.log('Page updated with enhanced persistence:', {
-          id: updatedPage.id,
-          title: updatedPage.title,
-          contentLength: updatedPage.content.length,
-          lastUpdated: updatedPage.lastUpdated,
-          version: data.version
-        });
+        console.log('Page saved successfully:', currentPage.id);
       }
-      
+
       setIsEditing(false);
       setCurrentView('page');
       
@@ -589,7 +511,6 @@ export function KnowledgeBaseApp() {
         title: "Page saved",
         description: `"${title}" has been saved successfully.`
       });
-      
     } catch (error) {
       console.error('Error saving page:', error);
       toast({
@@ -597,46 +518,19 @@ export function KnowledgeBaseApp() {
         description: "Failed to save page. Please try again.",
         variant: "destructive"
       });
-      throw error; // Re-throw to let auto-save handle it
     }
   };
-
   const handlePreview = () => {
     setIsEditing(false);
     setCurrentView('page');
   };
-
-  const handlePageSelect = async (pageId: string) => {
-    console.log('Selecting page:', pageId);
-    
-    // Always fetch fresh data when selecting a page
-    try {
-      const pageData = await fetchPageData(pageId, true);
-      if (pageData) {
-        setCurrentPage(pageData);
-        setCurrentView('page');
-        setIsEditing(false);
-        setSelectedItemId(pageId);
-
-        // Build breadcrumbs for this page
-        const breadcrumbPath = await buildBreadcrumbs(pageData);
-        setBreadcrumbs(breadcrumbPath);
-
-        // Increment view count
-        await supabase.from('pages').update({
-          view_count: ((pageData as any).view_count || 0) + 1
-        }).eq('id', pageData.id);
-      }
-    } catch (error) {
-      console.error('Error selecting page:', error);
-      toast({
-        title: "Error loading page",
-        description: "Failed to load page content.",
-        variant: "destructive"
-      });
-    }
+  const handlePageSelect = (pageId: string) => {
+    handleItemSelect({
+      id: pageId,
+      title: '',
+      type: 'page'
+    });
   };
-
   return <div className="flex h-screen bg-background">
       <ResizableSidebar onItemSelect={handleItemSelect} selectedId={selectedItemId} onCreatePage={handleCreatePage} onCreateSubPage={handleCreateSubPage} onCreatePageInEditor={handleCreatePageInEditor} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">

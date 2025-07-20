@@ -1,5 +1,13 @@
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import { 
   Bold, 
   Italic, 
@@ -15,106 +23,174 @@ import {
   Heading3,
   Save,
   Eye,
-  MoreHorizontal
+  MoreHorizontal,
+  Upload,
+  FileText,
+  ExternalLink
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/hooks/use-toast";
 import { RecommendedReadingManager } from "./RecommendedReadingManager";
-import { useAutoSave } from "@/hooks/useAutoSave";
-import { SaveStatusIndicator } from "./SaveStatusIndicator";
 
-interface ContentEditorProps {
+interface EnhancedContentEditorProps {
   title?: string;
   content?: string;
-  pageId?: string;
-  onSave: (title: string, content: string, recommendedReading?: Array<{
-    title: string;
-    url?: string;
-    description: string;
-    fileUrl?: string;
-    fileName?: string;
-    type?: string;
-    category?: string;
-  }>, orderedCategories?: string[]) => void;
+  onSave: (
+    title: string, 
+    content: string, 
+    recommendedReading?: Array<{
+      title: string;
+      url?: string;
+      description: string;
+      fileUrl?: string;
+      fileName?: string;
+      type?: string;
+      category?: string;
+    }>,
+    orderedCategories?: string[]
+  ) => void;
   onPreview?: () => void;
   isEditing?: boolean;
+  pageId?: string;
 }
 
 export function EnhancedContentEditor({ 
-  title: initialTitle = "", 
-  content: initialContent = "", 
-  pageId,
+  title = "", 
+  content = "", 
   onSave, 
   onPreview,
-  isEditing = true 
-}: ContentEditorProps) {
-  const [currentTitle, setCurrentTitle] = useState(initialTitle);
-  const [currentContent, setCurrentContent] = useState(initialContent);
+  isEditing = true,
+  pageId = ""
+}: EnhancedContentEditorProps) {
+  const [currentTitle, setCurrentTitle] = useState(title);
+  const [currentContent, setCurrentContent] = useState(content);
   const [tags, setTags] = useState<string[]>(['engineering', 'documentation']);
   const [recommendedReading, setRecommendedReading] = useState<Array<{
+    id?: string;
     title: string;
-    url?: string;
     description: string;
+    type: 'link' | 'file' | 'document' | 'guide' | 'reference';
+    url?: string;
     fileUrl?: string;
-    fileName?: string;  
-    type?: string;
+    fileName?: string;
     category?: string;
   }>>([]);
   const [orderedCategories, setOrderedCategories] = useState<string[]>([]);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const { toast } = useToast();
-  const lastSavedDataRef = useRef({ title: initialTitle, content: initialContent });
+  
+  const autoSaveTimeoutRef = useRef<NodeJS.Timeout>();
+  const lastSaveDataRef = useRef<string>('');
 
-  // Auto-save functionality
-  const handleAutoSave = useCallback(async (data: { title: string; content: string; recommendedReading: any[]; orderedCategories: string[] }) => {
-    try {
-      await onSave(data.title, data.content, data.recommendedReading, data.orderedCategories);
-      lastSavedDataRef.current = { title: data.title, content: data.content };
-      setHasUnsavedChanges(false);
-    } catch (error) {
-      console.error('Auto-save failed:', error);
-      throw error;
+  // Update state when props change
+  useEffect(() => {
+    console.log('EnhancedContentEditor: Props changed', { title, content: content.substring(0, 50) + '...', pageId });
+    setCurrentTitle(title);
+    setCurrentContent(content);
+    lastSaveDataRef.current = JSON.stringify({ title, content });
+  }, [title, content, pageId]);
+
+  // Load page data when pageId changes
+  useEffect(() => {
+    if (pageId && pageId !== 'new') {
+      loadPageData();
     }
-  }, [onSave]);
+  }, [pageId]);
 
-  const { triggerAutoSave, saveImmediately, clearPendingAutoSave, saveStatus } = useAutoSave({
-    onSave: handleAutoSave,
-    delay: 3000, // 3 seconds delay for auto-save
-    enabled: isEditing && pageId !== 'new'
-  });
-
-  // Update local state when props change
-  useEffect(() => {
-    setCurrentTitle(initialTitle);
-    setCurrentContent(initialContent);
-    lastSavedDataRef.current = { title: initialTitle, content: initialContent };
-    setHasUnsavedChanges(false);
-  }, [initialTitle, initialContent]);
-
-  // Check for unsaved changes
-  useEffect(() => {
-    const titleChanged = currentTitle !== lastSavedDataRef.current.title;
-    const contentChanged = currentContent !== lastSavedDataRef.current.content;
-    const hasChanges = titleChanged || contentChanged;
+  const loadPageData = async () => {
+    if (!pageId || pageId === 'new') return;
     
-    setHasUnsavedChanges(hasChanges);
-    
-    // Trigger auto-save if there are changes
-    if (hasChanges && isEditing && pageId !== 'new') {
-      triggerAutoSave({
-        title: currentTitle,
-        content: currentContent,
-        recommendedReading,
-        orderedCategories
+    try {
+      console.log('Loading fresh page data for:', pageId);
+      const { data, error } = await supabase
+        .from('pages')
+        .select('title, content, recommended_reading, category_order')
+        .eq('id', pageId)
+        .single();
+
+      if (error) throw error;
+
+      console.log('Fresh page data loaded:', {
+        id: pageId,
+        title: data.title,
+        contentLength: data.content?.length || 0,
+        lastUpdated: new Date().toISOString()
+      });
+
+      setCurrentTitle(data.title);
+      setCurrentContent(data.content);
+      setRecommendedReading(data.recommended_reading || []);
+      setOrderedCategories(data.category_order || []);
+      lastSaveDataRef.current = JSON.stringify({ 
+        title: data.title, 
+        content: data.content 
+      });
+    } catch (error) {
+      console.error('Error loading page data:', error);
+      toast({
+        title: "Error loading page",
+        description: "Failed to load the latest page content.",
+        variant: "destructive"
       });
     }
-  }, [currentTitle, currentContent, recommendedReading, orderedCategories, triggerAutoSave, isEditing, pageId]);
+  };
+
+  // Auto-save functionality
+  const autoSave = useCallback(async () => {
+    if (!pageId || pageId === 'new') return;
+    
+    const currentData = JSON.stringify({ 
+      title: currentTitle, 
+      content: currentContent 
+    });
+    
+    // Only save if content has actually changed
+    if (currentData === lastSaveDataRef.current) {
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      
+      const { error } = await supabase
+        .from('pages')
+        .update({
+          title: currentTitle,
+          content: currentContent,
+          recommended_reading: recommendedReading,
+          category_order: orderedCategories,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', pageId);
+
+      if (error) throw error;
+
+      lastSaveDataRef.current = currentData;
+      setLastSaved(new Date());
+      
+      console.log('Auto-saved page:', pageId);
+    } catch (error) {
+      console.error('Auto-save failed:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [currentTitle, currentContent, recommendedReading, orderedCategories, pageId]);
+
+  // Set up auto-save
+  useEffect(() => {
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+
+    if (currentTitle || currentContent) {
+      autoSaveTimeoutRef.current = setTimeout(autoSave, 3000);
+    }
+
+    return () => {
+      if (autoSaveTimeoutRef.current) {
+        clearTimeout(autoSaveTimeoutRef.current);
+      }
+    };
+  }, [currentTitle, currentContent, autoSave]);
 
   const toolbarItems = [
     { icon: Heading1, action: () => insertText('# '), label: 'Heading 1' },
@@ -186,33 +262,35 @@ export function EnhancedContentEditor({
     }
   };
 
-  const handleManualSave = async () => {
+  const handleSave = async () => {
+    setIsSaving(true);
     try {
-      clearPendingAutoSave(); // Clear any pending auto-saves
-      await saveImmediately({
-        title: currentTitle,
-        content: currentContent,
-        recommendedReading,
-        orderedCategories
+      await onSave(currentTitle, currentContent, recommendedReading, orderedCategories);
+      setLastSaved(new Date());
+      lastSaveDataRef.current = JSON.stringify({ 
+        title: currentTitle, 
+        content: currentContent 
       });
-      
       toast({
         title: "Page saved",
-        description: `"${currentTitle}" has been saved successfully.`
+        description: "Your changes have been saved successfully."
       });
     } catch (error) {
+      console.error('Save failed:', error);
       toast({
-        title: "Error saving page",
-        description: "Failed to save page. Please try again.",
+        title: "Save failed",
+        description: "Failed to save your changes. Please try again.",
         variant: "destructive"
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
   if (!isEditing) {
     return (
       <div className="flex-1 overflow-auto">
-        <div className="max-w-4xl mx-auto p-6">
+        <div className="max-w-none mx-8 p-6">
           <div className="mb-6">
             <h1 className="text-3xl font-bold text-foreground mb-2">{currentTitle}</h1>
             <div className="flex gap-2">
@@ -224,7 +302,10 @@ export function EnhancedContentEditor({
           
           <Card className="p-6">
             <div className="prose prose-lg max-w-none">
-              <pre className="whitespace-pre-wrap text-foreground">{currentContent}</pre>
+              <div 
+                className="text-foreground leading-relaxed" 
+                dangerouslySetInnerHTML={{ __html: currentContent }} 
+              />
             </div>
           </Card>
         </div>
@@ -247,17 +328,21 @@ export function EnhancedContentEditor({
           </div>
           
           <div className="flex items-center gap-2">
-            <SaveStatusIndicator 
-              status={hasUnsavedChanges && saveStatus === 'idle' ? 'idle' : saveStatus}
-              className="mr-2"
-            />
+            {isSaving && (
+              <span className="text-sm text-muted-foreground">Saving...</span>
+            )}
+            {lastSaved && !isSaving && (
+              <span className="text-sm text-muted-foreground">
+                Saved {lastSaved.toLocaleTimeString()}
+              </span>
+            )}
             <Button variant="outline" size="sm" onClick={onPreview}>
               <Eye className="h-4 w-4 mr-2" />
               Preview
             </Button>
-            <Button onClick={handleManualSave} className="bg-gradient-primary">
+            <Button onClick={handleSave} disabled={isSaving} className="bg-gradient-primary">
               <Save className="h-4 w-4 mr-2" />
-              Save
+              {isSaving ? 'Saving...' : 'Save'}
             </Button>
             <Button variant="ghost" size="sm">
               <MoreHorizontal className="h-4 w-4" />
@@ -299,28 +384,36 @@ export function EnhancedContentEditor({
         </div>
       </div>
 
-      {/* Editor Content */}
-      <div className="flex-1 p-4 overflow-hidden">
-        <Card className="h-full">
-          <Textarea
-            placeholder="Start writing your content here..."
-            value={currentContent}
-            onChange={(e) => setCurrentContent(e.target.value)}
-            className="h-full resize-none border-none shadow-none focus-visible:ring-0 text-base leading-relaxed"
-          />
-        </Card>
-      </div>
+      {/* Main Content Area */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Editor Content */}
+        <div className="flex-1 p-4 overflow-hidden">
+          <Card className="h-full">
+            <Textarea
+              placeholder="Start writing your content here..."
+              value={currentContent}
+              onChange={(e) => setCurrentContent(e.target.value)}
+              className="h-full resize-none border-none shadow-none focus-visible:ring-0 text-base leading-relaxed"
+            />
+          </Card>
+        </div>
 
-      {/* Recommended Reading Manager */}
-      <div className="border-t border-border p-4">
-        <RecommendedReadingManager
-          items={recommendedReading}
-          orderedCategories={orderedCategories}
-          onChange={(items, categories) => {
-            setRecommendedReading(items);
-            setOrderedCategories(categories || []);
-          }}
-        />
+        {/* Recommended Reading Sidebar */}
+        <div className="w-80 border-l border-border p-4 overflow-y-auto">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <FileText className="h-5 w-5" />
+            Recommended Reading
+          </h3>
+          
+          <RecommendedReadingManager
+            items={recommendedReading}
+            onChange={(newReading, newOrderedCategories) => {
+              setRecommendedReading(newReading);
+              setOrderedCategories(newOrderedCategories);
+            }}
+            pageId={pageId}
+          />
+        </div>
       </div>
     </div>
   );
