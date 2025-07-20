@@ -93,14 +93,6 @@ export function EnhancedContentEditor({
   pageId
 }: ContentEditorProps) {
   const [currentTitle, setCurrentTitle] = useState(title);
-  
-  // Direct DOM content tracking - no React state
-  const contentRef = useRef(content);
-  const lastSavedContentRef = useRef(content);
-  const lastSavedTitleRef = useRef(title);
-  const lastSavedTagsRef = useRef<string[]>([]);
-  const lastSavedRecommendedReadingRef = useRef<Array<{title: string, url?: string, description: string, type: 'link' | 'file', fileName?: string, fileUrl?: string, category?: string}>>([]);
-  const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
@@ -112,110 +104,152 @@ export function EnhancedContentEditor({
   const [newRecommendation, setNewRecommendation] = useState({title: '', url: '', description: '', type: 'link' as 'link' | 'file', fileName: '', fileUrl: '', category: 'General'});
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [editingItem, setEditingItem] = useState({title: '', url: '', description: '', type: 'link' as 'link' | 'file', fileName: '', fileUrl: '', category: 'General'});
+  const [currentTableCell, setCurrentTableCell] = useState<HTMLElement | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  
+  // Refs for tracking content and save state
+  const contentRef = useRef(content);
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const [currentTableCell, setCurrentTableCell] = useState<HTMLElement | null>(null);
-  const { toast } = useToast();
+  const lastSavedStateRef = useRef({
+    title,
+    content,
+    tags: [] as string[],
+    recommendedReading: [] as Array<{title: string, url?: string, description: string, type: 'link' | 'file', fileName?: string, fileUrl?: string, category?: string}>
+  });
+  const saveInProgressRef = useRef(false);
   
-  // Initialize audit logging for recommended reading
+  const { toast } = useToast();
   const { createSnapshot, logChange } = useRecommendedReadingAudit(pageId || '');
 
-  // Auto-save scheduler
-  const scheduleAutoSave = () => {
-    if (!pageId) return;
+  // Unified save function that handles all content consistently
+  const performSave = async (isManual = false) => {
+    if (!pageId || saveInProgressRef.current) return;
     
-    if (saveIntervalRef.current) {
-      clearTimeout(saveIntervalRef.current);
-    }
-    
-    saveIntervalRef.current = setTimeout(() => {
-      performAutoSave();
-    }, 2000); // 2 second delay
-  };
-
-  // Auto-save function
-  const performAutoSave = async () => {
-    if (!pageId) return;
-    
-    const currentContent = contentRef.current;
-    
-    // Check if any field has changed
-    const contentChanged = currentContent !== lastSavedContentRef.current;
-    const titleChanged = currentTitle !== lastSavedTitleRef.current;
-    const tagsChanged = JSON.stringify(tags) !== JSON.stringify(lastSavedTagsRef.current);
-    const recommendedReadingChanged = JSON.stringify(recommendedReading) !== JSON.stringify(lastSavedRecommendedReadingRef.current);
-    
-    // Don't save if nothing has changed
-    if (!contentChanged && !titleChanged && !tagsChanged && !recommendedReadingChanged) {
-      return;
-    }
-    
-    try {
-      console.log('Auto-save triggered - Current state:', { 
-        title: currentTitle, 
-        content: currentContent, 
-        tags, 
-        recommendedReading,
-        recommendedReadingCount: recommendedReading.length,
-        hasChanges: { contentChanged, titleChanged, tagsChanged, recommendedReadingChanged }
-      });
-      
-      const { error } = await supabase
-        .from('pages')
-        .update({ 
-          title: currentTitle,
-          content: currentContent,
-          tags: tags,
-          recommended_reading: recommendedReading,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', pageId);
-
-      if (error) throw error;
-      
-      // Update all last saved refs
-      lastSavedContentRef.current = currentContent;
-      lastSavedTitleRef.current = currentTitle;
-      lastSavedTagsRef.current = [...tags];
-      lastSavedRecommendedReadingRef.current = [...recommendedReading];
-      
-      console.log('Auto-save successful with all content preserved');
-    } catch (error) {
-      console.error('Auto-save failed:', error);
-    }
-  };
-
-  // Manual save function for navigation events
-  const saveNow = async () => {
-    if (!pageId) return;
+    saveInProgressRef.current = true;
+    if (isManual) setIsSaving(true);
     
     try {
       const currentContent = contentRef.current;
-      console.log('Saving now:', { title: currentTitle, content: currentContent, tags, recommendedReading });
+      const currentState = {
+        title: currentTitle,
+        content: currentContent,
+        tags,
+        recommendedReading
+      };
       
+      // Check if any field has changed
+      const hasChanges = (
+        currentState.title !== lastSavedStateRef.current.title ||
+        currentState.content !== lastSavedStateRef.current.content ||
+        JSON.stringify(currentState.tags) !== JSON.stringify(lastSavedStateRef.current.tags) ||
+        JSON.stringify(currentState.recommendedReading) !== JSON.stringify(lastSavedStateRef.current.recommendedReading)
+      );
+      
+      if (!hasChanges && !isManual) {
+        console.log('No changes detected, skipping save');
+        return;
+      }
+      
+      console.log(`${isManual ? 'Manual' : 'Auto'} save triggered:`, {
+        title: currentState.title,
+        content: currentState.content.substring(0, 100) + '...',
+        tagsCount: currentState.tags.length,
+        recommendedReadingCount: currentState.recommendedReading.length,
+        hasChanges
+      });
+      
+      // Perform the database update
       const { error } = await supabase
         .from('pages')
-        .update({ 
-          title: currentTitle,
-          content: currentContent,
-          tags: tags,
-          recommended_reading: recommendedReading,
+        .update({
+          title: currentState.title,
+          content: currentState.content,
+          tags: currentState.tags,
+          recommended_reading: currentState.recommendedReading,
           updated_at: new Date().toISOString()
         })
         .eq('id', pageId);
 
       if (error) throw error;
       
-      // Update all last saved refs
-      lastSavedContentRef.current = currentContent;
-      lastSavedTitleRef.current = currentTitle;
-      lastSavedTagsRef.current = [...tags];
-      lastSavedRecommendedReadingRef.current = [...recommendedReading];
+      // Update the last saved state
+      lastSavedStateRef.current = {
+        title: currentState.title,
+        content: currentState.content,
+        tags: [...currentState.tags],
+        recommendedReading: [...currentState.recommendedReading]
+      };
       
-      console.log('Save successful with all content preserved');
+      console.log(`${isManual ? 'Manual' : 'Auto'} save successful`);
+      
+      if (isManual) {
+        toast({
+          title: "Page saved",
+          description: "All content has been saved successfully.",
+        });
+      }
+      
     } catch (error) {
-      console.error('Save failed:', error);
+      console.error(`${isManual ? 'Manual' : 'Auto'} save failed:`, error);
+      if (isManual) {
+        toast({
+          title: "Error",
+          description: "Failed to save page. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      saveInProgressRef.current = false;
+      if (isManual) setIsSaving(false);
+    }
+  };
+
+  // Schedule auto-save with debouncing
+  const scheduleAutoSave = () => {
+    if (!pageId) return;
+    
+    if (autoSaveTimeoutRef.current) {
+      clearTimeout(autoSaveTimeoutRef.current);
+    }
+    
+    autoSaveTimeoutRef.current = setTimeout(() => {
+      performSave(false);
+    }, 10000); // Auto-save after 10 seconds of inactivity
+  };
+
+  // Manual save handler
+  const handleManualSave = async () => {
+    if (pageId) {
+      await performSave(true);
+    } else {
+      // For new pages, use the onSave prop
+      try {
+        setIsSaving(true);
+        console.log('Creating new page with all content:', {
+          title: currentTitle,
+          content: contentRef.current,
+          tags,
+          recommendedReading
+        });
+        
+        await onSave(currentTitle, contentRef.current, recommendedReading, [], tags);
+        
+        toast({
+          title: "Page created and saved",
+          description: "Your page has been created with all content.",
+        });
+      } catch (error) {
+        console.error('Error creating page:', error);
+        toast({
+          title: "Error",
+          description: "Failed to create page. Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setIsSaving(false);
+      }
     }
   };
 
@@ -225,8 +259,8 @@ export function EnhancedContentEditor({
     // Clean content of any RECOMMENDED_READING data before setting
     const cleanContent = content.split('RECOMMENDED_READING:')[0];
     contentRef.current = cleanContent;
-    lastSavedContentRef.current = cleanContent;
-    lastSavedTitleRef.current = title;
+    lastSavedStateRef.current.content = cleanContent;
+    lastSavedStateRef.current.title = title;
     
     if (editorRef.current) {
       editorRef.current.innerHTML = cleanContent;
@@ -280,16 +314,16 @@ export function EnhancedContentEditor({
 
     document.addEventListener('keydown', handleKeyDown);
     
-    // Add navigation-based saving (ONLY way to save now)
+    // Add navigation-based saving
     const handleBeforeUnload = () => {
       if (pageId) {
-        saveNow(); // Save immediately when leaving
+        performSave(false); // Save immediately when leaving
       }
     };
     
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden' && pageId) {
-        saveNow(); // Save immediately when tab becomes hidden
+        performSave(false); // Save immediately when tab becomes hidden
       }
     };
     
@@ -303,28 +337,28 @@ export function EnhancedContentEditor({
       
       // Save one final time when component unmounts
       if (pageId) {
-        saveNow();
+        performSave(false);
       }
     };
   }, [title, content]);
 
   // Auto-save when title changes
   useEffect(() => {
-    if (pageId && currentTitle !== lastSavedTitleRef.current) {
+    if (pageId && currentTitle !== lastSavedStateRef.current.title) {
       scheduleAutoSave();
     }
   }, [currentTitle, pageId]);
 
   // Auto-save when tags change
   useEffect(() => {
-    if (pageId && JSON.stringify(tags) !== JSON.stringify(lastSavedTagsRef.current)) {
+    if (pageId && JSON.stringify(tags) !== JSON.stringify(lastSavedStateRef.current.tags)) {
       scheduleAutoSave();
     }
   }, [tags, pageId]);
 
   // Auto-save when recommended reading changes
   useEffect(() => {
-    if (pageId && JSON.stringify(recommendedReading) !== JSON.stringify(lastSavedRecommendedReadingRef.current)) {
+    if (pageId && JSON.stringify(recommendedReading) !== JSON.stringify(lastSavedStateRef.current.recommendedReading)) {
       scheduleAutoSave();
     }
   }, [recommendedReading, pageId]);
@@ -363,22 +397,22 @@ export function EnhancedContentEditor({
                 category: item.category || 'General'
               }));
               setRecommendedReading(typedReadings);
-              lastSavedRecommendedReadingRef.current = typedReadings;
+              lastSavedStateRef.current.recommendedReading = typedReadings;
             } else {
               console.log('No recommended reading found in database');
               setRecommendedReading([]);
-              lastSavedRecommendedReadingRef.current = [];
+              lastSavedStateRef.current.recommendedReading = [];
             }
             
             // Set tags from database
             if (data.tags && Array.isArray(data.tags)) {
               console.log('Found tags in database:', data.tags);
               setTags(data.tags);
-              lastSavedTagsRef.current = data.tags;
+              lastSavedStateRef.current.tags = data.tags;
             } else {
               console.log('No tags found in database');
               setTags([]);
-              lastSavedTagsRef.current = [];
+              lastSavedStateRef.current.tags = [];
               
               // Legacy: Try to extract recommended reading from content if it exists
               try {
@@ -2524,47 +2558,6 @@ export function EnhancedContentEditor({
     }
   };
 
-  const handleSave = async () => {
-    try {
-      // Wait a brief moment to ensure all state updates have completed
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Derive ordered categories from the first occurrence of each category
-      const orderedCategories: string[] = [];
-      const seenCategories = new Set<string>();
-      
-      recommendedReading.forEach(item => {
-        const category = item.category || 'General';
-        if (!seenCategories.has(category)) {
-          orderedCategories.push(category);
-          seenCategories.add(category);
-        }
-      });
-
-      console.log('Manual save - Current state:', { 
-        title: currentTitle, 
-        content: contentRef.current, 
-        tags, 
-        recommendedReading,
-        recommendedReadingCount: recommendedReading.length 
-      });
-
-      // Save content and recommended reading using the provided onSave function
-      await onSave(currentTitle, contentRef.current, recommendedReading, orderedCategories, tags);
-      
-      toast({
-        title: "Page saved",
-        description: "All content, tags, and recommended reading have been saved successfully.",
-      });
-    } catch (error) {
-      console.error('Error saving page:', error);
-      toast({
-        title: "Error",
-        description: "Failed to save page",
-        variant: "destructive",
-      });
-    }
-  };
 
   const togglePublicAccess = async () => {
     if (!pageId) return;
@@ -2822,9 +2815,13 @@ export function EnhancedContentEditor({
               </Button>
             )}
             
-            <Button onClick={handleSave} className="bg-gradient-primary">
+            <Button 
+              onClick={handleManualSave} 
+              disabled={isSaving}
+              className="bg-gradient-primary"
+            >
               <Save className="h-4 w-4 mr-2" />
-              Save Page
+              {isSaving ? 'Saving...' : 'Save Page'}
             </Button>
           </div>
         </div>
