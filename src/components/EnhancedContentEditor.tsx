@@ -402,64 +402,86 @@ export function EnhancedContentEditor({
               editorRef.current.innerHTML = data.content;
             }
             
-            // Set recommended reading from database
-            if (data.recommended_reading && Array.isArray(data.recommended_reading)) {
-              console.log('Found recommended reading in database:', data.recommended_reading);
-              const typedReadings = data.recommended_reading.map((item: any) => ({
-                title: item.title || '',
-                url: item.url,
-                description: item.description || '',
-                type: (item.type as 'link' | 'file') || 'link',
-                fileName: item.fileName,
-                fileUrl: item.fileUrl,
-                category: item.category || 'General'
-              }));
-              setRecommendedReading(typedReadings);
-              lastSavedStateRef.current.recommendedReading = typedReadings;
+            // Only set recommended reading if we don't have unsaved changes
+            const hasUnsavedRecommendedReading = recommendedReading.length > 0 && 
+              JSON.stringify(recommendedReading) !== JSON.stringify(lastSavedStateRef.current.recommendedReading);
+            
+            if (!hasUnsavedRecommendedReading) {
+              if (data.recommended_reading && Array.isArray(data.recommended_reading)) {
+                console.log('Found recommended reading in database:', data.recommended_reading);
+                const typedReadings = data.recommended_reading.map((item: any) => ({
+                  title: item.title || '',
+                  url: item.url,
+                  description: item.description || '',
+                  type: (item.type as 'link' | 'file') || 'link',
+                  fileName: item.fileName,
+                  fileUrl: item.fileUrl,
+                  category: item.category || 'General'
+                }));
+                setRecommendedReading(typedReadings);
+                lastSavedStateRef.current.recommendedReading = typedReadings;
+              } else {
+                console.log('No recommended reading found in database');
+                setRecommendedReading([]);
+                lastSavedStateRef.current.recommendedReading = [];
+              }
             } else {
-              console.log('No recommended reading found in database');
-              setRecommendedReading([]);
-              lastSavedStateRef.current.recommendedReading = [];
+              console.log('Skipping recommended reading update - has unsaved changes');
             }
             
-            // Set tags from database
-            if (data.tags && Array.isArray(data.tags)) {
-              console.log('Found tags in database:', data.tags);
-              setTags(data.tags);
-              lastSavedStateRef.current.tags = data.tags;
+            // Only set tags if we don't have unsaved changes
+            const hasUnsavedTags = tags.length > 0 && 
+              JSON.stringify(tags) !== JSON.stringify(lastSavedStateRef.current.tags);
+            
+            if (!hasUnsavedTags) {
+              if (data.tags && Array.isArray(data.tags)) {
+                console.log('Found tags in database:', data.tags);
+                setTags(data.tags);
+                lastSavedStateRef.current.tags = data.tags;
+              } else {
+                console.log('No tags found in database');
+                setTags([]);
+                lastSavedStateRef.current.tags = [];
+              }
             } else {
-              console.log('No tags found in database');
-              setTags([]);
-              lastSavedStateRef.current.tags = [];
-              
-              // Legacy: Try to extract recommended reading from content if it exists
+              console.log('Skipping tags update - has unsaved changes');
+            
+            // Handle legacy content format if needed
+            if (data.content && data.content.includes('RECOMMENDED_READING:')) {
               try {
-                if (data.content && data.content.includes('RECOMMENDED_READING:')) {
-                  const parts = data.content.split('RECOMMENDED_READING:');
-                  if (parts.length > 1) {
-                    const readingData = JSON.parse(parts[1]);
-                    const typedReadings = readingData.map((item: any) => ({
-                      title: item.title || '',
-                      url: item.url,
-                      description: item.description || '',
-                      type: (item.type as 'link' | 'file') || 'link',
-                      fileName: item.fileName,
-                      fileUrl: item.fileUrl
-                    }));
-                    setRecommendedReading(typedReadings);
-                    contentRef.current = parts[0];
-                    if (editorRef.current) {
-                      editorRef.current.innerHTML = parts[0];
-                    }
+                const parts = data.content.split('RECOMMENDED_READING:');
+                if (parts.length > 1) {
+                  const readingSection = parts[1].trim();
+                  if (readingSection) {
+                    const readingData = readingSection.split('\n').map(line => {
+                      const [title, url] = line.split(' - ');
+                      return {
+                        title: title || 'Untitled',
+                        url: url || '',
+                        description: '',
+                        type: 'link' as const,
+                        category: 'General',
+                        fileUrl: url?.startsWith('http') ? undefined : url,
+                        fileName: url?.startsWith('http') ? undefined : title
+                      };
+                    }).filter(item => item.title && (item.url || item.fileUrl));
                     
-                    // Update the database to remove the appended data and save properly
-                    supabase
-                      .from('pages')
-                      .update({ 
-                        content: parts[0],
-                        recommended_reading: readingData
-                      })
-                      .eq('id', pageId);
+                    const hasUnsavedRecommendedReadingLegacy = recommendedReading.length > 0 && 
+                      JSON.stringify(recommendedReading) !== JSON.stringify(lastSavedStateRef.current.recommendedReading);
+                    
+                    if (!hasUnsavedRecommendedReadingLegacy && readingData.length > 0) {
+                      setRecommendedReading(readingData);
+                      lastSavedStateRef.current.recommendedReading = readingData;
+                      
+                      // Update database to new format
+                      await supabase
+                        .from('pages')
+                        .update({
+                          content: parts[0].trim(),
+                          recommended_reading: readingData
+                        })
+                        .eq('id', pageId);
+                    }
                   }
                 }
               } catch (e) {
@@ -3050,15 +3072,21 @@ export function EnhancedContentEditor({
                                  fileName: newRecommendation.fileName,
                                  category: newRecommendation.category
                                };
-                               setRecommendedReading(prev => {
-                                 const newList = [...prev, newItem];
-                                 // Log the addition
-                                 logChange('add', null, newItem, {
-                                   item_count: newList.length,
-                                   item_type: 'file'
-                                 });
-                                 return newList;
-                               });
+                                setRecommendedReading(prev => {
+                                  const newList = [...prev, newItem];
+                                  // Immediately trigger save to persist the change
+                                  setTimeout(() => {
+                                    if (pageId) {
+                                      performSave(false);
+                                    }
+                                  }, 100);
+                                  // Log the addition
+                                  logChange('add', null, newItem, {
+                                    item_count: newList.length,
+                                    item_type: 'file'
+                                  });
+                                  return newList;
+                                });
                                setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '', category: 'General' });
                                toast({
                                  title: "Added",
