@@ -1592,7 +1592,7 @@ export function EnhancedContentEditor({
             <input type="number" id="iframe-width-${iframeId}" placeholder="Width %" min="10" max="100" step="1" style="width: 80px; padding: 4px; border: 1px solid #ccc; border-radius: 4px;" />
             <span style="font-size: 12px;">%</span>
             <span style="font-size: 12px;">×</span>
-            <input type="number" id="iframe-height-${iframeId}" placeholder="Height px" min="100" max="800" step="10" style="width: 90px; padding: 4px; border: 1px solid #ccc; border-radius: 4px;" />
+            <input type="number" id="iframe-height-${iframeId}" placeholder="Height px" min="100" step="10" style="width: 90px; padding: 4px; border: 1px solid #ccc; border-radius: 4px;" />
             <span style="font-size: 12px;">px</span>
             <button onclick="applyCustomIframeSize('${iframeId}')" style="padding: 4px 8px; border: 1px solid #007acc; border-radius: 4px; cursor: pointer; background: #007acc; color: white;">Apply</button>
           </div>
