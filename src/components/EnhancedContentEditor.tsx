@@ -337,6 +337,13 @@ export function EnhancedContentEditor({
     }
   };
 
+  // Trigger auto-save when title changes
+  useEffect(() => {
+    if (pageId) {
+      triggerAutoSave();
+    }
+  }, [currentTitle, pageId]);
+
   // Auto-save functionality
   const triggerAutoSave = () => {
     if (!pageId) return; // Only auto-save for existing pages
@@ -347,7 +354,7 @@ export function EnhancedContentEditor({
     
     autoSaveTimeoutRef.current = setTimeout(() => {
       autoSave();
-    }, 3000); // Auto-save after 3 seconds of inactivity
+    }, 1500); // Auto-save after 1.5 seconds of inactivity
   };
 
   // Trigger auto-save when recommended reading changes
@@ -2708,10 +2715,6 @@ export function EnhancedContentEditor({
                 Preview
               </Button>
             )}
-            <Button onClick={handleSave} className="bg-gradient-primary">
-              <Save className="h-4 w-4 mr-2" />
-              Save
-            </Button>
           </div>
         </div>
 
