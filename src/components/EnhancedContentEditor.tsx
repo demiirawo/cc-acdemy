@@ -324,10 +324,9 @@ export function EnhancedContentEditor({
         <div className="w-80 border-l border-border p-4 overflow-auto">
           <RecommendedReadingManager
             pageId={pageId || ''}
-            recommendedReading={recommendedReading}
-            onRecommendedReadingChange={setRecommendedReading}
-            orderedCategories={orderedCategories}
-            onOrderedCategoriesChange={setOrderedCategories}
+            items={recommendedReading}
+            onItemsChange={setRecommendedReading}
+            autoSave={false}
           />
         </div>
       </div>
