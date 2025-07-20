@@ -44,116 +44,109 @@ export function ContentEditor({
   const [currentContent, setCurrentContent] = useState(content);
   const { toast } = useToast();
   
-  // Refs for managing auto-save
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastSavedContentRef = useRef({ title, content });
-  const isSavingRef = useRef(false);
+  // Simple auto-save system rebuilt from scratch
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastSavedRef = useRef({ title, content });
+  const isCurrentlySaving = useRef(false);
 
-  // Centralized save function with error handling
-  const performSave = useCallback(async (titleToSave: string, contentToSave: string, showToast = false) => {
-    if (isSavingRef.current) return;
+  // Single centralized save function
+  const doSave = useCallback(async (titleToSave: string, contentToSave: string, showSuccessToast = false) => {
+    // Prevent concurrent saves
+    if (isCurrentlySaving.current) return;
+    
+    console.log('Saving:', { titleToSave, contentToSave, showSuccessToast });
     
     try {
-      isSavingRef.current = true;
+      isCurrentlySaving.current = true;
       await onSave(titleToSave, contentToSave);
-      lastSavedContentRef.current = { title: titleToSave, content: contentToSave };
       
-      if (showToast) {
+      // Update what we consider "saved"
+      lastSavedRef.current = { title: titleToSave, content: contentToSave };
+      
+      if (showSuccessToast) {
         toast({
           title: "Saved",
-          description: "Your changes have been saved successfully.",
+          description: "Changes saved successfully.",
         });
       }
     } catch (error) {
-      console.error('Save failed:', error);
+      console.error('Save error:', error);
       toast({
-        title: "Save Failed",
-        description: "Failed to save your changes. Please try again.",
+        title: "Save failed", 
+        description: "Could not save changes. Please try again.",
         variant: "destructive",
       });
     } finally {
-      isSavingRef.current = false;
+      isCurrentlySaving.current = false;
     }
   }, [onSave, toast]);
 
-  // Immediate save function (no debounce) for navigation events
-  const saveImmediately = useCallback(() => {
-    // Clear any pending auto-save
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-      autoSaveTimeoutRef.current = null;
-    }
-    
-    // Check if content has changed since last save
-    const hasChanged = currentTitle !== lastSavedContentRef.current.title || 
-                      currentContent !== lastSavedContentRef.current.content;
-    
-    if (hasChanged) {
-      performSave(currentTitle, currentContent);
-    }
-  }, [currentTitle, currentContent, performSave]);
+  // Check if content has changed since last save
+  const hasUnsavedChanges = useCallback(() => {
+    return currentTitle !== lastSavedRef.current.title || currentContent !== lastSavedRef.current.content;
+  }, [currentTitle, currentContent]);
 
-  // Debounced auto-save function (3 seconds) for typing
+  // Immediate save (for navigation events)
+  const saveNow = useCallback(() => {
+    // Cancel any pending auto-save
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+    
+    if (hasUnsavedChanges()) {
+      doSave(currentTitle, currentContent);
+    }
+  }, [currentTitle, currentContent, hasUnsavedChanges, doSave]);
+
+  // Auto-save with 5-second delay
   const scheduleAutoSave = useCallback(() => {
-    // Clear existing timeout
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
     }
     
-    // Schedule new auto-save
-    autoSaveTimeoutRef.current = setTimeout(() => {
-      const hasChanged = currentTitle !== lastSavedContentRef.current.title || 
-                        currentContent !== lastSavedContentRef.current.content;
-      
-      if (hasChanged) {
-        performSave(currentTitle, currentContent);
+    saveTimeoutRef.current = setTimeout(() => {
+      if (hasUnsavedChanges()) {
+        doSave(currentTitle, currentContent);
       }
-    }, 3000); // 3 second debounce
-  }, [currentTitle, currentContent, performSave]);
+    }, 5000); // 5 seconds to avoid race conditions
+  }, [currentTitle, currentContent, hasUnsavedChanges, doSave]);
 
-  // Auto-save on content/title changes (debounced)
+  // Auto-save when content changes
   useEffect(() => {
     scheduleAutoSave();
     
-    // Cleanup timeout on unmount or dependency change
     return () => {
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [scheduleAutoSave]);
+  }, [currentTitle, currentContent, scheduleAutoSave]);
 
-  // Navigation-based saving (immediate, no debounce)
+  // Save on navigation events
   useEffect(() => {
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      // Save immediately before leaving
-      saveImmediately();
-    };
-
-    const handleVisibilityChange = () => {
+    const beforeUnload = () => saveNow();
+    const visibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        // Save immediately when tab becomes hidden
-        saveImmediately();
+        saveNow();
       }
     };
 
-    // Add event listeners
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('beforeunload', beforeUnload);
+    document.addEventListener('visibilitychange', visibilityChange);
 
-    // Cleanup on component unmount
     return () => {
-      // Save one final time when component unmounts
-      saveImmediately();
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      // Save on component unmount
+      saveNow();
       
-      // Clear any pending auto-save
-      if (autoSaveTimeoutRef.current) {
-        clearTimeout(autoSaveTimeoutRef.current);
+      window.removeEventListener('beforeunload', beforeUnload);
+      document.removeEventListener('visibilitychange', visibilityChange);
+      
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [saveImmediately]);
+  }, [saveNow]);
 
   const toolbarItems = [
     { icon: Heading1, action: () => insertText('# '), label: 'Heading 1' },
@@ -228,7 +221,7 @@ export function ContentEditor({
   };
 
   const handleManualSave = () => {
-    performSave(currentTitle, currentContent, true);
+    doSave(currentTitle, currentContent, true);
   };
 
   if (!isEditing) {
