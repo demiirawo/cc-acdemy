@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useRecommendedReadingAudit } from "@/hooks/useRecommendedReadingAudit";
 import { EditableTitle } from "./EditableTitle";
 import { ColorPicker } from "./ColorPicker";
 import {
@@ -115,6 +116,9 @@ export function EnhancedContentEditor({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
+  
+  // Initialize audit logging for recommended reading
+  const { createSnapshot, logChange } = useRecommendedReadingAudit(pageId || '');
 
   useEffect(() => {
     setCurrentTitle(title);
@@ -357,6 +361,26 @@ export function EnhancedContentEditor({
     if (!pageId || !currentContent) return;
     
     try {
+      // Get current page data for comparison
+      const { data: currentPage } = await supabase
+        .from('pages')
+        .select('recommended_reading')
+        .eq('id', pageId)
+        .single();
+
+      // Create snapshot if significant changes detected
+      if (currentPage && JSON.stringify(currentPage.recommended_reading) !== JSON.stringify(recommendedReading)) {
+        if (recommendedReading.length > 0) {
+          await createSnapshot('auto');
+        }
+        
+        // Log the auto-save change
+        await logChange('auto_save', currentPage.recommended_reading, recommendedReading, {
+          items_count: recommendedReading.length,
+          content_length: currentContent.length
+        });
+      }
+      
       const { error } = await supabase
         .from('pages')
         .update({ 
@@ -2873,20 +2897,29 @@ export function EnhancedContentEditor({
                         if (newRecommendation.title && newRecommendation.description) {
                           if (newRecommendation.type === 'file') {
                             // Check if file is already selected
-                            if (newRecommendation.fileUrl && newRecommendation.fileName) {
-                              setRecommendedReading(prev => [...prev, {
-                                title: newRecommendation.title,
-                                description: newRecommendation.description,
-                                type: 'file',
-                                fileUrl: newRecommendation.fileUrl,
-                                fileName: newRecommendation.fileName,
-                                category: newRecommendation.category
-                              }]);
-                              setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '', category: 'General' });
-                              toast({
-                                title: "Added",
-                                description: "Recommended reading file added.",
-                              });
+                             if (newRecommendation.fileUrl && newRecommendation.fileName) {
+                               const newItem = {
+                                 title: newRecommendation.title,
+                                 description: newRecommendation.description,
+                                 type: 'file' as const,
+                                 fileUrl: newRecommendation.fileUrl,
+                                 fileName: newRecommendation.fileName,
+                                 category: newRecommendation.category
+                               };
+                               setRecommendedReading(prev => {
+                                 const newList = [...prev, newItem];
+                                 // Log the addition
+                                 logChange('add', null, newItem, {
+                                   item_count: newList.length,
+                                   item_type: 'file'
+                                 });
+                                 return newList;
+                               });
+                               setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '', category: 'General' });
+                               toast({
+                                 title: "Added",
+                                 description: "Recommended reading file added.",
+                               });
                             } else {
                               toast({
                                 title: "No file selected",
@@ -2894,19 +2927,28 @@ export function EnhancedContentEditor({
                                 variant: "destructive"
                               });
                             }
-                          } else if (newRecommendation.url) {
-                            setRecommendedReading(prev => [...prev, {
-                              title: newRecommendation.title,
-                              url: newRecommendation.url,
-                              description: newRecommendation.description,
-                              type: 'link',
-                              category: newRecommendation.category
-                            }]);
-                            setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '', category: 'General' });
-                            toast({
-                              title: "Added",
-                              description: "Recommended reading item added.",
-                            });
+                           } else if (newRecommendation.url) {
+                             const newItem = {
+                               title: newRecommendation.title,
+                               url: newRecommendation.url,
+                               description: newRecommendation.description,
+                               type: 'link' as const,
+                               category: newRecommendation.category
+                             };
+                             setRecommendedReading(prev => {
+                               const newList = [...prev, newItem];
+                               // Log the addition
+                               logChange('add', null, newItem, {
+                                 item_count: newList.length,
+                                 item_type: 'link'
+                               });
+                               return newList;
+                             });
+                             setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '', category: 'General' });
+                             toast({
+                               title: "Added",
+                               description: "Recommended reading item added.",
+                             });
                           } else {
                             toast({
                               title: "Missing URL",
@@ -3219,7 +3261,22 @@ export function EnhancedContentEditor({
                              <Button
                              variant="ghost"
                              size="sm"
-                             onClick={() => setRecommendedReading(prev => prev.filter((_, i) => i !== index))}
+                              onClick={() => {
+                                const itemToDelete = recommendedReading[index];
+                                setRecommendedReading(prev => {
+                                  const newList = prev.filter((_, i) => i !== index);
+                                  // Log the deletion
+                                  logChange('delete', itemToDelete, null, {
+                                    item_count: newList.length,
+                                    deleted_title: itemToDelete.title
+                                  });
+                                  return newList;
+                                });
+                                toast({
+                                  title: "Removed",
+                                  description: `"${itemToDelete.title}" has been removed.`,
+                                });
+                              }}
                              className="h-8 w-8 p-0 text-destructive"
                              title="Delete"
                            >

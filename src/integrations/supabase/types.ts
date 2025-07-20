@@ -270,6 +270,39 @@ export type Database = {
         }
         Relationships: []
       }
+      page_content_snapshots: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          page_id: string
+          recommended_reading: Json
+          snapshot_type: string
+          title: string
+          user_id: string | null
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          page_id: string
+          recommended_reading?: Json
+          snapshot_type?: string
+          title: string
+          user_id?: string | null
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          page_id?: string
+          recommended_reading?: Json
+          snapshot_type?: string
+          title?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       page_permissions: {
         Row: {
           created_at: string
@@ -546,6 +579,39 @@ export type Database = {
           },
         ]
       }
+      recommended_reading_audit: {
+        Row: {
+          change_details: Json | null
+          created_at: string
+          id: string
+          new_data: Json | null
+          old_data: Json | null
+          operation_type: string
+          page_id: string
+          user_id: string | null
+        }
+        Insert: {
+          change_details?: Json | null
+          created_at?: string
+          id?: string
+          new_data?: Json | null
+          old_data?: Json | null
+          operation_type: string
+          page_id: string
+          user_id?: string | null
+        }
+        Update: {
+          change_details?: Json | null
+          created_at?: string
+          id?: string
+          new_data?: Json | null
+          old_data?: Json | null
+          operation_type?: string
+          page_id?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       spaces: {
         Row: {
           created_at: string
@@ -599,6 +665,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      create_page_snapshot: {
+        Args: { p_page_id: string; p_snapshot_type?: string }
+        Returns: string
+      }
       get_current_user_role: {
         Args: Record<PropertyKey, never>
         Returns: string
@@ -627,6 +697,16 @@ export type Database = {
           p_error_message?: string
         }
         Returns: undefined
+      }
+      log_recommended_reading_change: {
+        Args: {
+          p_page_id: string
+          p_operation_type: string
+          p_old_data?: Json
+          p_new_data?: Json
+          p_change_details?: Json
+        }
+        Returns: string
       }
       move_page_down: {
         Args: { page_id: string }
