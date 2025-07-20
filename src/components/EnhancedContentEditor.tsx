@@ -384,6 +384,7 @@ export function EnhancedContentEditor({
       const { error } = await supabase
         .from('pages')
         .update({ 
+          title: currentTitle,
           content: currentContent,
           recommended_reading: recommendedReading,
           updated_at: new Date().toISOString()
