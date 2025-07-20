@@ -2658,18 +2658,20 @@ export function EnhancedContentEditor({
     if (editingIndex !== null && editingItem.title && editingItem.description) {
       if (editingItem.type === 'file') {
         if (editingItem.fileUrl && editingItem.fileName) {
-          setRecommendedReading(prev => {
-            const newItems = [...prev];
-            newItems[editingIndex] = {
-              title: editingItem.title,
-              description: editingItem.description,
-              type: 'file',
-              fileUrl: editingItem.fileUrl,
-              fileName: editingItem.fileName,
-              category: editingItem.category
-            };
-            return newItems;
-          });
+           setRecommendedReading(prev => {
+             const newItems = [...prev];
+             newItems[editingIndex] = {
+               title: editingItem.title,
+               description: editingItem.description,
+               type: 'file',
+               fileUrl: editingItem.fileUrl,
+               fileName: editingItem.fileName,
+               category: editingItem.category
+             };
+             // Trigger immediate save after state update
+             setTimeout(() => scheduleAutoSave(), 100);
+             return newItems;
+           });
           setEditingIndex(null);
           toast({
             title: "Updated",
@@ -2683,17 +2685,19 @@ export function EnhancedContentEditor({
           });
         }
       } else if (editingItem.url) {
-        setRecommendedReading(prev => {
-          const newItems = [...prev];
-          newItems[editingIndex] = {
-            title: editingItem.title,
-            url: editingItem.url,
-            description: editingItem.description,
-            type: 'link',
-            category: editingItem.category
-          };
-          return newItems;
-        });
+         setRecommendedReading(prev => {
+           const newItems = [...prev];
+           newItems[editingIndex] = {
+             title: editingItem.title,
+             url: editingItem.url,
+             description: editingItem.description,
+             type: 'link',
+             category: editingItem.category
+           };
+           // Trigger immediate save after state update
+           setTimeout(() => scheduleAutoSave(), 100);
+           return newItems;
+         });
         setEditingIndex(null);
         toast({
           title: "Updated",
@@ -3035,15 +3039,17 @@ export function EnhancedContentEditor({
                                  fileName: newRecommendation.fileName,
                                  category: newRecommendation.category
                                };
-                               setRecommendedReading(prev => {
-                                 const newList = [...prev, newItem];
-                                 // Log the addition
-                                 logChange('add', null, newItem, {
-                                   item_count: newList.length,
-                                   item_type: 'file'
-                                 });
-                                 return newList;
-                               });
+                                setRecommendedReading(prev => {
+                                  const newList = [...prev, newItem];
+                                  // Log the addition
+                                  logChange('add', null, newItem, {
+                                    item_count: newList.length,
+                                    item_type: 'file'
+                                  });
+                                  // Trigger immediate save after state update
+                                  setTimeout(() => scheduleAutoSave(), 100);
+                                  return newList;
+                                });
                                setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '', category: 'General' });
                                toast({
                                  title: "Added",
@@ -3064,15 +3070,17 @@ export function EnhancedContentEditor({
                                type: 'link' as const,
                                category: newRecommendation.category
                              };
-                             setRecommendedReading(prev => {
-                               const newList = [...prev, newItem];
-                               // Log the addition
-                               logChange('add', null, newItem, {
-                                 item_count: newList.length,
-                                 item_type: 'link'
-                               });
-                               return newList;
-                             });
+                              setRecommendedReading(prev => {
+                                const newList = [...prev, newItem];
+                                // Log the addition
+                                logChange('add', null, newItem, {
+                                  item_count: newList.length,
+                                  item_type: 'link'
+                                });
+                                // Trigger immediate save after state update
+                                setTimeout(() => scheduleAutoSave(), 100);
+                                return newList;
+                              });
                              setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '', category: 'General' });
                              toast({
                                title: "Added",
@@ -3347,11 +3355,13 @@ export function EnhancedContentEditor({
                             size="sm"
                             onClick={() => {
                               if (index > 0) {
-                                setRecommendedReading(prev => {
-                                  const newItems = [...prev];
-                                  [newItems[index - 1], newItems[index]] = [newItems[index], newItems[index - 1]];
-                                  return newItems;
-                                });
+                                 setRecommendedReading(prev => {
+                                   const newItems = [...prev];
+                                   [newItems[index - 1], newItems[index]] = [newItems[index], newItems[index - 1]];
+                                   // Trigger immediate save after state update
+                                   setTimeout(() => scheduleAutoSave(), 100);
+                                   return newItems;
+                                 });
                               }
                             }}
                             disabled={index === 0}
@@ -3365,11 +3375,13 @@ export function EnhancedContentEditor({
                             size="sm"
                             onClick={() => {
                               if (index < recommendedReading.length - 1) {
-                                setRecommendedReading(prev => {
-                                  const newItems = [...prev];
-                                  [newItems[index], newItems[index + 1]] = [newItems[index + 1], newItems[index]];
-                                  return newItems;
-                                });
+                                 setRecommendedReading(prev => {
+                                   const newItems = [...prev];
+                                   [newItems[index], newItems[index + 1]] = [newItems[index + 1], newItems[index]];
+                                   // Trigger immediate save after state update
+                                   setTimeout(() => scheduleAutoSave(), 100);
+                                   return newItems;
+                                 });
                               }
                             }}
                             disabled={index === recommendedReading.length - 1}
@@ -3392,15 +3404,17 @@ export function EnhancedContentEditor({
                              size="sm"
                               onClick={() => {
                                 const itemToDelete = recommendedReading[index];
-                                setRecommendedReading(prev => {
-                                  const newList = prev.filter((_, i) => i !== index);
-                                  // Log the deletion
-                                  logChange('delete', itemToDelete, null, {
-                                    item_count: newList.length,
-                                    deleted_title: itemToDelete.title
-                                  });
-                                  return newList;
-                                });
+                                 setRecommendedReading(prev => {
+                                   const newList = prev.filter((_, i) => i !== index);
+                                   // Log the deletion
+                                   logChange('delete', itemToDelete, null, {
+                                     item_count: newList.length,
+                                     deleted_title: itemToDelete.title
+                                   });
+                                   // Trigger immediate save after state update
+                                   setTimeout(() => scheduleAutoSave(), 100);
+                                   return newList;
+                                 });
                                 toast({
                                   title: "Removed",
                                   description: `"${itemToDelete.title}" has been removed.`,
