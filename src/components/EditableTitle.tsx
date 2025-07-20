@@ -47,7 +47,7 @@ export function EditableTitle({ value, onChange, className, placeholder }: Edita
         onChange={(e) => setTempValue(e.target.value)}
         onBlur={handleSubmit}
         onKeyDown={handleKeyDown}
-        className={cn("text-4xl font-bold border-none p-0 h-auto bg-transparent", className)}
+        className={cn("text-4xl font-bold border-2 border-primary rounded-lg p-2 h-auto bg-background focus:border-primary focus:ring-2 focus:ring-primary/20", className)}
         placeholder={placeholder}
       />
     );
@@ -55,7 +55,7 @@ export function EditableTitle({ value, onChange, className, placeholder }: Edita
 
   return (
     <h1 
-      className={cn("text-4xl font-bold cursor-pointer hover:bg-muted/50 rounded p-1 -m-1", className)}
+      className={cn("text-4xl font-bold cursor-pointer hover:bg-muted/50 rounded-lg p-2 border-2 border-transparent hover:border-muted transition-all duration-200", className)}
       onClick={() => setIsEditing(true)}
     >
       {value || placeholder}

@@ -386,9 +386,12 @@ export function KnowledgeBaseApp() {
         title: 'Untitled Page',
         content: '',
         created_by: user.id,
-        parent_page_id: parentId || null
+        parent_page_id: parentId || null,
+        tags: [] // Initialize with empty tags array
       }).select().single();
       if (error) throw error;
+
+      // Note: Sidebar will refresh automatically through its own data fetching
 
       // Navigate directly to editor
       setCurrentPage({
@@ -434,7 +437,7 @@ export function KnowledgeBaseApp() {
     fileName?: string;
     type?: string;
     category?: string;
-  }>, orderedCategories?: string[]) => {
+  }>, orderedCategories?: string[], tags?: string[]) => {
     if (!currentPage || !user) return;
     try {
       if (currentPage.id === 'new') {
@@ -447,6 +450,7 @@ export function KnowledgeBaseApp() {
           content,
           recommended_reading: recommendedReading || [],
           category_order: orderedCategories || [],
+          tags: tags || [],
           created_by: user.id
         }).select().single();
         if (error) throw error;
@@ -466,6 +470,7 @@ export function KnowledgeBaseApp() {
           content,
           recommended_reading: recommendedReading || [],
           category_order: orderedCategories || [],
+          tags: tags || [],
           updated_at: new Date().toISOString()
         }).eq('id', currentPage.id);
         if (error) throw error;
