@@ -27,6 +27,86 @@ serve(async (req) => {
     // Initialize Supabase client for project context
     const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
     
+    // Get comprehensive knowledge base context
+    let knowledgeBaseContext = '';
+    try {
+      // Search for relevant pages based on the user's message
+      const { data: relevantPages } = await supabase
+        .from('pages')
+        .select('id, title, content, tags, created_at, is_public')
+        .or(`title.ilike.%${message.substring(0, 50)}%,content.ilike.%${message.substring(0, 50)}%`)
+        .eq('is_public', true)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      // Also get the most recently updated pages for general context
+      const { data: recentPages } = await supabase
+        .from('pages')
+        .select('id, title, content, tags, updated_at')
+        .eq('is_public', true)
+        .order('updated_at', { ascending: false })
+        .limit(10);
+
+      // Get all spaces for structural context
+      const { data: spaces } = await supabase
+        .from('spaces')
+        .select('id, name, description')
+        .order('name');
+
+      // Get user profiles for team context
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('display_name, role, email')
+        .order('display_name');
+
+      // Build comprehensive knowledge base context
+      const relevantContent = relevantPages?.map(page => 
+        `Page: "${page.title}"\nContent: ${page.content.substring(0, 500)}...\nTags: ${page.tags?.join(', ') || 'None'}\n`
+      ).join('\n') || '';
+
+      const recentContent = recentPages?.slice(0, 5).map(page => 
+        `- ${page.title} (Updated: ${new Date(page.updated_at).toLocaleDateString()})`
+      ).join('\n') || '';
+
+      const spacesList = spaces?.map(space => 
+        `- ${space.name}: ${space.description || 'No description'}`
+      ).join('\n') || '';
+
+      const teamMembers = profiles?.map(profile => 
+        `- ${profile.display_name || 'Unknown'} (${profile.role || 'viewer'}) - ${profile.email}`
+      ).join('\n') || '';
+
+      knowledgeBaseContext = `
+CARE CUDDLE ACADEMY KNOWLEDGE BASE CONTEXT:
+
+=== RELEVANT CONTENT FOR YOUR QUERY ===
+${relevantContent}
+
+=== RECENT PAGES IN KNOWLEDGE BASE ===
+${recentContent}
+
+=== AVAILABLE SPACES/SECTIONS ===
+${spacesList}
+
+=== TEAM MEMBERS ===
+${teamMembers}
+
+=== INSTRUCTIONS ===
+You have access to the Care Cuddle Academy knowledge base above. Use this information to:
+1. Provide specific, accurate answers based on the actual content
+2. Reference relevant pages and resources when applicable
+3. Suggest related content the user might find helpful
+4. If information isn't in the knowledge base, clearly state that and offer to help create content
+5. Maintain the care industry focus while being helpful and professional
+
+When referencing content, mention the specific page titles so users know where to find more information.`;
+
+      console.log('Knowledge base context loaded - relevant pages:', relevantPages?.length || 0);
+    } catch (error) {
+      console.error('Error loading knowledge base context:', error);
+      knowledgeBaseContext = 'Knowledge base context temporarily unavailable.';
+    }
+    
     // Get project context if conversation belongs to a project
     let projectContext = '';
     if (conversationId) {
@@ -55,19 +135,6 @@ serve(async (req) => {
               .order('last_message_at', { ascending: false })
               .limit(5);
 
-            // Get recent messages from project conversations for deeper context
-            const { data: recentMessages } = await supabase
-              .from('chat_messages')
-              .select(`
-                content,
-                role,
-                created_at,
-                conversations!inner(folder_id, title)
-              `)
-              .eq('conversations.folder_id', conversation.folder_id)
-              .order('created_at', { ascending: false })
-              .limit(20);
-
             // Build project context
             projectContext = `
 ACTIVE PROJECT: "${project.name}"
@@ -76,10 +143,7 @@ ${project.description ? `Project Description: ${project.description}` : ''}
 RECENT PROJECT CONVERSATIONS:
 ${projectConversations?.map(c => `- ${c.title} (${new Date(c.created_at).toLocaleDateString()})`).join('\n') || 'No previous conversations'}
 
-RECENT PROJECT DISCUSSION CONTEXT:
-${recentMessages?.slice(0, 10).map(m => `${m.role}: ${m.content.substring(0, 200)}...`).join('\n') || 'No previous messages'}
-
-INSTRUCTIONS: You are Care Cuddle AI working within the "${project.name}" project. Use the context above to provide relevant, informed responses that build upon previous discussions in this project. Reference past conversations when relevant and maintain project continuity.`;
+PROJECT INSTRUCTIONS: You are working within the "${project.name}" project. Use both the knowledge base and project context to provide informed responses.`;
 
             console.log('Project context loaded for:', project.name);
           }
@@ -90,19 +154,24 @@ INSTRUCTIONS: You are Care Cuddle AI working within the "${project.name}" projec
       }
     }
 
-    // Prepare system message with project context
-    const systemMessage = `You are Care Cuddle AI, a specialized assistant for care industry professionals. You help with care planning, compliance, documentation, and industry best practices.
+    // Prepare system message with both knowledge base and project context
+    const systemMessage = `You are Care Cuddle AI, a specialized assistant for care industry professionals with access to the complete Care Cuddle Academy knowledge base.
+
+${knowledgeBaseContext}
 
 ${projectContext}
 
 Key responsibilities:
-- Provide expert guidance on care industry topics
-- Help with care plans, risk assessments, and documentation
-- Assist with CQC compliance and regulatory matters
-- Support with staff training and development
+- Use the knowledge base content to provide accurate, specific answers
+- Reference actual pages and documents when relevant
+- Help with care planning, compliance, documentation, and industry best practices
+- Assist with CQC compliance and regulatory matters based on available resources
+- Support with staff training and development using academy content
 - Offer practical solutions for care delivery challenges
+- When users ask about topics, check if there are relevant pages in the knowledge base first
+- If information isn't available in the knowledge base, offer to help create or find the content
 
-Always be professional, empathetic, and focus on person-centered care principles.`;
+Always be professional, empathetic, and focus on person-centered care principles. When referencing knowledge base content, mention specific page titles so users can easily find and access the full information.`;
 
     let currentThreadId = threadId;
 
@@ -128,8 +197,8 @@ Always be professional, empathetic, and focus on person-centered care principles
       console.log('Created thread:', currentThreadId);
     }
 
-    // Add system message to provide project context
-    if (projectContext) {
+    // Add system message with context to provide comprehensive information
+    if (knowledgeBaseContext || projectContext) {
       const systemMessageResponse = await fetch(`https://api.openai.com/v1/threads/${currentThreadId}/messages`, {
         method: 'POST',
         headers: {
@@ -139,12 +208,12 @@ Always be professional, empathetic, and focus on person-centered care principles
         },
         body: JSON.stringify({
           role: 'user',
-          content: `[SYSTEM CONTEXT UPDATE]\n${systemMessage}\n\nUser message: ${message}`
+          content: `[KNOWLEDGE BASE & CONTEXT UPDATE]\n${systemMessage}\n\nUser message: ${message}`
         })
       });
 
       if (!systemMessageResponse.ok) {
-        console.warn('Failed to add system context, proceeding without it');
+        console.warn('Failed to add context, proceeding without it');
       }
     } else {
       // Add user message to thread
