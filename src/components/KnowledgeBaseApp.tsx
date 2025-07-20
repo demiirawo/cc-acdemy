@@ -200,6 +200,7 @@ export function KnowledgeBaseApp() {
   const [createPageParentId, setCreatePageParentId] = useState<string | null>(null);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbData[]>([]);
+  const [pageRenderKey, setPageRenderKey] = useState(0); // Force re-render key
   const {
     user,
     loading,
@@ -528,21 +529,28 @@ export function KnowledgeBaseApp() {
         }).eq('id', currentPage.id);
         if (error) throw error;
         
+        // Force complete component remount by temporarily hiding the page
+        console.log('Save completed, forcing component remount...');
+        setCurrentView('dashboard');
+        setCurrentPage(null);
+        
+        // Increment render key to force fresh mount
+        setPageRenderKey(prev => prev + 1);
+        
+        // Brief delay then reload the page with fresh data
+        setTimeout(async () => {
+          await handleItemSelect({
+            id: currentPage.id,
+            title: currentPage.title,
+            type: 'page'
+          });
+        }, 50);
+        
         toast({
           title: "Page saved",
           description: `"${title}" has been saved successfully.`
         });
       }
-      
-      // After saving, simulate exactly what happens when you click on a page
-      // This is the exact same flow as clicking the page in the sidebar
-      console.log('Save completed, reloading page with fresh data...');
-      
-      await handleItemSelect({
-        id: currentPage.id,
-        title: currentPage.title,
-        type: 'page'
-      });
       
       // Trigger sidebar refresh
       window.dispatchEvent(new CustomEvent('pagesChanged'));
@@ -631,7 +639,7 @@ export function KnowledgeBaseApp() {
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePreview} />}
         
-        {currentView === 'page' && currentPage && <PageView key={`${currentPage.id}-${currentPage.lastUpdated}`} currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
+        {currentView === 'page' && currentPage && <PageView key={`${pageRenderKey}-${currentPage.id}-${currentPage.lastUpdated}`} currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
       </div>
 
       {/* Create Page Dialog */}
