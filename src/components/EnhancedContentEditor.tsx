@@ -121,38 +121,80 @@ export function EnhancedContentEditor({
   // Initialize audit logging for recommended reading
   const { createSnapshot, logChange } = useRecommendedReadingAudit(pageId || '');
 
-  // Auto-save scheduler
-  const scheduleAutoSave = () => {
-    if (!pageId) return;
+  // Unified Save System
+  const saveQueueRef = useRef<{
+    isInProgress: boolean;
+    pendingSave: boolean;
+    lastSaveTime: number;
+  }>({
+    isInProgress: false,
+    pendingSave: false,
+    lastSaveTime: 0
+  });
+
+  // Single unified save function that handles ALL save scenarios
+  const unifiedSave = async (options: {
+    priority: 'immediate' | 'debounced';
+    trigger: 'auto' | 'manual' | 'navigation' | 'unmount';
+    debounceMs?: number;
+  } = { priority: 'debounced', trigger: 'auto', debounceMs: 2000 }) => {
     
+    if (!pageId) return;
+
+    const { priority, trigger, debounceMs = 2000 } = options;
+    
+    // For immediate saves or if we're unmounting, save right away
+    if (priority === 'immediate' || trigger === 'unmount' || trigger === 'navigation') {
+      await performSave(trigger);
+      return;
+    }
+
+    // For debounced saves, use the queue system
+    saveQueueRef.current.pendingSave = true;
+    
+    // Clear any existing timeout
     if (saveIntervalRef.current) {
       clearTimeout(saveIntervalRef.current);
     }
     
-    saveIntervalRef.current = setTimeout(() => {
-      performAutoSave();
-    }, 2000); // 2 second delay
+    // Set new timeout
+    saveIntervalRef.current = setTimeout(async () => {
+      if (saveQueueRef.current.pendingSave) {
+        await performSave(trigger);
+      }
+    }, debounceMs);
   };
 
-  // Auto-save function
-  const performAutoSave = async () => {
-    if (!pageId) return;
-    
-    const currentContent = contentRef.current;
-    
-    // Check if any field has changed
-    const contentChanged = currentContent !== lastSavedContentRef.current;
-    const titleChanged = currentTitle !== lastSavedTitleRef.current;
-    const tagsChanged = JSON.stringify(tags) !== JSON.stringify(lastSavedTagsRef.current);
-    const recommendedReadingChanged = JSON.stringify(recommendedReading) !== JSON.stringify(lastSavedRecommendedReadingRef.current);
-    
-    // Don't save if nothing has changed
-    if (!contentChanged && !titleChanged && !tagsChanged && !recommendedReadingChanged) {
+  // Core save function - handles the actual database update
+  const performSave = async (trigger: string) => {
+    // Prevent concurrent saves
+    if (saveQueueRef.current.isInProgress) {
+      console.log(`Save already in progress, queuing ${trigger} save`);
+      saveQueueRef.current.pendingSave = true;
       return;
     }
-    
+
+    saveQueueRef.current.isInProgress = true;
+    saveQueueRef.current.pendingSave = false;
+
     try {
-      console.log('Auto-save triggered - Current state:', { 
+      const currentContent = contentRef.current;
+      
+      // Check if any field has changed
+      const contentChanged = currentContent !== lastSavedContentRef.current;
+      const titleChanged = currentTitle !== lastSavedTitleRef.current;
+      const tagsChanged = JSON.stringify(tags) !== JSON.stringify(lastSavedTagsRef.current);
+      const recommendedReadingChanged = JSON.stringify(recommendedReading) !== JSON.stringify(lastSavedRecommendedReadingRef.current);
+      
+      const hasChanges = contentChanged || titleChanged || tagsChanged || recommendedReadingChanged;
+      
+      // Don't save if nothing has changed (unless it's a manual save)
+      if (!hasChanges && trigger !== 'manual') {
+        console.log(`No changes detected for ${trigger} save, skipping`);
+        return;
+      }
+      
+      console.log(`Unified save (${trigger}):`, { 
         title: currentTitle, 
         content: currentContent, 
         tags, 
@@ -161,6 +203,7 @@ export function EnhancedContentEditor({
         hasChanges: { contentChanged, titleChanged, tagsChanged, recommendedReadingChanged }
       });
       
+      // Perform the database update
       const { error } = await supabase
         .from('pages')
         .update({ 
@@ -174,48 +217,46 @@ export function EnhancedContentEditor({
 
       if (error) throw error;
       
-      // Update all last saved refs
+      // Update all last saved refs to current state
       lastSavedContentRef.current = currentContent;
       lastSavedTitleRef.current = currentTitle;
       lastSavedTagsRef.current = [...tags];
       lastSavedRecommendedReadingRef.current = [...recommendedReading];
       
-      console.log('Auto-save successful with all content preserved');
+      saveQueueRef.current.lastSaveTime = Date.now();
+      
+      console.log(`Unified save (${trigger}) successful - all content preserved`);
+      
+      // Show success message for manual saves
+      if (trigger === 'manual') {
+        toast({
+          title: "Page saved",
+          description: "All content, tags, and recommended reading have been saved successfully.",
+        });
+      }
+      
     } catch (error) {
-      console.error('Auto-save failed:', error);
-    }
-  };
-
-  // Manual save function for navigation events
-  const saveNow = async () => {
-    if (!pageId) return;
-    
-    try {
-      const currentContent = contentRef.current;
-      console.log('Saving now:', { title: currentTitle, content: currentContent, tags, recommendedReading });
+      console.error(`Unified save (${trigger}) failed:`, error);
       
-      const { error } = await supabase
-        .from('pages')
-        .update({ 
-          title: currentTitle,
-          content: currentContent,
-          tags: tags,
-          recommended_reading: recommendedReading,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', pageId);
-
-      if (error) throw error;
+      // Show error message for manual saves
+      if (trigger === 'manual') {
+        toast({
+          title: "Save failed",
+          description: "Failed to save page. Please try again.",
+          variant: "destructive"
+        });
+      }
+    } finally {
+      saveQueueRef.current.isInProgress = false;
       
-      // Update all last saved refs
-      lastSavedContentRef.current = currentContent;
-      lastSavedTitleRef.current = currentTitle;
-      lastSavedTagsRef.current = [...tags];
-      lastSavedRecommendedReadingRef.current = [...recommendedReading];
-      
-      console.log('Save successful with all content preserved');
-    } catch (error) {
-      console.error('Save failed:', error);
+      // If there's a pending save, process it
+      if (saveQueueRef.current.pendingSave) {
+        setTimeout(() => {
+          if (saveQueueRef.current.pendingSave) {
+            performSave('queued');
+          }
+        }, 500);
+      }
     }
   };
 
@@ -280,16 +321,18 @@ export function EnhancedContentEditor({
 
     document.addEventListener('keydown', handleKeyDown);
     
-    // Add navigation-based saving (ONLY way to save now)
+    // Navigation-based saving using unified save system
     const handleBeforeUnload = () => {
       if (pageId) {
-        saveNow(); // Save immediately when leaving
+        // Use immediate save for navigation events
+        unifiedSave({ priority: 'immediate', trigger: 'navigation' });
       }
     };
     
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden' && pageId) {
-        saveNow(); // Save immediately when tab becomes hidden
+        // Use immediate save when tab becomes hidden
+        unifiedSave({ priority: 'immediate', trigger: 'navigation' });
       }
     };
     
@@ -301,31 +344,29 @@ export function EnhancedContentEditor({
       window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       
-      // Save one final time when component unmounts
+      // Final save when component unmounts using unified save system
       if (pageId) {
-        saveNow();
+        unifiedSave({ priority: 'immediate', trigger: 'unmount' });
       }
     };
   }, [title, content]);
 
-  // Auto-save when title changes
+  // Unified auto-save triggers - all route through the unified save system
   useEffect(() => {
     if (pageId && currentTitle !== lastSavedTitleRef.current) {
-      scheduleAutoSave();
+      unifiedSave({ priority: 'debounced', trigger: 'auto', debounceMs: 2000 });
     }
   }, [currentTitle, pageId]);
 
-  // Auto-save when tags change
   useEffect(() => {
     if (pageId && JSON.stringify(tags) !== JSON.stringify(lastSavedTagsRef.current)) {
-      scheduleAutoSave();
+      unifiedSave({ priority: 'debounced', trigger: 'auto', debounceMs: 2000 });
     }
   }, [tags, pageId]);
 
-  // Auto-save when recommended reading changes
   useEffect(() => {
     if (pageId && JSON.stringify(recommendedReading) !== JSON.stringify(lastSavedRecommendedReadingRef.current)) {
-      scheduleAutoSave();
+      unifiedSave({ priority: 'debounced', trigger: 'auto', debounceMs: 2000 });
     }
   }, [recommendedReading, pageId]);
 
@@ -495,19 +536,11 @@ export function EnhancedContentEditor({
   const updateContent = () => {
     if (editorRef.current) {
       contentRef.current = editorRef.current.innerHTML;
-      scheduleAutoSave();
+      // Trigger unified save system for content changes
+      unifiedSave({ priority: 'debounced', trigger: 'auto', debounceMs: 2000 });
     }
   };
 
-  // Auto-save when title, tags, or recommended reading changes
-  useEffect(() => {
-    if (pageId) {
-      scheduleAutoSave();
-    }
-  }, [currentTitle, tags, recommendedReading, pageId]);
-
-  // Disabled auto-save completely - save only on manual save and navigation
-  // (No more auto-save on content changes)
 
   const formatText = (command: string, value?: string) => {
     execCommand(command, value);
@@ -2524,47 +2557,12 @@ export function EnhancedContentEditor({
     }
   };
 
+  // Manual save handler - now uses unified save system
   const handleSave = async () => {
-    try {
-      // Wait a brief moment to ensure all state updates have completed
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Derive ordered categories from the first occurrence of each category
-      const orderedCategories: string[] = [];
-      const seenCategories = new Set<string>();
-      
-      recommendedReading.forEach(item => {
-        const category = item.category || 'General';
-        if (!seenCategories.has(category)) {
-          orderedCategories.push(category);
-          seenCategories.add(category);
-        }
-      });
-
-      console.log('Manual save - Current state:', { 
-        title: currentTitle, 
-        content: contentRef.current, 
-        tags, 
-        recommendedReading,
-        recommendedReadingCount: recommendedReading.length 
-      });
-
-      // Save content and recommended reading using the provided onSave function
-      await onSave(currentTitle, contentRef.current, recommendedReading, orderedCategories, tags);
-      
-      toast({
-        title: "Page saved",
-        description: "All content, tags, and recommended reading have been saved successfully.",
-      });
-    } catch (error) {
-      console.error('Error saving page:', error);
-      toast({
-        title: "Error",
-        description: "Failed to save page",
-        variant: "destructive",
-      });
-    }
+    // Use immediate priority for manual saves to ensure they happen right away
+    await unifiedSave({ priority: 'immediate', trigger: 'manual' });
   };
+      
 
   const togglePublicAccess = async () => {
     if (!pageId) return;
