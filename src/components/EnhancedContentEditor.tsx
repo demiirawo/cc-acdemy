@@ -196,7 +196,6 @@ export function EnhancedContentEditor({
       if (isManual) {
         toast({
           title: "Page saved",
-          description: "All content has been saved successfully.",
         });
       }
       
@@ -246,9 +245,11 @@ export function EnhancedContentEditor({
         await onSave(currentTitle, contentRef.current, recommendedReading, [], tags);
         
         toast({
-          title: "Page created and saved",
-          description: "Your page has been created with all content.",
+          title: "Page saved",
         });
+        
+        // Navigate to the saved page
+        window.location.href = '/';
       } catch (error) {
         console.error('Error creating page:', error);
         toast({
