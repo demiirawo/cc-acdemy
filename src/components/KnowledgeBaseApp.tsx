@@ -536,14 +536,14 @@ export function KnowledgeBaseApp() {
                       </BreadcrumbPage>
                     </BreadcrumbItem>
                   </BreadcrumbList>
-                </Breadcrumb> : <h2 className="text-lg font-semibold text-[#00000e]/0">
+                </Breadcrumb> : <h2 className="text-lg font-semibold text-black/0">
                   {currentView === 'dashboard' ? 'Dashboard' : currentView === 'recent' ? 'Recently Updated' : currentView === 'tags' ? 'Tags' : currentView === 'people' ? 'People' : currentView === 'settings' ? 'Settings' : currentView === 'whiteboard' ? 'Whiteboard' : currentView === 'user-management' ? 'User Management' : currentView === 'chat' ? 'Care Cuddle AI' : 'Care Cuddle Academy'}
                 </h2>}
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" className="text-sm text-muted-foreground hover:text-foreground" onClick={() => setCurrentView('settings')}>
+              <span className="text-sm text-muted-foreground text-right">
                 {user?.user_metadata?.display_name || user?.email}
-              </Button>
+              </span>
               <Button variant="ghost" size="sm" onClick={signOut}>
                 <LogOut className="h-4 w-4" />
               </Button>

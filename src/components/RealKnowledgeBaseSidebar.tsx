@@ -860,6 +860,17 @@ export function RealKnowledgeBaseSidebar({
         </ScrollArea>
       </div>
 
+      {/* Footer */}
+      <div className="p-4 border-t border-sidebar-border">
+        <Button variant="ghost" className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent" onClick={() => handleItemSelect({
+        id: 'settings',
+        title: 'Settings',
+        type: 'page'
+      })}>
+          <Settings className="h-4 w-4 mr-2" />
+          Settings
+        </Button>
+      </div>
 
       {/* Move Page Dialog */}
       {pageToMove && (
