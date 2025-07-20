@@ -445,6 +445,7 @@ export function EnhancedContentEditor({
               }
             } else {
               console.log('Skipping tags update - has unsaved changes');
+            }
             
             // Handle legacy content format if needed
             if (data.content && data.content.includes('RECOMMENDED_READING:')) {
