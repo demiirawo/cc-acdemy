@@ -120,6 +120,13 @@ export function EnhancedContentEditor({
   });
   const saveInProgressRef = useRef(false);
   
+  // Refs to always access the latest state values during saves
+  const currentStateRef = useRef({
+    title: currentTitle,
+    tags,
+    recommendedReading
+  });
+  
   const { toast } = useToast();
   const { createSnapshot, logChange } = useRecommendedReadingAudit(pageId || '');
 
@@ -132,11 +139,13 @@ export function EnhancedContentEditor({
     
     try {
       const currentContent = contentRef.current;
+      
+      // Use the ref to get the absolute latest state values
       const currentState = {
-        title: currentTitle,
+        title: currentStateRef.current.title,
         content: currentContent,
-        tags,
-        recommendedReading
+        tags: [...currentStateRef.current.tags],
+        recommendedReading: [...currentStateRef.current.recommendedReading]
       };
       
       // Check if any field has changed
@@ -348,6 +357,15 @@ export function EnhancedContentEditor({
       scheduleAutoSave();
     }
   }, [currentTitle, pageId]);
+
+  // Update currentStateRef whenever state changes
+  useEffect(() => {
+    currentStateRef.current = {
+      title: currentTitle,
+      tags,
+      recommendedReading
+    };
+  }, [currentTitle, tags, recommendedReading]);
 
   // Auto-save when tags change
   useEffect(() => {
