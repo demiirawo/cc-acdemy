@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Tag, FileText, Hash, ChevronRight } from "lucide-react";
+import { Tag, FileText, Hash, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,9 +28,10 @@ interface TagData {
 
 interface TagsPageProps {
   onPageSelect: (pageId: string) => void;
+  onCreatePage?: () => void;
 }
 
-export function TagsPage({ onPageSelect }: TagsPageProps) {
+export function TagsPage({ onPageSelect, onCreatePage }: TagsPageProps) {
   const [allTags, setAllTags] = useState<TagData[]>([]);
   const [filteredTags, setFilteredTags] = useState<TagData[]>([]);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -152,7 +153,10 @@ export function TagsPage({ onPageSelect }: TagsPageProps) {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
             <Tag className="h-8 w-8 text-primary" />
-            <h1 className="text-3xl font-bold text-foreground">Tags</h1>
+            <Button onClick={onCreatePage}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Page
+            </Button>
           </div>
           <p className="text-muted-foreground mb-6">
             Browse content by tags to find related pages and topics

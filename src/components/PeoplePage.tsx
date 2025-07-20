@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Users, User, FileText, Crown, ChevronRight } from "lucide-react";
+import { Users, User, FileText, Crown, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,9 +30,10 @@ interface Page {
 
 interface PeoplePageProps {
   onPageSelect: (pageId: string) => void;
+  onCreatePage?: () => void;
 }
 
-export function PeoplePage({ onPageSelect }: PeoplePageProps) {
+export function PeoplePage({ onPageSelect, onCreatePage }: PeoplePageProps) {
   const [people, setPeople] = useState<Profile[]>([]);
   const [filteredPeople, setFilteredPeople] = useState<Profile[]>([]);
   const [selectedPerson, setSelectedPerson] = useState<Profile | null>(null);
@@ -169,7 +170,10 @@ export function PeoplePage({ onPageSelect }: PeoplePageProps) {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
             <Users className="h-8 w-8 text-primary" />
-            <h1 className="text-3xl font-bold text-foreground">People</h1>
+            <Button onClick={onCreatePage}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Page
+            </Button>
           </div>
           <p className="text-muted-foreground mb-6">
             Team members and their contributions to Care Cudde Academy

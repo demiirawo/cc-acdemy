@@ -9,7 +9,8 @@ import {
   Type,
   Minus,
   Download,
-  Trash2
+  Trash2,
+  Plus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +18,11 @@ import { cn } from "@/lib/utils";
 type FabricCanvas = any;
 type FabricObject = any;
 
-export function WhiteboardCanvas() {
+interface WhiteboardCanvasProps {
+  onCreatePage?: () => void;
+}
+
+export function WhiteboardCanvas({ onCreatePage }: WhiteboardCanvasProps = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
   const [activeTool, setActiveTool] = useState<'select' | 'draw' | 'text' | 'rectangle' | 'circle' | 'line'>('select');
@@ -202,7 +207,10 @@ export function WhiteboardCanvas() {
       {/* Header */}
       <div className="border-b border-border p-4 bg-background">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold text-foreground">Whiteboard</h1>
+          <Button onClick={onCreatePage}>
+            <Plus className="h-4 w-4 mr-2" />
+            Create Page
+          </Button>
           <div className="flex items-center gap-2">
             <Button onClick={handleDownload} variant="outline" size="sm">
               <Download className="h-4 w-4 mr-2" />

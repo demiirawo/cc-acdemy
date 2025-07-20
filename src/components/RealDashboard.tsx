@@ -255,11 +255,12 @@ export function RealDashboard({
         <div className="mb-8">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-4xl font-bold text-foreground mb-2">
-                Welcome back{user?.user_metadata?.display_name ? `, ${user.user_metadata.display_name}` : ''}!
-              </h1>
+              <Button onClick={onCreatePage} className="mb-2">
+                <Plus className="h-4 w-4 mr-2" />
+                Create Page
+              </Button>
               <p className="text-lg text-muted-foreground">
-                Your team's collective knowledge, organized and accessible
+                Welcome back{user?.user_metadata?.display_name ? `, ${user.user_metadata.display_name}` : ''}! Your team's collective knowledge, organized and accessible
               </p>
             </div>
             
