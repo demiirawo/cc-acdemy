@@ -121,31 +121,38 @@ export function EnhancedContentEditor({
   // Initialize audit logging for recommended reading
   const { createSnapshot, logChange } = useRecommendedReadingAudit(pageId || '');
 
-  // Unified save system that preserves ALL page fields
-  const unifiedSave = async (options: {
-    immediate?: boolean;
-    showToast?: boolean;
-    saveType?: 'auto' | 'manual' | 'navigation';
-  } = {}) => {
+  // Auto-save scheduler
+  const scheduleAutoSave = () => {
     if (!pageId) return;
     
-    const { immediate = false, showToast = false, saveType = 'auto' } = options;
+    if (saveIntervalRef.current) {
+      clearTimeout(saveIntervalRef.current);
+    }
+    
+    saveIntervalRef.current = setTimeout(() => {
+      performAutoSave();
+    }, 2000); // 2 second delay
+  };
+
+  // Auto-save function
+  const performAutoSave = async () => {
+    if (!pageId) return;
+    
+    const currentContent = contentRef.current;
+    
+    // Check if any field has changed
+    const contentChanged = currentContent !== lastSavedContentRef.current;
+    const titleChanged = currentTitle !== lastSavedTitleRef.current;
+    const tagsChanged = JSON.stringify(tags) !== JSON.stringify(lastSavedTagsRef.current);
+    const recommendedReadingChanged = JSON.stringify(recommendedReading) !== JSON.stringify(lastSavedRecommendedReadingRef.current);
+    
+    // Don't save if nothing has changed
+    if (!contentChanged && !titleChanged && !tagsChanged && !recommendedReadingChanged) {
+      return;
+    }
     
     try {
-      const currentContent = contentRef.current;
-      
-      // Check if any field has changed
-      const contentChanged = currentContent !== lastSavedContentRef.current;
-      const titleChanged = currentTitle !== lastSavedTitleRef.current;
-      const tagsChanged = JSON.stringify(tags) !== JSON.stringify(lastSavedTagsRef.current);
-      const recommendedReadingChanged = JSON.stringify(recommendedReading) !== JSON.stringify(lastSavedRecommendedReadingRef.current);
-      
-      // Don't save if nothing has changed (unless it's a manual save)
-      if (!immediate && saveType !== 'manual' && !contentChanged && !titleChanged && !tagsChanged && !recommendedReadingChanged) {
-        return;
-      }
-      
-      console.log(`${saveType} save triggered - Current state:`, { 
+      console.log('Auto-save triggered - Current state:', { 
         title: currentTitle, 
         content: currentContent, 
         tags, 
@@ -154,41 +161,15 @@ export function EnhancedContentEditor({
         hasChanges: { contentChanged, titleChanged, tagsChanged, recommendedReadingChanged }
       });
       
-      // First, fetch the current page to preserve any fields we're not managing
-      const { data: currentPageData, error: fetchError } = await supabase
-        .from('pages')
-        .select('*')
-        .eq('id', pageId)
-        .single();
-        
-      if (fetchError) throw fetchError;
-      
-      // Derive ordered categories from the first occurrence of each category
-      const orderedCategories: string[] = [];
-      const seenCategories = new Set<string>();
-      
-      recommendedReading.forEach(item => {
-        const category = item.category || 'General';
-        if (!seenCategories.has(category)) {
-          orderedCategories.push(category);
-          seenCategories.add(category);
-        }
-      });
-      
-      // Update with ALL current values, preserving fields we're not managing
-      const updateData = {
-        ...currentPageData, // Preserve all existing fields
-        title: currentTitle,
-        content: currentContent,
-        tags: tags,
-        recommended_reading: recommendedReading,
-        category_order: orderedCategories,
-        updated_at: new Date().toISOString()
-      };
-      
       const { error } = await supabase
         .from('pages')
-        .update(updateData)
+        .update({ 
+          title: currentTitle,
+          content: currentContent,
+          tags: tags,
+          recommended_reading: recommendedReading,
+          updated_at: new Date().toISOString()
+        })
         .eq('id', pageId);
 
       if (error) throw error;
@@ -199,46 +180,43 @@ export function EnhancedContentEditor({
       lastSavedTagsRef.current = [...tags];
       lastSavedRecommendedReadingRef.current = [...recommendedReading];
       
-      console.log(`${saveType} save successful with all content preserved`);
-      
-      if (showToast) {
-        toast({
-          title: "Page saved",
-          description: "All content, tags, and recommended reading have been saved successfully.",
-        });
-      }
+      console.log('Auto-save successful with all content preserved');
     } catch (error) {
-      console.error(`${saveType} save failed:`, error);
-      if (showToast) {
-        toast({
-          title: "Error",
-          description: "Failed to save page",
-          variant: "destructive",
-        });
-      }
+      console.error('Auto-save failed:', error);
     }
   };
 
-  // Auto-save scheduler
-  const scheduleAutoSave = () => {
+  // Manual save function for navigation events
+  const saveNow = async () => {
     if (!pageId) return;
     
-    if (saveIntervalRef.current) {
-      clearTimeout(saveIntervalRef.current);
-    }
-    
-    saveIntervalRef.current = setTimeout(() => {
-      unifiedSave({ saveType: 'auto' });
-    }, 2000); // 2 second delay
-  };
+    try {
+      const currentContent = contentRef.current;
+      console.log('Saving now:', { title: currentTitle, content: currentContent, tags, recommendedReading });
+      
+      const { error } = await supabase
+        .from('pages')
+        .update({ 
+          title: currentTitle,
+          content: currentContent,
+          tags: tags,
+          recommended_reading: recommendedReading,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', pageId);
 
-  // Immediate save function for navigation events and user actions
-  const saveNow = async (showToast = false) => {
-    await unifiedSave({ 
-      immediate: true, 
-      showToast, 
-      saveType: 'navigation' 
-    });
+      if (error) throw error;
+      
+      // Update all last saved refs
+      lastSavedContentRef.current = currentContent;
+      lastSavedTitleRef.current = currentTitle;
+      lastSavedTagsRef.current = [...tags];
+      lastSavedRecommendedReadingRef.current = [...recommendedReading];
+      
+      console.log('Save successful with all content preserved');
+    } catch (error) {
+      console.error('Save failed:', error);
+    }
   };
 
   useEffect(() => {
@@ -2548,15 +2526,43 @@ export function EnhancedContentEditor({
 
   const handleSave = async () => {
     try {
-      // Use the unified save system for manual saves
-      await unifiedSave({ 
-        immediate: true, 
-        showToast: true, 
-        saveType: 'manual' 
+      // Wait a brief moment to ensure all state updates have completed
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Derive ordered categories from the first occurrence of each category
+      const orderedCategories: string[] = [];
+      const seenCategories = new Set<string>();
+      
+      recommendedReading.forEach(item => {
+        const category = item.category || 'General';
+        if (!seenCategories.has(category)) {
+          orderedCategories.push(category);
+          seenCategories.add(category);
+        }
+      });
+
+      console.log('Manual save - Current state:', { 
+        title: currentTitle, 
+        content: contentRef.current, 
+        tags, 
+        recommendedReading,
+        recommendedReadingCount: recommendedReading.length 
+      });
+
+      // Save content and recommended reading using the provided onSave function
+      await onSave(currentTitle, contentRef.current, recommendedReading, orderedCategories, tags);
+      
+      toast({
+        title: "Page saved",
+        description: "All content, tags, and recommended reading have been saved successfully.",
       });
     } catch (error) {
       console.error('Error saving page:', error);
-      // Error handling is already done in unifiedSave
+      toast({
+        title: "Error",
+        description: "Failed to save page",
+        variant: "destructive",
+      });
     }
   };
 
@@ -2652,20 +2658,18 @@ export function EnhancedContentEditor({
     if (editingIndex !== null && editingItem.title && editingItem.description) {
       if (editingItem.type === 'file') {
         if (editingItem.fileUrl && editingItem.fileName) {
-           setRecommendedReading(prev => {
-             const newItems = [...prev];
-             newItems[editingIndex] = {
-               title: editingItem.title,
-               description: editingItem.description,
-               type: 'file',
-               fileUrl: editingItem.fileUrl,
-               fileName: editingItem.fileName,
-               category: editingItem.category
-             };
-              // Trigger immediate save after state update
-              setTimeout(() => unifiedSave({ immediate: true, saveType: 'auto' }), 100);
-             return newItems;
-           });
+          setRecommendedReading(prev => {
+            const newItems = [...prev];
+            newItems[editingIndex] = {
+              title: editingItem.title,
+              description: editingItem.description,
+              type: 'file',
+              fileUrl: editingItem.fileUrl,
+              fileName: editingItem.fileName,
+              category: editingItem.category
+            };
+            return newItems;
+          });
           setEditingIndex(null);
           toast({
             title: "Updated",
@@ -2679,19 +2683,17 @@ export function EnhancedContentEditor({
           });
         }
       } else if (editingItem.url) {
-         setRecommendedReading(prev => {
-           const newItems = [...prev];
-           newItems[editingIndex] = {
-             title: editingItem.title,
-             url: editingItem.url,
-             description: editingItem.description,
-             type: 'link',
-             category: editingItem.category
-           };
-            // Trigger immediate save after state update
-            setTimeout(() => unifiedSave({ immediate: true, saveType: 'auto' }), 100);
-           return newItems;
-         });
+        setRecommendedReading(prev => {
+          const newItems = [...prev];
+          newItems[editingIndex] = {
+            title: editingItem.title,
+            url: editingItem.url,
+            description: editingItem.description,
+            type: 'link',
+            category: editingItem.category
+          };
+          return newItems;
+        });
         setEditingIndex(null);
         toast({
           title: "Updated",
@@ -3033,17 +3035,15 @@ export function EnhancedContentEditor({
                                  fileName: newRecommendation.fileName,
                                  category: newRecommendation.category
                                };
-                                setRecommendedReading(prev => {
-                                  const newList = [...prev, newItem];
-                                  // Log the addition
-                                  logChange('add', null, newItem, {
-                                    item_count: newList.length,
-                                    item_type: 'file'
-                                  });
-                                   // Trigger immediate save after state update
-                                   setTimeout(() => unifiedSave({ immediate: true, saveType: 'auto' }), 100);
-                                  return newList;
-                                });
+                               setRecommendedReading(prev => {
+                                 const newList = [...prev, newItem];
+                                 // Log the addition
+                                 logChange('add', null, newItem, {
+                                   item_count: newList.length,
+                                   item_type: 'file'
+                                 });
+                                 return newList;
+                               });
                                setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '', category: 'General' });
                                toast({
                                  title: "Added",
@@ -3064,17 +3064,15 @@ export function EnhancedContentEditor({
                                type: 'link' as const,
                                category: newRecommendation.category
                              };
-                              setRecommendedReading(prev => {
-                                const newList = [...prev, newItem];
-                                // Log the addition
-                                logChange('add', null, newItem, {
-                                  item_count: newList.length,
-                                  item_type: 'link'
-                                });
-                                 // Trigger immediate save after state update
-                                 setTimeout(() => unifiedSave({ immediate: true, saveType: 'auto' }), 100);
-                                return newList;
-                              });
+                             setRecommendedReading(prev => {
+                               const newList = [...prev, newItem];
+                               // Log the addition
+                               logChange('add', null, newItem, {
+                                 item_count: newList.length,
+                                 item_type: 'link'
+                               });
+                               return newList;
+                             });
                              setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '', category: 'General' });
                              toast({
                                title: "Added",
@@ -3349,13 +3347,11 @@ export function EnhancedContentEditor({
                             size="sm"
                             onClick={() => {
                               if (index > 0) {
-                                 setRecommendedReading(prev => {
-                                   const newItems = [...prev];
-                                   [newItems[index - 1], newItems[index]] = [newItems[index], newItems[index - 1]];
-                                    // Trigger immediate save after state update
-                                    setTimeout(() => unifiedSave({ immediate: true, saveType: 'auto' }), 100);
-                                   return newItems;
-                                 });
+                                setRecommendedReading(prev => {
+                                  const newItems = [...prev];
+                                  [newItems[index - 1], newItems[index]] = [newItems[index], newItems[index - 1]];
+                                  return newItems;
+                                });
                               }
                             }}
                             disabled={index === 0}
@@ -3369,13 +3365,11 @@ export function EnhancedContentEditor({
                             size="sm"
                             onClick={() => {
                               if (index < recommendedReading.length - 1) {
-                                 setRecommendedReading(prev => {
-                                   const newItems = [...prev];
-                                   [newItems[index], newItems[index + 1]] = [newItems[index + 1], newItems[index]];
-                                    // Trigger immediate save after state update
-                                    setTimeout(() => unifiedSave({ immediate: true, saveType: 'auto' }), 100);
-                                   return newItems;
-                                 });
+                                setRecommendedReading(prev => {
+                                  const newItems = [...prev];
+                                  [newItems[index], newItems[index + 1]] = [newItems[index + 1], newItems[index]];
+                                  return newItems;
+                                });
                               }
                             }}
                             disabled={index === recommendedReading.length - 1}
@@ -3398,17 +3392,15 @@ export function EnhancedContentEditor({
                              size="sm"
                               onClick={() => {
                                 const itemToDelete = recommendedReading[index];
-                                 setRecommendedReading(prev => {
-                                   const newList = prev.filter((_, i) => i !== index);
-                                   // Log the deletion
-                                   logChange('delete', itemToDelete, null, {
-                                     item_count: newList.length,
-                                     deleted_title: itemToDelete.title
-                                   });
-                                    // Trigger immediate save after state update
-                                    setTimeout(() => unifiedSave({ immediate: true, saveType: 'auto' }), 100);
-                                   return newList;
-                                 });
+                                setRecommendedReading(prev => {
+                                  const newList = prev.filter((_, i) => i !== index);
+                                  // Log the deletion
+                                  logChange('delete', itemToDelete, null, {
+                                    item_count: newList.length,
+                                    deleted_title: itemToDelete.title
+                                  });
+                                  return newList;
+                                });
                                 toast({
                                   title: "Removed",
                                   description: `"${itemToDelete.title}" has been removed.`,
