@@ -361,6 +361,7 @@ export function EnhancedContentEditor({
               console.log('No recommended reading found in database');
               setRecommendedReading([]);
               lastSavedRecommendedReadingRef.current = [];
+            }
             
             // Set tags from database
             if (data.tags && Array.isArray(data.tags)) {
