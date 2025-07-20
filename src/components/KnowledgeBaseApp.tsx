@@ -62,7 +62,7 @@ function PageView({
           setPublicToken(data.public_token || '');
         }
 
-        // Use recommended reading from currentPage (which gets updated after save)
+        // Fetch recommended reading from the page's recommended_reading field
         if (currentPage.recommended_reading && Array.isArray(currentPage.recommended_reading)) {
           const validReading = currentPage.recommended_reading.map((item: any) => ({
             ...item,
@@ -80,7 +80,7 @@ function PageView({
       }
     };
     fetchPageSettings();
-  }, [currentPage.id, currentPage.lastUpdated, currentPage.recommended_reading]);
+  }, [currentPage.id]);
   const togglePublicAccess = async () => {
     try {
       const newIsPublic = !isPublic;
@@ -200,7 +200,6 @@ export function KnowledgeBaseApp() {
   const [createPageParentId, setCreatePageParentId] = useState<string | null>(null);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbData[]>([]);
-  const [pageRenderKey, setPageRenderKey] = useState(0); // Force re-render key
   const {
     user,
     loading,
@@ -529,30 +528,31 @@ export function KnowledgeBaseApp() {
         }).eq('id', currentPage.id);
         if (error) throw error;
         
-        // Force complete component remount by temporarily hiding the page
-        console.log('Save completed, forcing component remount...');
-        setCurrentView('dashboard');
-        setCurrentPage(null);
-        
-        // Increment render key to force fresh mount
-        setPageRenderKey(prev => prev + 1);
-        
-        // Brief delay then reload the page with fresh data
-        setTimeout(async () => {
-          await handleItemSelect({
-            id: currentPage.id,
-            title: currentPage.title,
-            type: 'page'
-          });
-        }, 50);
+        // Update the current page state with the new data
+        setCurrentPage({
+          ...currentPage,
+          title,
+          content,
+          lastUpdated: new Date().toISOString(),
+          recommended_reading: (recommendedReading || []).map(item => ({
+            ...item,
+            type: item.type || (item.url ? 'link' : 'file'),
+            category: item.category || 'General'
+          })),
+          category_order: orderedCategories || []
+        });
         
         toast({
           title: "Page saved",
-          description: `"${title}" has been saved successfully.`
+          description: `"${title}" has been saved with all content, tags, and recommended reading preserved.`
         });
       }
       
-      // Trigger sidebar refresh
+      // Force a refresh of the page hierarchy and navigate to view mode
+      setIsEditing(false);
+      setCurrentView('page');
+      
+      // Trigger a window event to refresh the sidebar
       window.dispatchEvent(new CustomEvent('pagesChanged'));
       
     } catch (error) {
@@ -639,7 +639,7 @@ export function KnowledgeBaseApp() {
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePreview} />}
         
-        {currentView === 'page' && currentPage && <PageView key={`${pageRenderKey}-${currentPage.id}-${currentPage.lastUpdated}`} currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
+        {currentView === 'page' && currentPage && <PageView currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
       </div>
 
       {/* Create Page Dialog */}
