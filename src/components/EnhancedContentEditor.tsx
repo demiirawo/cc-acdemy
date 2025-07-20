@@ -68,6 +68,7 @@ interface ContentEditorProps {
   onPreview?: () => void;
   isEditing?: boolean;
   pageId?: string;
+  onPageSaved?: () => void;
 }
 
 interface MediaFile {
@@ -90,7 +91,8 @@ export function EnhancedContentEditor({
   onSave,
   onPreview,
   isEditing = true,
-  pageId
+  pageId,
+  onPageSaved
 }: ContentEditorProps) {
   const [currentTitle, setCurrentTitle] = useState(title);
   const [tags, setTags] = useState<string[]>([]);
@@ -197,6 +199,10 @@ export function EnhancedContentEditor({
         toast({
           title: "Page saved",
         });
+        // Trigger callback to switch to view mode
+        if (onPageSaved) {
+          onPageSaved();
+        }
       }
       
     } catch (error) {
@@ -2868,7 +2874,7 @@ export function EnhancedContentEditor({
               className="bg-gradient-primary"
             >
               <Save className="h-4 w-4 mr-2" />
-              {isSaving ? 'Saving...' : 'Save Page'}
+              {isSaving ? 'Saving...' : 'Save'}
             </Button>
           </div>
         </div>
