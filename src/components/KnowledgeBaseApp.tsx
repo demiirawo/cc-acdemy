@@ -672,7 +672,7 @@ export function KnowledgeBaseApp() {
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePreview} />}
         
-        {currentView === 'page' && currentPage && <PageView currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
+        {currentView === 'page' && currentPage && <PageView key={`${currentPage.id}-${currentPage.lastUpdated}`} currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
       </div>
 
       {/* Create Page Dialog */}
