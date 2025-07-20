@@ -208,25 +208,7 @@ export function ContentEditor({
     const url = prompt('Enter URL:');
     const text = prompt('Enter link text:') || url;
     if (url) {
-      // Basic URL validation for security
-      try {
-        const validUrl = new URL(url);
-        if (['http:', 'https:', 'mailto:'].includes(validUrl.protocol)) {
-          insertText(`[${text}](${url})`);
-        } else {
-          toast({
-            title: "Invalid URL",
-            description: "Please enter a valid HTTP, HTTPS, or mailto URL.",
-            variant: "destructive",
-          });
-        }
-      } catch {
-        toast({
-          title: "Invalid URL",
-          description: "Please enter a valid URL.",
-          variant: "destructive",
-        });
-      }
+      insertText(`[${text}](${url})`);
     }
   };
 
@@ -234,25 +216,7 @@ export function ContentEditor({
     const url = prompt('Enter image URL:');
     const alt = prompt('Enter alt text:') || 'Image';
     if (url) {
-      // Basic URL validation for security
-      try {
-        const validUrl = new URL(url);
-        if (['http:', 'https:'].includes(validUrl.protocol)) {
-          insertText(`![${alt}](${url})`);
-        } else {
-          toast({
-            title: "Invalid Image URL",
-            description: "Please enter a valid HTTP or HTTPS image URL.",
-            variant: "destructive",
-          });
-        }
-      } catch {
-        toast({
-          title: "Invalid URL",
-          description: "Please enter a valid image URL.",
-          variant: "destructive",
-        });
-      }
+      insertText(`![${alt}](${url})`);
     }
   };
 

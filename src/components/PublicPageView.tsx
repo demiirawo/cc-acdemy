@@ -6,7 +6,6 @@ import { Globe, Eye, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { RecommendedReadingSection } from "@/components/RecommendedReadingSection";
-import { sanitizeHtml } from "@/lib/security";
 
 interface PublicPage {
   id: string;
@@ -178,7 +177,7 @@ export function PublicPageView() {
               <div 
                 className="text-foreground leading-relaxed [&_iframe]:w-full [&_iframe]:aspect-video [&_iframe]:rounded-lg [&_iframe]:border [&_iframe]:border-border [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_h1]:text-3xl [&_h1]:font-bold [&_h1]:mb-4 [&_h2]:text-2xl [&_h2]:font-semibold [&_h2]:mb-3 [&_h3]:text-xl [&_h3]:font-medium [&_h3]:mb-2 [&_p]:mb-4 [&_ul]:mb-4 [&_ol]:mb-4 [&_li]:mb-1 [&_blockquote]:border-l-4 [&_blockquote]:border-primary [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:mb-4 [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-sm [&_pre]:bg-muted [&_pre]:p-4 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_pre]:mb-4"
                 dangerouslySetInnerHTML={{ 
-                  __html: sanitizeHtml(page.content)
+                  __html: page.content
                 }}
               />
             </div>

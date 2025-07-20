@@ -13,7 +13,6 @@ import { AuthForm } from "./AuthForm";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { sanitizeHtml } from "@/lib/security";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -147,7 +146,7 @@ function PageView({
         
         <div className="prose prose-lg max-w-none">
           <div className="text-foreground leading-relaxed" dangerouslySetInnerHTML={{
-          __html: sanitizeHtml(cleanContent.split('RECOMMENDED_READING:')[0])
+          __html: cleanContent.split('RECOMMENDED_READING:')[0]
         }} />
         </div>
 
