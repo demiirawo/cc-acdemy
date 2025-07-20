@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { 
   Bold, 
@@ -22,7 +21,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 interface ContentEditorProps {
@@ -42,12 +40,11 @@ export function ContentEditor({
 }: ContentEditorProps) {
   const [currentTitle, setCurrentTitle] = useState(title);
   const [currentContent, setCurrentContent] = useState(content);
-  const [tags, setTags] = useState<string[]>(['engineering', 'documentation']);
 
   // Auto-save when leaving the page
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      // Save the current state before leaving
+      // Save the current state before leaving (including empty content)
       onSave(currentTitle, currentContent);
     };
 
@@ -64,7 +61,7 @@ export function ContentEditor({
 
     // Cleanup event listeners on component unmount
     return () => {
-      // Save one final time when component unmounts
+      // Save one final time when component unmounts (including empty content)
       onSave(currentTitle, currentContent);
       window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -153,11 +150,6 @@ export function ContentEditor({
         <div className="max-w-4xl mx-auto p-6">
           <div className="mb-6">
             <h1 className="text-3xl font-bold text-foreground mb-2">{currentTitle}</h1>
-            <div className="flex gap-2">
-              {tags.map((tag) => (
-                <Badge key={tag} variant="secondary">{tag}</Badge>
-              ))}
-            </div>
           </div>
           
           <Card className="p-6">
@@ -197,16 +189,6 @@ export function ContentEditor({
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </div>
-        </div>
-
-        {/* Tags */}
-        <div className="flex gap-2 mb-4">
-          {tags.map((tag) => (
-            <Badge key={tag} variant="secondary">{tag}</Badge>
-          ))}
-          <Button variant="outline" size="sm" className="h-6 text-xs">
-            + Add tag
-          </Button>
         </div>
 
         {/* Toolbar */}

@@ -8,7 +8,6 @@ import {
   ChevronDown,
   Home,
   Clock,
-  Tag,
   Users,
   Settings,
   MessageSquare
@@ -73,7 +72,6 @@ const sampleData: SidebarItem[] = [
 const navigationItems = [
   { id: 'home', title: 'Home', icon: Home, href: '/' },
   { id: 'recent', title: 'Recently Updated', icon: Clock, href: '/recent' },
-  { id: 'tags', title: 'Tags', icon: Tag, href: '/tags' },
   { id: 'people', title: 'People', icon: Users, href: '/people' },
   { id: 'ai-chat', title: 'Care Cuddle AI', icon: MessageSquare, href: '/chat' },
 ];
