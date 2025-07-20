@@ -2754,12 +2754,10 @@ export function EnhancedContentEditor({
               </Button>
             )}
             
-            {onPreview && (
-              <Button onClick={onPreview} variant="outline">
-                <Eye className="h-4 w-4 mr-2" />
-                Preview
-              </Button>
-            )}
+            <Button onClick={handleSave} className="bg-gradient-primary">
+              <Save className="h-4 w-4 mr-2" />
+              Save Page
+            </Button>
           </div>
         </div>
 

@@ -385,6 +385,7 @@ export function KnowledgeBaseApp() {
       } = await supabase.from('pages').insert({
         title: 'Untitled Page',
         content: '',
+        tags: [],
         created_by: user.id,
         parent_page_id: parentId || null
       }).select().single();
@@ -475,6 +476,8 @@ export function KnowledgeBaseApp() {
           updated_at: new Date().toISOString()
         }).eq('id', currentPage.id);
         if (error) throw error;
+        
+        // Update the current page state with the new data
         setCurrentPage({
           ...currentPage,
           title,
@@ -487,13 +490,20 @@ export function KnowledgeBaseApp() {
           })),
           category_order: orderedCategories || []
         });
+        
         toast({
           title: "Page saved",
           description: `"${title}" has been saved with all content, tags, and recommended reading preserved.`
         });
       }
+      
+      // Force a refresh of the page hierarchy and navigate to view mode
       setIsEditing(false);
       setCurrentView('page');
+      
+      // Trigger a window event to refresh the sidebar
+      window.dispatchEvent(new CustomEvent('pagesChanged'));
+      
     } catch (error) {
       console.error('Error saving page:', error);
       toast({
