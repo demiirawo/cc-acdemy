@@ -62,7 +62,7 @@ function PageView({
           setPublicToken(data.public_token || '');
         }
 
-        // Fetch recommended reading from the page's recommended_reading field
+        // Use recommended reading from currentPage (which gets updated after save)
         if (currentPage.recommended_reading && Array.isArray(currentPage.recommended_reading)) {
           const validReading = currentPage.recommended_reading.map((item: any) => ({
             ...item,
@@ -80,7 +80,7 @@ function PageView({
       }
     };
     fetchPageSettings();
-  }, [currentPage.id]);
+  }, [currentPage.id, currentPage.lastUpdated, currentPage.recommended_reading]);
   const togglePublicAccess = async () => {
     try {
       const newIsPublic = !isPublic;
