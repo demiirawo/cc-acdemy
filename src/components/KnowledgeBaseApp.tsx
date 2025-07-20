@@ -62,7 +62,7 @@ function PageView({
           setPublicToken(data.public_token || '');
         }
 
-        // Fetch recommended reading from the page's recommended_reading field
+        // Use recommended reading from the currentPage prop (which is now fresh from the database)
         if (currentPage.recommended_reading && Array.isArray(currentPage.recommended_reading)) {
           const validReading = currentPage.recommended_reading.map((item: any) => ({
             ...item,
@@ -80,7 +80,7 @@ function PageView({
       }
     };
     fetchPageSettings();
-  }, [currentPage.id]);
+  }, [currentPage.id, currentPage.recommended_reading, currentPage.lastUpdated]);
   const togglePublicAccess = async () => {
     try {
       const newIsPublic = !isPublic;
@@ -568,6 +568,56 @@ export function KnowledgeBaseApp() {
     setIsEditing(false);
     setCurrentView('page');
   };
+
+  const handlePageSaved = async () => {
+    if (!currentPage) return;
+    
+    try {
+      // Fetch fresh page data from database
+      const { data, error } = await supabase
+        .from('pages')
+        .select(`
+          id,
+          title,
+          content,
+          updated_at,
+          view_count,
+          created_by,
+          recommended_reading,
+          category_order,
+          parent_page_id,
+          space_id
+        `)
+        .eq('id', currentPage.id)
+        .single();
+
+      if (error) throw error;
+
+      if (data) {
+        // Update current page with fresh data
+        const updatedPageData = {
+          id: data.id,
+          title: data.title,
+          content: data.content,
+          lastUpdated: data.updated_at,
+          author: 'User',
+          parent_page_id: data.parent_page_id,
+          space_id: data.space_id,
+          recommended_reading: data.recommended_reading as any || [],
+          category_order: data.category_order as string[] || []
+        };
+        
+        setCurrentPage(updatedPageData);
+        setIsEditing(false);
+        setCurrentView('page');
+      }
+    } catch (error) {
+      console.error('Error refreshing page data:', error);
+      // Fallback to simple preview
+      setIsEditing(false);
+      setCurrentView('page');
+    }
+  };
   const handlePageSelect = (pageId: string) => {
     handleItemSelect({
       id: pageId,
@@ -637,7 +687,7 @@ export function KnowledgeBaseApp() {
         {currentView === 'user-management' && <UserManagement />}
         {currentView === 'chat' && <ChatPage />}
         
-        {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePreview} />}
+        {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePageSaved} />}
         
         {currentView === 'page' && currentPage && <PageView currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
       </div>
