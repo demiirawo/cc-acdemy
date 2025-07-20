@@ -2408,7 +2408,7 @@ export function EnhancedContentEditor({
           const originalWidth = iframe.getAttribute('width') || iframe.style.width;
           
           // Build CSS preserving original dimensions
-          let cssStyles = 'max-width: 100%; border: none; display: block;';
+          let cssStyles = 'border: none; display: block;';
           if (originalHeight) {
             cssStyles += ` height: ${originalHeight}${originalHeight.includes('px') || originalHeight.includes('%') ? '' : 'px'};`;
           }
