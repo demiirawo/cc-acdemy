@@ -353,8 +353,6 @@ export function EnhancedContentEditor({
           pageId={pageId}
           items={recommendedReading}
           onItemsChange={setRecommendedReading}
-          orderedCategories={orderedCategories}
-          onCategoryOrderChange={setOrderedCategories}
         />
       </div>
     </div>
