@@ -2666,6 +2666,10 @@ export function EnhancedContentEditor({
               fileName: editingItem.fileName,
               category: editingItem.category
             };
+            // Trigger immediate save for edit operations
+            setTimeout(() => {
+              unifiedSave({ priority: 'immediate', trigger: 'manual' });
+            }, 100);
             return newItems;
           });
           setEditingIndex(null);
@@ -2690,6 +2694,10 @@ export function EnhancedContentEditor({
             type: 'link',
             category: editingItem.category
           };
+          // Trigger immediate save for edit operations
+          setTimeout(() => {
+            unifiedSave({ priority: 'immediate', trigger: 'manual' });
+          }, 100);
           return newItems;
         });
         setEditingIndex(null);
@@ -3033,15 +3041,19 @@ export function EnhancedContentEditor({
                                  fileName: newRecommendation.fileName,
                                  category: newRecommendation.category
                                };
-                               setRecommendedReading(prev => {
-                                 const newList = [...prev, newItem];
-                                 // Log the addition
-                                 logChange('add', null, newItem, {
-                                   item_count: newList.length,
-                                   item_type: 'file'
-                                 });
-                                 return newList;
-                               });
+                                setRecommendedReading(prev => {
+                                  const newList = [...prev, newItem];
+                                  // Log the addition
+                                  logChange('add', null, newItem, {
+                                    item_count: newList.length,
+                                    item_type: 'file'
+                                  });
+                                  // Trigger immediate save to ensure all data persists
+                                  setTimeout(() => {
+                                    unifiedSave({ priority: 'immediate', trigger: 'manual' });
+                                  }, 100);
+                                  return newList;
+                                });
                                setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '', category: 'General' });
                                toast({
                                  title: "Added",
@@ -3062,15 +3074,19 @@ export function EnhancedContentEditor({
                                type: 'link' as const,
                                category: newRecommendation.category
                              };
-                             setRecommendedReading(prev => {
-                               const newList = [...prev, newItem];
-                               // Log the addition
-                               logChange('add', null, newItem, {
-                                 item_count: newList.length,
-                                 item_type: 'link'
-                               });
-                               return newList;
-                             });
+                              setRecommendedReading(prev => {
+                                const newList = [...prev, newItem];
+                                // Log the addition
+                                logChange('add', null, newItem, {
+                                  item_count: newList.length,
+                                  item_type: 'link'
+                                });
+                                // Trigger immediate save to ensure all data persists
+                                setTimeout(() => {
+                                  unifiedSave({ priority: 'immediate', trigger: 'manual' });
+                                }, 100);
+                                return newList;
+                              });
                              setNewRecommendation({ title: '', url: '', description: '', type: 'link', fileName: '', fileUrl: '', category: 'General' });
                              toast({
                                title: "Added",
@@ -3348,6 +3364,10 @@ export function EnhancedContentEditor({
                                 setRecommendedReading(prev => {
                                   const newItems = [...prev];
                                   [newItems[index - 1], newItems[index]] = [newItems[index], newItems[index - 1]];
+                                  // Trigger immediate save for move operations
+                                  setTimeout(() => {
+                                    unifiedSave({ priority: 'immediate', trigger: 'manual' });
+                                  }, 100);
                                   return newItems;
                                 });
                               }
@@ -3366,6 +3386,10 @@ export function EnhancedContentEditor({
                                 setRecommendedReading(prev => {
                                   const newItems = [...prev];
                                   [newItems[index], newItems[index + 1]] = [newItems[index + 1], newItems[index]];
+                                  // Trigger immediate save for move operations
+                                  setTimeout(() => {
+                                    unifiedSave({ priority: 'immediate', trigger: 'manual' });
+                                  }, 100);
                                   return newItems;
                                 });
                               }
@@ -3397,6 +3421,10 @@ export function EnhancedContentEditor({
                                     item_count: newList.length,
                                     deleted_title: itemToDelete.title
                                   });
+                                  // Trigger immediate save for delete operations
+                                  setTimeout(() => {
+                                    unifiedSave({ priority: 'immediate', trigger: 'manual' });
+                                  }, 100);
                                   return newList;
                                 });
                                 toast({
