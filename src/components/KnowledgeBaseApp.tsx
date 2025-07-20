@@ -174,6 +174,7 @@ interface Page {
   author: string;
   parent_page_id?: string | null;
   space_id?: string | null;
+  tags?: string[];
   recommended_reading?: Array<{
     id?: string;
     title: string;
@@ -533,6 +534,7 @@ export function KnowledgeBaseApp() {
           ...currentPage,
           title,
           content,
+          tags: tags || [],
           lastUpdated: new Date().toISOString(),
           recommended_reading: (recommendedReading || []).map(item => ({
             ...item,
