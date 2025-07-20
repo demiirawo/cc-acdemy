@@ -489,48 +489,73 @@ export function KnowledgeBaseApp() {
     category?: string;
   }>, orderedCategories?: string[], tags?: string[]) => {
     if (!currentPage || !user) return;
+    
+    console.log('handleSavePage called with:', {
+      title,
+      content: content.substring(0, 50) + '...',
+      recommendedReading,
+      orderedCategories,
+      tags,
+      currentPageId: currentPage.id
+    });
+    
     try {
       if (currentPage.id === 'new') {
         // Create new page
-        const {
-          data,
-          error
-        } = await supabase.from('pages').insert({
-          title,
-          content,
-          recommended_reading: recommendedReading || [],
-          category_order: orderedCategories || [],
-          tags: tags || [],
-          created_by: user.id
-        }).select().single();
+        const { data, error } = await supabase
+          .from('pages')
+          .insert({
+            title,
+            content,
+            recommended_reading: recommendedReading || [],
+            category_order: orderedCategories || [],
+            tags: tags || [],
+            created_by: user.id
+          })
+          .select()
+          .single();
+          
         if (error) throw error;
-        setCurrentPage({
+        
+        const updatedPage = {
           ...currentPage,
           id: data.id,
           title,
           content,
-          lastUpdated: data.updated_at
-        });
+          tags: tags || [],
+          lastUpdated: data.updated_at,
+          recommended_reading: (recommendedReading || []).map(item => ({
+            ...item,
+            type: item.type || (item.url ? 'link' : 'file'),
+            category: item.category || 'General'
+          })),
+          category_order: orderedCategories || []
+        };
+        
+        setCurrentPage(updatedPage);
+        
         toast({
           title: "Page saved",
           description: ""
         });
       } else {
         // Update existing page
-        const {
-          error
-        } = await supabase.from('pages').update({
-          title,
-          content,
-          recommended_reading: recommendedReading || [],
-          category_order: orderedCategories || [],
-          tags: tags || [],
-          updated_at: new Date().toISOString()
-        }).eq('id', currentPage.id);
+        const { error } = await supabase
+          .from('pages')
+          .update({
+            title,
+            content,
+            recommended_reading: recommendedReading || [],
+            category_order: orderedCategories || [],
+            tags: tags || [],
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', currentPage.id);
+          
         if (error) throw error;
         
-        // Update the current page state with the new data
-        setCurrentPage({
+        // Update the current page state with ALL the new data
+        const updatedPage = {
           ...currentPage,
           title,
           content,
@@ -542,7 +567,10 @@ export function KnowledgeBaseApp() {
             category: item.category || 'General'
           })),
           category_order: orderedCategories || []
-        });
+        };
+        
+        console.log('Updating currentPage state with:', updatedPage);
+        setCurrentPage(updatedPage);
         
         toast({
           title: "Page saved",
