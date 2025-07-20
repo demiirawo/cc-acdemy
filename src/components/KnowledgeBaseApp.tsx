@@ -533,59 +533,36 @@ export function KnowledgeBaseApp() {
         }).eq('id', currentPage.id);
         if (error) throw error;
         
-        console.log('Page saved successfully, refreshing content...');
+        console.log('Page saved successfully, forcing complete reload...');
         
         toast({
           title: "Page saved",
           description: `"${title}" has been saved with all content, tags, and recommended reading preserved.`
         });
+        
+        // Clear current page state to force fresh load
+        setCurrentPage(null);
+        setIsEditing(false);
+        setCurrentView('dashboard');
+        
+        // Wait a moment for state to clear, then reload the page completely
+        setTimeout(async () => {
+          console.log('Reloading page with fresh data...');
+          await handleItemSelect({
+            id: currentPage.id,
+            title: title,
+            type: 'page'
+          });
+        }, 200);
+        
+        // Trigger a window event to refresh the sidebar
+        window.dispatchEvent(new CustomEvent('pagesChanged'));
+        return; // Exit early since we're handling the view change in the timeout
       }
       
       // Force a refresh of the page hierarchy and navigate to view mode
       setIsEditing(false);
       setCurrentView('page');
-      
-      // Add a small delay to ensure database transaction is committed
-      await new Promise(resolve => setTimeout(resolve, 100));
-      
-      // Fetch fresh data from database after save
-      console.log('Fetching fresh page data after save...');
-      const { data: freshPageData, error: fetchError } = await supabase
-        .from('pages')
-        .select(`
-          id,
-          title,
-          content,
-          updated_at,
-          view_count,
-          created_by,
-          recommended_reading,
-          category_order,
-          parent_page_id,
-          space_id
-        `)
-        .eq('id', currentPage.id)
-        .single();
-      
-      if (fetchError) {
-        console.error('Error fetching fresh page data:', fetchError);
-      } else if (freshPageData) {
-        console.log('Fresh page data fetched:', freshPageData.title);
-        const updatedPageData = {
-          id: freshPageData.id,
-          title: freshPageData.title,
-          content: freshPageData.content,
-          lastUpdated: freshPageData.updated_at,
-          author: 'User',
-          parent_page_id: freshPageData.parent_page_id,
-          space_id: freshPageData.space_id,
-          recommended_reading: freshPageData.recommended_reading as any || [],
-          category_order: freshPageData.category_order as string[] || []
-        };
-        
-        setCurrentPage(updatedPageData);
-        console.log('Page state updated with fresh data');
-      }
       
       // Trigger a window event to refresh the sidebar
       window.dispatchEvent(new CustomEvent('pagesChanged'));
