@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { ResizableSidebar } from "./ResizableSidebar";
 import { RealDashboard } from "./RealDashboard";
@@ -209,6 +210,55 @@ export function KnowledgeBaseApp() {
     toast
   } = useToast();
 
+  // Function to fetch fresh page data
+  const fetchPageData = async (pageId: string) => {
+    try {
+      const {
+        data,
+        error
+      } = await supabase.from('pages').select(`
+          id,
+          title,
+          content,
+          updated_at,
+          view_count,
+          created_by,
+          recommended_reading,
+          category_order,
+          parent_page_id,
+          space_id
+        `).eq('id', pageId).single();
+      
+      if (error) throw error;
+      
+      if (data) {
+        const pageData = {
+          id: data.id,
+          title: data.title,
+          content: data.content,
+          lastUpdated: data.updated_at,
+          author: 'User',
+          parent_page_id: data.parent_page_id,
+          space_id: data.space_id,
+          recommended_reading: data.recommended_reading as any || [],
+          category_order: data.category_order as string[] || []
+        };
+        
+        console.log('Fetched fresh page data:', {
+          id: pageData.id,
+          title: pageData.title,
+          contentLength: pageData.content.length,
+          lastUpdated: pageData.lastUpdated
+        });
+        
+        return pageData;
+      }
+    } catch (error) {
+      console.error('Error fetching page data:', error);
+      throw error;
+    }
+  };
+
   // Build breadcrumb hierarchy
   const buildBreadcrumbs = async (page: Page): Promise<BreadcrumbData[]> => {
     const breadcrumbPath: BreadcrumbData[] = [];
@@ -306,35 +356,9 @@ export function KnowledgeBaseApp() {
       setBreadcrumbs([]);
     } else if (item.type === 'page') {
       try {
-        // Fetch real page data from Supabase
-        const {
-          data,
-          error
-        } = await supabase.from('pages').select(`
-            id,
-            title,
-            content,
-            updated_at,
-            view_count,
-            created_by,
-            recommended_reading,
-            category_order,
-            parent_page_id,
-            space_id
-          `).eq('id', item.id).single();
-        if (error) throw error;
-        if (data) {
-          const pageData = {
-            id: data.id,
-            title: data.title,
-            content: data.content,
-            lastUpdated: data.updated_at,
-            author: 'User',
-            parent_page_id: data.parent_page_id,
-            space_id: data.space_id,
-            recommended_reading: data.recommended_reading as any || [],
-            category_order: data.category_order as string[] || []
-          };
+        // Always fetch fresh page data
+        const pageData = await fetchPageData(item.id);
+        if (pageData) {
           setCurrentPage(pageData);
           setCurrentView('page');
           setIsEditing(false);
@@ -345,8 +369,8 @@ export function KnowledgeBaseApp() {
 
           // Increment view count
           await supabase.from('pages').update({
-            view_count: (data.view_count || 0) + 1
-          }).eq('id', data.id);
+            view_count: (pageData as any).view_count ? (pageData as any).view_count + 1 : 1
+          }).eq('id', pageData.id);
         }
       } catch (error) {
         console.error('Error fetching page:', error);
@@ -436,6 +460,14 @@ export function KnowledgeBaseApp() {
     category?: string;
   }>, orderedCategories?: string[]) => {
     if (!currentPage || !user) return;
+    
+    console.log('Saving page:', {
+      id: currentPage.id,
+      title,
+      contentLength: content.length,
+      recommendedReadingCount: recommendedReading?.length || 0
+    });
+    
     try {
       if (currentPage.id === 'new') {
         // Create new page
@@ -450,16 +482,27 @@ export function KnowledgeBaseApp() {
           created_by: user.id
         }).select().single();
         if (error) throw error;
-        setCurrentPage({
+        
+        const updatedPage = {
           ...currentPage,
           id: data.id,
           title,
           content,
-          lastUpdated: data.updated_at
-        });
+          lastUpdated: data.updated_at,
+          recommended_reading: (recommendedReading || []).map(item => ({
+            ...item,
+            type: item.type || (item.url ? 'link' : 'file'),
+            category: item.category || 'General'
+          })),
+          category_order: orderedCategories || []
+        };
+        
+        setCurrentPage(updatedPage);
+        console.log('New page created and state updated');
       } else {
         // Update existing page
         const {
+          data,
           error
         } = await supabase.from('pages').update({
           title,
@@ -467,23 +510,36 @@ export function KnowledgeBaseApp() {
           recommended_reading: recommendedReading || [],
           category_order: orderedCategories || [],
           updated_at: new Date().toISOString()
-        }).eq('id', currentPage.id);
+        }).eq('id', currentPage.id).select().single();
+        
         if (error) throw error;
-        setCurrentPage({
+        
+        // Update local state with fresh data from database
+        const updatedPage = {
           ...currentPage,
           title,
           content,
-          lastUpdated: new Date().toISOString(),
+          lastUpdated: data.updated_at,
           recommended_reading: (recommendedReading || []).map(item => ({
             ...item,
             type: item.type || (item.url ? 'link' : 'file'),
             category: item.category || 'General'
           })),
           category_order: orderedCategories || []
+        };
+        
+        setCurrentPage(updatedPage);
+        console.log('Page updated and state refreshed:', {
+          id: updatedPage.id,
+          title: updatedPage.title,
+          contentLength: updatedPage.content.length,
+          lastUpdated: updatedPage.lastUpdated
         });
       }
+      
       setIsEditing(false);
       setCurrentView('page');
+      
       toast({
         title: "Page saved",
         description: `"${title}" has been saved successfully.`
@@ -501,12 +557,33 @@ export function KnowledgeBaseApp() {
     setIsEditing(false);
     setCurrentView('page');
   };
-  const handlePageSelect = (pageId: string) => {
-    handleItemSelect({
-      id: pageId,
-      title: '',
-      type: 'page'
-    });
+  const handlePageSelect = async (pageId: string) => {
+    // Always fetch fresh data when selecting a page
+    try {
+      const pageData = await fetchPageData(pageId);
+      if (pageData) {
+        setCurrentPage(pageData);
+        setCurrentView('page');
+        setIsEditing(false);
+        setSelectedItemId(pageId);
+
+        // Build breadcrumbs for this page
+        const breadcrumbPath = await buildBreadcrumbs(pageData);
+        setBreadcrumbs(breadcrumbPath);
+
+        // Increment view count
+        await supabase.from('pages').update({
+          view_count: ((pageData as any).view_count || 0) + 1
+        }).eq('id', pageData.id);
+      }
+    } catch (error) {
+      console.error('Error selecting page:', error);
+      toast({
+        title: "Error loading page",
+        description: "Failed to load page content.",
+        variant: "destructive"
+      });
+    }
   };
   return <div className="flex h-screen bg-background">
       <ResizableSidebar onItemSelect={handleItemSelect} selectedId={selectedItemId} onCreatePage={handleCreatePage} onCreateSubPage={handleCreateSubPage} onCreatePageInEditor={handleCreatePageInEditor} />
