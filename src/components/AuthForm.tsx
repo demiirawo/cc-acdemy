@@ -32,6 +32,17 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
     e.preventDefault();
     setIsLoading(true);
 
+    // Check if email domain is care-cuddle.co.uk
+    if (!formData.email.endsWith('@care-cuddle.co.uk')) {
+      toast({
+        title: "Registration restricted",
+        description: "Only care-cuddle.co.uk email addresses can register for this platform.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const { error } = await supabase.auth.signUp({
         email: formData.email,
