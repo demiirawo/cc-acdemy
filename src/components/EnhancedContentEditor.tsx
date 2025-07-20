@@ -62,6 +62,8 @@ interface ContentEditorProps {
     description: string;
     fileUrl?: string;
     fileName?: string;
+    type?: string;
+    category?: string;
   }>, orderedCategories?: string[], tags?: string[]) => void;
   onPreview?: () => void;
   isEditing?: boolean;
@@ -226,11 +228,6 @@ export function EnhancedContentEditor({
               editorRef.current.innerHTML = data.content;
             }
             
-            // Load tags from database
-            if (data.tags && Array.isArray(data.tags)) {
-              setTags(data.tags);
-            }
-            
             // Set recommended reading from database
             if (data.recommended_reading && Array.isArray(data.recommended_reading)) {
               console.log('Found recommended reading in database:', data.recommended_reading);
@@ -247,6 +244,15 @@ export function EnhancedContentEditor({
             } else {
               console.log('No recommended reading found in database');
               setRecommendedReading([]);
+            }
+            
+            // Set tags from database
+            if (data.tags && Array.isArray(data.tags)) {
+              console.log('Found tags in database:', data.tags);
+              setTags(data.tags);
+            } else {
+              console.log('No tags found in database');
+              setTags([]);
               
               // Legacy: Try to extract recommended reading from content if it exists
               try {
@@ -393,15 +399,15 @@ export function EnhancedContentEditor({
     }
     
     try {
-      console.log('Auto-saving:', { title: currentTitle, content: currentContent });
+      console.log('Auto-saving:', { title: currentTitle, content: currentContent, tags, recommendedReading });
       
       const { error } = await supabase
         .from('pages')
         .update({ 
           title: currentTitle,
           content: currentContent,
+          tags: tags,
           recommended_reading: recommendedReading,
-          tags: tags, // Save tags
           updated_at: new Date().toISOString()
         })
         .eq('id', pageId);
@@ -409,7 +415,7 @@ export function EnhancedContentEditor({
       if (error) throw error;
       
       lastSavedContentRef.current = currentContent;
-      console.log('Auto-save successful');
+      console.log('Auto-save successful with all content preserved');
     } catch (error) {
       console.error('Auto-save failed:', error);
     }
@@ -421,22 +427,22 @@ export function EnhancedContentEditor({
     
     try {
       const currentContent = contentRef.current;
-      console.log('Saving now:', { title: currentTitle, content: currentContent });
+      console.log('Saving now:', { title: currentTitle, content: currentContent, tags, recommendedReading });
       
       const { error } = await supabase
         .from('pages')
         .update({ 
           title: currentTitle,
           content: currentContent,
+          tags: tags,
           recommended_reading: recommendedReading,
-          tags: tags, // Save tags
           updated_at: new Date().toISOString()
         })
         .eq('id', pageId);
 
       if (error) throw error;
       lastSavedContentRef.current = currentContent;
-      console.log('Save successful');
+      console.log('Save successful with all content preserved');
     } catch (error) {
       console.error('Save failed:', error);
     }
@@ -2475,12 +2481,12 @@ export function EnhancedContentEditor({
       });
 
       // Save content and recommended reading using the provided onSave function
-      console.log('Saving with recommended reading:', recommendedReading);
+      console.log('Saving with recommended reading and tags:', { recommendedReading, tags });
       await onSave(currentTitle, contentRef.current, recommendedReading, orderedCategories, tags);
       
       toast({
-        title: "Saved",
-        description: "Page saved successfully",
+        title: "Page saved",
+        description: "All content, tags, and recommended reading have been saved successfully.",
       });
     } catch (error) {
       console.error('Error saving page:', error);
@@ -2748,12 +2754,10 @@ export function EnhancedContentEditor({
               </Button>
             )}
             
-            {onPreview && (
-              <Button onClick={onPreview} variant="outline">
-                <Eye className="h-4 w-4 mr-2" />
-                Preview
-              </Button>
-            )}
+            <Button onClick={handleSave} className="bg-gradient-primary">
+              <Save className="h-4 w-4 mr-2" />
+              Save Page
+            </Button>
           </div>
         </div>
 

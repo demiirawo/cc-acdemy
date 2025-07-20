@@ -368,7 +368,42 @@ export function KnowledgeBaseApp() {
     handleCreatePageInEditor(parentId);
   };
   const handleCreatePageInEditor = async (parentId?: string) => {
-    if (!user) return;
+    if (!user) {
+      console.error('No user found when trying to create page');
+      toast({
+        title: "Authentication required",
+        description: "Please log in to create pages.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    console.log('Creating page for user:', user.id);
+    
+    // Check current session and refresh if needed
+    const { data: session, error: sessionError } = await supabase.auth.getSession();
+    console.log('Current session:', {
+      session: session.session ? 'exists' : 'null',
+      error: sessionError
+    });
+    
+    if (!session?.session || sessionError) {
+      console.error('No valid session found', sessionError);
+      
+      // Try to refresh the session
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+      console.log('Refresh attempt:', { refreshData, refreshError });
+      
+      if (refreshError || !refreshData.session) {
+        toast({
+          title: "Session expired",
+          description: "Please log in again.",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+    
     try {
       // Validate parentId if provided
       if (parentId) {
@@ -379,19 +414,33 @@ export function KnowledgeBaseApp() {
           parentId = null; // Reset if parent doesn't exist
         }
       }
+      
+      // Test if we can insert into pages table first
+      console.log('Testing page creation with:', {
+        title: 'Untitled Page',
+        content: '',
+        tags: [],
+        created_by: user.id,
+        parent_page_id: parentId || null
+      });
+      
       const {
         data,
         error
       } = await supabase.from('pages').insert({
         title: 'Untitled Page',
         content: '',
+        tags: [],
         created_by: user.id,
-        parent_page_id: parentId || null,
-        tags: [] // Initialize with empty tags array
+        parent_page_id: parentId || null
       }).select().single();
-      if (error) throw error;
+      
+      if (error) {
+        console.error('Database error:', error);
+        throw error;
+      }
 
-      // Note: Sidebar will refresh automatically through its own data fetching
+      console.log('Page created successfully:', data);
 
       // Navigate directly to editor
       setCurrentPage({
@@ -412,7 +461,7 @@ export function KnowledgeBaseApp() {
       console.error('Error creating page:', error);
       toast({
         title: "Error creating page",
-        description: "Failed to create page. Please try again.",
+        description: `Failed to create page: ${error.message || 'Unknown error'}`,
         variant: "destructive"
       });
     }
@@ -461,6 +510,10 @@ export function KnowledgeBaseApp() {
           content,
           lastUpdated: data.updated_at
         });
+        toast({
+          title: "Page created and saved",
+          description: `"${title}" has been created with all content, tags, and recommended reading saved.`
+        });
       } else {
         // Update existing page
         const {
@@ -474,6 +527,8 @@ export function KnowledgeBaseApp() {
           updated_at: new Date().toISOString()
         }).eq('id', currentPage.id);
         if (error) throw error;
+        
+        // Update the current page state with the new data
         setCurrentPage({
           ...currentPage,
           title,
@@ -486,13 +541,20 @@ export function KnowledgeBaseApp() {
           })),
           category_order: orderedCategories || []
         });
+        
+        toast({
+          title: "Page saved",
+          description: `"${title}" has been saved with all content, tags, and recommended reading preserved.`
+        });
       }
+      
+      // Force a refresh of the page hierarchy and navigate to view mode
       setIsEditing(false);
       setCurrentView('page');
-      toast({
-        title: "Page saved",
-        description: `"${title}" has been saved successfully.`
-      });
+      
+      // Trigger a window event to refresh the sidebar
+      window.dispatchEvent(new CustomEvent('pagesChanged'));
+      
     } catch (error) {
       console.error('Error saving page:', error);
       toast({
