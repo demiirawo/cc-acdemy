@@ -15,7 +15,7 @@ import { useUserRole } from "@/hooks/useUserRole";
 interface Permission {
   id: string;
   user_id: string | null;
-  space_id: string | null;
+  space_id?: string | null;
   permission_type: string;
   profiles?: {
     display_name?: string;
@@ -24,7 +24,7 @@ interface Permission {
 }
 
 interface Profile {
-  id: string;
+  id?: string;
   user_id: string;
   display_name: string | null;
   email: string | null;
@@ -66,76 +66,89 @@ export function PagePermissionsDialog({
   const { isAdmin } = useUserRole();
 
   useEffect(() => {
-    if (open && pageId) {
-      fetchData();
-    }
-  }, [open, pageId]);
+    const fetchData = async () => {
+      if (!open || !pageId) return;
 
-  const fetchData = async () => {
-    try {
       setLoadingData(true);
-      
-      // Fetch page details
-      const { data: pageData, error: pageError } = await supabase
-        .from('pages')
-        .select('id, title, is_public, public_token, created_by')
-        .eq('id', pageId)
-        .single();
 
-      if (pageError) throw pageError;
-      setPage(pageData);
+      try {
+        // Fetch page details
+        const { data: pageData, error: pageError } = await supabase
+          .from('pages')
+          .select('id, title, is_public, public_token, created_by')
+          .eq('id', pageId)
+          .single();
 
-      // Fetch existing permissions
-      const { data: permissionsData, error: permissionsError } = await supabase
-        .from('page_permissions')
-        .select('*')
-        .eq('page_id', pageId);
+        if (pageError) throw pageError;
+        setPage(pageData);
+        
+        // Set initial visibility type based on page data
+        if (pageData.is_public) {
+          setVisibilityType('public');
+        } else {
+          // For now, default to admin for private pages
+          setVisibilityType('admin');
+        }
 
-      if (permissionsError) throw permissionsError;
+        // Fetch existing permissions with profile data
+        const { data: permissionsData, error: permissionsError } = await supabase
+          .from('page_permissions')
+          .select(`
+            id,
+            user_id,
+            space_id,
+            permission_type
+          `)
+          .eq('page_id', pageId);
 
-      // Enrich permissions with profile data
-      const enrichedPermissions = await Promise.all(
-        (permissionsData || []).map(async (permission) => {
-          if (permission.user_id) {
-            const { data: profileData } = await supabase
-              .from('profiles')
-              .select('display_name, email')
-              .eq('user_id', permission.user_id)
-              .single();
-            
+        if (permissionsError) throw permissionsError;
+
+        // Enrich permissions with profile data
+        const enrichedPermissions = await Promise.all(
+          (permissionsData || []).map(async (permission) => {
+            if (permission.user_id) {
+              const { data: profileData } = await supabase
+                .from('profiles')
+                .select('display_name, email')
+                .eq('user_id', permission.user_id)
+                .single();
+              
+              return {
+                ...permission,
+                profiles: profileData
+              };
+            }
             return {
               ...permission,
-              profiles: profileData
+              profiles: null
             };
-          }
-          return {
-            ...permission,
-            profiles: null
-          };
-        })
-      );
+          })
+        );
 
-      setPermissions(enrichedPermissions);
+        setPermissions(enrichedPermissions);
 
-      // Fetch all profiles for user selection
-      const { data: profilesData, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, user_id, display_name, email')
-        .order('display_name');
+        // Fetch all profiles for the select dropdown
+        const { data: profilesData, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, user_id, display_name, email');
 
-      if (profilesError) throw profilesError;
-      setProfiles(profilesData || []);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load page permissions.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoadingData(false);
-    }
-  };
+        if (profilesError) throw profilesError;
+        setProfiles(profilesData || []);
+
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load permissions data.",
+          variant: "destructive",
+        });
+      } finally {
+        setLoadingData(false);
+      }
+    };
+
+    fetchData();
+  }, [open, pageId, toast]);
 
   const handleAddPermission = async () => {
     if (!selectedUserId || !selectedPermissionType) {
@@ -274,6 +287,55 @@ export function PagePermissionsDialog({
     }
   };
 
+  const handleVisibilityChange = async (newVisibility: 'public' | 'domain' | 'admin') => {
+    if (!page || !isAdmin) return;
+
+    setLoading(true);
+
+    try {
+      let updateData: any = {};
+      
+      // Update page visibility based on selection
+      if (newVisibility === 'public') {
+        updateData = {
+          is_public: true,
+          public_token: page.public_token || crypto.randomUUID()
+        };
+      } else {
+        updateData = {
+          is_public: false,
+          public_token: null
+        };
+      }
+
+      const { data, error } = await supabase
+        .from('pages')
+        .update(updateData)
+        .eq('id', pageId)
+        .select('id, title, is_public, public_token, created_by')
+        .single();
+
+      if (error) throw error;
+
+      setPage(data);
+      setVisibilityType(newVisibility);
+
+      toast({
+        title: "Visibility updated",
+        description: `Page visibility changed to ${newVisibility}.`,
+      });
+    } catch (error) {
+      console.error('Error updating visibility:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update page visibility. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCopyPublicLink = async () => {
     if (!page?.public_token) return;
 
@@ -355,8 +417,8 @@ export function PagePermissionsDialog({
                   name="visibility"
                   value="public"
                   checked={visibilityType === 'public'}
-                  onChange={(e) => setVisibilityType(e.target.value as 'public' | 'domain' | 'admin')}
-                  disabled={!isAdmin}
+                  onChange={(e) => handleVisibilityChange(e.target.value as 'public' | 'domain' | 'admin')}
+                  disabled={!isAdmin || loading}
                   className="h-4 w-4"
                 />
               </div>
@@ -371,8 +433,8 @@ export function PagePermissionsDialog({
                   name="visibility"
                   value="domain"
                   checked={visibilityType === 'domain'}
-                  onChange={(e) => setVisibilityType(e.target.value as 'public' | 'domain' | 'admin')}
-                  disabled={!isAdmin}
+                  onChange={(e) => handleVisibilityChange(e.target.value as 'public' | 'domain' | 'admin')}
+                  disabled={!isAdmin || loading}
                   className="h-4 w-4"
                 />
               </div>
@@ -387,8 +449,8 @@ export function PagePermissionsDialog({
                   name="visibility"
                   value="admin"
                   checked={visibilityType === 'admin'}
-                  onChange={(e) => setVisibilityType(e.target.value as 'public' | 'domain' | 'admin')}
-                  disabled={!isAdmin}
+                  onChange={(e) => handleVisibilityChange(e.target.value as 'public' | 'domain' | 'admin')}
+                  disabled={!isAdmin || loading}
                   className="h-4 w-4"
                 />
               </div>
