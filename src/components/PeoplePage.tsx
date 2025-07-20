@@ -30,10 +30,9 @@ interface Page {
 
 interface PeoplePageProps {
   onPageSelect: (pageId: string) => void;
-  onCreatePage?: () => void;
 }
 
-export function PeoplePage({ onPageSelect, onCreatePage }: PeoplePageProps) {
+export function PeoplePage({ onPageSelect }: PeoplePageProps) {
   const [people, setPeople] = useState<Profile[]>([]);
   const [filteredPeople, setFilteredPeople] = useState<Profile[]>([]);
   const [selectedPerson, setSelectedPerson] = useState<Profile | null>(null);
@@ -170,8 +169,8 @@ export function PeoplePage({ onPageSelect, onCreatePage }: PeoplePageProps) {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
             <Users className="h-8 w-8 text-primary" />
-            <Button onClick={onCreatePage}>
-              <Plus className="h-4 w-4 mr-2" />
+            <Button onClick={() => {}} size="lg">
+              <Plus className="h-5 w-5 mr-2" />
               Create Page
             </Button>
           </div>

@@ -33,11 +33,7 @@ interface Conversation {
   created_at: string;
 }
 
-interface ChatPageProps {
-  onCreatePage?: () => void;
-}
-
-export const ChatPage = ({ onCreatePage }: ChatPageProps = {}) => {
+export const ChatPage = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -500,8 +496,8 @@ export const ChatPage = ({ onCreatePage }: ChatPageProps = {}) => {
             <MessageSquare className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <Button onClick={onCreatePage} className="mb-2">
-              <Plus className="h-4 w-4 mr-2" />
+            <Button onClick={() => {}} size="lg">
+              <Plus className="h-5 w-5 mr-2" />
               Create Page
             </Button>
             <p className="text-sm text-muted-foreground">

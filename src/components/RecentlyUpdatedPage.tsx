@@ -22,10 +22,9 @@ interface Page {
 
 interface RecentlyUpdatedPageProps {
   onPageSelect: (pageId: string) => void;
-  onCreatePage?: () => void;
 }
 
-export function RecentlyUpdatedPage({ onPageSelect, onCreatePage }: RecentlyUpdatedPageProps) {
+export function RecentlyUpdatedPage({ onPageSelect }: RecentlyUpdatedPageProps) {
   const [pages, setPages] = useState<Page[]>([]);
   const [filteredPages, setFilteredPages] = useState<Page[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -146,8 +145,8 @@ export function RecentlyUpdatedPage({ onPageSelect, onCreatePage }: RecentlyUpda
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
             <Clock className="h-8 w-8 text-primary" />
-            <Button onClick={onCreatePage}>
-              <Plus className="h-4 w-4 mr-2" />
+            <Button onClick={() => {}} size="lg">
+              <Plus className="h-5 w-5 mr-2" />
               Create Page
             </Button>
           </div>

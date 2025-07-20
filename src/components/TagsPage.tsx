@@ -28,10 +28,9 @@ interface TagData {
 
 interface TagsPageProps {
   onPageSelect: (pageId: string) => void;
-  onCreatePage?: () => void;
 }
 
-export function TagsPage({ onPageSelect, onCreatePage }: TagsPageProps) {
+export function TagsPage({ onPageSelect }: TagsPageProps) {
   const [allTags, setAllTags] = useState<TagData[]>([]);
   const [filteredTags, setFilteredTags] = useState<TagData[]>([]);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -153,8 +152,8 @@ export function TagsPage({ onPageSelect, onCreatePage }: TagsPageProps) {
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
             <Tag className="h-8 w-8 text-primary" />
-            <Button onClick={onCreatePage}>
-              <Plus className="h-4 w-4 mr-2" />
+            <Button onClick={() => {}} size="lg">
+              <Plus className="h-5 w-5 mr-2" />
               Create Page
             </Button>
           </div>
