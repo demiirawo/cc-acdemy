@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback } from "react";
 import { 
   Bold, 
@@ -25,18 +24,22 @@ import { Badge } from "@/components/ui/badge";
 import { RecommendedReadingManager } from "./RecommendedReadingManager";
 import { useToast } from "@/hooks/use-toast";
 
+// Import the proper type from RecommendedReadingManager
+interface RecommendedReadingItem {
+  id?: string;
+  title: string;
+  url?: string;
+  description: string;
+  fileUrl?: string;
+  fileName?: string;
+  type?: 'link' | 'file' | 'document' | 'guide' | 'reference';
+  category?: string;
+}
+
 interface ContentEditorProps {
   title?: string;
   content?: string;
-  onSave: (title: string, content: string, recommendedReading?: Array<{
-    title: string;
-    url?: string;
-    description: string;
-    fileUrl?: string;
-    fileName?: string;
-    type?: string;
-    category?: string;
-  }>, orderedCategories?: string[]) => void;
+  onSave: (title: string, content: string, recommendedReading?: RecommendedReadingItem[], orderedCategories?: string[]) => void;
   onPreview?: () => void;
   isEditing?: boolean;
   pageId?: string;
@@ -52,28 +55,13 @@ export function EnhancedContentEditor({
 }: ContentEditorProps) {
   const [currentTitle, setCurrentTitle] = useState(title);
   const [currentContent, setCurrentContent] = useState(content);
-  const [recommendedReading, setRecommendedReading] = useState<Array<{
-    title: string;
-    url?: string;
-    description: string;
-    fileUrl?: string;
-    fileName?: string;
-    type?: string;
-    category?: string;
-  }>>([]);
+  const [recommendedReading, setRecommendedReading] = useState<RecommendedReadingItem[]>([]);
   const [orderedCategories, setOrderedCategories] = useState<string[]>([]);
   
   const { toast } = useToast();
   const saveTimeoutRef = useRef<NodeJS.Timeout>();
   const lastSavedRef = useRef({ title, content, recommendedReading: [], orderedCategories: [] });
   const isSavingRef = useRef(false);
-
-  // Update local state when props change
-  useEffect(() => {
-    setCurrentTitle(title);
-    setCurrentContent(content);
-    lastSavedRef.current = { title, content, recommendedReading: [], orderedCategories: [] };
-  }, [title, content]);
 
   const performSave = useCallback(async () => {
     if (isSavingRef.current) return;
@@ -168,6 +156,13 @@ export function EnhancedContentEditor({
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [performSave]);
+
+  // Update local state when props change
+  useEffect(() => {
+    setCurrentTitle(title);
+    setCurrentContent(content);
+    lastSavedRef.current = { title, content, recommendedReading: [], orderedCategories: [] };
+  }, [title, content]);
 
   const toolbarItems = [
     { icon: Heading1, action: () => insertText('# '), label: 'Heading 1' },
