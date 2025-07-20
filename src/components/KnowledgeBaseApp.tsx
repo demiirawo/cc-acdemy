@@ -80,7 +80,7 @@ function PageView({
       }
     };
     fetchPageSettings();
-  }, [currentPage.id]);
+  }, [currentPage.id, currentPage.recommended_reading, currentPage.lastUpdated]);
   const togglePublicAccess = async () => {
     try {
       const newIsPublic = !isPublic;
@@ -575,6 +575,55 @@ export function KnowledgeBaseApp() {
       type: 'page'
     });
   };
+  
+  const handlePageSaved = async () => {
+    if (!currentPage) return;
+    
+    // Fetch the latest page data from the database
+    try {
+      const { data, error } = await supabase
+        .from('pages')
+        .select('*')
+        .eq('id', currentPage.id)
+        .single();
+      
+      if (error) throw error;
+      
+      if (data) {
+        // Update the current page with fresh data
+        setCurrentPage({
+          id: data.id,
+          title: data.title,
+          content: data.content,
+          lastUpdated: data.updated_at,
+          author: 'User',
+          parent_page_id: data.parent_page_id,
+          space_id: data.space_id,
+          recommended_reading: (data.recommended_reading as any[] || []).map((item: any) => ({
+            id: item.id,
+            title: item.title || '',
+            description: item.description || '',
+            type: item.type || 'link',
+            url: item.url,
+            fileUrl: item.fileUrl,
+            fileName: item.fileName,
+            category: item.category || 'General'
+          })),
+          category_order: data.category_order || []
+        });
+      }
+      
+      // Switch to view mode
+      setIsEditing(false);
+      setCurrentView('page');
+      
+    } catch (error) {
+      console.error('Error refreshing page data:', error);
+      // Fall back to preview mode even if refresh fails
+      setIsEditing(false);
+      setCurrentView('page');
+    }
+  };
   return <div className="flex h-screen bg-background">
       <ResizableSidebar onItemSelect={handleItemSelect} selectedId={selectedItemId} onCreatePage={handleCreatePage} onCreateSubPage={handleCreateSubPage} onCreatePageInEditor={handleCreatePageInEditor} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
@@ -637,7 +686,7 @@ export function KnowledgeBaseApp() {
         {currentView === 'user-management' && <UserManagement />}
         {currentView === 'chat' && <ChatPage />}
         
-        {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePreview} />}
+        {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePageSaved} />}
         
         {currentView === 'page' && currentPage && <PageView currentPage={currentPage} onEditPage={handleEditPage} setPermissionsDialogOpen={setPermissionsDialogOpen} onPageSelect={handlePageSelect} />}
       </div>
