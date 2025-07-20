@@ -114,7 +114,6 @@ function PageView({
     });
   };
   const cleanContent = currentPage.content;
-  console.log('PageView render - Page ID:', currentPage.id, 'Last Updated:', currentPage.lastUpdated, 'Content Length:', cleanContent.length);
   return <div className="flex-1 overflow-auto">
       <div className="max-w-none mx-8 p-6">
           <div className="mb-6">
@@ -146,13 +145,9 @@ function PageView({
         </div>
         
         <div className="prose prose-lg max-w-none">
-          <div 
-            key={`content-${currentPage.id}-${currentPage.lastUpdated}`}
-            className="text-foreground leading-relaxed" 
-            dangerouslySetInnerHTML={{
-              __html: cleanContent.split('RECOMMENDED_READING:')[0]
-            }} 
-          />
+          <div className="text-foreground leading-relaxed" dangerouslySetInnerHTML={{
+          __html: cleanContent.split('RECOMMENDED_READING:')[0]
+        }} />
         </div>
 
         {/* Recommended Reading Section */}
@@ -533,31 +528,24 @@ export function KnowledgeBaseApp() {
         }).eq('id', currentPage.id);
         if (error) throw error;
         
-        console.log('Page saved successfully, forcing complete reload...');
+        // Update the current page state with the new data
+        setCurrentPage({
+          ...currentPage,
+          title,
+          content,
+          lastUpdated: new Date().toISOString(),
+          recommended_reading: (recommendedReading || []).map(item => ({
+            ...item,
+            type: item.type || (item.url ? 'link' : 'file'),
+            category: item.category || 'General'
+          })),
+          category_order: orderedCategories || []
+        });
         
         toast({
           title: "Page saved",
           description: `"${title}" has been saved with all content, tags, and recommended reading preserved.`
         });
-        
-        // Clear current page state to force fresh load
-        setCurrentPage(null);
-        setIsEditing(false);
-        setCurrentView('dashboard');
-        
-        // Wait a moment for state to clear, then reload the page completely
-        setTimeout(async () => {
-          console.log('Reloading page with fresh data...');
-          await handleItemSelect({
-            id: currentPage.id,
-            title: title,
-            type: 'page'
-          });
-        }, 200);
-        
-        // Trigger a window event to refresh the sidebar
-        window.dispatchEvent(new CustomEvent('pagesChanged'));
-        return; // Exit early since we're handling the view change in the timeout
       }
       
       // Force a refresh of the page hierarchy and navigate to view mode
