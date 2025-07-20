@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Clock, FileText, User, ChevronRight } from "lucide-react";
+import { Clock, FileText, User, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -145,7 +145,10 @@ export function RecentlyUpdatedPage({ onPageSelect }: RecentlyUpdatedPageProps) 
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
             <Clock className="h-8 w-8 text-primary" />
-            <h1 className="text-3xl font-bold text-foreground">Recently Updated</h1>
+            <Button onClick={() => {}} size="lg">
+              <Plus className="h-5 w-5 mr-2" />
+              Create Page
+            </Button>
           </div>
           <p className="text-muted-foreground mb-6">
             Pages that have been updated recently, showing the latest changes first
