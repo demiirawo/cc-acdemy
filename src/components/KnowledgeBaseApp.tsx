@@ -114,6 +114,7 @@ function PageView({
     });
   };
   const cleanContent = currentPage.content;
+  console.log('PageView render - Page ID:', currentPage.id, 'Last Updated:', currentPage.lastUpdated, 'Content Length:', cleanContent.length);
   return <div className="flex-1 overflow-auto">
       <div className="max-w-none mx-8 p-6">
           <div className="mb-6">
@@ -145,9 +146,13 @@ function PageView({
         </div>
         
         <div className="prose prose-lg max-w-none">
-          <div className="text-foreground leading-relaxed" dangerouslySetInnerHTML={{
-          __html: cleanContent.split('RECOMMENDED_READING:')[0]
-        }} />
+          <div 
+            key={`content-${currentPage.id}-${currentPage.lastUpdated}`}
+            className="text-foreground leading-relaxed" 
+            dangerouslySetInnerHTML={{
+              __html: cleanContent.split('RECOMMENDED_READING:')[0]
+            }} 
+          />
         </div>
 
         {/* Recommended Reading Section */}
