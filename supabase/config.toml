@@ -37,3 +37,6 @@ url = ""
 
 [functions.cleanup-unconfirmed-users]
 verify_jwt = false
+
+[functions.get-user-profiles]
+verify_jwt = true

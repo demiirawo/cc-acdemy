@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Plus, Trash2, Edit } from "lucide-react";
+import { Users, Plus, Trash2, Edit, CheckCircle, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -17,6 +17,7 @@ interface Profile {
   email: string | null;
   role: string | null;
   created_at: string;
+  email_confirmed_at: string | null;
 }
 
 export function UserManagement() {
@@ -33,13 +34,16 @@ export function UserManagement() {
 
   const fetchProfiles = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+      // Use the edge function to get profiles with confirmation status
+      const { data, error } = await supabase.functions.invoke('get-user-profiles');
 
       if (error) throw error;
-      setProfiles(data || []);
+
+      if (data.success) {
+        setProfiles(data.data || []);
+      } else {
+        throw new Error(data.error || 'Failed to fetch profiles');
+      }
     } catch (error) {
       console.error('Error fetching profiles:', error);
       toast({
@@ -119,6 +123,22 @@ export function UserManagement() {
     }
   };
 
+  const getConfirmationStatus = (emailConfirmedAt: string | null) => {
+    if (emailConfirmedAt) {
+      return {
+        icon: CheckCircle,
+        color: "text-green-600",
+        tooltip: "Account confirmed"
+      };
+    } else {
+      return {
+        icon: Clock,
+        color: "text-amber-600",
+        tooltip: "Pending confirmation"
+      };
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -153,8 +173,19 @@ export function UserManagement() {
                     <Users className="h-5 w-5 text-primary" />
                   </div>
                   <div>
-                    <CardTitle className="text-lg">
+                    <CardTitle className="text-lg flex items-center gap-2">
                       {profile.display_name || 'No name'}
+                      {(() => {
+                        const status = getConfirmationStatus(profile.email_confirmed_at);
+                        const StatusIcon = status.icon;
+                        return (
+                          <div title={status.tooltip}>
+                            <StatusIcon 
+                              className={`h-4 w-4 ${status.color}`}
+                            />
+                          </div>
+                        );
+                      })()}
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
                       {profile.email || 'No email'}
