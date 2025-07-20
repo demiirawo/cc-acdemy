@@ -541,9 +541,14 @@ export function KnowledgeBaseApp() {
                 </h2>}
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground text-right">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-sm text-muted-foreground hover:text-foreground px-2"
+                onClick={() => setCurrentView('settings')}
+              >
                 {user?.user_metadata?.display_name || user?.email}
-              </span>
+              </Button>
               <Button variant="ghost" size="sm" onClick={signOut}>
                 <LogOut className="h-4 w-4" />
               </Button>
