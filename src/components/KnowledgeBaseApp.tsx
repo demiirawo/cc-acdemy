@@ -380,18 +380,28 @@ export function KnowledgeBaseApp() {
     
     console.log('Creating page for user:', user.id);
     
-    // Check current session
-    const { data: session } = await supabase.auth.getSession();
-    console.log('Current session:', session);
+    // Check current session and refresh if needed
+    const { data: session, error: sessionError } = await supabase.auth.getSession();
+    console.log('Current session:', {
+      session: session.session ? 'exists' : 'null',
+      error: sessionError
+    });
     
-    if (!session?.session) {
-      console.error('No valid session found');
-      toast({
-        title: "Session expired",
-        description: "Please log in again.",
-        variant: "destructive"
-      });
-      return;
+    if (!session?.session || sessionError) {
+      console.error('No valid session found', sessionError);
+      
+      // Try to refresh the session
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+      console.log('Refresh attempt:', { refreshData, refreshError });
+      
+      if (refreshError || !refreshData.session) {
+        toast({
+          title: "Session expired",
+          description: "Please log in again.",
+          variant: "destructive"
+        });
+        return;
+      }
     }
     
     try {
