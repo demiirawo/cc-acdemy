@@ -100,7 +100,11 @@ export function EnhancedContentEditor({
   pageId
 }: ContentEditorProps) {
   const [currentTitle, setCurrentTitle] = useState(title);
-  const [currentContent, setCurrentContent] = useState(content);
+  
+  // Direct DOM content tracking - no React state
+  const contentRef = useRef(content);
+  const lastSavedContentRef = useRef(content);
+  const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [mediaFiles, setMediaFiles] = useState<MediaFile[]>([]);
@@ -125,7 +129,8 @@ export function EnhancedContentEditor({
     
     // Clean content of any RECOMMENDED_READING data before setting
     const cleanContent = content.split('RECOMMENDED_READING:')[0];
-    setCurrentContent(cleanContent);
+    contentRef.current = cleanContent;
+    lastSavedContentRef.current = cleanContent;
     
     if (editorRef.current) {
       editorRef.current.innerHTML = cleanContent;
@@ -225,7 +230,10 @@ export function EnhancedContentEditor({
           if (data) {
             setIsPublic(data.is_public || false);
             setPublicToken(data.public_token || '');
-            setCurrentContent(data.content);
+            contentRef.current = data.content;
+            if (editorRef.current) {
+              editorRef.current.innerHTML = data.content;
+            }
             
             // Set recommended reading from database
             if (data.recommended_reading && Array.isArray(data.recommended_reading)) {
@@ -259,7 +267,10 @@ export function EnhancedContentEditor({
                       fileUrl: item.fileUrl
                     }));
                     setRecommendedReading(typedReadings);
-                    setCurrentContent(parts[0]);
+                    contentRef.current = parts[0];
+                    if (editorRef.current) {
+                      editorRef.current.innerHTML = parts[0];
+                    }
                     
                     // Update the database to remove the appended data and save properly
                     supabase
@@ -355,8 +366,55 @@ export function EnhancedContentEditor({
 
   const updateContent = () => {
     if (editorRef.current) {
-      setCurrentContent(editorRef.current.innerHTML);
-      // Removed auto-save trigger
+      contentRef.current = editorRef.current.innerHTML;
+      // Trigger auto-save with new approach
+      scheduleAutoSave();
+    }
+  };
+
+  // Auto-save scheduler
+  const scheduleAutoSave = () => {
+    if (!pageId) return;
+    
+    if (saveIntervalRef.current) {
+      clearTimeout(saveIntervalRef.current);
+    }
+    
+    saveIntervalRef.current = setTimeout(() => {
+      performAutoSave();
+    }, 2000); // 2 second delay
+  };
+
+  // Auto-save function
+  const performAutoSave = async () => {
+    if (!pageId) return;
+    
+    const currentContent = contentRef.current;
+    
+    // Don't save if content hasn't changed
+    if (currentContent === lastSavedContentRef.current) {
+      return;
+    }
+    
+    try {
+      console.log('Auto-saving:', { title: currentTitle, content: currentContent });
+      
+      const { error } = await supabase
+        .from('pages')
+        .update({ 
+          title: currentTitle,
+          content: currentContent,
+          recommended_reading: recommendedReading,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', pageId);
+
+      if (error) throw error;
+      
+      lastSavedContentRef.current = currentContent;
+      console.log('Auto-save successful');
+    } catch (error) {
+      console.error('Auto-save failed:', error);
     }
   };
 
@@ -365,6 +423,7 @@ export function EnhancedContentEditor({
     if (!pageId) return;
     
     try {
+      const currentContent = contentRef.current;
       console.log('Saving now:', { title: currentTitle, content: currentContent });
       
       const { error } = await supabase
@@ -378,6 +437,7 @@ export function EnhancedContentEditor({
         .eq('id', pageId);
 
       if (error) throw error;
+      lastSavedContentRef.current = currentContent;
       console.log('Save successful');
     } catch (error) {
       console.error('Save failed:', error);
@@ -2418,7 +2478,7 @@ export function EnhancedContentEditor({
 
       // Save content and recommended reading using the provided onSave function
       console.log('Saving with recommended reading:', recommendedReading);
-      await onSave(currentTitle, currentContent, recommendedReading, orderedCategories);
+      await onSave(currentTitle, contentRef.current, recommendedReading, orderedCategories);
       
       toast({
         title: "Saved",
@@ -2619,7 +2679,7 @@ export function EnhancedContentEditor({
           <div className="prose prose-lg max-w-none">
             <div 
               className="text-foreground leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: currentContent.split('RECOMMENDED_READING:')[0] }}
+              dangerouslySetInnerHTML={{ __html: contentRef.current.split('RECOMMENDED_READING:')[0] }}
             />
           </div>
           
