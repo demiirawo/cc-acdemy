@@ -152,7 +152,14 @@ export function EnhancedContentEditor({
     }
     
     try {
-      console.log('Auto-saving:', { title: currentTitle, content: currentContent, tags, recommendedReading });
+      console.log('Auto-save triggered - Current state:', { 
+        title: currentTitle, 
+        content: currentContent, 
+        tags, 
+        recommendedReading,
+        recommendedReadingCount: recommendedReading.length,
+        hasChanges: { contentChanged, titleChanged, tagsChanged, recommendedReadingChanged }
+      });
       
       const { error } = await supabase
         .from('pages')
@@ -2519,6 +2526,9 @@ export function EnhancedContentEditor({
 
   const handleSave = async () => {
     try {
+      // Wait a brief moment to ensure all state updates have completed
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       // Derive ordered categories from the first occurrence of each category
       const orderedCategories: string[] = [];
       const seenCategories = new Set<string>();
@@ -2531,8 +2541,15 @@ export function EnhancedContentEditor({
         }
       });
 
+      console.log('Manual save - Current state:', { 
+        title: currentTitle, 
+        content: contentRef.current, 
+        tags, 
+        recommendedReading,
+        recommendedReadingCount: recommendedReading.length 
+      });
+
       // Save content and recommended reading using the provided onSave function
-      console.log('Saving with recommended reading and tags:', { recommendedReading, tags });
       await onSave(currentTitle, contentRef.current, recommendedReading, orderedCategories, tags);
       
       toast({
