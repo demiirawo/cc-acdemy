@@ -528,37 +528,18 @@ export function KnowledgeBaseApp() {
         }).eq('id', currentPage.id);
         if (error) throw error;
         
-        // Refresh page content from database after save
-        const { data: refreshedPage, error: refreshError } = await supabase
-          .from('pages')
-          .select(`
-            id,
-            title,
-            content,
-            updated_at,
-            view_count,
-            created_by,
-            recommended_reading,
-            category_order,
-            parent_page_id,
-            space_id
-          `)
-          .eq('id', currentPage.id)
-          .single();
-        
-        if (refreshError) throw refreshError;
-        
-        // Update the current page state with refreshed data from database
+        // Update the current page state with the new data
         setCurrentPage({
-          id: refreshedPage.id,
-          title: refreshedPage.title,
-          content: refreshedPage.content,
-          lastUpdated: refreshedPage.updated_at,
-          author: 'User',
-          parent_page_id: refreshedPage.parent_page_id,
-          space_id: refreshedPage.space_id,
-          recommended_reading: refreshedPage.recommended_reading as any || [],
-          category_order: refreshedPage.category_order as string[] || []
+          ...currentPage,
+          title,
+          content,
+          lastUpdated: new Date().toISOString(),
+          recommended_reading: (recommendedReading || []).map(item => ({
+            ...item,
+            type: item.type || (item.url ? 'link' : 'file'),
+            category: item.category || 'General'
+          })),
+          category_order: orderedCategories || []
         });
         
         toast({
