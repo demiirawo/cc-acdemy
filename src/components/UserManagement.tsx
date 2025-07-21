@@ -196,6 +196,34 @@ export function UserManagement() {
     }
   };
 
+  const syncMissingProfiles = async () => {
+    try {
+      console.log('Syncing missing profiles...');
+      const { data, error } = await supabase.rpc('sync_missing_profiles');
+      
+      if (error) {
+        console.error('Sync error:', error);
+        throw error;
+      }
+      
+      const newProfiles = data.filter((user: any) => user.created_profile);
+      toast({
+        title: "Sync Complete",
+        description: `Created ${newProfiles.length} missing profiles`
+      });
+      
+      // Refresh the profiles list
+      fetchProfiles();
+    } catch (error) {
+      console.error('Error syncing profiles:', error);
+      toast({
+        title: "Error",
+        description: "Failed to sync profiles",
+        variant: "destructive"
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -215,6 +243,14 @@ export function UserManagement() {
           <p className="text-muted-foreground">Manage user profiles and permissions</p>
         </div>
         <div className="flex items-center gap-4">
+          <Button
+            variant="outline"
+            onClick={syncMissingProfiles}
+            className="flex items-center gap-2"
+          >
+            <Users className="h-4 w-4" />
+            Sync Missing Profiles
+          </Button>
           <Button
             variant="outline"
             onClick={runDiagnosis}

@@ -780,6 +780,14 @@ export type Database = {
         Args: { p_page_id: string; p_expected_version: number }
         Returns: Json
       }
+      sync_missing_profiles: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          user_id: string
+          email: string
+          created_profile: boolean
+        }[]
+      }
       update_project_memory: {
         Args: { p_project_id: string }
         Returns: Json
