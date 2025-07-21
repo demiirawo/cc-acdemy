@@ -1,13 +1,14 @@
 
+
 project_id = "pavwwgfgpykakbqkxsal"
 
 [auth]
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "https://f4c61c1a-eda3-41b7-9302-4188c45ebea0.lovableproject.com/"
+site_url = "https://cc-academy.care-cuddle.co.uk/"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://f4c61c1a-eda3-41b7-9302-4188c45ebea0.lovableproject.com/", "http://localhost:3000"]
+additional_redirect_urls = ["https://cc-academy.care-cuddle.co.uk/", "http://localhost:3000"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604800 (1 week).
 jwt_expiry = 3600
 # Allow/disallow new user signups to your project.
