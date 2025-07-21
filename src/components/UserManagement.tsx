@@ -83,29 +83,28 @@ export function UserManagement() {
   };
 
   const deleteProfile = async (userId: string) => {
-    if (!confirm("Are you sure you want to delete this user profile? This action cannot be undone.")) {
+    if (!confirm("Are you sure you want to completely delete this user? This will remove them from the system entirely and cannot be undone.")) {
       return;
     }
 
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('user_id', userId);
+      // Delete the user from auth.users using admin API
+      // This will cascade delete the profile due to foreign key constraint
+      const { error } = await supabase.auth.admin.deleteUser(userId);
 
       if (error) throw error;
 
       toast({
         title: "Success",
-        description: "User profile deleted successfully"
+        description: "User deleted completely from the system"
       });
 
       fetchProfiles();
     } catch (error) {
-      console.error('Error deleting profile:', error);
+      console.error('Error deleting user:', error);
       toast({
         title: "Error",
-        description: "Failed to delete user profile",
+        description: "Failed to delete user. You may need admin privileges.",
         variant: "destructive"
       });
     }
