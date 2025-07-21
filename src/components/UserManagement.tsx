@@ -82,30 +82,32 @@ export function UserManagement() {
     }
   };
 
-  const deleteProfile = async (userId: string) => {
-    if (!confirm("Are you sure you want to delete this user profile? This action cannot be undone.")) {
+  const deleteUserCompletely = async (userId: string) => {
+    if (!confirm("Are you sure you want to delete this user completely? This will remove both their profile and authentication data. This action cannot be undone.")) {
       return;
     }
 
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('user_id', userId);
+      const { data, error } = await supabase.functions.invoke('delete-user-completely', {
+        body: { userId }
+      });
 
       if (error) throw error;
 
-      toast({
-        title: "Success",
-        description: "User profile deleted successfully"
-      });
-
-      fetchProfiles();
+      if (data.success) {
+        toast({
+          title: "Success",
+          description: "User completely deleted from both profiles and auth"
+        });
+        fetchProfiles();
+      } else {
+        throw new Error(data.error || 'Failed to delete user completely');
+      }
     } catch (error) {
-      console.error('Error deleting profile:', error);
+      console.error('Error deleting user completely:', error);
       toast({
         title: "Error",
-        description: "Failed to delete user profile",
+        description: "Failed to delete user completely",
         variant: "destructive"
       });
     }
@@ -253,7 +255,7 @@ export function UserManagement() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => deleteProfile(profile.user_id)}
+                    onClick={() => deleteUserCompletely(profile.user_id)}
                     className="text-destructive hover:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />
