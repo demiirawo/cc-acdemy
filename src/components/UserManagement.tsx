@@ -171,6 +171,31 @@ export function UserManagement() {
     }
   };
 
+  const runDiagnosis = async () => {
+    try {
+      console.log('Running user diagnosis...');
+      const { data, error } = await supabase.functions.invoke('diagnose-users');
+      
+      if (error) {
+        console.error('Diagnosis error:', error);
+        throw error;
+      }
+      
+      console.log('Diagnosis results:', data.diagnosis);
+      toast({
+        title: "Diagnosis Complete",
+        description: "Check the console for detailed results"
+      });
+    } catch (error) {
+      console.error('Error running diagnosis:', error);
+      toast({
+        title: "Error",
+        description: "Failed to run diagnosis",
+        variant: "destructive"
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -189,9 +214,19 @@ export function UserManagement() {
           <h1 className="text-3xl font-bold text-foreground">User Management</h1>
           <p className="text-muted-foreground">Manage user profiles and permissions</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Users className="h-5 w-5 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">{profiles.length} users</span>
+        <div className="flex items-center gap-4">
+          <Button
+            variant="outline"
+            onClick={runDiagnosis}
+            className="flex items-center gap-2"
+          >
+            <Users className="h-4 w-4" />
+            Diagnose Users
+          </Button>
+          <div className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">{profiles.length} users</span>
+          </div>
         </div>
       </div>
 
