@@ -56,7 +56,28 @@ export function UserManagement() {
 
   const fetchProfiles = async () => {
     try {
-      // Use the edge function to get profiles with confirmation status
+      // First, sync missing profiles to ensure all auth users have profiles
+      console.log('Syncing missing profiles...');
+      const { data: syncData, error: syncError } = await supabase
+        .rpc('sync_missing_profiles');
+
+      if (syncError) {
+        console.error('Sync error:', syncError);
+        // Don't fail completely if sync fails, just log and continue
+      } else {
+        console.log('Sync result:', syncData);
+        if (syncData && syncData.length > 0) {
+          const newProfiles = syncData.filter((profile: any) => profile.created_profile);
+          if (newProfiles.length > 0) {
+            toast({
+              title: "Profiles Synchronized",
+              description: `${newProfiles.length} missing profile(s) were created`,
+            });
+          }
+        }
+      }
+
+      // Then use the edge function to get profiles with confirmation status
       const { data, error } = await supabase.functions.invoke('get-user-profiles');
 
       if (error) throw error;
