@@ -53,21 +53,31 @@ serve(async (req) => {
 
     console.log(`Admin ${user.email} attempting to delete user: ${userId}`);
 
+    // First, let's check if the user exists in auth.users
+    const { data: userToDelete, error: getUserError } = await supabaseAdmin.auth.admin.getUserById(userId);
+    
+    if (getUserError) {
+      console.error('Error getting user to delete:', getUserError);
+      throw new Error(`User not found in auth system: ${getUserError.message}`);
+    }
+    
+    console.log(`Found user to delete: ${userToDelete.user.email}`);
+
     // Delete the user from auth.users using admin client
     // This will cascade delete the profile due to foreign key constraint
     const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId);
 
     if (deleteError) {
       console.error('Error deleting user:', deleteError);
-      throw deleteError;
+      throw new Error(`Failed to delete user: ${deleteError.message}`);
     }
 
-    console.log(`Successfully deleted user: ${userId}`);
+    console.log(`Successfully deleted user: ${userToDelete.user.email} (${userId})`);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: 'User deleted completely from the system' 
+        message: `User ${userToDelete.user.email} deleted completely from the system` 
       }),
       { 
         headers: { 

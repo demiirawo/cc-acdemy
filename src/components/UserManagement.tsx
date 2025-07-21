@@ -30,6 +30,28 @@ export function UserManagement() {
 
   useEffect(() => {
     fetchProfiles();
+
+    // Set up real-time listening for profile changes
+    const channel = supabase
+      .channel('user-management-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to all events (INSERT, UPDATE, DELETE)
+          schema: 'public',
+          table: 'profiles'
+        },
+        (payload) => {
+          console.log('Profile change detected:', payload);
+          // Refetch profiles when any change occurs
+          fetchProfiles();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchProfiles = async () => {
@@ -88,27 +110,34 @@ export function UserManagement() {
     }
 
     try {
+      console.log('Attempting to delete user:', userId);
+      
       // Use edge function to delete user completely (requires admin privileges)
       const { data, error } = await supabase.functions.invoke('delete-user-completely', {
         body: { userId }
       });
 
-      if (error) throw error;
+      console.log('Edge function response:', { data, error });
 
-      if (data.success) {
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(`Edge function error: ${error.message}`);
+      }
+
+      if (data?.success) {
         toast({
           title: "Success",
-          description: data.message
+          description: data.message || "User deleted successfully"
         });
-        fetchProfiles();
+        // No need to call fetchProfiles() as real-time updates will handle it
       } else {
-        throw new Error(data.error || 'Failed to delete user');
+        throw new Error(data?.error || 'Failed to delete user - unknown error');
       }
     } catch (error) {
       console.error('Error deleting user:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to delete user completely",
+        description: `Failed to delete user: ${error.message}`,
         variant: "destructive"
       });
     }
