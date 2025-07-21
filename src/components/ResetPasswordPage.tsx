@@ -87,8 +87,11 @@ export function ResetPasswordPage() {
       } else {
         toast({
           title: "Password updated!",
-          description: "Your password has been successfully updated. You can now sign in with your new password.",
+          description: "Your password has been successfully updated. You are now signed in.",
         });
+        
+        // After successful password update, the user should be properly authenticated
+        // The auth state will update automatically, so just navigate to home
         navigate('/');
       }
     } catch (error: any) {

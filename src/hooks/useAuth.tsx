@@ -41,18 +41,26 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         
         console.log('Auth state change:', event, session?.user?.id);
         
+        // Check if this is a recovery session - don't auto-login for password reset
+        const urlHash = window.location.hash;
+        const urlParams = new URLSearchParams(window.location.search);
+        const isRecoveryFlow = urlHash.includes('type=recovery') || urlParams.get('type') === 'recovery';
+        
         // Handle different auth events
         if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
           setSession(session);
           setUser(session?.user ?? null);
         } else if (event === 'SIGNED_IN') {
+          // Don't auto-login during password recovery flow
+          if (isRecoveryFlow) {
+            console.log('Recovery session detected - not auto-logging in');
+            return;
+          }
+          
           setSession(session);
           setUser(session?.user ?? null);
           
           // Check if this is from email confirmation
-          const urlParams = new URLSearchParams(window.location.search);
-          const urlHash = window.location.hash;
-          
           if (urlParams.get('type') === 'signup' || urlHash.includes('type=signup')) {
             toast({
               title: "Email confirmed!",
@@ -64,6 +72,11 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             window.history.replaceState({}, document.title, cleanUrl);
           }
         } else if (event === 'INITIAL_SESSION') {
+          // Don't establish session during recovery flow
+          if (isRecoveryFlow) {
+            console.log('Recovery session detected in initial session - not auto-logging in');
+            return;
+          }
           setSession(session);
           setUser(session?.user ?? null);
         }
@@ -84,10 +97,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         if (urlHash.includes('type=recovery') || urlParams.get('type') === 'recovery') {
           console.log('Password reset detected in URL - redirecting to reset page');
           
-          const { data: { session }, error } = await supabase.auth.getSession();
+          // Don't establish the session yet - let the ResetPasswordPage handle it
           if (mounted) {
-            setSession(session);
-            setUser(session?.user ?? null);
             setLoading(false);
           }
           
