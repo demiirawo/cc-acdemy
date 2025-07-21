@@ -29,6 +29,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -40,25 +41,34 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         if (!mounted) return;
         
         console.log('Auth state change:', event, session?.user?.id);
+        console.log('Current URL:', window.location.href);
+        console.log('URL hash:', window.location.hash);
+        console.log('URL search:', window.location.search);
         
         // Check if this is a recovery session - don't auto-login for password reset
         const urlHash = window.location.hash;
         const urlParams = new URLSearchParams(window.location.search);
         const isRecoveryFlow = urlHash.includes('type=recovery') || urlParams.get('type') === 'recovery';
         
+        console.log('Is recovery flow?', isRecoveryFlow);
+        
         // Handle different auth events
         if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
           setSession(session);
           setUser(session?.user ?? null);
         } else if (event === 'SIGNED_IN') {
-          // Don't auto-login during password recovery flow
-          if (isRecoveryFlow) {
-            console.log('Recovery session detected - not auto-logging in');
-            return;
-          }
+          console.log('SIGNED_IN event - recovery flow check:', isRecoveryFlow);
+          console.log('Is recovery mode?', isRecoveryMode);
           
+          // Always set session and user, but don't navigate if in recovery mode
           setSession(session);
           setUser(session?.user ?? null);
+          
+          // If we're in recovery mode, don't show success message or navigate
+          if (isRecoveryFlow || isRecoveryMode) {
+            console.log('Recovery session detected - session established but staying on reset page');
+            return;
+          }
           
           // Check if this is from email confirmation
           if (urlParams.get('type') === 'signup' || urlHash.includes('type=signup')) {
@@ -72,11 +82,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             window.history.replaceState({}, document.title, cleanUrl);
           }
         } else if (event === 'INITIAL_SESSION') {
-          // Don't establish session during recovery flow
-          if (isRecoveryFlow) {
-            console.log('Recovery session detected in initial session - not auto-logging in');
-            return;
-          }
+          console.log('INITIAL_SESSION event - recovery flow check:', isRecoveryFlow);
+          console.log('Is recovery mode?', isRecoveryMode);
+          
           setSession(session);
           setUser(session?.user ?? null);
         }
@@ -95,16 +103,21 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         const urlParams = new URLSearchParams(window.location.search);
         
         if (urlHash.includes('type=recovery') || urlParams.get('type') === 'recovery') {
-          console.log('Password reset detected in URL - redirecting to reset page');
+          console.log('Password reset detected in URL - setting recovery mode');
+          console.log('Hash:', urlHash);
+          console.log('Search params:', urlParams.toString());
           
-          // Don't establish the session yet - let the ResetPasswordPage handle it
+          setIsRecoveryMode(true);
+          
           if (mounted) {
             setLoading(false);
           }
           
-          // Redirect to reset password page with the recovery parameters
-          const currentParams = urlHash ? urlHash.substring(1) : urlParams.toString();
-          window.location.href = `/reset-password${urlHash}${window.location.search}`;
+          // If we're not already on the reset page, redirect there
+          if (!window.location.pathname.includes('/reset-password')) {
+            console.log('Redirecting to reset password page');
+            window.location.href = `/reset-password${urlHash}${window.location.search}`;
+          }
           return;
         }
         

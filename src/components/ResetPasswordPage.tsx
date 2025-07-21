@@ -90,8 +90,11 @@ export function ResetPasswordPage() {
           description: "Your password has been successfully updated. You are now signed in.",
         });
         
-        // After successful password update, the user should be properly authenticated
-        // The auth state will update automatically, so just navigate to home
+        // Clear the recovery URL parameters before navigating
+        const cleanUrl = window.location.origin + '/';
+        window.history.replaceState({}, document.title, cleanUrl);
+        
+        // After successful password update, navigate to home
         navigate('/');
       }
     } catch (error: any) {
