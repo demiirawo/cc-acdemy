@@ -88,23 +88,27 @@ export function UserManagement() {
     }
 
     try {
-      // Delete the user from auth.users using admin API
-      // This will cascade delete the profile due to foreign key constraint
-      const { error } = await supabase.auth.admin.deleteUser(userId);
+      // Use edge function to delete user completely (requires admin privileges)
+      const { data, error } = await supabase.functions.invoke('delete-user-completely', {
+        body: { userId }
+      });
 
       if (error) throw error;
 
-      toast({
-        title: "Success",
-        description: "User deleted completely from the system"
-      });
-
-      fetchProfiles();
+      if (data.success) {
+        toast({
+          title: "Success",
+          description: data.message
+        });
+        fetchProfiles();
+      } else {
+        throw new Error(data.error || 'Failed to delete user');
+      }
     } catch (error) {
       console.error('Error deleting user:', error);
       toast({
         title: "Error",
-        description: "Failed to delete user. You may need admin privileges.",
+        description: error.message || "Failed to delete user completely",
         variant: "destructive"
       });
     }
