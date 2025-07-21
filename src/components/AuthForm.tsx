@@ -15,7 +15,7 @@ interface AuthFormProps {
 export function AuthForm({ onAuthStateChange }: AuthFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [showMagicLink, setShowMagicLink] = useState(false);
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -130,14 +130,14 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
     }
   };
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
+  const handleMagicLink = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
     if (!formData.email) {
       toast({
         title: "Email required",
-        description: "Please enter your email address to reset your password.",
+        description: "Please enter your email address to receive a magic link.",
         variant: "destructive",
       });
       setIsLoading(false);
@@ -145,26 +145,29 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
     }
 
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(formData.email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+      const { error } = await supabase.auth.signInWithOtp({
+        email: formData.email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/`,
+        }
       });
 
       if (error) {
-        console.error('Password reset error:', error);
+        console.error('Magic link error:', error);
         toast({
-          title: "Reset failed",
-          description: error.message || "Unable to send reset email. Please try again.",
+          title: "Failed to send magic link",
+          description: error.message || "Unable to send magic link. Please try again.",
           variant: "destructive",
         });
       } else {
         toast({
-          title: "Reset email sent",
-          description: "Check your email for a password reset link.",
+          title: "Magic link sent!",
+          description: "Check your email and click the magic link to sign in.",
         });
-        setShowForgotPassword(false);
+        setShowMagicLink(false);
       }
     } catch (error: any) {
-      console.error('Unexpected password reset error:', error);
+      console.error('Unexpected magic link error:', error);
       toast({
         title: "Error",
         description: error?.message || "An unexpected error occurred. Please try again.",
@@ -195,8 +198,8 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
             </TabsList>
             
             <TabsContent value="signin">
-              {showForgotPassword ? (
-                <form onSubmit={handleForgotPassword} className="space-y-4">
+              {showMagicLink ? (
+                <form onSubmit={handleMagicLink} className="space-y-4">
                   <div className="space-y-2">
                     <Input
                       name="email"
@@ -209,13 +212,13 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
                   </div>
                   <Button type="submit" className="w-full bg-gradient-primary" disabled={isLoading}>
                     {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Send Reset Email
+                    Send Magic Link
                   </Button>
                   <Button 
                     type="button" 
                     variant="ghost" 
                     className="w-full" 
-                    onClick={() => setShowForgotPassword(false)}
+                    onClick={() => setShowMagicLink(false)}
                   >
                     Back to Sign In
                   </Button>
@@ -259,9 +262,9 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
                     type="button" 
                     variant="ghost" 
                     className="w-full text-sm text-muted-foreground" 
-                    onClick={() => setShowForgotPassword(true)}
+                    onClick={() => setShowMagicLink(true)}
                   >
-                    Forgot your password?
+                    Sign in with magic link
                   </Button>
                 </form>
               )}

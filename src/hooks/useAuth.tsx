@@ -29,7 +29,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -41,36 +40,19 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         if (!mounted) return;
         
         console.log('Auth state change:', event, session?.user?.id);
-        console.log('Current URL:', window.location.href);
-        console.log('URL hash:', window.location.hash);
-        console.log('URL search:', window.location.search);
-        
-        // Check if this is a recovery session - don't auto-login for password reset
-        const urlHash = window.location.hash;
-        const urlParams = new URLSearchParams(window.location.search);
-        const isRecoveryFlow = urlHash.includes('type=recovery') || urlParams.get('type') === 'recovery';
-        
-        console.log('Is recovery flow?', isRecoveryFlow);
         
         // Handle different auth events
         if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
           setSession(session);
           setUser(session?.user ?? null);
         } else if (event === 'SIGNED_IN') {
-          console.log('SIGNED_IN event - recovery flow check:', isRecoveryFlow);
-          console.log('Is recovery mode?', isRecoveryMode);
-          
-          // Always set session and user, but don't navigate if in recovery mode
           setSession(session);
           setUser(session?.user ?? null);
           
-          // If we're in recovery mode, don't show success message or navigate
-          if (isRecoveryFlow || isRecoveryMode) {
-            console.log('Recovery session detected - session established but staying on reset page');
-            return;
-          }
+          // Check if this is from email confirmation or magic link
+          const urlParams = new URLSearchParams(window.location.search);
+          const urlHash = window.location.hash;
           
-          // Check if this is from email confirmation
           if (urlParams.get('type') === 'signup' || urlHash.includes('type=signup')) {
             toast({
               title: "Email confirmed!",
@@ -80,11 +62,17 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             // Clean up URL parameters
             const cleanUrl = window.location.origin + window.location.pathname;
             window.history.replaceState({}, document.title, cleanUrl);
+          } else if (urlParams.get('type') === 'magiclink' || urlHash.includes('type=magiclink')) {
+            toast({
+              title: "Welcome back!",
+              description: "You've been signed in successfully with your magic link.",
+            });
+            
+            // Clean up URL parameters
+            const cleanUrl = window.location.origin + window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
           }
         } else if (event === 'INITIAL_SESSION') {
-          console.log('INITIAL_SESSION event - recovery flow check:', isRecoveryFlow);
-          console.log('Is recovery mode?', isRecoveryMode);
-          
           setSession(session);
           setUser(session?.user ?? null);
         }
@@ -98,30 +86,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     // THEN check for existing session and handle URL parameters
     const initializeAuth = async () => {
       try {
-        // Check for password reset in URL hash
-        const urlHash = window.location.hash;
-        const urlParams = new URLSearchParams(window.location.search);
-        
-        if (urlHash.includes('type=recovery') || urlParams.get('type') === 'recovery') {
-          console.log('Password reset detected in URL - setting recovery mode');
-          console.log('Hash:', urlHash);
-          console.log('Search params:', urlParams.toString());
-          
-          setIsRecoveryMode(true);
-          
-          if (mounted) {
-            setLoading(false);
-          }
-          
-          // If we're not already on the reset page, redirect there
-          if (!window.location.pathname.includes('/reset-password')) {
-            console.log('Redirecting to reset password page');
-            window.location.href = `/reset-password${urlHash}${window.location.search}`;
-          }
-          return;
-        }
-        
         // Check for email confirmation in URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlHash = window.location.hash;
+        
         if (urlParams.get('type') === 'signup' || urlHash.includes('type=signup')) {
           console.log('Email confirmation detected in URL');
           
