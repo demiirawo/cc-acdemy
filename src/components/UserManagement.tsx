@@ -26,6 +26,7 @@ export function UserManagement() {
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
   const [newRole, setNewRole] = useState<string>('');
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deletingUsers, setDeletingUsers] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -113,6 +114,57 @@ export function UserManagement() {
     }
   };
 
+  const deleteSpecificUsers = async () => {
+    const emailsToDelete = [
+      'faizay.irawo@care-cuddle.co.uk',
+      'alo.oluwamurewa@care-cuddle.co.uk', 
+      'kenny.osibogun@care-cuddle.co.uk'
+    ];
+
+    if (!confirm(`Are you sure you want to delete these users?\n${emailsToDelete.join('\n')}\n\nThis action cannot be undone.`)) {
+      return;
+    }
+
+    setDeletingUsers(true);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('delete-users-by-email', {
+        body: { emails: emailsToDelete }
+      });
+
+      if (error) throw error;
+
+      if (data.success) {
+        toast({
+          title: "Deletion Complete",
+          description: data.message
+        });
+        
+        // Show detailed results
+        data.results.forEach((result: any) => {
+          if (result.success) {
+            console.log(`✓ ${result.email}: ${result.message}`);
+          } else {
+            console.error(`✗ ${result.email}: ${result.error}`);
+          }
+        });
+        
+        fetchProfiles();
+      } else {
+        throw new Error(data.error || 'Failed to delete users');
+      }
+    } catch (error) {
+      console.error('Error deleting specific users:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete the specified users",
+        variant: "destructive"
+      });
+    } finally {
+      setDeletingUsers(false);
+    }
+  };
+
   const getRoleBadgeVariant = (role: string | null) => {
     switch (role) {
       case 'admin':
@@ -162,6 +214,15 @@ export function UserManagement() {
         <div className="flex items-center gap-2">
           <Users className="h-5 w-5 text-muted-foreground" />
           <span className="text-sm text-muted-foreground">{profiles.length} users</span>
+          <Button 
+            onClick={deleteSpecificUsers}
+            disabled={deletingUsers}
+            variant="destructive"
+            size="sm"
+            className="ml-4"
+          >
+            {deletingUsers ? "Deleting..." : "Delete Specific Users"}
+          </Button>
         </div>
       </div>
 
