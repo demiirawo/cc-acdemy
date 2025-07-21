@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { ResizableSidebar } from "./ResizableSidebar";
 import { RealDashboard } from "./RealDashboard";
 import { RecentlyUpdatedPage } from "./RecentlyUpdatedPage";
@@ -201,7 +200,6 @@ export function KnowledgeBaseApp() {
   const [createPageParentId, setCreatePageParentId] = useState<string | null>(null);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbData[]>([]);
-  const navigate = useNavigate();
   const {
     user,
     loading,
@@ -211,22 +209,11 @@ export function KnowledgeBaseApp() {
     toast
   } = useToast();
 
-  // Handle URL parameters for email confirmation and password reset on component mount
+  // Handle URL parameters for email confirmation on component mount
   useEffect(() => {
-    const handleUrlParams = () => {
+    const handleEmailConfirmation = () => {
       const urlParams = new URLSearchParams(window.location.search);
       const urlHash = window.location.hash;
-      
-      console.log('KnowledgeBaseApp - Current URL:', window.location.href);
-      console.log('KnowledgeBaseApp - Search params:', urlParams.toString());
-      console.log('KnowledgeBaseApp - Hash:', urlHash);
-      
-      // Check for password reset first
-      if (urlHash.includes('type=recovery') || urlParams.get('type') === 'recovery') {
-        console.log('Password reset detected - redirecting to reset page');
-        navigate('/reset-password');
-        return;
-      }
       
       // Check for confirmation error
       if (urlParams.get('error') === 'access_denied' || urlParams.get('error_description')) {
@@ -242,15 +229,15 @@ export function KnowledgeBaseApp() {
         return;
       }
       
-      // Check for successful email confirmation
+      // Check for successful confirmation
       if (urlParams.get('type') === 'signup' || urlHash.includes('type=signup')) {
         // The auth hook will handle the success message
         console.log('Email confirmation process detected');
       }
     };
 
-    handleUrlParams();
-  }, [toast, navigate]);
+    handleEmailConfirmation();
+  }, [toast]);
 
   // Build breadcrumb hierarchy
   const buildBreadcrumbs = async (page: Page): Promise<BreadcrumbData[]> => {
