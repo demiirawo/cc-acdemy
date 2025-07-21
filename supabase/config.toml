@@ -1,17 +1,12 @@
-
 project_id = "pavwwgfgpykakbqkxsal"
 
 [auth]
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
-# in emails. Updated to use production URL instead of localhost
-site_url = "https://f4c61c1a-eda3-41b7-9302-4188c45ebea0.lovableproject.com"
+# in emails.
+site_url = "http://localhost:3000"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-# Updated to include production URLs and remove localhost references
-additional_redirect_urls = [
-  "https://f4c61c1a-eda3-41b7-9302-4188c45ebea0.lovableproject.com",
-  "http://localhost:3000"
-]
+additional_redirect_urls = ["https://localhost:3000"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604800 (1 week).
 jwt_expiry = 3600
 # Allow/disallow new user signups to your project.
@@ -23,8 +18,8 @@ enable_signup = true
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
-# Enable email confirmations - this was set to false which was causing confusion
-enable_confirmations = true
+# If enabled, users need to confirm their email address before signing in.
+enable_confirmations = false
 
 # Use an external OAuth provider. The full list of providers are:
 # `apple`, `azure`, `bitbucket`, `discord`, `facebook`, `github`, `gitlab`,
