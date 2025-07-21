@@ -83,13 +83,17 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         
         if (urlHash.includes('type=recovery') || urlParams.get('type') === 'recovery') {
           console.log('Password reset detected in URL - redirecting to reset page');
-          // Don't handle this here, let the reset page handle it
+          
           const { data: { session }, error } = await supabase.auth.getSession();
           if (mounted) {
             setSession(session);
             setUser(session?.user ?? null);
             setLoading(false);
           }
+          
+          // Redirect to reset password page with the recovery parameters
+          const currentParams = urlHash ? urlHash.substring(1) : urlParams.toString();
+          window.location.href = `/reset-password${urlHash}${window.location.search}`;
           return;
         }
         
