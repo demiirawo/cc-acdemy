@@ -56,9 +56,10 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
       });
 
       if (error) {
+        console.error('Sign up error:', error);
         toast({
           title: "Sign up failed",
-          description: error.message,
+          description: error.message || "Unable to create account. Please check your email and password.",
           variant: "destructive",
         });
       } else {
@@ -67,10 +68,11 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
           description: "We've sent you a confirmation link to complete your registration.",
         });
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Unexpected sign up error:', error);
       toast({
         title: "Error",
-        description: "An unexpected error occurred. Please try again.",
+        description: error?.message || "An unexpected error occurred. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -89,9 +91,10 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
       });
 
       if (error) {
+        console.error('Sign in error:', error);
         toast({
           title: "Sign in failed",
-          description: error.message,
+          description: error.message || "Invalid email or password. Please try again.",
           variant: "destructive",
         });
       } else {
@@ -101,10 +104,11 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
         });
         onAuthStateChange();
       }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Unexpected sign in error:', error);
       toast({
         title: "Error",
-        description: "An unexpected error occurred. Please try again.",
+        description: error?.message || "An unexpected error occurred. Please try again.",
         variant: "destructive",
       });
     } finally {
