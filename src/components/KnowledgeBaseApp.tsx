@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { ResizableSidebar } from "./ResizableSidebar";
 import { RealDashboard } from "./RealDashboard";
 import { RecentlyUpdatedPage } from "./RecentlyUpdatedPage";
@@ -200,6 +201,7 @@ export function KnowledgeBaseApp() {
   const [createPageParentId, setCreatePageParentId] = useState<string | null>(null);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbData[]>([]);
+  const navigate = useNavigate();
   const {
     user,
     loading,
@@ -209,11 +211,18 @@ export function KnowledgeBaseApp() {
     toast
   } = useToast();
 
-  // Handle URL parameters for email confirmation on component mount
+  // Handle URL parameters for email confirmation and password reset on component mount
   useEffect(() => {
-    const handleEmailConfirmation = () => {
+    const handleUrlParams = () => {
       const urlParams = new URLSearchParams(window.location.search);
       const urlHash = window.location.hash;
+      
+      // Check for password reset first
+      if (urlHash.includes('type=recovery') || urlParams.get('type') === 'recovery') {
+        console.log('Password reset detected - redirecting to reset page');
+        navigate('/reset-password');
+        return;
+      }
       
       // Check for confirmation error
       if (urlParams.get('error') === 'access_denied' || urlParams.get('error_description')) {
@@ -229,15 +238,15 @@ export function KnowledgeBaseApp() {
         return;
       }
       
-      // Check for successful confirmation
+      // Check for successful email confirmation
       if (urlParams.get('type') === 'signup' || urlHash.includes('type=signup')) {
         // The auth hook will handle the success message
         console.log('Email confirmation process detected');
       }
     };
 
-    handleEmailConfirmation();
-  }, [toast]);
+    handleUrlParams();
+  }, [toast, navigate]);
 
   // Build breadcrumb hierarchy
   const buildBreadcrumbs = async (page: Page): Promise<BreadcrumbData[]> => {

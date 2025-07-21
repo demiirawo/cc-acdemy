@@ -18,11 +18,21 @@ export function ResetPasswordPage() {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Check if we have the required access_token and refresh_token in the URL
-    const accessToken = searchParams.get('access_token');
-    const refreshToken = searchParams.get('refresh_token');
+    // Check for password reset tokens in URL hash or search params
+    const urlHash = window.location.hash;
+    const searchParams = new URLSearchParams(window.location.search);
     
-    if (!accessToken || !refreshToken) {
+    // Supabase password reset links use hash parameters
+    const hashParams = new URLSearchParams(urlHash.substring(1));
+    
+    // Check both hash and search params for tokens
+    const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
+    const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token');
+    const type = hashParams.get('type') || searchParams.get('type');
+    
+    console.log('Reset page - type:', type, 'has tokens:', !!accessToken, !!refreshToken);
+    
+    if (type !== 'recovery' || !accessToken || !refreshToken) {
       toast({
         title: "Invalid reset link",
         description: "This password reset link is invalid or has expired.",
@@ -37,7 +47,7 @@ export function ResetPasswordPage() {
       access_token: accessToken,
       refresh_token: refreshToken,
     });
-  }, [searchParams, navigate, toast]);
+  }, [navigate, toast]);
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
