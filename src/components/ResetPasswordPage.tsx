@@ -18,6 +18,10 @@ export function ResetPasswordPage() {
   const { toast } = useToast();
 
   useEffect(() => {
+    console.log('ResetPasswordPage - Current URL:', window.location.href);
+    console.log('ResetPasswordPage - Hash:', window.location.hash);
+    console.log('ResetPasswordPage - Search:', window.location.search);
+    
     // Check for password reset tokens in URL hash or search params
     const urlHash = window.location.hash;
     const searchParams = new URLSearchParams(window.location.search);

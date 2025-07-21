@@ -217,6 +217,10 @@ export function KnowledgeBaseApp() {
       const urlParams = new URLSearchParams(window.location.search);
       const urlHash = window.location.hash;
       
+      console.log('KnowledgeBaseApp - Current URL:', window.location.href);
+      console.log('KnowledgeBaseApp - Search params:', urlParams.toString());
+      console.log('KnowledgeBaseApp - Hash:', urlHash);
+      
       // Check for password reset first
       if (urlHash.includes('type=recovery') || urlParams.get('type') === 'recovery') {
         console.log('Password reset detected - redirecting to reset page');
