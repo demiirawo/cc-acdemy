@@ -209,6 +209,36 @@ export function KnowledgeBaseApp() {
     toast
   } = useToast();
 
+  // Handle URL parameters for email confirmation on component mount
+  useEffect(() => {
+    const handleEmailConfirmation = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlHash = window.location.hash;
+      
+      // Check for confirmation error
+      if (urlParams.get('error') === 'access_denied' || urlParams.get('error_description')) {
+        toast({
+          title: "Confirmation failed",
+          description: urlParams.get('error_description') || "Email confirmation failed. Please try again.",
+          variant: "destructive",
+        });
+        
+        // Clean up URL
+        const cleanUrl = window.location.origin + window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+        return;
+      }
+      
+      // Check for successful confirmation
+      if (urlParams.get('type') === 'signup' || urlHash.includes('type=signup')) {
+        // The auth hook will handle the success message
+        console.log('Email confirmation process detected');
+      }
+    };
+
+    handleEmailConfirmation();
+  }, [toast]);
+
   // Build breadcrumb hierarchy
   const buildBreadcrumbs = async (page: Page): Promise<BreadcrumbData[]> => {
     const breadcrumbPath: BreadcrumbData[] = [];

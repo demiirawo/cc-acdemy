@@ -1,6 +1,8 @@
+
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 interface AuthContextType {
   user: User | null;
@@ -27,6 +29,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
   useEffect(() => {
     let mounted = true;
@@ -42,7 +45,25 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
           setSession(session);
           setUser(session?.user ?? null);
-        } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        } else if (event === 'SIGNED_IN') {
+          setSession(session);
+          setUser(session?.user ?? null);
+          
+          // Check if this is from email confirmation
+          const urlParams = new URLSearchParams(window.location.search);
+          const urlHash = window.location.hash;
+          
+          if (urlParams.get('type') === 'signup' || urlHash.includes('type=signup')) {
+            toast({
+              title: "Email confirmed!",
+              description: "Your account has been verified. Welcome to Care Cuddle Academy!",
+            });
+            
+            // Clean up URL parameters
+            const cleanUrl = window.location.origin + window.location.pathname;
+            window.history.replaceState({}, document.title, cleanUrl);
+          }
+        } else if (event === 'INITIAL_SESSION') {
           setSession(session);
           setUser(session?.user ?? null);
         }
@@ -53,9 +74,38 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       }
     );
 
-    // THEN check for existing session
+    // THEN check for existing session and handle URL parameters
     const initializeAuth = async () => {
       try {
+        // Check for email confirmation in URL first
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlHash = window.location.hash;
+        
+        if (urlParams.get('type') === 'signup' || urlHash.includes('type=signup')) {
+          console.log('Email confirmation detected in URL');
+          
+          // Let Supabase handle the session from URL parameters
+          const { data, error } = await supabase.auth.getSession();
+          
+          if (error) {
+            console.error('Error confirming email:', error);
+            toast({
+              title: "Confirmation failed",
+              description: "There was an issue confirming your email. Please try again.",
+              variant: "destructive",
+            });
+          }
+          
+          if (mounted) {
+            setSession(data.session);
+            setUser(data.session?.user ?? null);
+            setLoading(false);
+          }
+          
+          return;
+        }
+        
+        // Normal session check
         const { data: { session }, error } = await supabase.auth.getSession();
         if (error) {
           console.error('Error getting session:', error);
@@ -80,7 +130,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [toast]);
 
   const signOut = async () => {
     const { error } = await supabase.auth.signOut();
