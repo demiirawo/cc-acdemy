@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -6,9 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Plus, Trash2, Edit, CheckCircle, Clock } from "lucide-react";
+import { Users, Plus, Trash2, Edit, CheckCircle, Clock, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { UserManagementActions } from "./UserManagementActions";
 
 interface Profile {
   id: string;
@@ -132,12 +134,14 @@ export function UserManagement() {
       };
     } else {
       return {
-        icon: Clock,
+        icon: AlertTriangle,
         color: "text-amber-600",
         tooltip: "Pending confirmation"
       };
     }
   };
+
+  const unconfirmedCount = profiles.filter(p => !p.email_confirmed_at).length;
 
   if (loading) {
     return (
@@ -157,9 +161,17 @@ export function UserManagement() {
           <h1 className="text-3xl font-bold text-foreground">User Management</h1>
           <p className="text-muted-foreground">Manage user profiles and permissions</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Users className="h-5 w-5 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">{profiles.length} users</span>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">{profiles.length} users</span>
+          </div>
+          {unconfirmedCount > 0 && (
+            <div className="flex items-center gap-2 bg-amber-100 text-amber-800 px-3 py-1 rounded-lg">
+              <AlertTriangle className="h-4 w-4" />
+              <span className="text-sm font-medium">{unconfirmedCount} pending confirmation</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -196,6 +208,10 @@ export function UserManagement() {
                   <Badge variant={getRoleBadgeVariant(profile.role)}>
                     {profile.role || 'viewer'}
                   </Badge>
+                  <UserManagementActions 
+                    profile={profile} 
+                    onUpdate={fetchProfiles}
+                  />
                   <Dialog open={editDialogOpen && selectedProfile?.id === profile.id} onOpenChange={setEditDialogOpen}>
                     <DialogTrigger asChild>
                       <Button
