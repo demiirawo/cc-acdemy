@@ -77,10 +77,23 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     // THEN check for existing session and handle URL parameters
     const initializeAuth = async () => {
       try {
-        // Check for email confirmation in URL first
-        const urlParams = new URLSearchParams(window.location.search);
+        // Check for password reset in URL hash
         const urlHash = window.location.hash;
+        const urlParams = new URLSearchParams(window.location.search);
         
+        if (urlHash.includes('type=recovery') || urlParams.get('type') === 'recovery') {
+          console.log('Password reset detected in URL - redirecting to reset page');
+          // Don't handle this here, let the reset page handle it
+          const { data: { session }, error } = await supabase.auth.getSession();
+          if (mounted) {
+            setSession(session);
+            setUser(session?.user ?? null);
+            setLoading(false);
+          }
+          return;
+        }
+        
+        // Check for email confirmation in URL
         if (urlParams.get('type') === 'signup' || urlHash.includes('type=signup')) {
           console.log('Email confirmation detected in URL');
           
