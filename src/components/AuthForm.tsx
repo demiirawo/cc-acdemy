@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -65,8 +66,10 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
       } else {
         toast({
           title: "Check your email",
-          description: "We've sent you a confirmation link to complete your registration.",
+          description: "We've sent you a confirmation link. Please check your email and click the link to verify your account before signing in.",
         });
+        // Clear the form after successful signup
+        setFormData({ email: "", password: "", displayName: "" });
       }
     } catch (error: any) {
       console.error('Unexpected sign up error:', error);
@@ -92,11 +95,21 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
 
       if (error) {
         console.error('Sign in error:', error);
-        toast({
-          title: "Sign in failed",
-          description: error.message || "Invalid email or password. Please try again.",
-          variant: "destructive",
-        });
+        
+        // Check if it's an email confirmation error
+        if (error.message?.includes('email') && error.message?.includes('confirm')) {
+          toast({
+            title: "Email not confirmed",
+            description: "Please check your email and click the confirmation link before signing in.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Sign in failed",
+            description: error.message || "Invalid email or password. Please try again.",
+            variant: "destructive",
+          });
+        }
       } else {
         toast({
           title: "Welcome back!",
@@ -124,6 +137,9 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
             <img src="/lovable-uploads/260e3091-eda4-4cc2-a0c5-5483261cafd3.png" alt="Care Cuddle" className="max-w-full max-h-full object-contain" />
           </div>
           <CardTitle className="text-2xl">Care Cuddle Academy</CardTitle>
+          <CardDescription>
+            Please confirm your email address after signing up
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="signin" className="w-full">
@@ -186,7 +202,7 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
                   <Input
                     name="email"
                     type="email"
-                    placeholder="Email"
+                    placeholder="Email (@care-cuddle.co.uk only)"
                     value={formData.email}
                     onChange={handleInputChange}
                     required
