@@ -19,10 +19,12 @@ type FabricObject = any;
 
 export function WhiteboardCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
   const [activeTool, setActiveTool] = useState<'select' | 'draw' | 'text' | 'rectangle' | 'circle' | 'line'>('select');
   const [activeColor, setActiveColor] = useState('#000000');
   const [brushSize, setBrushSize] = useState(2);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
 
   const colors = [
     '#000000', '#FF0000', '#00FF00', '#0000FF', 
@@ -30,8 +32,37 @@ export function WhiteboardCanvas() {
     '#800080', '#008000', '#800000', '#000080'
   ];
 
+  // Calculate canvas size based on container
+  useEffect(() => {
+    const calculateSize = () => {
+      if (containerRef.current) {
+        const containerWidth = containerRef.current.clientWidth;
+        const containerHeight = containerRef.current.clientHeight;
+        
+        // Use 95% of container width and maintain aspect ratio
+        const targetWidth = Math.max(containerWidth * 0.95, 800);
+        const targetHeight = Math.max(containerHeight * 0.85, 600);
+        
+        setCanvasSize({ width: targetWidth, height: targetHeight });
+      }
+    };
+
+    calculateSize();
+    window.addEventListener('resize', calculateSize);
+    
+    // Small delay to ensure container is rendered
+    const timer = setTimeout(calculateSize, 100);
+
+    return () => {
+      window.removeEventListener('resize', calculateSize);
+      clearTimeout(timer);
+    };
+  }, []);
+
   // Initialize canvas
   useEffect(() => {
+    if (canvasSize.width === 0 || canvasSize.height === 0) return;
+    
     let canvas: FabricCanvas | null = null;
     
     const initCanvas = async () => {
@@ -42,8 +73,8 @@ export function WhiteboardCanvas() {
         const { Canvas, PencilBrush } = await import('fabric');
         
         canvas = new Canvas(canvasRef.current, {
-          width: 1200,
-          height: 700,
+          width: canvasSize.width,
+          height: canvasSize.height,
           backgroundColor: '#ffffff',
         });
 
@@ -53,7 +84,7 @@ export function WhiteboardCanvas() {
         canvas.freeDrawingBrush.width = brushSize;
 
         setFabricCanvas(canvas);
-        console.log('Canvas initialized successfully');
+        console.log('Canvas initialized successfully with size:', canvasSize);
 
       } catch (error) {
         console.error('Failed to initialize canvas:', error);
@@ -71,7 +102,7 @@ export function WhiteboardCanvas() {
         }
       }
     };
-  }, []);
+  }, [canvasSize]);
 
   // Update canvas mode when tool changes
   useEffect(() => {
@@ -304,8 +335,8 @@ export function WhiteboardCanvas() {
       </div>
 
       {/* Canvas */}
-      <div className="flex-1 p-4 overflow-auto">
-        <div className="flex justify-center">
+      <div ref={containerRef} className="flex-1 p-4 overflow-auto">
+        <div className="flex justify-center items-center h-full">
           <div className="border border-border rounded-lg shadow-lg overflow-hidden bg-white">
             <canvas ref={canvasRef} />
           </div>
