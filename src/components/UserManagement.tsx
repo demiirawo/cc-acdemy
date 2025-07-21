@@ -26,11 +26,32 @@ export function UserManagement() {
   const [selectedProfile, setSelectedProfile] = useState<Profile | null>(null);
   const [newRole, setNewRole] = useState<string>('');
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [deletingUsers, setDeletingUsers] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     fetchProfiles();
+
+    // Set up real-time listening for profile changes
+    const channel = supabase
+      .channel('user-management-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to all events (INSERT, UPDATE, DELETE)
+          schema: 'public',
+          table: 'profiles'
+        },
+        (payload) => {
+          console.log('Profile change detected:', payload);
+          // Refetch profiles when any change occurs
+          fetchProfiles();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchProfiles = async () => {
@@ -83,85 +104,42 @@ export function UserManagement() {
     }
   };
 
-  const deleteUserCompletely = async (userId: string) => {
-    if (!confirm("Are you sure you want to delete this user completely? This will remove both their profile and authentication data. This action cannot be undone.")) {
+  const deleteProfile = async (userId: string) => {
+    if (!confirm("Are you sure you want to completely delete this user? This will remove them from the system entirely and cannot be undone.")) {
       return;
     }
 
     try {
+      console.log('Attempting to delete user:', userId);
+      
+      // Use edge function to delete user completely (requires admin privileges)
       const { data, error } = await supabase.functions.invoke('delete-user-completely', {
         body: { userId }
       });
 
-      if (error) throw error;
+      console.log('Edge function response:', { data, error });
 
-      if (data.success) {
+      if (error) {
+        console.error('Edge function error:', error);
+        throw new Error(`Edge function error: ${error.message}`);
+      }
+
+      if (data?.success) {
         toast({
           title: "Success",
-          description: "User completely deleted from both profiles and auth"
+          description: data.message || "User deleted successfully"
         });
-        fetchProfiles();
+        // No need to call fetchProfiles() as real-time updates will handle it
       } else {
-        throw new Error(data.error || 'Failed to delete user completely');
+        throw new Error(data?.error || 'Failed to delete user - unknown error');
       }
     } catch (error) {
-      console.error('Error deleting user completely:', error);
+      console.error('Error deleting user:', error);
       toast({
         title: "Error",
-        description: "Failed to delete user completely",
+        description: `Failed to delete user: ${error.message}`,
         variant: "destructive"
       });
-    }
-  };
-
-  const deleteSpecificUsers = async () => {
-    const emailsToDelete = [
-      'faizay.irawo@care-cuddle.co.uk',
-      'alo.oluwamurewa@care-cuddle.co.uk', 
-      'kenny.osibogun@care-cuddle.co.uk'
-    ];
-
-    if (!confirm(`Are you sure you want to delete these users?\n${emailsToDelete.join('\n')}\n\nThis action cannot be undone.`)) {
-      return;
-    }
-
-    setDeletingUsers(true);
-    
-    try {
-      const { data, error } = await supabase.functions.invoke('delete-users-by-email', {
-        body: { emails: emailsToDelete }
-      });
-
-      if (error) throw error;
-
-      if (data.success) {
-        toast({
-          title: "Deletion Complete",
-          description: data.message
-        });
-        
-        // Show detailed results
-        data.results.forEach((result: any) => {
-          if (result.success) {
-            console.log(`✓ ${result.email}: ${result.message}`);
-          } else {
-            console.error(`✗ ${result.email}: ${result.error}`);
-          }
-        });
-        
-        fetchProfiles();
-      } else {
-        throw new Error(data.error || 'Failed to delete users');
-      }
-    } catch (error) {
-      console.error('Error deleting specific users:', error);
-      toast({
-        title: "Error",
-        description: "Failed to delete the specified users",
-        variant: "destructive"
-      });
-    } finally {
-      setDeletingUsers(false);
     }
   };
 
@@ -193,6 +171,31 @@ export function UserManagement() {
     }
   };
 
+  const runDiagnosis = async () => {
+    try {
+      console.log('Running user diagnosis...');
+      const { data, error } = await supabase.functions.invoke('diagnose-users');
+      
+      if (error) {
+        console.error('Diagnosis error:', error);
+        throw error;
+      }
+      
+      console.log('Diagnosis results:', data.diagnosis);
+      toast({
+        title: "Diagnosis Complete",
+        description: "Check the console for detailed results"
+      });
+    } catch (error) {
+      console.error('Error running diagnosis:', error);
+      toast({
+        title: "Error",
+        description: "Failed to run diagnosis",
+        variant: "destructive"
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -211,18 +214,19 @@ export function UserManagement() {
           <h1 className="text-3xl font-bold text-foreground">User Management</h1>
           <p className="text-muted-foreground">Manage user profiles and permissions</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Users className="h-5 w-5 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">{profiles.length} users</span>
-          <Button 
-            onClick={deleteSpecificUsers}
-            disabled={deletingUsers}
-            variant="destructive"
-            size="sm"
-            className="ml-4"
+        <div className="flex items-center gap-4">
+          <Button
+            variant="outline"
+            onClick={runDiagnosis}
+            className="flex items-center gap-2"
           >
-            {deletingUsers ? "Deleting..." : "Delete Specific Users"}
+            <Users className="h-4 w-4" />
+            Diagnose Users
           </Button>
+          <div className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-muted-foreground" />
+            <span className="text-sm text-muted-foreground">{profiles.length} users</span>
+          </div>
         </div>
       </div>
 
@@ -316,7 +320,7 @@ export function UserManagement() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => deleteUserCompletely(profile.user_id)}
+                    onClick={() => deleteProfile(profile.user_id)}
                     className="text-destructive hover:text-destructive"
                   >
                     <Trash2 className="h-4 w-4" />
