@@ -30,15 +30,42 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
       return;
     }
 
-    // Check if email domain is care-cuddle.co.uk for new users
-    if (!email.endsWith('@care-cuddle.co.uk')) {
-      toast({
-        title: "Access restricted",
-        description: "Only care-cuddle.co.uk email addresses can access this platform.",
-        variant: "destructive",
-      });
-      setIsLoading(false);
-      return;
+    // Check if email is allowed (either care-cuddle.co.uk domain or in exceptions list)
+    const isCareCuddleDomain = email.endsWith('@care-cuddle.co.uk');
+    
+    if (!isCareCuddleDomain) {
+      // Check if email is in the exceptions list
+      try {
+        const { data: exceptions, error } = await supabase
+          .from('email_exceptions')
+          .select('email')
+          .eq('email', email.toLowerCase());
+          
+        if (error) {
+          console.error('Error checking email exceptions:', error);
+        }
+        
+        const isExceptionEmail = exceptions && exceptions.length > 0;
+        
+        if (!isExceptionEmail) {
+          toast({
+            title: "Access restricted",
+            description: "Only care-cuddle.co.uk email addresses can access this platform.",
+            variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
+        }
+      } catch (error) {
+        console.error('Error checking email exceptions:', error);
+        toast({
+          title: "Access restricted",
+          description: "Only care-cuddle.co.uk email addresses can access this platform.",
+          variant: "destructive",
+        });
+        setIsLoading(false);
+        return;
+      }
     }
 
     try {

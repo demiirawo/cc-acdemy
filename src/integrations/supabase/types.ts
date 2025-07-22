@@ -237,6 +237,33 @@ export type Database = {
           },
         ]
       }
+      email_exceptions: {
+        Row: {
+          created_at: string
+          created_by: string
+          email: string
+          id: string
+          reason: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          email: string
+          id?: string
+          reason?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          email?: string
+          id?: string
+          reason?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       page_audit_log: {
         Row: {
           created_at: string | null
