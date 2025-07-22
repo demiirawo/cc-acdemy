@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ResizableSidebar } from "./ResizableSidebar";
 import { RealDashboard } from "./RealDashboard";
 import { RecentlyUpdatedPage } from "./RecentlyUpdatedPage";
@@ -202,6 +202,7 @@ export function KnowledgeBaseApp() {
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbData[]>([]);
   const navigate = useNavigate();
+  const { pageId, viewName } = useParams();
   const {
     user,
     loading,
@@ -247,6 +248,49 @@ export function KnowledgeBaseApp() {
 
     handleUrlParams();
   }, [toast, navigate]);
+
+  // Handle URL parameters for page and view routing
+  useEffect(() => {
+    const initializeFromUrl = async () => {
+      if (!user) return; // Wait for authentication
+      
+      if (pageId) {
+        // Navigate to specific page
+        await handleItemSelect({
+          id: pageId,
+          title: '',
+          type: 'page'
+        });
+      } else if (viewName) {
+        // Navigate to specific view
+        const viewMap: Record<string, ViewMode> = {
+          'dashboard': 'dashboard',
+          'recent': 'recent',
+          'tags': 'tags',
+          'people': 'people',
+          'settings': 'settings',
+          'whiteboard': 'whiteboard',
+          'user-management': 'user-management',
+          'chat': 'chat'
+        };
+        
+        if (viewMap[viewName]) {
+          setCurrentView(viewMap[viewName]);
+          setSelectedItemId(viewName === 'dashboard' ? 'home' : viewName);
+          setCurrentPage(null);
+          setBreadcrumbs([]);
+        }
+      } else if (currentView === 'dashboard' && !pageId && !viewName) {
+        // Default to dashboard if no URL parameters
+        setCurrentView('dashboard');
+        setSelectedItemId('home');
+        setCurrentPage(null);
+        setBreadcrumbs([]);
+      }
+    };
+
+    initializeFromUrl();
+  }, [pageId, viewName, user]);
 
   // Build breadcrumb hierarchy
   const buildBreadcrumbs = async (page: Page): Promise<BreadcrumbData[]> => {
@@ -315,34 +359,42 @@ export function KnowledgeBaseApp() {
       setCurrentView('dashboard');
       setCurrentPage(null);
       setBreadcrumbs([]);
+      navigate('/');
     } else if (item.id === 'recent') {
       setCurrentView('recent');
       setCurrentPage(null);
       setBreadcrumbs([]);
+      navigate('/view/recent');
     } else if (item.id === 'tags') {
       setCurrentView('tags');
       setCurrentPage(null);
       setBreadcrumbs([]);
+      navigate('/view/tags');
     } else if (item.id === 'people') {
       setCurrentView('people');
       setCurrentPage(null);
       setBreadcrumbs([]);
+      navigate('/view/people');
     } else if (item.id === 'settings') {
       setCurrentView('settings');
       setCurrentPage(null);
       setBreadcrumbs([]);
+      navigate('/view/settings');
     } else if (item.id === 'whiteboard') {
       setCurrentView('whiteboard');
       setCurrentPage(null);
       setBreadcrumbs([]);
+      navigate('/view/whiteboard');
     } else if (item.id === 'user-management') {
       setCurrentView('user-management');
       setCurrentPage(null);
       setBreadcrumbs([]);
+      navigate('/view/user-management');
     } else if (item.id === 'chat') {
       setCurrentView('chat');
       setCurrentPage(null);
       setBreadcrumbs([]);
+      navigate('/view/chat');
     } else if (item.type === 'page') {
       try {
         // Fetch real page data from Supabase
@@ -386,6 +438,9 @@ export function KnowledgeBaseApp() {
           await supabase.from('pages').update({
             view_count: (data.view_count || 0) + 1
           }).eq('id', data.id);
+
+          // Update URL
+          navigate(`/page/${data.id}`);
         }
       } catch (error) {
         console.error('Error fetching page:', error);
@@ -492,6 +547,7 @@ export function KnowledgeBaseApp() {
       setIsEditing(true);
       setCurrentView('editor');
       setSelectedItemId(data.id);
+      navigate(`/page/${data.id}`);
       toast({
         title: "Page created",
         description: "New page created. Start editing!"
@@ -674,11 +730,14 @@ export function KnowledgeBaseApp() {
                   <BreadcrumbList>
                     {breadcrumbs.map((crumb, index) => <div key={crumb.id} className="flex items-center">
                         <BreadcrumbItem>
-                          <BreadcrumbLink className="cursor-pointer text-muted-foreground hover:text-foreground" onClick={() => handleItemSelect({
-                      id: crumb.id,
-                      title: crumb.title,
-                      type: crumb.type === 'space' ? 'space' : 'page'
-                    })}>
+                          <BreadcrumbLink 
+                            className="cursor-pointer text-muted-foreground hover:text-foreground" 
+                            onClick={() => handleItemSelect({
+                              id: crumb.id,
+                              title: crumb.title,
+                              type: crumb.type === 'space' ? 'space' : 'page'
+                            })}
+                          >
                             {crumb.title}
                           </BreadcrumbLink>
                         </BreadcrumbItem>

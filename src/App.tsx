@@ -20,6 +20,8 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/page/:pageId" element={<Index />} />
+          <Route path="/view/:viewName" element={<Index />} />
           
           <Route path="/public/:token" element={<PublicPageView />} />
           <Route path="/project/:projectId" element={<ProjectView />} />
