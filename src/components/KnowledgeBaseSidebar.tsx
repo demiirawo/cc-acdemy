@@ -8,7 +8,6 @@ import {
   ChevronDown,
   Home,
   Clock,
-  Users,
   Settings,
   MessageSquare
 } from "lucide-react";
@@ -72,7 +71,6 @@ const sampleData: SidebarItem[] = [
 const navigationItems = [
   { id: 'home', title: 'Home', icon: Home, href: '/' },
   { id: 'recent', title: 'Recently Updated', icon: Clock, href: '/recent' },
-  
   { id: 'ai-chat', title: 'Care Cuddle AI', icon: MessageSquare, href: '/chat' },
 ];
 

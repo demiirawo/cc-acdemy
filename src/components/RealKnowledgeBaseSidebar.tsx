@@ -1,6 +1,5 @@
-
 import { useState, useEffect } from "react";
-import { Search, Plus, BookOpen, Folder, ChevronRight, ChevronDown, Home, Clock, Tag, Users, Settings, Globe, FolderOpen, FileText, MoreHorizontal, Edit, Copy, Share, Star, Archive, Trash2, ArrowUp, ArrowDown, MessageSquare } from "lucide-react";
+import { Search, Plus, BookOpen, Folder, ChevronRight, ChevronDown, Home, Clock, Tag, Settings, Globe, FolderOpen, FileText, MoreHorizontal, Edit, Copy, Share, Star, Archive, Trash2, ArrowUp, ArrowDown, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -65,14 +64,13 @@ const navigationItems = [{
   icon: Tag,
   href: '/tags'
 }, {
-  id: 'people',
-  title: 'People',
-  icon: Users,
-  href: '/people'
-}, {
   id: 'user-management',
   title: 'User Management',
-  icon: Users,
+  icon: () => <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+        <circle cx="9" cy="7" r="4"/>
+        <path d="m22 21-3-3m0 0a4.5 4.5 0 1 0-6.364-6.364A4.5 4.5 0 0 0 19 18Z"/>
+      </svg>,
   href: '/user-management'
 }, {
   id: 'whiteboard',
