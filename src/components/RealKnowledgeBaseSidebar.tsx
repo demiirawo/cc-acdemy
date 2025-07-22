@@ -66,7 +66,7 @@ const navigationItems = [{
 }, {
   id: 'user-management',
   title: 'User Management',
-  icon: () => <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+  icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
         <circle cx="9" cy="7" r="4"/>
         <path d="m22 21-3-3m0 0a4.5 4.5 0 1 0-6.364-6.364A4.5 4.5 0 0 0 19 18Z"/>
