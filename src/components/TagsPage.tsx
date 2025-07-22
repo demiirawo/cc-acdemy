@@ -38,6 +38,15 @@ export function TagsPage({ onPageSelect }: TagsPageProps) {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
+  // Utility function to strip HTML tags and get clean text
+  const stripHtmlTags = (html: string): string => {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    let text = tempDiv.textContent || tempDiv.innerText || '';
+    text = text.replace(/\s+/g, ' ').trim();
+    return text;
+  };
+
   useEffect(() => {
     fetchTagsData();
   }, []);
@@ -274,7 +283,7 @@ export function TagsPage({ onPageSelect }: TagsPageProps) {
                             </h3>
                             
                             <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
-                              {page.content.substring(0, 150)}...
+                              {stripHtmlTags(page.content).substring(0, 150)}...
                             </p>
                             
                             <div className="flex items-center gap-4 text-xs text-muted-foreground mb-2">

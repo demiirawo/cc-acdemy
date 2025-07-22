@@ -46,12 +46,23 @@ export function RealDashboard({
     recentUpdates: 0
   });
   const [loading, setLoading] = useState(true);
-  const {
-    user
-  } = useAuth();
-  const {
-    toast
-  } = useToast();
+  const { user } = useAuth();
+  const { toast } = useToast();
+
+  // Utility function to strip HTML tags and get clean text
+  const stripHtmlTags = (html: string): string => {
+    // Create a temporary div element to parse HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    
+    // Get text content and clean up whitespace
+    let text = tempDiv.textContent || tempDiv.innerText || '';
+    
+    // Replace multiple whitespace characters with single spaces
+    text = text.replace(/\s+/g, ' ').trim();
+    
+    return text;
+  };
   useEffect(() => {
     fetchDashboardData();
   }, []);
@@ -296,7 +307,7 @@ export function RealDashboard({
                       <div className="flex-1 min-w-0">
                         <h4 className="font-medium text-foreground truncate">{result.title}</h4>
                         <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                          {result.content.substring(0, 120)}...
+                          {stripHtmlTags(result.content).substring(0, 120)}...
                         </p>
                         <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
                           <span>{result.view_count || 0} views</span>
@@ -384,7 +395,7 @@ export function RealDashboard({
                           <Badge variant="secondary">page</Badge>
                         </div>
                         <p className="text-sm text-muted-foreground mb-2 line-clamp-2">
-                          {page.content.substring(0, 100)}...
+                          {stripHtmlTags(page.content).substring(0, 150)}...
                         </p>
                         <div className="flex items-center gap-4 text-xs text-muted-foreground">
                           <span>{page.view_count || 0} views</span>
