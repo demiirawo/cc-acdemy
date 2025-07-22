@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
 import { Send, MessageSquare, Bot, User, Paperclip, X, FileText, ArrowLeft } from "lucide-react";
@@ -47,6 +47,7 @@ export const ProjectChatPage = ({ conversationId, onBack, projectContext }: Proj
   const [isDragOver, setIsDragOver] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -125,6 +126,11 @@ export const ProjectChatPage = ({ conversationId, onBack, projectContext }: Proj
     setMessages(prev => [...prev, userMessage]);
     setInputMessage('');
     setAttachedFiles([]);
+    
+    // Reset textarea height
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
     setIsLoading(true);
 
     try {
@@ -194,6 +200,15 @@ export const ProjectChatPage = ({ conversationId, onBack, projectContext }: Proj
       e.preventDefault();
       sendMessage();
     }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInputMessage(e.target.value);
+    
+    // Auto-resize functionality
+    const textarea = e.target;
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
   };
 
   const handleFileUpload = async (files: FileList) => {
@@ -444,13 +459,14 @@ export const ProjectChatPage = ({ conversationId, onBack, projectContext }: Proj
               </Button>
               
               <div className="flex-1">
-                <Input
+                <Textarea
                   value={inputMessage}
-                  onChange={(e) => setInputMessage(e.target.value)}
+                  onChange={handleInputChange}
                   onKeyPress={handleKeyPress}
                   placeholder={`Message ${projectContext.name}...`}
                   disabled={isLoading}
-                  className="min-h-[44px]"
+                  className="min-h-[44px] max-h-[200px] resize-none"
+                  ref={textareaRef}
                 />
               </div>
               

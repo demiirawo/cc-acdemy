@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "@/components/ui/card";
 import { Send, MessageSquare, Bot, User, Paperclip, X, FileText } from "lucide-react";
@@ -43,6 +43,7 @@ export const ChatPage = () => {
   const [isDragOver, setIsDragOver] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { toast } = useToast();
 
   const scrollToBottom = () => {
@@ -316,6 +317,11 @@ export const ChatPage = () => {
     setInputMessage('');
     const currentAttachedFiles = [...attachedFiles];
     setAttachedFiles([]);
+    
+    // Reset textarea height
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
     setIsLoading(true);
 
     // Save user message to database
@@ -391,6 +397,15 @@ export const ChatPage = () => {
       e.preventDefault();
       sendMessage();
     }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInputMessage(e.target.value);
+    
+    // Auto-resize functionality
+    const textarea = e.target;
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
   };
 
   // Drag and drop functionality
@@ -629,14 +644,15 @@ export const ChatPage = () => {
 
         {/* Input Area */}
         <div className="space-y-3">
-          <div className="flex gap-2">
-            <Input
+          <div className="flex gap-2 items-end">
+            <Textarea
               value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
+              onChange={handleInputChange}
               onKeyPress={handleKeyPress}
               placeholder="Type your message..."
               disabled={isLoading}
-              className="flex-1"
+              className="flex-1 min-h-[44px] max-h-[200px] resize-none"
+              ref={textareaRef}
               style={{ 
                 userSelect: 'text', 
                 WebkitUserSelect: 'text',
