@@ -68,11 +68,11 @@ const sampleData: SidebarItem[] = [
   }
 ];
 
-const navigationItems = [
-  { id: 'home', title: 'Home', icon: Home, href: '/' },
-  { id: 'recent', title: 'Recently Updated', icon: Clock, href: '/recent' },
-  { id: 'chat', title: 'Care Cuddle AI', icon: MessageSquare, href: '/chat' },
-  { id: 'glossary', title: 'Glossary', icon: BookOpen, href: '/glossary' },
+const navigationItems: SidebarItem[] = [
+  { id: 'home', title: 'Home', icon: Home, href: '/', type: 'page' },
+  { id: 'recent', title: 'Recently Updated', icon: Clock, href: '/recent', type: 'page' },
+  { id: 'chat', title: 'Care Cuddle AI', icon: MessageSquare, href: '/chat', type: 'page' },
+  { id: 'glossary', title: 'Glossary', icon: BookOpen, href: '/glossary', type: 'page' },
 ];
 
 interface SidebarTreeItemProps {
@@ -197,7 +197,7 @@ export function KnowledgeBaseSidebar({ onItemSelect, selectedId }: KnowledgeBase
                   "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                   isSelected && "bg-sidebar-accent text-sidebar-accent-foreground"
                 )}
-                onClick={() => handleItemSelect({ ...item, type: 'page' })}
+                onClick={() => handleItemSelect(item)}
               >
                 <Icon className="h-4 w-4 text-sidebar-foreground/70" />
                 <span className="text-sidebar-foreground">{item.title}</span>
