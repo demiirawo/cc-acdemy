@@ -49,19 +49,24 @@ export function RealDashboard({
   const { user } = useAuth();
   const { toast } = useToast();
 
-  // Utility function to strip HTML tags and get clean text
+  // Utility function to strip HTML tags and get clean text, excluding bold content
   const stripHtmlTags = (html: string): string => {
-    // Create a temporary div element to parse HTML
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = html;
+    if (!html) return '';
     
-    // Get text content and clean up whitespace
-    let text = tempDiv.textContent || tempDiv.innerText || '';
+    // First remove bold content (text inside <b>, <strong> tags)
+    let content = html
+      .replace(/<(b|strong)[^>]*>.*?<\/(b|strong)>/gi, '') // Remove bold tags and their content
+      .replace(/<[^>]*>/g, '') // Remove remaining HTML tags
+      .replace(/&nbsp;/g, ' ') // Replace non-breaking spaces
+      .replace(/&amp;/g, '&') // Replace encoded ampersands
+      .replace(/&lt;/g, '<') // Replace encoded less-than
+      .replace(/&gt;/g, '>') // Replace encoded greater-than
+      .replace(/&quot;/g, '"') // Replace encoded quotes
+      .replace(/&#39;/g, "'") // Replace encoded apostrophes
+      .trim();
     
-    // Replace multiple whitespace characters with single spaces
-    text = text.replace(/\s+/g, ' ').trim();
-    
-    return text;
+    // Clean up extra whitespace
+    return content.replace(/\s+/g, ' ').trim();
   };
   useEffect(() => {
     fetchDashboardData();

@@ -38,13 +38,24 @@ export function TagsPage({ onPageSelect }: TagsPageProps) {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  // Utility function to strip HTML tags and get clean text
+  // Utility function to strip HTML tags and get clean text, excluding bold content
   const stripHtmlTags = (html: string): string => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = html;
-    let text = tempDiv.textContent || tempDiv.innerText || '';
-    text = text.replace(/\s+/g, ' ').trim();
-    return text;
+    if (!html) return '';
+    
+    // First remove bold content (text inside <b>, <strong> tags)
+    let content = html
+      .replace(/<(b|strong)[^>]*>.*?<\/(b|strong)>/gi, '') // Remove bold tags and their content
+      .replace(/<[^>]*>/g, '') // Remove remaining HTML tags
+      .replace(/&nbsp;/g, ' ') // Replace non-breaking spaces
+      .replace(/&amp;/g, '&') // Replace encoded ampersands
+      .replace(/&lt;/g, '<') // Replace encoded less-than
+      .replace(/&gt;/g, '>') // Replace encoded greater-than
+      .replace(/&quot;/g, '"') // Replace encoded quotes
+      .replace(/&#39;/g, "'") // Replace encoded apostrophes
+      .trim();
+    
+    // Clean up extra whitespace
+    return content.replace(/\s+/g, ' ').trim();
   };
 
   useEffect(() => {
