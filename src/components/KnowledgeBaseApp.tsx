@@ -56,6 +56,7 @@ function PageView({
     if (!glossaryTerms.length) return content;
     
     let highlightedContent = content;
+    const highlightedTerms = new Set<string>();
     
     // Sort terms by length (longest first) to avoid partial matches
     const sortedTerms = [...glossaryTerms].sort((a, b) => b.term.length - a.term.length);
@@ -63,9 +64,16 @@ function PageView({
     sortedTerms.forEach(term => {
       const regex = new RegExp(`\\b${term.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
       const definition = term.definition;
+      let isFirstMatch = true;
       
       highlightedContent = highlightedContent.replace(regex, (match) => {
-        return `<span class="glossary-term" data-term="${term.term}" data-definition="${definition.replace(/"/g, '&quot;')}" style="border-bottom: 2px solid rgb(147, 51, 234); cursor: help;">${match}</span>`;
+        const termLower = term.term.toLowerCase();
+        if (isFirstMatch && !highlightedTerms.has(termLower)) {
+          highlightedTerms.add(termLower);
+          isFirstMatch = false;
+          return `<span class="glossary-term" data-term="${term.term}" data-definition="${definition.replace(/"/g, '&quot;')}" style="border-bottom: 2px solid rgb(147, 51, 234); cursor: help;">${match}</span>`;
+        }
+        return match;
       });
     });
     
