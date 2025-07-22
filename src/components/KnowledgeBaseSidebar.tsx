@@ -72,6 +72,7 @@ const navigationItems = [
   { id: 'home', title: 'Home', icon: Home, href: '/' },
   { id: 'recent', title: 'Recently Updated', icon: Clock, href: '/recent' },
   { id: 'ai-chat', title: 'Care Cuddle AI', icon: MessageSquare, href: '/chat' },
+  { id: 'glossary', title: 'Glossary', icon: BookOpen, href: '/glossary' },
 ];
 
 interface SidebarTreeItemProps {

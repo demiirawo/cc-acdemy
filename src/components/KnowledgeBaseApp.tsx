@@ -20,6 +20,7 @@ import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy, FileText }
 import { UserManagement } from "./UserManagement";
 import { ChatPage } from "./ChatPage";
 import { RecommendedReadingSection } from "./RecommendedReadingSection";
+import { GlossaryPage } from "./GlossaryPage";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 
 // Page view component
@@ -157,7 +158,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary';
 interface SidebarItem {
   id: string;
   title: string;
@@ -269,7 +270,8 @@ export function KnowledgeBaseApp() {
           'settings': 'settings',
           'whiteboard': 'whiteboard',
           'user-management': 'user-management',
-          'chat': 'chat'
+          'chat': 'chat',
+          'glossary': 'glossary'
         };
         
         if (viewMap[viewName]) {
@@ -388,6 +390,11 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
       setBreadcrumbs([]);
       navigate('/view/chat');
+    } else if (item.id === 'glossary') {
+      setCurrentView('glossary');
+      setCurrentPage(null);
+      setBreadcrumbs([]);
+      navigate('/view/glossary');
     } else if (item.type === 'page') {
       try {
         // Fetch real page data from Supabase
@@ -776,6 +783,7 @@ export function KnowledgeBaseApp() {
         {currentView === 'whiteboard' && <WhiteboardCanvas />}
         {currentView === 'user-management' && <UserManagement />}
         {currentView === 'chat' && <ChatPage />}
+        {currentView === 'glossary' && <GlossaryPage />}
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePageSaved} />}
         

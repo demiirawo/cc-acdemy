@@ -81,6 +81,11 @@ const navigationItems = [{
         <path d="m17 7-10 10" />
       </svg>,
   href: '/whiteboard'
+}, {
+  id: 'glossary',
+  title: 'Glossary',
+  icon: BookOpen,
+  href: '/glossary'
 }];
 
 interface SidebarTreeItemProps {

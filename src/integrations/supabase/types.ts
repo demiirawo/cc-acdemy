@@ -264,6 +264,33 @@ export type Database = {
         }
         Relationships: []
       }
+      glossary: {
+        Row: {
+          created_at: string
+          created_by: string
+          definition: string
+          id: string
+          term: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          definition: string
+          id?: string
+          term: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          definition?: string
+          id?: string
+          term?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       page_audit_log: {
         Row: {
           created_at: string | null

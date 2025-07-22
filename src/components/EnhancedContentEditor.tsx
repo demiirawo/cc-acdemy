@@ -12,6 +12,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useRecommendedReadingAudit } from "@/hooks/useRecommendedReadingAudit";
+import { useGlossary } from "@/hooks/useGlossary";
+import { GlossaryTooltip } from "./GlossaryTooltip";
 import { EditableTitle } from "./EditableTitle";
 import { ColorPicker } from "./ColorPicker";
 import {
@@ -131,6 +133,28 @@ export function EnhancedContentEditor({
   
   const { toast } = useToast();
   const { createSnapshot, logChange } = useRecommendedReadingAudit(pageId || '');
+  const { terms: glossaryTerms, getDefinition } = useGlossary();
+
+  // Function to highlight glossary terms in content
+  const highlightGlossaryTerms = (content: string): string => {
+    if (!glossaryTerms.length) return content;
+    
+    let highlightedContent = content;
+    
+    // Sort terms by length (longest first) to avoid partial matches
+    const sortedTerms = [...glossaryTerms].sort((a, b) => b.term.length - a.term.length);
+    
+    sortedTerms.forEach(term => {
+      const regex = new RegExp(`\\b${term.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+      const definition = term.definition;
+      
+      highlightedContent = highlightedContent.replace(regex, (match) => {
+        return `<span class="glossary-term" data-term="${term.term}" data-definition="${definition.replace(/"/g, '&quot;')}" style="border-bottom: 2px solid rgb(147, 51, 234); cursor: help;">${match}</span>`;
+      });
+    });
+    
+    return highlightedContent;
+  };
 
   // Unified save function that handles all content consistently
   const performSave = async (isManual = false) => {
@@ -2251,6 +2275,87 @@ export function EnhancedContentEditor({
     };
   }, []);
 
+  // Add event listeners for glossary term hover tooltips
+  useEffect(() => {
+    const handleGlossaryHover = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.classList.contains('glossary-term')) {
+        const term = target.getAttribute('data-term');
+        const definition = target.getAttribute('data-definition');
+        
+        if (term && definition) {
+          // Create tooltip
+          const tooltip = document.createElement('div');
+          tooltip.className = 'glossary-tooltip';
+          tooltip.style.cssText = `
+            position: absolute;
+            background: hsl(var(--popover));
+            color: hsl(var(--popover-foreground));
+            border: 1px solid hsl(var(--border));
+            border-radius: 6px;
+            padding: 12px;
+            max-width: 320px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            font-size: 14px;
+            line-height: 1.4;
+            pointer-events: none;
+          `;
+          
+          tooltip.innerHTML = `
+            <div style="font-weight: 600; margin-bottom: 4px;">${term}</div>
+            <div style="color: hsl(var(--muted-foreground));">${definition}</div>
+          `;
+          
+          document.body.appendChild(tooltip);
+          
+          // Position tooltip
+          const rect = target.getBoundingClientRect();
+          const tooltipRect = tooltip.getBoundingClientRect();
+          
+          let left = rect.left;
+          let top = rect.bottom + 8;
+          
+          // Adjust if tooltip goes off screen
+          if (left + tooltipRect.width > window.innerWidth) {
+            left = window.innerWidth - tooltipRect.width - 16;
+          }
+          if (top + tooltipRect.height > window.innerHeight) {
+            top = rect.top - tooltipRect.height - 8;
+          }
+          
+          tooltip.style.left = `${left}px`;
+          tooltip.style.top = `${top}px`;
+          
+          target.setAttribute('data-tooltip-id', 'glossary-tooltip');
+        }
+      }
+    };
+
+    const handleGlossaryLeave = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.classList.contains('glossary-term')) {
+        const tooltip = document.querySelector('.glossary-tooltip');
+        if (tooltip) {
+          tooltip.remove();
+        }
+        target.removeAttribute('data-tooltip-id');
+      }
+    };
+
+    // Add event listeners to document for event delegation
+    document.addEventListener('mouseover', handleGlossaryHover);
+    document.addEventListener('mouseout', handleGlossaryLeave);
+
+    return () => {
+      document.removeEventListener('mouseover', handleGlossaryHover);
+      document.removeEventListener('mouseout', handleGlossaryLeave);
+      // Clean up any remaining tooltips
+      const tooltips = document.querySelectorAll('.glossary-tooltip');
+      tooltips.forEach(tooltip => tooltip.remove());
+    };
+  }, []);
+
   const formattingToolbarItems = [
     ...basicToolbarItems,
     ...alignmentToolbarItems,
@@ -2978,7 +3083,7 @@ export function EnhancedContentEditor({
           <div className="prose prose-lg max-w-none">
             <div 
               className="text-foreground leading-relaxed"
-              dangerouslySetInnerHTML={{ __html: contentRef.current.split('RECOMMENDED_READING:')[0] }}
+              dangerouslySetInnerHTML={{ __html: highlightGlossaryTerms(contentRef.current.split('RECOMMENDED_READING:')[0]) }}
             />
           </div>
           
