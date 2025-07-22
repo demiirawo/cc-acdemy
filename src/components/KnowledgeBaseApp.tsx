@@ -4,7 +4,6 @@ import { ResizableSidebar } from "./ResizableSidebar";
 import { RealDashboard } from "./RealDashboard";
 import { RecentlyUpdatedPage } from "./RecentlyUpdatedPage";
 import { TagsPage } from "./TagsPage";
-import { PeoplePage } from "./PeoplePage";
 import { EnhancedContentEditor } from "./EnhancedContentEditor";
 import { CreatePageDialog } from "./CreatePageDialog";
 import { PagePermissionsDialog } from "./PagePermissionsDialog";
@@ -158,7 +157,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'people' | 'settings' | 'whiteboard' | 'user-management' | 'chat';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat';
 interface SidebarItem {
   id: string;
   title: string;
@@ -267,7 +266,6 @@ export function KnowledgeBaseApp() {
           'dashboard': 'dashboard',
           'recent': 'recent',
           'tags': 'tags',
-          'people': 'people',
           'settings': 'settings',
           'whiteboard': 'whiteboard',
           'user-management': 'user-management',
@@ -370,11 +368,6 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
       setBreadcrumbs([]);
       navigate('/view/tags');
-    } else if (item.id === 'people') {
-      setCurrentView('people');
-      setCurrentPage(null);
-      setBreadcrumbs([]);
-      navigate('/view/people');
     } else if (item.id === 'settings') {
       setCurrentView('settings');
       setCurrentPage(null);
@@ -751,7 +744,7 @@ export function KnowledgeBaseApp() {
                     </BreadcrumbItem>
                   </BreadcrumbList>
                 </Breadcrumb> : <h2 className="text-lg font-semibold text-black/0">
-                  {currentView === 'dashboard' ? 'Dashboard' : currentView === 'recent' ? 'Recently Updated' : currentView === 'tags' ? 'Tags' : currentView === 'people' ? 'People' : currentView === 'settings' ? 'Settings' : currentView === 'whiteboard' ? 'Whiteboard' : currentView === 'user-management' ? 'User Management' : currentView === 'chat' ? 'Care Cuddle AI' : 'Care Cuddle Academy'}
+                  {currentView === 'dashboard' ? 'Dashboard' : currentView === 'recent' ? 'Recently Updated' : currentView === 'tags' ? 'Tags' : currentView === 'settings' ? 'Settings' : currentView === 'whiteboard' ? 'Whiteboard' : currentView === 'user-management' ? 'User Management' : currentView === 'chat' ? 'Care Cuddle AI' : 'Care Cuddle Academy'}
                 </h2>}
             </div>
             <div className="flex items-center gap-2">
@@ -776,7 +769,7 @@ export function KnowledgeBaseApp() {
 
         {currentView === 'tags' && <TagsPage onPageSelect={handlePageSelect} />}
 
-        {currentView === 'people' && <PeoplePage onPageSelect={handlePageSelect} />}
+        
 
         {currentView === 'settings' && <SettingsPage onClose={() => setCurrentView('dashboard')} />}
 

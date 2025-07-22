@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Users, Plus, Trash2, Edit, CheckCircle, Clock, Mail } from "lucide-react";
+import { Users, Plus, Trash2, Edit, CheckCircle, Clock, Mail, BookOpen, Eye, TrendingUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -20,6 +20,10 @@ interface Profile {
   role: string | null;
   created_at: string;
   email_confirmed_at: string | null;
+  total_pages_viewed?: number;
+  unique_pages_viewed?: number;
+  last_page_viewed?: string;
+  last_view_date?: string;
 }
 
 interface EmailException {
@@ -28,6 +32,13 @@ interface EmailException {
   reason: string | null;
   created_by: string;
   created_at: string;
+}
+
+interface PageView {
+  page_id: string;
+  page_title: string;
+  view_count: number;
+  last_viewed: string;
 }
 
 export function UserManagement() {
@@ -40,6 +51,9 @@ export function UserManagement() {
   const [newEmail, setNewEmail] = useState('');
   const [newReason, setNewReason] = useState('');
   const [addEmailDialogOpen, setAddEmailDialogOpen] = useState(false);
+  const [selectedUserPageViews, setSelectedUserPageViews] = useState<PageView[]>([]);
+  const [pageViewsDialogOpen, setPageViewsDialogOpen] = useState(false);
+  const [pageViewsLoading, setPageViewsLoading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -104,13 +118,62 @@ export function UserManagement() {
         }
       }
 
-      // Then use the edge function to get profiles with confirmation status
+      // Get profiles and aggregate page view data
       const { data, error } = await supabase.functions.invoke('get-user-profiles');
 
       if (error) throw error;
 
       if (data.success) {
-        setProfiles(data.data || []);
+        // For each profile, get page view analytics
+        const profilesWithAnalytics = await Promise.all(
+          (data.data || []).map(async (profile: Profile) => {
+            try {
+              // Get page view statistics for this user
+              const { data: viewData } = await supabase
+                .from('page_audit_log')
+                .select('page_id, created_at')
+                .eq('user_id', profile.user_id)
+                .eq('operation_type', 'view');
+
+              const totalViews = viewData?.length || 0;
+              const uniquePages = new Set(viewData?.map(v => v.page_id) || []).size;
+              
+              // Get last page viewed
+              const lastView = viewData?.sort((a, b) => 
+                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+              )[0];
+
+              let lastPageTitle = '';
+              if (lastView) {
+                const { data: pageData } = await supabase
+                  .from('pages')
+                  .select('title')
+                  .eq('id', lastView.page_id)
+                  .single();
+                lastPageTitle = pageData?.title || 'Unknown Page';
+              }
+
+              return {
+                ...profile,
+                total_pages_viewed: totalViews,
+                unique_pages_viewed: uniquePages,
+                last_page_viewed: lastPageTitle,
+                last_view_date: lastView?.created_at
+              };
+            } catch (error) {
+              console.error('Error fetching analytics for user:', profile.user_id, error);
+              return {
+                ...profile,
+                total_pages_viewed: 0,
+                unique_pages_viewed: 0,
+                last_page_viewed: '',
+                last_view_date: null
+              };
+            }
+          })
+        );
+
+        setProfiles(profilesWithAnalytics);
       } else {
         throw new Error(data.error || 'Failed to fetch profiles');
       }
@@ -300,6 +363,66 @@ export function UserManagement() {
     }
   };
 
+  const fetchUserPageViews = async (userId: string) => {
+    setPageViewsLoading(true);
+    try {
+      // Get detailed page views for this user
+      const { data: viewData } = await supabase
+        .from('page_audit_log')
+        .select('page_id, created_at')
+        .eq('user_id', userId)
+        .eq('operation_type', 'view')
+        .order('created_at', { ascending: false });
+
+      if (viewData) {
+        // Group by page_id and count views
+        const pageViewCounts = viewData.reduce((acc: any, view) => {
+          if (acc[view.page_id]) {
+            acc[view.page_id].count++;
+            if (new Date(view.created_at) > new Date(acc[view.page_id].lastViewed)) {
+              acc[view.page_id].lastViewed = view.created_at;
+            }
+          } else {
+            acc[view.page_id] = {
+              pageId: view.page_id,
+              count: 1,
+              lastViewed: view.created_at
+            };
+          }
+          return acc;
+        }, {});
+
+        // Get page titles
+        const pageIds = Object.keys(pageViewCounts);
+        const { data: pagesData } = await supabase
+          .from('pages')
+          .select('id, title')
+          .in('id', pageIds);
+
+        const pageViews: PageView[] = Object.values(pageViewCounts).map((view: any) => {
+          const page = pagesData?.find(p => p.id === view.pageId);
+          return {
+            page_id: view.pageId,
+            page_title: page?.title || 'Unknown Page',
+            view_count: view.count,
+            last_viewed: view.lastViewed
+          };
+        }).sort((a, b) => b.view_count - a.view_count);
+
+        setSelectedUserPageViews(pageViews);
+      }
+    } catch (error) {
+      console.error('Error fetching user page views:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load page views",
+        variant: "destructive"
+      });
+    } finally {
+      setPageViewsLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -433,9 +556,66 @@ export function UserManagement() {
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0">
-                  <div className="flex items-center justify-between text-sm text-muted-foreground">
-                    <span>Created: {new Date(profile.created_at).toLocaleDateString()}</span>
-                    <span>ID: {profile.user_id.substring(0, 8)}...</span>
+                  <div className="space-y-3">
+                    {/* Page Analytics Summary */}
+                    <div className="grid grid-cols-3 gap-4 p-3 bg-muted/30 rounded-lg">
+                      <div className="text-center">
+                        <div className="flex items-center justify-center gap-1 mb-1">
+                          <Eye className="h-4 w-4 text-primary" />
+                          <span className="text-sm font-medium">Total Views</span>
+                        </div>
+                        <span className="text-lg font-bold text-foreground">
+                          {profile.total_pages_viewed || 0}
+                        </span>
+                      </div>
+                      <div className="text-center border-l border-border">
+                        <div className="flex items-center justify-center gap-1 mb-1">
+                          <BookOpen className="h-4 w-4 text-accent" />
+                          <span className="text-sm font-medium">Unique Pages</span>
+                        </div>
+                        <span className="text-lg font-bold text-foreground">
+                          {profile.unique_pages_viewed || 0}
+                        </span>
+                      </div>
+                      <div className="text-center border-l border-border">
+                        <div className="text-center">
+                          <div className="flex items-center justify-center gap-1 mb-1">
+                            <TrendingUp className="h-4 w-4 text-success" />
+                            <span className="text-sm font-medium">Activity</span>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedProfile(profile);
+                              fetchUserPageViews(profile.user_id);
+                              setPageViewsDialogOpen(true);
+                            }}
+                            className="h-8 text-xs"
+                          >
+                            View Details
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Last Activity */}
+                    {profile.last_page_viewed && (
+                      <div className="text-sm text-muted-foreground">
+                        <span className="font-medium">Last viewed:</span> {profile.last_page_viewed}
+                        {profile.last_view_date && (
+                          <span className="ml-2">
+                            ({new Date(profile.last_view_date).toLocaleDateString()})
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* User Info */}
+                    <div className="flex items-center justify-between text-sm text-muted-foreground pt-2 border-t border-border">
+                      <span>Created: {new Date(profile.created_at).toLocaleDateString()}</span>
+                      <span>ID: {profile.user_id.substring(0, 8)}...</span>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -548,6 +728,58 @@ export function UserManagement() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Page Views Detail Dialog */}
+      <Dialog open={pageViewsDialogOpen} onOpenChange={setPageViewsDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Page Views - {selectedProfile?.display_name || 'User'}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {pageViewsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {selectedUserPageViews.length > 0 ? (
+                <div className="grid gap-3">
+                  {selectedUserPageViews.map((pageView) => (
+                    <Card key={pageView.page_id} className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <h4 className="font-medium text-foreground mb-1">
+                            {pageView.page_title}
+                          </h4>
+                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Eye className="h-3 w-3" />
+                              {pageView.view_count} view{pageView.view_count !== 1 ? 's' : ''}
+                            </span>
+                            <span>
+                              Last viewed: {new Date(pageView.last_viewed).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+                        <Badge variant="secondary">
+                          {pageView.view_count}
+                        </Badge>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No pages viewed yet</p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -594,7 +594,7 @@ export function RealKnowledgeBaseSidebar({
   };
 
   const handleItemSelect = (item: SidebarItem) => {
-    if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people' || item.id === 'settings' || item.id === 'whiteboard' || item.id === 'user-management' || item.id === 'chat') {
+    if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'settings' || item.id === 'whiteboard' || item.id === 'user-management' || item.id === 'chat') {
       onItemSelect(item);
     } else if (item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
       onItemSelect(item);
@@ -760,7 +760,7 @@ export function RealKnowledgeBaseSidebar({
           {navigationItems
             .filter((item) => {
               // Filter navigation items based on user role
-              if (item.id === 'people' || item.id === 'user-management') {
+              if (item.id === 'user-management') {
                 return isAdmin;
               }
               return true;

@@ -72,7 +72,7 @@ const sampleData: SidebarItem[] = [
 const navigationItems = [
   { id: 'home', title: 'Home', icon: Home, href: '/' },
   { id: 'recent', title: 'Recently Updated', icon: Clock, href: '/recent' },
-  { id: 'people', title: 'People', icon: Users, href: '/people' },
+  
   { id: 'ai-chat', title: 'Care Cuddle AI', icon: MessageSquare, href: '/chat' },
 ];
 
@@ -150,7 +150,7 @@ export function KnowledgeBaseSidebar({ onItemSelect, selectedId }: KnowledgeBase
 
   const handleItemSelect = (item: SidebarItem) => {
     // Only call onItemSelect for actual navigation items or real pages
-    if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'people') {
+    if (item.id === 'home' || item.id === 'recent' || item.id === 'tags') {
       onItemSelect(item);
     } else if (item.type === 'page' && item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
       // Only try to load real pages with valid UUIDs
