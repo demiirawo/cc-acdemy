@@ -101,7 +101,7 @@ export function EnhancedContentEditor({
   const [isPublic, setIsPublic] = useState(false);
   const [publicToken, setPublicToken] = useState('');
   const [showAdvancedToolbar, setShowAdvancedToolbar] = useState(false);
-  const [selectedFontSize, setSelectedFontSize] = useState("14");
+  const [selectedFontSize, setSelectedFontSize] = useState("16");
   const [recommendedReading, setRecommendedReading] = useState<Array<{title: string, url?: string, description: string, type: 'link' | 'file', fileName?: string, fileUrl?: string, category?: string}>>([]);
   const [newRecommendation, setNewRecommendation] = useState({title: '', url: '', description: '', type: 'link' as 'link' | 'file', fileName: '', fileUrl: '', category: 'General'});
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -327,6 +327,24 @@ export function EnhancedContentEditor({
           case 'u':
             e.preventDefault();
             formatText('underline');
+            break;
+          case '1':
+            if (e.altKey || e.shiftKey) {
+              e.preventDefault();
+              formatHeading('h1');
+            }
+            break;
+          case '2':
+            if (e.altKey || e.shiftKey) {
+              e.preventDefault();
+              formatHeading('h2');
+            }
+            break;
+          case '3':
+            if (e.altKey || e.shiftKey) {
+              e.preventDefault();
+              formatHeading('h3');
+            }
             break;
         }
       }
@@ -2078,13 +2096,120 @@ export function EnhancedContentEditor({
       range.deleteContents();
       range.insertNode(span);
       
-      // Restore selection to the newly created span
+      // Restore selection to the newly created span - keep it selected
       const newRange = document.createRange();
       newRange.selectNodeContents(span);
       selection.removeAllRanges();
       selection.addRange(newRange);
       
+      // Update the selected font size in dropdown
+      setSelectedFontSize(size.replace('px', ''));
+      
       updateContent();
+    }
+  };
+
+  const formatHeading = (headingTag: string) => {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const selectedText = range.toString() || 'Heading';
+      
+      // Create heading element
+      const heading = document.createElement(headingTag);
+      heading.textContent = selectedText;
+      
+      // Apply heading styles
+      switch (headingTag) {
+        case 'h1':
+          heading.style.cssText = 'font-size: 32px; font-weight: bold; margin: 16px 0; line-height: 1.2;';
+          break;
+        case 'h2':
+          heading.style.cssText = 'font-size: 24px; font-weight: bold; margin: 14px 0; line-height: 1.3;';
+          break;
+        case 'h3':
+          heading.style.cssText = 'font-size: 20px; font-weight: bold; margin: 12px 0; line-height: 1.4;';
+          break;
+      }
+      
+      // Replace content or insert heading
+      if (range.toString()) {
+        range.deleteContents();
+      }
+      range.insertNode(heading);
+      
+      // Position cursor after heading
+      const afterRange = document.createRange();
+      afterRange.setStartAfter(heading);
+      afterRange.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(afterRange);
+      
+      updateContent();
+    }
+  };
+
+  const indentText = () => {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const parentElement = range.commonAncestorContainer.nodeType === Node.TEXT_NODE 
+        ? range.commonAncestorContainer.parentElement 
+        : range.commonAncestorContainer as Element;
+      
+      // Find the closest block element
+      let blockElement = parentElement?.closest('p, div, h1, h2, h3, h4, h5, h6, li, blockquote');
+      
+      if (blockElement) {
+        const element = blockElement as HTMLElement;
+        const currentIndent = parseInt(element.style.paddingLeft) || 0;
+        element.style.paddingLeft = `${currentIndent + 20}px`;
+        updateContent();
+      } else {
+        // Create a div with indentation
+        const div = document.createElement('div');
+        div.style.paddingLeft = '20px';
+        
+        if (range.toString()) {
+          div.textContent = range.toString();
+          range.deleteContents();
+        } else {
+          div.innerHTML = '&nbsp;';
+        }
+        
+        range.insertNode(div);
+        
+        // Position cursor in the div
+        const newRange = document.createRange();
+        newRange.setStart(div, div.childNodes.length);
+        newRange.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(newRange);
+        
+        updateContent();
+      }
+    }
+  };
+
+  const outdentText = () => {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const parentElement = range.commonAncestorContainer.nodeType === Node.TEXT_NODE 
+        ? range.commonAncestorContainer.parentElement 
+        : range.commonAncestorContainer as Element;
+      
+      // Find the closest block element
+      let blockElement = parentElement?.closest('p, div, h1, h2, h3, h4, h5, h6, li, blockquote');
+      
+      if (blockElement) {
+        const element = blockElement as HTMLElement;
+        const currentIndent = parseInt(element.style.paddingLeft) || 0;
+        if (currentIndent > 0) {
+          element.style.paddingLeft = `${Math.max(0, currentIndent - 20)}px`;
+          updateContent();
+        }
+      }
     }
   };
 
@@ -2103,11 +2228,28 @@ export function EnhancedContentEditor({
       
       if (parentElement) {
         const computedStyle = window.getComputedStyle(parentElement as Element);
-        return parseInt(computedStyle.fontSize) || 16;
+        const fontSize = parseInt(computedStyle.fontSize) || 16;
+        
+        // Update the dropdown to show current font size
+        setSelectedFontSize(fontSize.toString());
+        
+        return fontSize;
       }
     }
     return 16; // Default font size
   };
+
+  // Update font size display when selection changes
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      getCurrentFontSize();
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  }, []);
 
   const formattingToolbarItems = [
     ...basicToolbarItems,
@@ -2297,8 +2439,48 @@ export function EnhancedContentEditor({
       action: insertDivider, 
       tooltip: "Insert Section Divider" 
     },
-    { icon: Code, action: () => formatText('formatBlock', 'pre'), tooltip: "Code Block" },
     { icon: FileText, action: () => fileInputRef.current?.click(), tooltip: "Upload File" }
+  ];
+
+  const headingToolbarItems = [
+    { 
+      text: "H1", 
+      action: () => formatHeading('h1'), 
+      tooltip: "Heading 1 (Alt+1)" 
+    },
+    { 
+      text: "H2", 
+      action: () => formatHeading('h2'), 
+      tooltip: "Heading 2 (Alt+2)" 
+    },
+    { 
+      text: "H3", 
+      action: () => formatHeading('h3'), 
+      tooltip: "Heading 3 (Alt+3)" 
+    },
+  ];
+
+  const indentToolbarItems = [
+    { 
+      icon: () => (
+        <div className="flex items-center">
+          <div className="w-2 h-0.5 bg-current mr-1"></div>
+          <div className="w-1 h-0.5 bg-current"></div>
+        </div>
+      ), 
+      action: indentText, 
+      tooltip: "Increase Indent" 
+    },
+    { 
+      icon: () => (
+        <div className="flex items-center">
+          <div className="w-1 h-0.5 bg-current mr-1"></div>
+          <div className="w-2 h-0.5 bg-current"></div>
+        </div>
+      ), 
+      action: outdentText, 
+      tooltip: "Decrease Indent" 
+    },
   ];
 
   const extractYouTubeId = (url: string): string | null => {
@@ -2923,6 +3105,22 @@ export function EnhancedContentEditor({
               ))}
             </div>
 
+            {/* Headings */}
+            <div className="flex items-center gap-1 px-2 border-r">
+              {headingToolbarItems.map((item, index) => (
+                <Button
+                  key={index}
+                  variant="ghost"
+                  size="sm"
+                  onClick={item.action}
+                  title={item.tooltip}
+                  className="h-8 w-8 p-0 hover:bg-muted text-xs font-medium"
+                >
+                  {item.text}
+                </Button>
+              ))}
+            </div>
+
             {/* Text Size Controls */}
             <div className="flex items-center gap-1 px-2 border-r">
               {textSizeToolbarItems.map((item, index) => (
@@ -2939,9 +3137,15 @@ export function EnhancedContentEditor({
               ))}
               
               {/* Font Size Dropdown */}
-              <Select onValueChange={(value) => setFontSize(`${value}px`)}>
+              <Select 
+                value={selectedFontSize} 
+                onValueChange={(value) => {
+                  setSelectedFontSize(value);
+                  setFontSize(`${value}px`);
+                }}
+              >
                 <SelectTrigger className="h-8 w-20 text-xs">
-                  <SelectValue placeholder="Size" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {[10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 42, 48].map((size) => (
@@ -2951,6 +3155,22 @@ export function EnhancedContentEditor({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* Indentation */}
+            <div className="flex items-center gap-1 px-2 border-r">
+              {indentToolbarItems.map((item, index) => (
+                <Button
+                  key={index}
+                  variant="ghost"
+                  size="sm"
+                  onClick={item.action}
+                  title={item.tooltip}
+                  className="h-8 w-8 p-0 hover:bg-muted"
+                >
+                  <item.icon />
+                </Button>
+              ))}
             </div>
 
             {/* Text Color */}
