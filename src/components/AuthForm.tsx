@@ -14,6 +14,9 @@ interface AuthFormProps {
 export function AuthForm({ onAuthStateChange }: AuthFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState("");
+  const [isAdminLogin, setIsAdminLogin] = useState(false);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const { toast } = useToast();
 
   const handleMagicLink = async (e: React.FormEvent) => {
@@ -102,6 +105,53 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
     }
   };
 
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+
+    if (!username || !password) {
+      toast({
+        title: "Credentials required",
+        description: "Please enter both username and password.",
+        variant: "destructive",
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: username,
+        password: password,
+      });
+
+      if (error) {
+        console.error('Admin login error:', error);
+        toast({
+          title: "Login failed",
+          description: error.message || "Invalid credentials. Please try again.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Login successful",
+          description: "Welcome back!",
+        });
+        setUsername("");
+        setPassword("");
+      }
+    } catch (error: any) {
+      console.error('Unexpected login error:', error);
+      toast({
+        title: "Error",
+        description: error?.message || "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4" style={{ backgroundColor: '#5E18EB' }}>
       <Card className="w-full max-w-md">
@@ -115,24 +165,70 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleMagicLink} className="space-y-4">
-            <div className="space-y-2">
-              <Input
-                type="email"
-                placeholder="Enter your @care-cuddle.co.uk email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </div>
-            <Button type="submit" className="w-full bg-gradient-primary" disabled={isLoading}>
-              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Send Magic Link
-            </Button>
-            <p className="text-xs text-muted-foreground text-center">
-              A secure link will be sent to your email. Click it to sign in instantly - no password required.
-            </p>
-          </form>
+          {!isAdminLogin ? (
+            <form onSubmit={handleMagicLink} className="space-y-4">
+              <div className="space-y-2">
+                <Input
+                  type="email"
+                  placeholder="Enter your @care-cuddle.co.uk email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <Button type="submit" className="w-full bg-gradient-primary" disabled={isLoading}>
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Send Magic Link
+              </Button>
+              <Button 
+                type="button" 
+                variant="outline" 
+                className="w-full" 
+                onClick={() => setIsAdminLogin(true)}
+                disabled={isLoading}
+              >
+                Admin Login
+              </Button>
+              <p className="text-xs text-muted-foreground text-center">
+                A secure link will be sent to your email. Click it to sign in instantly - no password required.
+              </p>
+            </form>
+          ) : (
+            <form onSubmit={handleAdminLogin} className="space-y-4">
+              <div className="space-y-2">
+                <Input
+                  type="email"
+                  placeholder="Admin username/email"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                />
+                <Input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+              <Button type="submit" className="w-full bg-gradient-primary" disabled={isLoading}>
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Admin Login
+              </Button>
+              <Button 
+                type="button" 
+                variant="outline" 
+                className="w-full" 
+                onClick={() => setIsAdminLogin(false)}
+                disabled={isLoading}
+              >
+                Back to Magic Link
+              </Button>
+              <p className="text-xs text-muted-foreground text-center">
+                Enter your admin credentials to sign in directly.
+              </p>
+            </form>
+          )}
         </CardContent>
       </Card>
     </div>
