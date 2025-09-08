@@ -86,8 +86,9 @@ export function ResizableSidebar({
       <div
         ref={sidebarRef}
         className={cn(
-          "relative bg-sidebar-background border-r border-sidebar-border flex-shrink-0 transition-all duration-300",
-          isCollapsed && "border-r-0"
+          "relative bg-sidebar-background transition-all duration-300",
+          isCollapsed ? "w-0 border-r-0" : "border-r border-sidebar-border",
+          "flex-shrink-0"
         )}
         style={{ width: currentWidth }}
       >
@@ -111,6 +112,17 @@ export function ResizableSidebar({
             >
               <div className="w-1 h-16 bg-border/40 rounded group-hover:bg-primary/40 transition-colors" />
             </div>
+            
+            {/* Collapse button when expanded - positioned in top right of sidebar */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleCollapse}
+              className="absolute top-3 right-8 z-20 h-7 w-7 p-0 opacity-70 hover:opacity-100 bg-sidebar-background hover:bg-sidebar-accent"
+              title="Collapse sidebar"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
           </>
         )}
         
@@ -120,30 +132,19 @@ export function ResizableSidebar({
         )}
       </div>
       
-      {/* Floating toggle button when collapsed */}
+      {/* Floating expand button when collapsed - positioned at the edge */}
       {isCollapsed && (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={toggleCollapse}
-          className="fixed top-4 left-4 z-50 h-8 w-8 p-0"
-          title="Expand sidebar"
-        >
-          <Menu className="h-4 w-4" />
-        </Button>
-      )}
-      
-      {/* Collapse button when expanded */}
-      {!isCollapsed && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={toggleCollapse}
-          className="absolute top-2 right-6 z-20 h-6 w-6 p-0 opacity-60 hover:opacity-100"
-          title="Collapse sidebar"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
+        <div className="relative">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={toggleCollapse}
+            className="absolute top-4 left-2 z-50 h-8 w-8 p-0 shadow-lg bg-background hover:bg-accent"
+            title="Expand sidebar"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
       )}
     </>
   );
