@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { RealKnowledgeBaseSidebar } from "./RealKnowledgeBaseSidebar";
 import { Button } from "@/components/ui/button";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SidebarItem {
@@ -32,11 +32,13 @@ export function ResizableSidebar({
 }: ResizableSidebarProps) {
   const [width, setWidth] = useState(320);
   const [isResizing, setIsResizing] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const resizerRef = useRef<HTMLDivElement>(null);
 
   const minWidth = 240;
   const maxWidth = 600;
+  const collapsedWidth = 0;
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -68,39 +70,81 @@ export function ResizableSidebar({
   }, [isResizing]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    if (isCollapsed) return;
     e.preventDefault();
     setIsResizing(true);
   };
 
+  const toggleCollapse = () => {
+    setIsCollapsed(!isCollapsed);
+  };
+
+  const currentWidth = isCollapsed ? collapsedWidth : width;
+
   return (
-    <div
-      ref={sidebarRef}
-      className="relative bg-sidebar-background border-r border-sidebar-border flex-shrink-0"
-      style={{ width }}
-    >
-      <RealKnowledgeBaseSidebar
-        onItemSelect={onItemSelect}
-        selectedId={selectedId}
-        onCreatePage={onCreatePage}
-        onCreateSubPage={onCreateSubPage}
-        onCreatePageInEditor={onCreatePageInEditor}
-        onMovePage={onMovePage}
-      />
-      
-      {/* Enhanced Resize handle */}
+    <>
       <div
-        ref={resizerRef}
-        className="absolute top-0 right-0 w-4 h-full cursor-col-resize bg-transparent hover:bg-primary/10 transition-colors z-10 flex items-center justify-center group"
-        onMouseDown={handleMouseDown}
-        title="Drag to resize sidebar"
+        ref={sidebarRef}
+        className={cn(
+          "relative bg-sidebar-background border-r border-sidebar-border flex-shrink-0 transition-all duration-300",
+          isCollapsed && "border-r-0"
+        )}
+        style={{ width: currentWidth }}
       >
-        <div className="w-1 h-16 bg-border/40 rounded group-hover:bg-primary/40 transition-colors" />
+        {!isCollapsed && (
+          <>
+            <RealKnowledgeBaseSidebar
+              onItemSelect={onItemSelect}
+              selectedId={selectedId}
+              onCreatePage={onCreatePage}
+              onCreateSubPage={onCreateSubPage}
+              onCreatePageInEditor={onCreatePageInEditor}
+              onMovePage={onMovePage}
+            />
+            
+            {/* Enhanced Resize handle */}
+            <div
+              ref={resizerRef}
+              className="absolute top-0 right-0 w-4 h-full cursor-col-resize bg-transparent hover:bg-primary/10 transition-colors z-10 flex items-center justify-center group"
+              onMouseDown={handleMouseDown}
+              title="Drag to resize sidebar"
+            >
+              <div className="w-1 h-16 bg-border/40 rounded group-hover:bg-primary/40 transition-colors" />
+            </div>
+          </>
+        )}
+        
+        {/* Overlay during resize */}
+        {isResizing && (
+          <div className="fixed inset-0 z-50 cursor-col-resize bg-black/5" />
+        )}
       </div>
       
-      {/* Overlay during resize */}
-      {isResizing && (
-        <div className="fixed inset-0 z-50 cursor-col-resize bg-black/5" />
+      {/* Floating toggle button when collapsed */}
+      {isCollapsed && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={toggleCollapse}
+          className="fixed top-4 left-4 z-50 h-8 w-8 p-0"
+          title="Expand sidebar"
+        >
+          <Menu className="h-4 w-4" />
+        </Button>
       )}
-    </div>
+      
+      {/* Collapse button when expanded */}
+      {!isCollapsed && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={toggleCollapse}
+          className="absolute top-2 right-6 z-20 h-6 w-6 p-0 opacity-60 hover:opacity-100"
+          title="Collapse sidebar"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+      )}
+    </>
   );
 }
