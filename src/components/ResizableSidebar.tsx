@@ -118,7 +118,7 @@ export function ResizableSidebar({
               variant="ghost"
               size="sm"
               onClick={toggleCollapse}
-              className="absolute top-3 right-8 z-20 h-7 w-7 p-0 opacity-70 hover:opacity-100 bg-sidebar-background hover:bg-sidebar-accent"
+              className="absolute top-3 right-8 z-20 h-7 w-7 p-0 opacity-70 hover:opacity-100 bg-sidebar-background hover:bg-sidebar-accent text-white"
               title="Collapse sidebar"
             >
               <ChevronLeft className="h-4 w-4" />
