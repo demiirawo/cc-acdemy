@@ -893,7 +893,11 @@ export function KnowledgeBaseApp() {
         {currentView === 'whiteboard' && <WhiteboardCanvas />}
         {currentView === 'user-management' && <UserManagement />}
         {currentView === 'chat' && <ChatPage />}
-        {currentView === 'glossary' && <GlossaryPage />}
+        {currentView === 'glossary' && (
+          <div className="flex-1 overflow-auto">
+            <GlossaryPage />
+          </div>
+        )}
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePageSaved} />}
         
