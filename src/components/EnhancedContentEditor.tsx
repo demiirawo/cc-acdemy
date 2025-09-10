@@ -655,19 +655,49 @@ export function EnhancedContentEditor({
     // Create a cleaner, more reliable table HTML structure
     const tableId = `table-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    // Build header row HTML
+    // Build header row HTML with proper cursor alignment styles
     let headerHTML = '<tr>';
     for (let j = 0; j < cols; j++) {
-      headerHTML += `<th contenteditable="true" style="border: 1px solid hsl(var(--border)); padding: 8px; background-color: hsl(var(--muted)); font-weight: 600; text-align: left; min-width: 100px;"></th>`;
+      headerHTML += `<th contenteditable="true" style="
+        border: 1px solid hsl(var(--border)); 
+        padding: 8px 12px; 
+        background-color: hsl(var(--muted)); 
+        font-weight: 600; 
+        text-align: left; 
+        min-width: 100px;
+        line-height: 1.4;
+        font-family: inherit;
+        font-size: 14px;
+        vertical-align: top;
+        box-sizing: border-box;
+        white-space: normal;
+        word-wrap: break-word;
+        overflow-wrap: break-word;
+        position: relative;
+      "></th>`;
     }
     headerHTML += '</tr>';
     
-    // Build body rows HTML
+    // Build body rows HTML with proper cursor alignment styles
     let bodyHTML = '';
     for (let i = 0; i < rows - 1; i++) {
       bodyHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        bodyHTML += `<td contenteditable="true" style="border: 1px solid hsl(var(--border)); padding: 8px; text-align: left; min-width: 100px; vertical-align: top;"></td>`;
+        bodyHTML += `<td contenteditable="true" style="
+          border: 1px solid hsl(var(--border)); 
+          padding: 8px 12px; 
+          text-align: left; 
+          min-width: 100px; 
+          vertical-align: top;
+          line-height: 1.4;
+          font-family: inherit;
+          font-size: 14px;
+          box-sizing: border-box;
+          white-space: normal;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
+          position: relative;
+        "></td>`;
       }
       bodyHTML += '</tr>';
     }
