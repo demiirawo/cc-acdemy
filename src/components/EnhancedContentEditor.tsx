@@ -658,7 +658,7 @@ export function EnhancedContentEditor({
     // Build header row HTML
     let headerHTML = '<tr>';
     for (let j = 0; j < cols; j++) {
-      headerHTML += `<th contenteditable="true" style="border: 1px solid hsl(var(--border)); padding: 8px; background-color: hsl(var(--muted)); font-weight: 600; text-align: left; min-width: 100px;">Header ${j + 1}</th>`;
+      headerHTML += `<th contenteditable="true" style="border: 1px solid hsl(var(--border)); padding: 8px; background-color: hsl(var(--muted)); font-weight: 600; text-align: left; min-width: 100px;"></th>`;
     }
     headerHTML += '</tr>';
     
@@ -667,7 +667,7 @@ export function EnhancedContentEditor({
     for (let i = 0; i < rows - 1; i++) {
       bodyHTML += '<tr>';
       for (let j = 0; j < cols; j++) {
-        bodyHTML += `<td contenteditable="true" style="border: 1px solid hsl(var(--border)); padding: 8px; text-align: left; min-width: 100px; vertical-align: top;">Cell ${i + 1},${j + 1}</td>`;
+        bodyHTML += `<td contenteditable="true" style="border: 1px solid hsl(var(--border)); padding: 8px; text-align: left; min-width: 100px; vertical-align: top;"></td>`;
       }
       bodyHTML += '</tr>';
     }
@@ -717,11 +717,6 @@ export function EnhancedContentEditor({
               const firstCell = insertedTable.querySelector('th') as HTMLElement;
               if (firstCell) {
                 firstCell.focus();
-                
-                // Clear placeholder text and position cursor at start
-                if (firstCell.textContent === `Header 1`) {
-                  firstCell.textContent = '';
-                }
                 
                 const newSelection = window.getSelection();
                 if (newSelection) {
