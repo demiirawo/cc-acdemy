@@ -649,149 +649,174 @@ export function EnhancedContentEditor({
     console.log('Inserting table:', rows, 'x', cols);
     
     // Ensure editor has focus
-    if (editorRef.current) {
-      editorRef.current.focus();
+    if (!editorRef.current) return;
+    editorRef.current.focus();
+    
+    // Create a cleaner, more reliable table HTML structure
+    const tableId = `table-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Build header row HTML
+    let headerHTML = '<tr>';
+    for (let j = 0; j < cols; j++) {
+      headerHTML += `<th contenteditable="true" style="border: 1px solid hsl(var(--border)); padding: 8px; background-color: hsl(var(--muted)); font-weight: 600; text-align: left; min-width: 100px;">Header ${j + 1}</th>`;
+    }
+    headerHTML += '</tr>';
+    
+    // Build body rows HTML
+    let bodyHTML = '';
+    for (let i = 0; i < rows - 1; i++) {
+      bodyHTML += '<tr>';
+      for (let j = 0; j < cols; j++) {
+        bodyHTML += `<td contenteditable="true" style="border: 1px solid hsl(var(--border)); padding: 8px; text-align: left; min-width: 100px; vertical-align: top;">Cell ${i + 1},${j + 1}</td>`;
+      }
+      bodyHTML += '</tr>';
     }
     
-    // Create table element programmatically for better control
-    const table = document.createElement('table');
-    table.setAttribute('data-editable-table', 'true');
-    table.style.cssText = `
-      border-collapse: collapse;
-      width: 100%;
-      margin: 10px 0;
-      table-layout: fixed;
-      border: 1px solid #ccc;
+    // Complete table HTML with semantic design tokens
+    const tableHTML = `
+      <table id="${tableId}" data-editable-table="true" style="
+        border-collapse: collapse; 
+        width: 100%; 
+        margin: 16px 0; 
+        border: 1px solid hsl(var(--border));
+        font-family: inherit;
+        font-size: 14px;
+        line-height: 1.5;
+      ">
+        <thead>${headerHTML}</thead>
+        <tbody>${bodyHTML}</tbody>
+      </table>
+      <p><br></p>
     `;
     
-    // Create header
-    const thead = document.createElement('thead');
-    const headerRow = document.createElement('tr');
-    
-     for (let j = 0; j < cols; j++) {
-       const th = document.createElement('th');
-      th.contentEditable = 'true';
-      th.style.cssText = `
-        border: 1px solid #ccc;
-        padding: 12px;
-        background-color: #f8f9fa;
-        vertical-align: top;
-        text-align: left !important;
-        min-width: 120px;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-        font-size: 14px;
-        font-family: inherit;
-        height: auto;
-        box-sizing: border-box;
-        white-space: normal;
-        direction: ltr !important;
-        unicode-bidi: embed !important;
-        writing-mode: horizontal-tb !important;
-      `;
-      
-      // Force proper text direction
-      th.dir = 'ltr';
-      th.setAttribute('data-cell-type', 'header');
-      
-      // Add event listeners for proper cursor behavior and cell-specific paste handling
-      th.addEventListener('focus', handleCellFocus);
-      th.addEventListener('click', handleCellClick);
-      th.addEventListener('keydown', handleCellKeydown);
-      th.addEventListener('paste', handleCellPaste);
-      th.addEventListener('input', updateContent);
-      
-      headerRow.appendChild(th);
-    }
-    
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-    
-    // Create body
-    const tbody = document.createElement('tbody');
-    
-    for (let i = 0; i < rows - 1; i++) {
-      const row = document.createElement('tr');
-      
-      for (let j = 0; j < cols; j++) {
-         const td = document.createElement('td');
-        td.contentEditable = 'true';
-        td.style.cssText = `
-          border: 1px solid #ccc;
-          padding: 12px;
-          vertical-align: top;
-          text-align: start;
-          min-width: 120px;
-          word-wrap: break-word;
-          overflow-wrap: break-word;
-          font-size: 14px;
-          font-family: inherit;
-          height: auto;
-          box-sizing: border-box;
-          white-space: normal;
-          direction: ltr !important;
-          unicode-bidi: embed !important;
-          writing-mode: horizontal-tb !important;
-        `;
+    // Get current selection for insertion point
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      try {
+        // Insert using the more reliable insertHTML method
+        const range = selection.getRangeAt(0);
+        range.deleteContents();
         
-        // Force proper text direction
-        td.dir = 'ltr';
-        td.setAttribute('data-cell-type', 'data');
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = tableHTML;
+        const tableElement = tempDiv.firstElementChild as HTMLTableElement;
         
-        // Add event listeners for proper cursor behavior and cell-specific paste handling
-        td.addEventListener('focus', handleCellFocus);
-        td.addEventListener('click', handleCellClick);
-        td.addEventListener('keydown', handleCellKeydown);
-        td.addEventListener('paste', handleCellPaste);
-        td.addEventListener('input', updateContent);
+        if (tableElement) {
+          range.insertNode(tableElement);
+          
+          // Insert a paragraph after the table for continued typing
+          const paragraph = document.createElement('p');
+          paragraph.innerHTML = '<br>';
+          range.setStartAfter(tableElement);
+          range.insertNode(paragraph);
+          
+          // Position cursor in first cell
+          setTimeout(() => {
+            const insertedTable = document.getElementById(tableId);
+            if (insertedTable) {
+              const firstCell = insertedTable.querySelector('th') as HTMLElement;
+              if (firstCell) {
+                firstCell.focus();
+                
+                // Clear placeholder text and position cursor at start
+                if (firstCell.textContent === `Header 1`) {
+                  firstCell.textContent = '';
+                }
+                
+                const newSelection = window.getSelection();
+                if (newSelection) {
+                  newSelection.removeAllRanges();
+                  const newRange = document.createRange();
+                  newRange.setStart(firstCell, 0);
+                  newRange.collapse(true);
+                  newSelection.addRange(newRange);
+                }
+              }
+              
+              // Setup table navigation and controls
+              setupTableNavigation(insertedTable);
+            }
+            
+            // Update content to trigger save
+            updateContent();
+            
+            console.log('Table inserted and focused successfully');
+          }, 50);
+        }
         
-        row.appendChild(td);
-      }
-      
-      tbody.appendChild(row);
-    }
-    
-    table.appendChild(tbody);
-    
-    // Insert the table using execCommand for better compatibility
-    try {
-      const tableHTML = table.outerHTML + '<br>';
-      execCommand('insertHTML', tableHTML);
-      
-      console.log('Table inserted successfully');
-      
-      // Position cursor in first cell after a short delay
-      setTimeout(() => {
-        const insertedTable = editorRef.current?.querySelector('table[data-editable-table]:last-of-type');
-        if (insertedTable) {
-          const firstCell = insertedTable.querySelector('th') as HTMLElement;
-          if (firstCell) {
-            firstCell.focus();
-            const selection = window.getSelection();
-            if (selection) {
-              selection.removeAllRanges();
-              const range = document.createRange();
-              range.setStart(firstCell, 0);
-              range.collapse(true);
-              selection.addRange(range);
+      } catch (error) {
+        console.error('Error with range insertion:', error);
+        // Fallback: use execCommand
+        try {
+          document.execCommand('insertHTML', false, tableHTML);
+        } catch (execError) {
+          console.error('Error with execCommand fallback:', execError);
+          // Last resort: append to editor
+          if (editorRef.current) {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = tableHTML;
+            const table = tempDiv.firstElementChild;
+            if (table) {
+              editorRef.current.appendChild(table);
+              updateContent();
             }
           }
         }
-        
-        // Setup table controls
-        setupTableControls();
-      }, 100);
-      
-    } catch (error) {
-      console.error('Error inserting table:', error);
-      // Fallback: direct insertion
-      if (editorRef.current) {
-        editorRef.current.appendChild(table);
-        const br = document.createElement('br');
-        editorRef.current.appendChild(br);
-        updateContent();
+      }
+    } else {
+      // No selection, append to end of content
+      try {
+        document.execCommand('insertHTML', false, tableHTML);
+      } catch (error) {
+        console.error('Error inserting at end:', error);
       }
     }
+  };
+
+  // Simplified table navigation setup
+  const setupTableNavigation = (table: HTMLElement) => {
+    const cells = table.querySelectorAll('th, td');
+    
+    cells.forEach((cell, index) => {
+      const htmlCell = cell as HTMLElement;
+      
+      // Add keyboard navigation
+      htmlCell.addEventListener('keydown', (e: KeyboardEvent) => {
+        switch (e.key) {
+          case 'Tab':
+            e.preventDefault();
+            const nextIndex = e.shiftKey ? index - 1 : index + 1;
+            const nextCell = cells[nextIndex] as HTMLElement;
+            if (nextCell) {
+              nextCell.focus();
+              // Select all content in the cell for easy editing
+              const selection = window.getSelection();
+              if (selection) {
+                selection.removeAllRanges();
+                const range = document.createRange();
+                range.selectNodeContents(nextCell);
+                selection.addRange(range);
+              }
+            }
+            break;
+          case 'Enter':
+            if (!e.shiftKey) {
+              e.preventDefault();
+              const nextRowIndex = index + (table.querySelector('thead tr')?.children.length || 0);
+              const nextRowCell = cells[nextRowIndex] as HTMLElement;
+              if (nextRowCell) {
+                nextRowCell.focus();
+              }
+            }
+            break;
+        }
+      });
+      
+      // Update content when cell content changes
+      htmlCell.addEventListener('input', () => {
+        updateContent();
+      });
+    });
   };
 
   const handleCellFocus = (e: Event) => {
