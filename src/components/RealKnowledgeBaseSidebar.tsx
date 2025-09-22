@@ -420,11 +420,14 @@ export function RealKnowledgeBaseSidebar({
     // Event listener for page updates
     const handlePageUpdated = () => {
       console.log('Page updated event received, refreshing hierarchy...');
-      fetchHierarchyData();
+      // Add a small delay to ensure database writes are complete
+      setTimeout(() => {
+        fetchHierarchyData();
+      }, 100);
     };
     window.addEventListener('pageUpdated', handlePageUpdated);
 
-    // Set up real-time subscriptions
+    // Set up real-time subscriptions with better error handling
     const pagesChannel = supabase
       .channel('pages-changes')
       .on('postgres_changes', { 
@@ -433,9 +436,14 @@ export function RealKnowledgeBaseSidebar({
         table: 'pages' 
       }, (payload) => {
         console.log('Real-time page change:', payload);
-        fetchHierarchyData();
+        // Add delay to ensure consistency
+        setTimeout(() => {
+          fetchHierarchyData();
+        }, 100);
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Pages channel subscription status:', status);
+      });
 
     const spacesChannel = supabase
       .channel('spaces-changes')
@@ -445,9 +453,13 @@ export function RealKnowledgeBaseSidebar({
         table: 'spaces' 
       }, (payload) => {
         console.log('Real-time space change:', payload);
-        fetchHierarchyData();
+        setTimeout(() => {
+          fetchHierarchyData();
+        }, 100);
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Spaces channel subscription status:', status);
+      });
 
     return () => {
       window.removeEventListener('pageUpdated', handlePageUpdated);
@@ -522,12 +534,20 @@ export function RealKnowledgeBaseSidebar({
       if (spacesResponse.error) throw spacesResponse.error;
       if (pagesResponse.error) throw pagesResponse.error;
 
-      console.log('Fetched pages with sort_order:', pagesResponse.data?.map(p => ({ title: p.title, sort_order: p.sort_order })));
+      console.log('Fetched hierarchy data - Spaces:', spacesResponse.data?.length, 'Pages:', pagesResponse.data?.length);
+      console.log('Pages with hierarchy info:', pagesResponse.data?.map(p => ({ 
+        title: p.title, 
+        id: p.id,
+        parent_page_id: p.parent_page_id, 
+        space_id: p.space_id,
+        sort_order: p.sort_order 
+      })));
 
       setSpaces(spacesResponse.data || []);
       setPages(pagesResponse.data || []);
 
       const hierarchy = buildHierarchy(spacesResponse.data || [], pagesResponse.data || []);
+      console.log('Built hierarchy:', hierarchy);
       setHierarchyData(hierarchy);
     } catch (error) {
       console.error('Error fetching hierarchy data:', error);

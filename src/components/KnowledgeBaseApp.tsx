@@ -572,6 +572,8 @@ export function KnowledgeBaseApp() {
     handleCreatePageInEditor(parentId);
   };
   const handleCreatePageInEditor = async (parentId?: string) => {
+    console.log('handleCreatePageInEditor called with parentId:', parentId);
+    
     if (!user) {
       console.error('No user found when trying to create page');
       toast({
@@ -609,35 +611,61 @@ export function KnowledgeBaseApp() {
     }
     
     try {
-      // Validate parentId if provided
+      let resolvedParentId = parentId;
+      let resolvedSpaceId = null;
+
+      // Validate and resolve parentId and spaceId if provided
       if (parentId) {
-        const {
-          data: parentExists
-        } = await supabase.from('pages').select('id').eq('id', parentId).single();
-        if (!parentExists) {
-          parentId = null; // Reset if parent doesn't exist
+        const { data: parentPage } = await supabase
+          .from('pages')
+          .select('id, space_id')
+          .eq('id', parentId)
+          .single();
+        
+        if (parentPage) {
+          resolvedSpaceId = parentPage.space_id;
+          console.log('Resolved parent page context:', { parentId, spaceId: resolvedSpaceId });
+        } else {
+          // If parent doesn't exist, check if it's a space ID
+          const { data: space } = await supabase
+            .from('spaces')
+            .select('id')
+            .eq('id', parentId)
+            .single();
+          
+          if (space) {
+            resolvedParentId = null;
+            resolvedSpaceId = parentId;
+            console.log('Resolved as space context:', { spaceId: resolvedSpaceId });
+          } else {
+            resolvedParentId = null;
+            console.log('Parent/space not found, creating at root level');
+          }
         }
       }
       
-      // Test if we can insert into pages table first
-      console.log('Testing page creation with:', {
+      // Create page with resolved hierarchy context
+      console.log('Creating page with hierarchy context:', {
         title: 'Untitled Page',
         content: '',
         tags: [],
         created_by: user.id,
-        parent_page_id: parentId || null
+        parent_page_id: resolvedParentId,
+        space_id: resolvedSpaceId
       });
       
-      const {
-        data,
-        error
-      } = await supabase.from('pages').insert({
-        title: 'Untitled Page',
-        content: '',
-        tags: [],
-        created_by: user.id,
-        parent_page_id: parentId || null
-      }).select().single();
+      const { data, error } = await supabase
+        .from('pages')
+        .insert({
+          title: 'Untitled Page',
+          content: '',
+          tags: [],
+          created_by: user.id,
+          parent_page_id: resolvedParentId,
+          space_id: resolvedSpaceId
+        })
+        .select()
+        .single();
       
       if (error) {
         console.error('Database error:', error);
@@ -646,13 +674,18 @@ export function KnowledgeBaseApp() {
 
       console.log('Page created successfully:', data);
 
+      // Trigger hierarchy refresh
+      window.dispatchEvent(new CustomEvent('pageUpdated'));
+
       // Navigate directly to editor
       setCurrentPage({
         id: data.id,
         title: data.title,
         content: data.content,
         lastUpdated: data.updated_at,
-        author: 'User'
+        author: 'User',
+        parent_page_id: data.parent_page_id,
+        space_id: data.space_id
       });
       setIsEditing(true);
       setCurrentView('editor');
@@ -660,7 +693,7 @@ export function KnowledgeBaseApp() {
       navigate(`/page/${data.id}`);
       toast({
         title: "Page created",
-        description: "New page created. Start editing!"
+        description: "New page created in the correct location. Start editing!"
       });
     } catch (error) {
       console.error('Error creating page:', error);

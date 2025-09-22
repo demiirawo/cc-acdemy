@@ -230,13 +230,21 @@ export function MovePageDialog({ isOpen, onClose, pageId, currentPageTitle }: Mo
 
       if (error) throw error;
 
+      console.log('Page moved successfully:', { pageId, updateData });
+
       toast({
         title: "Success",
         description: `"${currentPageTitle}" moved successfully`
       });
 
-      // Trigger refresh
+      // Trigger multiple refresh signals to ensure updates
       window.dispatchEvent(new CustomEvent('pageUpdated'));
+      
+      // Also trigger a delayed refresh to handle any timing issues
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('pageUpdated'));
+      }, 200);
+      
       onClose();
     } catch (error) {
       console.error('Error moving page:', error);
