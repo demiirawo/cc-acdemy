@@ -139,21 +139,47 @@ export function EnhancedContentEditor({
   const highlightGlossaryTerms = (content: string): string => {
     if (!glossaryTerms.length) return content;
     
-    let highlightedContent = content;
+    // Create a map of positions to avoid overlapping highlights
+    const highlights: { start: number; end: number; term: any }[] = [];
     
-    // Sort terms by length (longest first) to avoid partial matches
+    // Sort terms by length (longest first) to prioritize longer matches
     const sortedTerms = [...glossaryTerms].sort((a, b) => b.term.length - a.term.length);
     
     sortedTerms.forEach(term => {
       const regex = new RegExp(`\\b${term.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
-      const definition = term.definition;
+      let match;
       
-      highlightedContent = highlightedContent.replace(regex, (match) => {
-        return `<span class="glossary-term" data-term="${term.term}" data-definition="${definition.replace(/"/g, '&quot;')}">${match}</span>`;
-      });
+      while ((match = regex.exec(content)) !== null) {
+        const start = match.index;
+        const end = match.index + match[0].length;
+        
+        // Check if this position overlaps with existing highlights
+        const overlaps = highlights.some(h => 
+          (start >= h.start && start < h.end) || 
+          (end > h.start && end <= h.end) ||
+          (start <= h.start && end >= h.end)
+        );
+        
+        if (!overlaps) {
+          highlights.push({ start, end, term });
+        }
+      }
     });
     
-    return highlightedContent;
+    // Sort highlights by position (reverse order for easier string manipulation)
+    highlights.sort((a, b) => b.start - a.start);
+    
+    // Apply highlights from end to beginning to maintain positions
+    let result = content;
+    highlights.forEach(highlight => {
+      const { start, end, term } = highlight;
+      const matchedText = content.substring(start, end);
+      const definition = term.definition;
+      const replacement = `<span class="glossary-term" data-term="${term.term}" data-definition="${definition.replace(/"/g, '&quot;')}">${matchedText}</span>`;
+      result = result.substring(0, start) + replacement + result.substring(end);
+    });
+    
+    return result;
   };
 
   // Unified save function that handles all content consistently
