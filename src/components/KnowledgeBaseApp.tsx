@@ -71,7 +71,7 @@ function PageView({
         if (isFirstMatch && !highlightedTerms.has(termLower)) {
           highlightedTerms.add(termLower);
           isFirstMatch = false;
-          return `<span class="glossary-term" data-term="${term.term}" data-definition="${definition.replace(/"/g, '&quot;')}" style="border-bottom: 2px solid rgb(147, 51, 234); cursor: help;">${match}</span>`;
+          return `<span class="glossary-term" data-term="${term.term}" data-definition="${definition.replace(/"/g, '&quot;')}">${match}</span>`;
         }
         return match;
       });

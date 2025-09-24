@@ -144,4 +144,16 @@
     -ms-user-select: none;
     user-select: none;
   }
+
+  /* Glossary term styling */
+  .glossary-term {
+    border-bottom: 2px solid hsl(var(--primary));
+    cursor: help;
+    text-decoration: none;
+    position: relative;
+  }
+
+  .glossary-term:hover {
+    border-bottom-color: hsl(var(--primary-light));
+  }
 }

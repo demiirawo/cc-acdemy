@@ -149,7 +149,7 @@ export function EnhancedContentEditor({
       const definition = term.definition;
       
       highlightedContent = highlightedContent.replace(regex, (match) => {
-        return `<span class="glossary-term" data-term="${term.term}" data-definition="${definition.replace(/"/g, '&quot;')}" style="border-bottom: 2px solid rgb(147, 51, 234); cursor: help;">${match}</span>`;
+        return `<span class="glossary-term" data-term="${term.term}" data-definition="${definition.replace(/"/g, '&quot;')}">${match}</span>`;
       });
     });
     
