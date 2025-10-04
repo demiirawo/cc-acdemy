@@ -100,6 +100,8 @@ interface SidebarTreeItemProps {
   onCopyLink?: (pageId: string) => void;
   onMovePage?: (pageId: string) => void;
   hierarchyData?: SidebarItem[];
+  expandedItems: Set<string>;
+  onToggleExpanded: (itemId: string) => void;
 }
 
 // Simple SidebarTreeItem component without drag functionality
@@ -114,13 +116,15 @@ function SidebarTreeItem({
   onArchivePage,
   onCopyLink,
   onMovePage,
-  hierarchyData
+  hierarchyData,
+  expandedItems,
+  onToggleExpanded
 }: SidebarTreeItemProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const hasChildren = item.children && item.children.length > 0;
   const isSelected = selectedId === item.id;
+  const isExpanded = expandedItems.has(item.id);
   const { toast } = useToast();
 
   const handleMovePageUp = async (pageId: string) => {
@@ -216,7 +220,7 @@ function SidebarTreeItem({
         {hasChildren && (
           <Button variant="ghost" size="sm" className="h-4 w-4 p-0 hover:bg-transparent" onClick={(e) => {
             e.stopPropagation();
-            setIsExpanded(!isExpanded);
+            onToggleExpanded(item.id);
           }}>
             {isExpanded ? <ChevronDown className="h-3 w-3 text-white hover:animate-pulse" /> : <ChevronRight className="h-3 w-3 text-white hover:animate-pulse" />}
           </Button>
@@ -377,6 +381,8 @@ function SidebarTreeItem({
               onCopyLink={onCopyLink}
               onMovePage={onMovePage}
               hierarchyData={hierarchyData}
+              expandedItems={expandedItems}
+              onToggleExpanded={onToggleExpanded}
             />
           ))}
         </div>
@@ -411,8 +417,21 @@ export function RealKnowledgeBaseSidebar({
   const [loading, setLoading] = useState(true);
   const [moveDialogOpen, setMoveDialogOpen] = useState(false);
   const [pageToMove, setPageToMove] = useState<{ id: string; title: string } | null>(null);
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const { isAdmin } = useUserRole();
+
+  const toggleExpanded = (itemId: string) => {
+    setExpandedItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(itemId)) {
+        newSet.delete(itemId);
+      } else {
+        newSet.add(itemId);
+      }
+      return newSet;
+    });
+  };
 
   useEffect(() => {
     fetchHierarchyData();
@@ -858,6 +877,8 @@ export function RealKnowledgeBaseSidebar({
                       onCopyLink={handleCopyLink}
                       onMovePage={handleMovePage}
                       hierarchyData={hierarchyData}
+                      expandedItems={expandedItems}
+                      onToggleExpanded={toggleExpanded}
                     />
                   ))
                 ) : searchQuery ? (
