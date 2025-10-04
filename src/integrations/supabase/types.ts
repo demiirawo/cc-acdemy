@@ -7,7 +7,7 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instanciate createClient with right options
+  // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "12.2.3 (519615d)"
@@ -767,38 +767,38 @@ export type Database = {
       }
       has_role: {
         Args: {
-          _user_id: string
           _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
         }
         Returns: boolean
       }
       log_page_operation: {
         Args: {
-          p_page_id: string
-          p_operation_type: string
-          p_old_values?: Json
-          p_new_values?: Json
           p_error_message?: string
+          p_new_values?: Json
+          p_old_values?: Json
+          p_operation_type: string
+          p_page_id: string
         }
         Returns: undefined
       }
       log_recommended_reading_change: {
         Args: {
-          p_page_id: string
-          p_operation_type: string
-          p_old_data?: Json
-          p_new_data?: Json
           p_change_details?: Json
+          p_new_data?: Json
+          p_old_data?: Json
+          p_operation_type: string
+          p_page_id: string
         }
         Returns: string
       }
       log_security_event: {
         Args: {
-          p_user_id: string
-          p_event_type: string
           p_event_details?: Json
+          p_event_type: string
           p_ip_address?: unknown
           p_user_agent?: string
+          p_user_id: string
         }
         Returns: undefined
       }
@@ -807,18 +807,18 @@ export type Database = {
         Returns: boolean
       }
       move_page_down_enhanced: {
-        Args: { p_page_id: string; p_expected_version: number }
+        Args: { p_expected_version?: number; p_page_id: string }
         Returns: Json
       }
       move_page_down_safe: {
-        Args: { p_page_id: string; p_expected_version: number }
+        Args: { p_expected_version: number; p_page_id: string }
         Returns: Json
       }
       move_page_to_parent_safe: {
         Args: {
-          p_page_id: string
-          p_new_parent_id: string
           p_expected_version: number
+          p_new_parent_id: string
+          p_page_id: string
         }
         Returns: Json
       }
@@ -827,19 +827,19 @@ export type Database = {
         Returns: boolean
       }
       move_page_up_enhanced: {
-        Args: { p_page_id: string; p_expected_version: number }
+        Args: { p_expected_version?: number; p_page_id: string }
         Returns: Json
       }
       move_page_up_safe: {
-        Args: { p_page_id: string; p_expected_version: number }
+        Args: { p_expected_version: number; p_page_id: string }
         Returns: Json
       }
       sync_missing_profiles: {
         Args: Record<PropertyKey, never>
         Returns: {
-          user_id: string
-          email: string
           created_profile: boolean
+          email: string
+          user_id: string
         }[]
       }
       update_project_memory: {
