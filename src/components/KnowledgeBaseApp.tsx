@@ -51,6 +51,12 @@ function PageView({
   const { toast } = useToast();
   const { terms: glossaryTerms } = useGlossary();
 
+  // Function to make content read-only by removing contenteditable attributes
+  const makeContentReadOnly = (content: string): string => {
+    // Remove all contenteditable attributes to prevent editing in view mode
+    return content.replace(/\scontenteditable="true"/gi, '');
+  };
+
   // Function to highlight glossary terms in content
   const highlightGlossaryTerms = (content: string): string => {
     if (!glossaryTerms.length) return content;
@@ -284,7 +290,7 @@ function PageView({
         
         <div className="prose prose-lg max-w-none">
           <div className="text-foreground leading-relaxed" dangerouslySetInnerHTML={{
-          __html: highlightGlossaryTerms(cleanContent.split('RECOMMENDED_READING:')[0])
+          __html: makeContentReadOnly(highlightGlossaryTerms(cleanContent.split('RECOMMENDED_READING:')[0]))
         }} />
         </div>
 
