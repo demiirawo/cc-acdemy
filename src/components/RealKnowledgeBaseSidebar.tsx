@@ -642,7 +642,7 @@ export function RealKnowledgeBaseSidebar({
   };
 
   const handleItemSelect = (item: SidebarItem) => {
-    if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'settings' || item.id === 'whiteboard' || item.id === 'user-management' || item.id === 'chat' || item.id === 'glossary') {
+    if (item.id === 'home' || item.id === 'recent' || item.id === 'tags' || item.id === 'settings' || item.id === 'whiteboard' || item.id === 'user-management' || item.id === 'chat' || item.id === 'glossary' || item.id === 'recycling-bin') {
       onItemSelect(item);
     } else if (item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
       onItemSelect(item);
