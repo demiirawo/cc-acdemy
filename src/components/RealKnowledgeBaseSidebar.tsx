@@ -808,7 +808,7 @@ export function RealKnowledgeBaseSidebar({
           {navigationItems
             .filter((item) => {
               // Filter navigation items based on user role
-              if (item.id === 'user-management') {
+              if (item.id === 'user-management' || item.id === 'recycling-bin') {
                 return isAdmin;
               }
               return true;

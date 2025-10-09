@@ -21,6 +21,7 @@ import { UserManagement } from "./UserManagement";
 import { ChatPage } from "./ChatPage";
 import { RecommendedReadingSection } from "./RecommendedReadingSection";
 import { GlossaryPage } from "./GlossaryPage";
+import { RecyclingBin } from "./RecyclingBin";
 import { useGlossary } from "@/hooks/useGlossary";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 
@@ -406,16 +407,17 @@ export function KnowledgeBaseApp() {
         });
       } else if (viewName) {
         // Navigate to specific view
-        const viewMap: Record<string, ViewMode> = {
-          'dashboard': 'dashboard',
-          'recent': 'recent',
-          'tags': 'tags',
-          'settings': 'settings',
-          'whiteboard': 'whiteboard',
-          'user-management': 'user-management',
-          'chat': 'chat',
-          'glossary': 'glossary'
-        };
+      const viewMap: Record<string, ViewMode> = {
+        'dashboard': 'dashboard',
+        'recent': 'recent',
+        'tags': 'tags',
+        'settings': 'settings',
+        'whiteboard': 'whiteboard',
+        'user-management': 'user-management',
+        'chat': 'chat',
+        'glossary': 'glossary',
+        'recycling-bin': 'recycling-bin'
+      };
         
         if (viewMap[viewName]) {
           setCurrentView(viewMap[viewName]);
@@ -542,7 +544,7 @@ export function KnowledgeBaseApp() {
       setCurrentView('recycling-bin');
       setCurrentPage(null);
       setBreadcrumbs([]);
-      navigate('/recycling-bin');
+      navigate('/view/recycling-bin');
     } else if (item.type === 'page') {
       try {
         // Fetch real page data from Supabase
@@ -967,6 +969,11 @@ export function KnowledgeBaseApp() {
         {currentView === 'glossary' && (
           <div className="flex-1 overflow-auto">
             <GlossaryPage />
+          </div>
+        )}
+        {currentView === 'recycling-bin' && (
+          <div className="flex-1 overflow-auto">
+            <RecyclingBin />
           </div>
         )}
         
