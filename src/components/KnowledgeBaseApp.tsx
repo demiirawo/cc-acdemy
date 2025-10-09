@@ -301,7 +301,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin';
 interface SidebarItem {
   id: string;
   title: string;
@@ -538,6 +538,11 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
       setBreadcrumbs([]);
       navigate('/view/glossary');
+    } else if (item.id === 'recycling-bin') {
+      setCurrentView('recycling-bin');
+      setCurrentPage(null);
+      setBreadcrumbs([]);
+      navigate('/recycling-bin');
     } else if (item.type === 'page') {
       try {
         // Fetch real page data from Supabase
