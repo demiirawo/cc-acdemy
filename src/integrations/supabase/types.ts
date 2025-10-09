@@ -408,6 +408,7 @@ export type Database = {
           content: string
           created_at: string
           created_by: string
+          deleted_at: string | null
           id: string
           is_public: boolean | null
           parent_page_id: string | null
@@ -426,6 +427,7 @@ export type Database = {
           content?: string
           created_at?: string
           created_by: string
+          deleted_at?: string | null
           id?: string
           is_public?: boolean | null
           parent_page_id?: string | null
@@ -444,6 +446,7 @@ export type Database = {
           content?: string
           created_at?: string
           created_by?: string
+          deleted_at?: string | null
           id?: string
           is_public?: boolean | null
           parent_page_id?: string | null
@@ -832,6 +835,14 @@ export type Database = {
       }
       move_page_up_safe: {
         Args: { p_expected_version: number; p_page_id: string }
+        Returns: Json
+      }
+      permanently_delete_page: {
+        Args: { p_page_id: string }
+        Returns: Json
+      }
+      restore_page: {
+        Args: { p_page_id: string }
         Returns: Json
       }
       sync_missing_profiles: {

@@ -64,6 +64,11 @@ const navigationItems = [{
   icon: Tag,
   href: '/tags'
 }, {
+  id: 'recycling-bin',
+  title: 'Recycling Bin',
+  icon: Trash2,
+  href: '/recycling-bin'
+}, {
   id: 'user-management',
   title: 'User Management',
   icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -331,18 +336,19 @@ function SidebarTreeItem({
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={async () => {
-                  if (confirm("Are you sure you want to delete this page? This action cannot be undone.")) {
+                  if (confirm("Are you sure you want to delete this page? You can restore it from the recycling bin.")) {
                     try {
+                      // Soft delete by setting deleted_at timestamp
                       const { error } = await supabase
                         .from('pages')
-                        .delete()
+                        .update({ deleted_at: new Date().toISOString() })
                         .eq('id', item.id);
                       
                       if (error) throw error;
                       
                       toast({
                         title: "Page deleted",
-                        description: "Page has been permanently deleted."
+                        description: "Page moved to recycling bin."
                       });
                       
                       window.dispatchEvent(new CustomEvent('pageUpdated'));

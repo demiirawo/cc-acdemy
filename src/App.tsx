@@ -9,6 +9,7 @@ import NotFound from "./pages/NotFound";
 import ProjectView from "./components/ProjectView";
 
 import { PublicPageView } from "./components/PublicPageView";
+import { RecyclingBin } from "./components/RecyclingBin";
 
 const queryClient = new QueryClient();
 
@@ -22,6 +23,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/page/:pageId" element={<Index />} />
           <Route path="/view/:viewName" element={<Index />} />
+          <Route path="/recycling-bin" element={<RecyclingBin />} />
           
           <Route path="/public/:token" element={<PublicPageView />} />
           <Route path="/project/:projectId" element={<ProjectView />} />
