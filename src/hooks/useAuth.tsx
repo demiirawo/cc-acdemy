@@ -42,7 +42,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         console.log('Auth state change:', event, session?.user?.id);
         
         // Handle different auth events
-        if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
+        if (event === 'SIGNED_OUT') {
+          // Clear any stale session data
+          localStorage.removeItem('supabase.auth.token');
+          setSession(null);
+          setUser(null);
+        } else if (event === 'TOKEN_REFRESHED') {
           setSession(session);
           setUser(session?.user ?? null);
         } else if (event === 'SIGNED_IN') {
