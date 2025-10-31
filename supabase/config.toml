@@ -42,3 +42,6 @@ verify_jwt = false
 
 [functions.get-user-profiles]
 verify_jwt = true
+
+[functions.set-user-password]
+verify_jwt = false
