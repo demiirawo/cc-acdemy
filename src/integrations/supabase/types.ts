@@ -675,7 +675,7 @@ export type Database = {
           event_details: Json | null
           event_type: string
           id: string
-          ip_address: unknown | null
+          ip_address: unknown
           user_agent: string | null
           user_id: string | null
         }
@@ -684,7 +684,7 @@ export type Database = {
           event_details?: Json | null
           event_type: string
           id?: string
-          ip_address?: unknown | null
+          ip_address?: unknown
           user_agent?: string | null
           user_id?: string | null
         }
@@ -693,7 +693,7 @@ export type Database = {
           event_details?: Json | null
           event_type?: string
           id?: string
-          ip_address?: unknown | null
+          ip_address?: unknown
           user_agent?: string | null
           user_id?: string | null
         }
@@ -756,10 +756,7 @@ export type Database = {
         Args: { p_page_id: string; p_snapshot_type?: string }
         Returns: string
       }
-      get_current_user_role: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
+      get_current_user_role: { Args: never; Returns: string }
       get_next_sort_order: {
         Args: { p_parent_page_id: string; p_space_id: string }
         Returns: number
@@ -805,10 +802,7 @@ export type Database = {
         }
         Returns: undefined
       }
-      move_page_down: {
-        Args: { page_id: string }
-        Returns: boolean
-      }
+      move_page_down: { Args: { page_id: string }; Returns: boolean }
       move_page_down_enhanced: {
         Args: { p_expected_version?: number; p_page_id: string }
         Returns: Json
@@ -825,10 +819,7 @@ export type Database = {
         }
         Returns: Json
       }
-      move_page_up: {
-        Args: { page_id: string }
-        Returns: boolean
-      }
+      move_page_up: { Args: { page_id: string }; Returns: boolean }
       move_page_up_enhanced: {
         Args: { p_expected_version?: number; p_page_id: string }
         Returns: Json
@@ -837,26 +828,17 @@ export type Database = {
         Args: { p_expected_version: number; p_page_id: string }
         Returns: Json
       }
-      permanently_delete_page: {
-        Args: { p_page_id: string }
-        Returns: Json
-      }
-      restore_page: {
-        Args: { p_page_id: string }
-        Returns: Json
-      }
+      permanently_delete_page: { Args: { p_page_id: string }; Returns: Json }
+      restore_page: { Args: { p_page_id: string }; Returns: Json }
       sync_missing_profiles: {
-        Args: Record<PropertyKey, never>
+        Args: never
         Returns: {
           created_profile: boolean
           email: string
           user_id: string
         }[]
       }
-      update_project_memory: {
-        Args: { p_project_id: string }
-        Returns: Json
-      }
+      update_project_memory: { Args: { p_project_id: string }; Returns: Json }
       user_has_page_permission: {
         Args: { page_id: string; permission_types: string[] }
         Returns: boolean
