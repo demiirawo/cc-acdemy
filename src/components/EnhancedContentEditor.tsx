@@ -1717,8 +1717,12 @@ export function EnhancedContentEditor({
   const setupImageControls = () => {
     // Add global function for image controls
     (window as any).showImageControls = (imageId: string) => {
+      console.log('showImageControls called for:', imageId);
       const img = document.getElementById(imageId);
-      if (!img) return;
+      if (!img) {
+        console.error('Image not found:', imageId);
+        return;
+      }
       
       // Remove existing controls
       document.querySelectorAll('.image-controls').forEach(control => control.remove());
@@ -1742,31 +1746,82 @@ export function EnhancedContentEditor({
         <h4 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600;">Image Controls</h4>
         <div style="margin-bottom: 8px;">
           <label style="display: block; margin-bottom: 4px; font-size: 12px;">Alignment:</label>
-          <button onclick="alignImage('${imageId}', 'left')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Left</button>
-          <button onclick="alignImage('${imageId}', 'center')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Center</button>
-          <button onclick="alignImage('${imageId}', 'right')" style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Right</button>
+          <button data-action="align-left" data-image-id="${imageId}" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Left</button>
+          <button data-action="align-center" data-image-id="${imageId}" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Center</button>
+          <button data-action="align-right" data-image-id="${imageId}" style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">Right</button>
         </div>
         <div style="margin-bottom: 8px;">
           <label style="display: block; margin-bottom: 4px; font-size: 12px;">Size:</label>
-          <button onclick="resizeImage('${imageId}', '25%')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">25%</button>
-          <button onclick="resizeImage('${imageId}', '50%')" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">50%</button>
-          <button onclick="resizeImage('${imageId}', '100%')" style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">100%</button>
+          <button data-action="resize-25" data-image-id="${imageId}" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">25%</button>
+          <button data-action="resize-50" data-image-id="${imageId}" style="margin-right: 4px; padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">50%</button>
+          <button data-action="resize-100" data-image-id="${imageId}" style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">100%</button>
         </div>
-        <button onclick="closeImageControls()" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: #f5f5f5;">Close</button>
+        <button data-action="close" style="width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: #f5f5f5;">Close</button>
       `;
       
       document.body.appendChild(controls);
       
+      // Add event listeners to buttons
+      controls.querySelectorAll('button').forEach(button => {
+        button.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const action = (e.target as HTMLElement).getAttribute('data-action');
+          const imgId = (e.target as HTMLElement).getAttribute('data-image-id');
+          
+          if (action === 'close') {
+            controls.remove();
+          } else if (imgId) {
+            const targetImg = document.getElementById(imgId);
+            if (targetImg) {
+              if (action === 'align-left') {
+                const container = targetImg.parentElement;
+                if (container) {
+                  container.style.textAlign = 'left';
+                  updateContent();
+                }
+              } else if (action === 'align-center') {
+                const container = targetImg.parentElement;
+                if (container) {
+                  container.style.textAlign = 'center';
+                  updateContent();
+                }
+              } else if (action === 'align-right') {
+                const container = targetImg.parentElement;
+                if (container) {
+                  container.style.textAlign = 'right';
+                  updateContent();
+                }
+              } else if (action === 'resize-25') {
+                (targetImg as HTMLImageElement).style.width = '25%';
+                (targetImg as HTMLImageElement).style.height = 'auto';
+                updateContent();
+              } else if (action === 'resize-50') {
+                (targetImg as HTMLImageElement).style.width = '50%';
+                (targetImg as HTMLImageElement).style.height = 'auto';
+                updateContent();
+              } else if (action === 'resize-100') {
+                (targetImg as HTMLImageElement).style.width = '100%';
+                (targetImg as HTMLImageElement).style.height = 'auto';
+                updateContent();
+              }
+            }
+          }
+        });
+      });
+      
       // Click outside to close
       setTimeout(() => {
-        document.addEventListener('click', (e) => {
-          if (!controls.contains(e.target as Node)) {
+        const closeOnClickOutside = (e: MouseEvent) => {
+          if (!controls.contains(e.target as Node) && !img.contains(e.target as Node)) {
             controls.remove();
+            document.removeEventListener('click', closeOnClickOutside);
           }
-        }, { once: true });
+        };
+        document.addEventListener('click', closeOnClickOutside);
       }, 100);
     };
     
+    // Keep these for backwards compatibility
     (window as any).alignImage = (imageId: string, alignment: string) => {
       const img = document.getElementById(imageId);
       if (!img) return;
