@@ -1625,90 +1625,93 @@ export function EnhancedContentEditor({
     updateContent();
   };
 
-  const insertImage = () => {
+  const insertImage = async () => {
     // Create a file input for local uploads
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
-    fileInput.accept = 'image/*,video/*,.pdf,.doc,.docx';
-    fileInput.onchange = (e) => {
+    fileInput.accept = 'image/*';
+    fileInput.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
-        if (file.type.startsWith('image/')) {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            const result = e.target?.result as string;
-            const imageId = `img-${Date.now()}`;
-            insertText(`
-              <div class="image-container" style="text-align: left; margin: 10px 0;">
-                <img 
-                  id="${imageId}" 
-                  src="${result}" 
-                  alt="${file.name}" 
-                  style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer; display: block;" 
-                  onclick="showImageControls('${imageId}')"
-                />
-              </div>
-            `);
-            
-            // Add image control functionality
-            setTimeout(() => setupImageControls(), 100);
-            
-            toast({
-              title: "Image inserted",
-              description: "Click the image to resize and align it",
-            });
-          };
-          reader.readAsDataURL(file);
-        } else if (file.type.startsWith('video/')) {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            const result = e.target?.result as string;
-            insertText(`<video controls style="max-width: 100%; height: auto; border-radius: 8px; margin: 10px 0;"><source src="${result}" type="${file.type}">Your browser does not support the video tag.</video>`);
-            toast({
-              title: "Video inserted",
-              description: "Video has been added to your content",
-            });
-          };
-          reader.readAsDataURL(file);
-        } else {
-          // For other file types, create a download link
-          const fileUrl = URL.createObjectURL(file);
-          insertText(`<div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin: 10px 0; background: #f9fafb;"><a href="${fileUrl}" download="${file.name}" style="color: #3b82f6; text-decoration: none; font-weight: 500;">📁 ${file.name}</a><br><small style="color: #6b7280;">Click to download</small></div>`);
+      if (!file) return;
+      
+      try {
+        // Show uploading toast
+        toast({
+          title: "Uploading image...",
+          description: "Please wait while we upload your image",
+        });
+
+        // Get current user
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
           toast({
-            title: "File attached",
-            description: "File has been added to your content",
+            title: "Error",
+            description: "You must be logged in to upload images",
+            variant: "destructive",
           });
+          return;
         }
+
+        // Create unique file name
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+
+        // Upload to Supabase Storage
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('page-images')
+          .upload(fileName, file, {
+            cacheControl: '3600',
+            upsert: false
+          });
+
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          toast({
+            title: "Upload failed",
+            description: uploadError.message,
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from('page-images')
+          .getPublicUrl(fileName);
+
+        // Insert image into editor
+        const imageId = `img-${Date.now()}`;
+        insertText(`
+          <div class="image-container" style="text-align: left; margin: 10px 0;">
+            <img 
+              id="${imageId}" 
+              src="${publicUrl}" 
+              alt="${file.name}" 
+              style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer; display: block;" 
+              onclick="showImageControls('${imageId}')"
+            />
+          </div>
+        `);
+        
+        // Add image control functionality
+        setTimeout(() => setupImageControls(), 100);
+        
+        toast({
+          title: "Image uploaded",
+          description: "Click the image to resize and align it",
+        });
+      } catch (error) {
+        console.error('Error uploading image:', error);
+        toast({
+          title: "Error",
+          description: "Failed to upload image. Please try again.",
+          variant: "destructive",
+        });
       }
     };
     
-    // Also provide option for URL
-    const choice = confirm("Upload local file? (Cancel for URL input)");
-    if (choice) {
-      fileInput.click();
-    } else {
-      const url = prompt("Enter image/file URL:");
-      const alt = prompt("Enter alt text or description:") || "Media";
-      if (url) {
-        if (url.match(/\.(jpg|jpeg|png|gif|bmp|webp)$/i)) {
-          const imageId = `img-${Date.now()}`;
-          insertText(`
-            <div class="image-container" style="text-align: left; margin: 10px 0;">
-              <img 
-                id="${imageId}" 
-                src="${url}" 
-                alt="${alt}" 
-                style="max-width: 100%; height: auto; border-radius: 8px; cursor: pointer; display: block;" 
-                onclick="showImageControls('${imageId}')"
-              />
-            </div>
-          `);
-          setTimeout(() => setupImageControls(), 100);
-        } else {
-          insertText(`<a href="${url}" target="_blank" style="color: #3b82f6; text-decoration: underline;">${alt}</a>`);
-        }
-      }
-    }
+    // Trigger file input
+    fileInput.click();
   };
 
   const setupImageControls = () => {
