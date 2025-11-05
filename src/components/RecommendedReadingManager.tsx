@@ -13,6 +13,7 @@ import {
   AlertTriangle, Save, Undo2, Shield, Clock
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import { 
   useRecommendedReadingAudit, 
   RecommendedReadingItem, 
@@ -414,11 +415,54 @@ export function RecommendedReadingManager({
                                 ) : (
                                   <Input
                                     type="file"
-                                    onChange={(e) => {
+                                    onChange={async (e) => {
                                       const file = e.target.files?.[0];
-                                      if (file) {
+                                      if (!file) return;
+                                      
+                                      try {
+                                        // Create unique file path
+                                        const fileExt = file.name.split('.').pop();
+                                        const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+                                        const filePath = `${fileName}`;
+                                        
+                                        // Upload to Supabase Storage
+                                        const { data, error } = await supabase.storage
+                                          .from('recommended-reading')
+                                          .upload(filePath, file, {
+                                            cacheControl: '3600',
+                                            upsert: false
+                                          });
+                                        
+                                        if (error) {
+                                          console.error('Upload error:', error);
+                                          toast({
+                                            title: "Upload Failed",
+                                            description: error.message,
+                                            variant: "destructive",
+                                          });
+                                          return;
+                                        }
+                                        
+                                        // Get public URL
+                                        const { data: { publicUrl } } = supabase.storage
+                                          .from('recommended-reading')
+                                          .getPublicUrl(filePath);
+                                        
+                                        // Update item with file info
                                         updateItem(index, 'fileName', file.name);
-                                        updateItem(index, 'fileUrl', `mock://files/${file.name}`);
+                                        updateItem(index, 'fileUrl', publicUrl);
+                                        
+                                        toast({
+                                          title: "File Uploaded",
+                                          description: `${file.name} uploaded successfully.`,
+                                        });
+                                      } catch (error) {
+                                        console.error('Upload error:', error);
+                                        toast({
+                                          title: "Upload Failed",
+                                          description: "Failed to upload file. Please try again.",
+                                          variant: "destructive",
+                                        });
                                       }
                                     }}
                                   />
