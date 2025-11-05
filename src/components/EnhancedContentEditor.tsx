@@ -2307,6 +2307,34 @@ export function EnhancedContentEditor({
     }
   };
 
+  const formatBodyText = () => {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      const selectedText = range.toString() || 'Body text';
+      
+      // Create paragraph element with default body text styles
+      const paragraph = document.createElement('p');
+      paragraph.textContent = selectedText;
+      paragraph.style.cssText = 'font-size: 16px; font-weight: normal; margin: 8px 0; line-height: 1.5;';
+      
+      // Replace content or insert paragraph
+      if (range.toString()) {
+        range.deleteContents();
+      }
+      range.insertNode(paragraph);
+      
+      // Position cursor after paragraph
+      const afterRange = document.createRange();
+      afterRange.setStartAfter(paragraph);
+      afterRange.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(afterRange);
+      
+      updateContent();
+    }
+  };
+
   const indentText = () => {
     const selection = window.getSelection();
     if (selection && selection.rangeCount > 0) {
@@ -2682,6 +2710,11 @@ export function EnhancedContentEditor({
   ];
 
   const headingToolbarItems = [
+    { 
+      text: "Body", 
+      action: formatBodyText, 
+      tooltip: "Body text (paragraph)" 
+    },
     { 
       text: "H1", 
       action: () => formatHeading('h1'), 
