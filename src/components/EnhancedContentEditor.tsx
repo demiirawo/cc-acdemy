@@ -2311,25 +2311,36 @@ export function EnhancedContentEditor({
     const selection = window.getSelection();
     if (selection && selection.rangeCount > 0) {
       const range = selection.getRangeAt(0);
-      const selectedText = range.toString() || 'Body text';
+      const parentElement = range.commonAncestorContainer.nodeType === Node.TEXT_NODE 
+        ? range.commonAncestorContainer.parentElement 
+        : range.commonAncestorContainer as Element;
       
-      // Create paragraph element with default body text styles
-      const paragraph = document.createElement('p');
-      paragraph.textContent = selectedText;
-      paragraph.style.cssText = 'font-size: 16px; font-weight: normal; margin: 8px 0; line-height: 1.5;';
+      // Find the closest heading element
+      const headingElement = parentElement?.closest('h1, h2, h3, h4, h5, h6');
       
-      // Replace content or insert paragraph
-      if (range.toString()) {
-        range.deleteContents();
+      if (headingElement) {
+        // Convert heading to paragraph while preserving content
+        const paragraph = document.createElement('p');
+        paragraph.innerHTML = headingElement.innerHTML;
+        paragraph.style.cssText = 'font-size: 16px; font-weight: normal; margin: 8px 0; line-height: 1.5;';
+        headingElement.replaceWith(paragraph);
+        
+        // Restore selection within the new paragraph
+        const newRange = document.createRange();
+        newRange.selectNodeContents(paragraph);
+        newRange.collapse(false);
+        selection.removeAllRanges();
+        selection.addRange(newRange);
+      } else {
+        // Just apply body text styles to the current block element
+        const blockElement = parentElement?.closest('p, div, li, blockquote');
+        if (blockElement) {
+          const element = blockElement as HTMLElement;
+          element.style.fontSize = '16px';
+          element.style.fontWeight = 'normal';
+          element.style.lineHeight = '1.5';
+        }
       }
-      range.insertNode(paragraph);
-      
-      // Position cursor after paragraph
-      const afterRange = document.createRange();
-      afterRange.setStartAfter(paragraph);
-      afterRange.collapse(true);
-      selection.removeAllRanges();
-      selection.addRange(afterRange);
       
       updateContent();
     }
