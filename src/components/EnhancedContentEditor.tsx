@@ -336,10 +336,11 @@ export function EnhancedContentEditor({
       editorRef.current.innerHTML = cleanContent;
     }
     
-    // Setup image and video controls after content is set
+    // Setup image, video, and iframe controls after content is set
     setTimeout(() => {
       setupImageControls();
       setupYouTubeControls();
+      setupIframeControls();
     }, 100);
 
     // Add keyboard shortcuts
