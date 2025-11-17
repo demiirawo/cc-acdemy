@@ -1885,6 +1885,77 @@ export function EnhancedContentEditor({
     }
   };
 
+  const insertIframe = () => {
+    const iframeCode = prompt("Paste your iframe embed code:");
+    if (iframeCode) {
+      try {
+        // Parse the iframe HTML
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(iframeCode, 'text/html');
+        const iframe = doc.querySelector('iframe');
+        
+        if (iframe) {
+          const iframeId = `iframe-${Date.now()}`;
+          const src = iframe.getAttribute('src') || '';
+          const width = iframe.getAttribute('width') || iframe.style.width || '100%';
+          const height = iframe.getAttribute('height') || iframe.style.height || '640';
+          const allow = iframe.getAttribute('allow') || 'fullscreen';
+          
+          // Create iframe container
+          const container = document.createElement('div');
+          container.className = 'iframe-container';
+          container.style.cssText = 'text-align: center; margin: 20px 0; border: 1px solid hsl(var(--border)); border-radius: 8px; padding: 10px; background: hsl(var(--muted));';
+          
+          // Create new iframe with preserved attributes
+          const newIframe = document.createElement('iframe');
+          newIframe.id = iframeId;
+          newIframe.src = src;
+          newIframe.style.cssText = `border: none; display: block; width: ${width}${width.includes('px') || width.includes('%') ? '' : 'px'}; height: ${height}${height.includes('px') || height.includes('%') ? '' : 'px'}; border-radius: 4px; margin: 0 auto; cursor: pointer;`;
+          newIframe.setAttribute('frameborder', '0');
+          newIframe.setAttribute('allow', allow);
+          newIframe.setAttribute('allowfullscreen', 'true');
+          newIframe.setAttribute('onclick', `showIframeControls('${iframeId}')`);
+          
+          container.appendChild(newIframe);
+          
+          // Insert at cursor position
+          const selection = window.getSelection();
+          if (selection && selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            range.deleteContents();
+            range.insertNode(container);
+            
+            // Move cursor after iframe
+            range.setStartAfter(container);
+            range.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+          
+          updateContent();
+          setTimeout(() => setupIframeControls(), 100);
+          
+          toast({
+            title: "Iframe embedded",
+            description: "Click the iframe to adjust size and alignment",
+          });
+        } else {
+          toast({
+            title: "Invalid iframe code",
+            description: "Please paste valid iframe HTML code",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        toast({
+          title: "Error parsing iframe",
+          description: "Could not parse the iframe code",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
   const setupYouTubeControls = () => {
     (window as any).showYouTubeControls = (iframeId: string) => {
       const iframe = document.getElementById(iframeId);
@@ -2711,6 +2782,7 @@ export function EnhancedContentEditor({
     { icon: Link, action: insertLink, tooltip: "Insert Link" },
     { icon: Image, action: insertImage, tooltip: "Insert Image" },
     { icon: Youtube, action: insertYouTube, tooltip: "Insert YouTube Video" },
+    { icon: Monitor, action: insertIframe, tooltip: "Insert Iframe Embed" },
     { 
       icon: () => (
         <div className="w-4 h-4 border-t-2 border-foreground"></div>
