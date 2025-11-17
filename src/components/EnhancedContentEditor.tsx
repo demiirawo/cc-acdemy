@@ -2951,6 +2951,65 @@ export function EnhancedContentEditor({
     }
     
     if (pastedText) {
+      // Check if it's an iframe code string
+      const iframeRegex = /<iframe[^>]*>.*?<\/iframe>/gi;
+      if (iframeRegex.test(pastedText)) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(pastedText, 'text/html');
+        const iframes = doc.querySelectorAll('iframe');
+        
+        if (iframes.length > 0) {
+          iframes.forEach(iframe => {
+            const iframeId = `iframe-${Date.now()}`;
+            
+            // Create wrapper container
+            const container = document.createElement('div');
+            container.className = 'iframe-container';
+            container.style.cssText = 'text-align: center; margin: 20px 0; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; background: #f9fafb;';
+            
+            // Clone the iframe and add our properties
+            const newIframe = iframe.cloneNode(true) as HTMLIFrameElement;
+            newIframe.id = iframeId;
+            
+            // Preserve existing dimensions
+            const originalHeight = iframe.getAttribute('height') || iframe.style.height || '800px';
+            const originalWidth = iframe.getAttribute('width') || iframe.style.width || '100%';
+            
+            // Build CSS preserving original dimensions
+            let cssStyles = `border: none; display: block; width: ${originalWidth}${originalWidth.includes('px') || originalWidth.includes('%') ? '' : 'px'}; height: ${originalHeight}${originalHeight.includes('px') || originalHeight.includes('%') ? '' : 'px'}; border-radius: 4px;`;
+            
+            newIframe.style.cssText = cssStyles;
+            newIframe.setAttribute('frameborder', '0');
+            newIframe.setAttribute('allowfullscreen', 'true');
+            
+            container.appendChild(newIframe);
+            
+            // Insert the container
+            const selection = window.getSelection();
+            if (selection && selection.rangeCount > 0) {
+              const range = selection.getRangeAt(0);
+              range.deleteContents();
+              range.insertNode(container);
+              
+              // Move cursor after iframe
+              range.setStartAfter(container);
+              range.collapse(true);
+              selection.removeAllRanges();
+              selection.addRange(range);
+            }
+          });
+          
+          updateContent();
+          setTimeout(() => setupIframeControls(), 100);
+          
+          toast({
+            title: "Iframe embedded",
+            description: "Iframe has been embedded successfully. Click it to adjust settings.",
+          });
+          return;
+        }
+      }
+      
       // Check if it's a URL
       const urlRegex = /^https?:\/\/[^\s]+$/;
       if (urlRegex.test(pastedText.trim())) {
