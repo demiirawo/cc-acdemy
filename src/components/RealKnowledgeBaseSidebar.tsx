@@ -339,12 +339,15 @@ function SidebarTreeItem({
                   if (confirm("Are you sure you want to delete this page? You can restore it from the recycling bin.")) {
                     try {
                       // Soft delete by setting deleted_at timestamp
-                      const { error } = await supabase
+                      const { data, error } = await supabase
                         .from('pages')
                         .update({ deleted_at: new Date().toISOString() })
-                        .eq('id', item.id);
+                        .eq('id', item.id)
+                        .select()
+                        .single();
                       
                       if (error) throw error;
+                      if (!data) throw new Error('No permission to delete this page');
                       
                       toast({
                         title: "Page deleted",
@@ -352,11 +355,11 @@ function SidebarTreeItem({
                       });
                       
                       window.dispatchEvent(new CustomEvent('pageUpdated'));
-                    } catch (error) {
+                    } catch (error: any) {
                       console.error('Error deleting page:', error);
                       toast({
                         title: "Error",
-                        description: "Failed to delete page.",
+                        description: error.message || "Failed to delete page.",
                         variant: "destructive"
                       });
                     }
