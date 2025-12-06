@@ -30,7 +30,7 @@ export function ResizableSidebar({
   onCreatePageInEditor,
   onMovePage
 }: ResizableSidebarProps) {
-  const [width, setWidth] = useState(320);
+  const [width, setWidth] = useState(400);
   const [isResizing, setIsResizing] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
