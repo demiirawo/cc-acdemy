@@ -11,6 +11,7 @@ import { Folder, BookOpen, Plus, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useUserRole } from "@/hooks/useUserRole";
 
 interface Space {
   id: string;
@@ -54,6 +55,19 @@ export function CreatePageDialog({
   
   const { user } = useAuth();
   const { toast } = useToast();
+  const { isEditor } = useUserRole();
+
+  // If user is not an editor, close dialog and show message
+  useEffect(() => {
+    if (open && !isEditor) {
+      toast({
+        title: "Permission denied",
+        description: "Only editors and admins can create pages.",
+        variant: "destructive",
+      });
+      onOpenChange(false);
+    }
+  }, [open, isEditor, onOpenChange, toast]);
 
   useEffect(() => {
     if (open) {
