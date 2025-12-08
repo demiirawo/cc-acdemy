@@ -131,6 +131,7 @@ function SidebarTreeItem({
   const isSelected = selectedId === item.id;
   const isExpanded = expandedItems.has(item.id);
   const { toast } = useToast();
+  const { isEditor } = useUserRole();
 
   const handleMovePageUp = async (pageId: string) => {
     if (isLoading) return;
@@ -244,8 +245,8 @@ function SidebarTreeItem({
           "flex items-center gap-1 transition-opacity duration-200",
           (isHovered || isSelected) ? "opacity-100" : "opacity-0"
         )}>
-          {/* Add child page button */}
-          {(item.type === 'space' || item.type === 'page') && onCreatePageInEditor && (
+          {/* Add child page button - only for editors and admins */}
+          {(item.type === 'space' || item.type === 'page') && onCreatePageInEditor && isEditor && (
             <Button variant="ghost" size="sm" className="h-6 w-6 p-0 hover:bg-sidebar-accent/50" 
               onClick={(e) => {
                 e.stopPropagation();
@@ -428,7 +429,7 @@ export function RealKnowledgeBaseSidebar({
   const [pageToMove, setPageToMove] = useState<{ id: string; title: string } | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const { toast } = useToast();
-  const { isAdmin } = useUserRole();
+  const { isAdmin, isEditor } = useUserRole();
 
   const toggleExpanded = (itemId: string) => {
     setExpandedItems(prev => {
@@ -839,7 +840,7 @@ export function RealKnowledgeBaseSidebar({
             Pages
           </h3>
           <div className="flex gap-1">
-            {onCreatePage && (
+            {onCreatePage && isEditor && (
               <Button 
                 variant="ghost" 
                 size="sm" 
@@ -891,7 +892,7 @@ export function RealKnowledgeBaseSidebar({
                   <div className="text-center py-8 text-sidebar-foreground/50">
                     <FolderOpen className="h-8 w-8 mx-auto mb-2 opacity-50" />
                     <p className="text-sm mb-3">No content yet</p>
-                    {onCreatePage && (
+                    {onCreatePage && isEditor && (
                       <Button variant="outline" size="sm" onClick={handleCreatePage}>
                         <Plus className="h-3 w-3 mr-1" />
                         Create first page
