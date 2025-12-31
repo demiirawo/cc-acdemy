@@ -741,6 +741,45 @@ export type Database = {
         }
         Relationships: []
       }
+      recurring_bonuses: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string
+          currency: string
+          description: string | null
+          end_date: string | null
+          id: string
+          start_date: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          created_by: string
+          currency?: string
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          start_date: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string
+          currency?: string
+          description?: string | null
+          end_date?: string | null
+          id?: string
+          start_date?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       recurring_shift_patterns: {
         Row: {
           client_name: string
