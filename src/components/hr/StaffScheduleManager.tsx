@@ -85,13 +85,14 @@ interface Client {
 interface StaffRequest {
   id: string;
   user_id: string;
-  request_type: 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
+  request_type: 'overtime_standard' | 'overtime_double_up' | 'overtime' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
   swap_with_user_id: string | null;
   start_date: string;
   end_date: string;
   days_requested: number;
   details: string | null;
   status: string;
+  linked_holiday_id: string | null;
 }
 
 type ViewMode = "staff" | "client";
@@ -938,7 +939,7 @@ export function StaffScheduleManager() {
     const coverageRequests = staffRequests.filter(r => 
       r.linked_holiday_id === holiday.id && 
       r.status === 'approved' &&
-      (r.request_type === 'overtime_standard' || r.request_type === 'overtime_double_up')
+      (r.request_type === 'overtime_standard' || r.request_type === 'overtime_double_up' || r.request_type === 'overtime')
     );
     
     if (coverageRequests.length === 0) return null;
@@ -956,11 +957,11 @@ export function StaffScheduleManager() {
     const relevantRequests = staffRequests.filter(r => {
       if (r.user_id !== userId) return false;
       if (r.status !== 'approved') return false;
-      if (r.request_type !== 'overtime_standard' && r.request_type !== 'overtime_double_up') return false;
+      if (r.request_type !== 'overtime_standard' && r.request_type !== 'overtime_double_up' && r.request_type !== 'overtime') return false;
       if (!r.linked_holiday_id) return false;
-      const start = parseISO(r.start_date);
-      const end = parseISO(r.end_date);
-      return isWithinInterval(day, { start, end }) || isSameDay(day, start) || isSameDay(day, end);
+      const start = startOfDay(parseISO(r.start_date));
+      const end = endOfDay(parseISO(r.end_date));
+      return isWithinInterval(day, { start, end });
     });
     
     if (relevantRequests.length === 0) return null;
