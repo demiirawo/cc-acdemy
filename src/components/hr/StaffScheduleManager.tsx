@@ -9,9 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, Clock, Palmtree, AlertCircle, Trash2 } from "lucide-react";
+import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks } from "date-fns";
+import { Plus, ChevronLeft, ChevronRight, Clock, Palmtree, Trash2, Users, Building2, Repeat } from "lucide-react";
 
 interface Schedule {
   id: string;
@@ -57,12 +58,26 @@ interface HRProfile {
   base_currency: string;
 }
 
+type ViewMode = "staff" | "client";
+
+const DAYS_OF_WEEK = [
+  { value: 1, label: "Mon" },
+  { value: 2, label: "Tue" },
+  { value: 3, label: "Wed" },
+  { value: 4, label: "Thu" },
+  { value: 5, label: "Fri" },
+  { value: 6, label: "Sat" },
+  { value: 0, label: "Sun" },
+];
+
 export function StaffScheduleManager() {
   const queryClient = useQueryClient();
   const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [isOvertimeDialogOpen, setIsOvertimeDialogOpen] = useState(false);
+  const [isRecurringDialogOpen, setIsRecurringDialogOpen] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<ViewMode>("staff");
   
   // Schedule form state
   const [scheduleForm, setScheduleForm] = useState({
@@ -70,6 +85,19 @@ export function StaffScheduleManager() {
     client_name: "",
     start_datetime: "",
     end_datetime: "",
+    notes: "",
+    hourly_rate: "",
+    currency: "GBP"
+  });
+
+  // Recurring schedule form state
+  const [recurringForm, setRecurringForm] = useState({
+    user_id: "",
+    client_name: "",
+    start_time: "09:00",
+    end_time: "17:00",
+    selected_days: [] as number[],
+    weeks_to_create: 4,
     notes: "",
     hourly_rate: "",
     currency: "GBP"
@@ -169,6 +197,12 @@ export function StaffScheduleManager() {
     }
   });
 
+  // Get unique clients from schedules
+  const uniqueClients = useMemo(() => {
+    const clients = new Set(schedules.map(s => s.client_name));
+    return Array.from(clients).sort();
+  }, [schedules]);
+
   // Create schedule mutation
   const createScheduleMutation = useMutation({
     mutationFn: async (data: typeof scheduleForm) => {
@@ -196,6 +230,59 @@ export function StaffScheduleManager() {
     },
     onError: (error) => {
       toast.error("Failed to create schedule: " + error.message);
+    }
+  });
+
+  // Create recurring schedule mutation
+  const createRecurringScheduleMutation = useMutation({
+    mutationFn: async (data: typeof recurringForm) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error("Not authenticated");
+
+      const schedulesToCreate: any[] = [];
+      const startDate = currentWeekStart;
+
+      for (let week = 0; week < data.weeks_to_create; week++) {
+        const weekStart = addWeeks(startDate, week);
+        
+        for (const dayOfWeek of data.selected_days) {
+          // Find the date for this day of the week
+          const daysToAdd = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Adjust for Monday start
+          const scheduleDate = addDays(weekStart, daysToAdd);
+          
+          const startDatetime = `${format(scheduleDate, "yyyy-MM-dd")}T${data.start_time}:00`;
+          const endDatetime = `${format(scheduleDate, "yyyy-MM-dd")}T${data.end_time}:00`;
+
+          schedulesToCreate.push({
+            user_id: data.user_id,
+            client_name: data.client_name,
+            start_datetime: startDatetime,
+            end_datetime: endDatetime,
+            notes: data.notes || null,
+            hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
+            currency: data.currency,
+            created_by: userData.user.id
+          });
+        }
+      }
+
+      if (schedulesToCreate.length === 0) {
+        throw new Error("No schedules to create. Please select at least one day.");
+      }
+
+      const { error } = await supabase.from("staff_schedules").insert(schedulesToCreate);
+      if (error) throw error;
+
+      return schedulesToCreate.length;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ["staff-schedules"] });
+      setIsRecurringDialogOpen(false);
+      resetRecurringForm();
+      toast.success(`Created ${count} recurring schedule entries`);
+    },
+    onError: (error) => {
+      toast.error("Failed to create recurring schedule: " + error.message);
     }
   });
 
@@ -264,6 +351,20 @@ export function StaffScheduleManager() {
     });
   };
 
+  const resetRecurringForm = () => {
+    setRecurringForm({
+      user_id: "",
+      client_name: "",
+      start_time: "09:00",
+      end_time: "17:00",
+      selected_days: [],
+      weeks_to_create: 4,
+      notes: "",
+      hourly_rate: "",
+      currency: "GBP"
+    });
+  };
+
   const resetOvertimeForm = () => {
     setOvertimeForm({
       user_id: "",
@@ -273,6 +374,15 @@ export function StaffScheduleManager() {
       currency: "GBP",
       notes: ""
     });
+  };
+
+  const toggleRecurringDay = (day: number) => {
+    setRecurringForm(prev => ({
+      ...prev,
+      selected_days: prev.selected_days.includes(day)
+        ? prev.selected_days.filter(d => d !== day)
+        : [...prev.selected_days, day]
+    }));
   };
 
   const navigateWeek = (direction: "prev" | "next") => {
@@ -288,6 +398,13 @@ export function StaffScheduleManager() {
     return schedules.filter(s => {
       const scheduleDate = parseISO(s.start_datetime);
       return s.user_id === userId && format(scheduleDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd");
+    });
+  };
+
+  const getSchedulesForClientDay = (clientName: string, day: Date) => {
+    return schedules.filter(s => {
+      const scheduleDate = parseISO(s.start_datetime);
+      return s.client_name === clientName && format(scheduleDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd");
     });
   };
 
@@ -346,20 +463,46 @@ export function StaffScheduleManager() {
               </Button>
             </div>
 
+            <div className="flex items-center gap-2">
+              {/* View Mode Toggle */}
+              <div className="flex border rounded-md">
+                <Button
+                  variant={viewMode === "staff" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("staff")}
+                  className="rounded-r-none"
+                >
+                  <Users className="h-4 w-4 mr-1" />
+                  Staff View
+                </Button>
+                <Button
+                  variant={viewMode === "client" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("client")}
+                  className="rounded-l-none"
+                >
+                  <Building2 className="h-4 w-4 mr-1" />
+                  Client View
+                </Button>
+              </div>
+            </div>
+
             <div className="flex items-center gap-4">
-              <Select value={selectedStaff} onValueChange={setSelectedStaff}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="All Staff" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Staff</SelectItem>
-                  {staffMembers.map(staff => (
-                    <SelectItem key={staff.user_id} value={staff.user_id}>
-                      {staff.display_name || staff.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {viewMode === "staff" && (
+                <Select value={selectedStaff} onValueChange={setSelectedStaff}>
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="All Staff" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Staff</SelectItem>
+                    {staffMembers.map(staff => (
+                      <SelectItem key={staff.user_id} value={staff.user_id}>
+                        {staff.display_name || staff.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
 
               <Dialog open={isScheduleDialogOpen} onOpenChange={setIsScheduleDialogOpen}>
                 <DialogTrigger asChild>
@@ -453,6 +596,142 @@ export function StaffScheduleManager() {
                       className="w-full"
                     >
                       Create Schedule
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+
+              {/* Recurring Schedule Dialog */}
+              <Dialog open={isRecurringDialogOpen} onOpenChange={setIsRecurringDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline">
+                    <Repeat className="h-4 w-4 mr-2" />
+                    Recurring
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Create Recurring Schedule</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Staff Member</Label>
+                      <Select value={recurringForm.user_id} onValueChange={v => setRecurringForm(p => ({ ...p, user_id: v }))}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select staff" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {staffMembers.map(staff => (
+                            <SelectItem key={staff.user_id} value={staff.user_id}>
+                              {staff.display_name || staff.email}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Client Name</Label>
+                      <Input
+                        value={recurringForm.client_name}
+                        onChange={e => setRecurringForm(p => ({ ...p, client_name: e.target.value }))}
+                        placeholder="Enter client name"
+                      />
+                    </div>
+                    <div>
+                      <Label>Select Days</Label>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {DAYS_OF_WEEK.map(day => (
+                          <Button
+                            key={day.value}
+                            type="button"
+                            variant={recurringForm.selected_days.includes(day.value) ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => toggleRecurringDay(day.value)}
+                          >
+                            {day.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Start Time</Label>
+                        <Input
+                          type="time"
+                          value={recurringForm.start_time}
+                          onChange={e => setRecurringForm(p => ({ ...p, start_time: e.target.value }))}
+                        />
+                      </div>
+                      <div>
+                        <Label>End Time</Label>
+                        <Input
+                          type="time"
+                          value={recurringForm.end_time}
+                          onChange={e => setRecurringForm(p => ({ ...p, end_time: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Number of Weeks</Label>
+                      <Select 
+                        value={recurringForm.weeks_to_create.toString()} 
+                        onValueChange={v => setRecurringForm(p => ({ ...p, weeks_to_create: parseInt(v) }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">1 week</SelectItem>
+                          <SelectItem value="2">2 weeks</SelectItem>
+                          <SelectItem value="4">4 weeks</SelectItem>
+                          <SelectItem value="8">8 weeks</SelectItem>
+                          <SelectItem value="12">12 weeks</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label>Hourly Rate (optional)</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={recurringForm.hourly_rate}
+                          onChange={e => setRecurringForm(p => ({ ...p, hourly_rate: e.target.value }))}
+                          placeholder="0.00"
+                        />
+                      </div>
+                      <div>
+                        <Label>Currency</Label>
+                        <Select value={recurringForm.currency} onValueChange={v => setRecurringForm(p => ({ ...p, currency: v }))}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="GBP">GBP</SelectItem>
+                            <SelectItem value="USD">USD</SelectItem>
+                            <SelectItem value="EUR">EUR</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    <div>
+                      <Label>Notes (optional)</Label>
+                      <Textarea
+                        value={recurringForm.notes}
+                        onChange={e => setRecurringForm(p => ({ ...p, notes: e.target.value }))}
+                        placeholder="Add any notes..."
+                      />
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      This will create {recurringForm.selected_days.length * recurringForm.weeks_to_create} schedule entries
+                      starting from {format(currentWeekStart, "MMM d, yyyy")}
+                    </div>
+                    <Button 
+                      onClick={() => createRecurringScheduleMutation.mutate(recurringForm)}
+                      disabled={!recurringForm.user_id || !recurringForm.client_name || recurringForm.selected_days.length === 0}
+                      className="w-full"
+                    >
+                      Create Recurring Schedule
                     </Button>
                   </div>
                 </DialogContent>
@@ -556,14 +835,18 @@ export function StaffScheduleManager() {
       {/* Gantt-style Timeline */}
       <Card>
         <CardHeader>
-          <CardTitle>Staff Schedule Timeline</CardTitle>
+          <CardTitle>
+            {viewMode === "staff" ? "Staff Schedule Timeline" : "Client Schedule Timeline"}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <div className="min-w-[900px]">
               {/* Header Row */}
               <div className="grid grid-cols-8 gap-1 mb-2">
-                <div className="font-medium text-sm text-muted-foreground p-2">Staff</div>
+                <div className="font-medium text-sm text-muted-foreground p-2">
+                  {viewMode === "staff" ? "Staff" : "Client"}
+                </div>
                 {weekDays.map(day => (
                   <div key={day.toISOString()} className="font-medium text-sm text-center p-2 bg-muted rounded">
                     <div>{format(day, "EEE")}</div>
@@ -572,8 +855,8 @@ export function StaffScheduleManager() {
                 ))}
               </div>
 
-              {/* Staff Rows */}
-              {filteredStaff.map(staff => (
+              {/* Staff View */}
+              {viewMode === "staff" && filteredStaff.map(staff => (
                 <div key={staff.user_id} className="grid grid-cols-8 gap-1 mb-1">
                   <div className="p-2 text-sm font-medium truncate border-r">
                     {staff.display_name || staff.email}
@@ -669,9 +952,80 @@ export function StaffScheduleManager() {
                 </div>
               ))}
 
-              {filteredStaff.length === 0 && (
+              {/* Client View */}
+              {viewMode === "client" && uniqueClients.map(clientName => (
+                <div key={clientName} className="grid grid-cols-8 gap-1 mb-1">
+                  <div className="p-2 text-sm font-medium truncate border-r">
+                    {clientName}
+                  </div>
+                  {weekDays.map(day => {
+                    const daySchedules = getSchedulesForClientDay(clientName, day);
+
+                    return (
+                      <div 
+                        key={day.toISOString()} 
+                        className="min-h-[80px] p-1 rounded border bg-background border-border"
+                      >
+                        {daySchedules.map(schedule => {
+                          const cost = calculateScheduleCost(schedule);
+                          const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
+                          
+                          return (
+                            <div 
+                              key={schedule.id} 
+                              className={`rounded p-1 mb-1 text-xs group relative ${
+                                staffOnHoliday 
+                                  ? 'bg-amber-100 border border-amber-300' 
+                                  : 'bg-primary/10 border border-primary/30'
+                              }`}
+                            >
+                              <div className="font-medium truncate flex items-center gap-1">
+                                {getStaffName(schedule.user_id)}
+                                {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600" />}
+                              </div>
+                              <div className="text-muted-foreground">
+                                {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
+                              </div>
+                              {cost !== null && (
+                                <div className="text-muted-foreground">
+                                  {schedule.currency} {cost.toFixed(2)}
+                                </div>
+                              )}
+                              {schedule.notes && (
+                                <div className="text-muted-foreground italic truncate">{schedule.notes}</div>
+                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
+                                onClick={() => deleteScheduleMutation.mutate(schedule.id)}
+                              >
+                                <Trash2 className="h-3 w-3 text-destructive" />
+                              </Button>
+                            </div>
+                          );
+                        })}
+
+                        {daySchedules.length === 0 && (
+                          <div className="text-xs text-muted-foreground italic flex items-center justify-center h-full">
+                            No staff
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+
+              {viewMode === "staff" && filteredStaff.length === 0 && (
                 <div className="text-center py-8 text-muted-foreground">
                   No staff members found
+                </div>
+              )}
+
+              {viewMode === "client" && uniqueClients.length === 0 && (
+                <div className="text-center py-8 text-muted-foreground">
+                  No client schedules found for this week
                 </div>
               )}
             </div>
