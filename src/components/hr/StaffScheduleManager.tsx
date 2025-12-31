@@ -115,6 +115,16 @@ export function StaffScheduleManager() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; isPattern: boolean; patternId?: string; exceptionDate?: string } | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<string>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("staff");
+  const [isEditScheduleDialogOpen, setIsEditScheduleDialogOpen] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
+  const [editScheduleForm, setEditScheduleForm] = useState({
+    client_name: "",
+    start_time: "09:00",
+    end_time: "17:00",
+    notes: "",
+    hourly_rate: "",
+    currency: "GBP"
+  });
 
   // Edit pattern form state
   const [editPatternForm, setEditPatternForm] = useState({
@@ -639,6 +649,34 @@ export function StaffScheduleManager() {
     }
   });
 
+  // Update schedule mutation
+  const updateScheduleMutation = useMutation({
+    mutationFn: async (data: { id: string; client_name: string; start_datetime: string; end_datetime: string; notes: string | null; hourly_rate: number | null; currency: string }) => {
+      const { error } = await supabase
+        .from("staff_schedules")
+        .update({
+          client_name: data.client_name,
+          start_datetime: data.start_datetime,
+          end_datetime: data.end_datetime,
+          notes: data.notes,
+          hourly_rate: data.hourly_rate,
+          currency: data.currency
+        })
+        .eq("id", data.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["staff-schedules"] });
+      setIsEditScheduleDialogOpen(false);
+      setEditingSchedule(null);
+      toast.success("Schedule updated");
+    },
+    onError: (error) => {
+      toast.error("Failed to update schedule: " + error.message);
+    }
+  });
+
   // Delete overtime mutation
   const deleteOvertimeMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -751,7 +789,29 @@ export function StaffScheduleManager() {
       const patternId = parts[1];
       openEditPatternDialog(patternId);
     }
-    // For non-pattern schedules, we could add individual schedule editing later
+    // Non-pattern schedules are handled by double-click
+  };
+
+  const handleScheduleDoubleClick = (schedule: Schedule) => {
+    if (schedule.id.startsWith('pattern-')) {
+      // For patterns, just use the single click handler
+      handleScheduleClick(schedule.id);
+      return;
+    }
+    
+    // Open edit dialog for regular schedules
+    setEditingSchedule(schedule);
+    const startDate = parseISO(schedule.start_datetime);
+    const endDate = parseISO(schedule.end_datetime);
+    setEditScheduleForm({
+      client_name: schedule.client_name,
+      start_time: format(startDate, "HH:mm"),
+      end_time: format(endDate, "HH:mm"),
+      notes: schedule.notes || "",
+      hourly_rate: schedule.hourly_rate?.toString() || "",
+      currency: schedule.currency
+    });
+    setIsEditScheduleDialogOpen(true);
   };
 
   const navigateWeek = (direction: "prev" | "next") => {
@@ -1342,7 +1402,8 @@ export function StaffScheduleManager() {
                                     : 'bg-violet-50 border border-violet-300' 
                                   : 'bg-primary/10 border border-primary/30'
                               }`}
-                              onClick={() => handleScheduleClick(schedule.id)}
+                              onDoubleClick={() => handleScheduleDoubleClick(schedule)}
+                              title="Double-click to edit"
                             >
                               <div className="font-medium truncate flex items-center gap-1">
                                 {schedule.client_name}
@@ -1470,7 +1531,7 @@ export function StaffScheduleManager() {
                           return (
                             <div 
                               key={schedule.id} 
-                              className={`rounded p-1 mb-1 text-xs group relative ${
+                              className={`rounded p-1 mb-1 text-xs group relative cursor-pointer hover:ring-2 hover:ring-primary/50 ${
                                 staffOnHoliday 
                                   ? 'bg-amber-100 border border-amber-300' 
                                   : isFromPattern
@@ -1479,6 +1540,8 @@ export function StaffScheduleManager() {
                                       : 'bg-violet-50 border border-violet-300'
                                     : 'bg-primary/10 border border-primary/30'
                               }`}
+                              onDoubleClick={() => handleScheduleDoubleClick(schedule)}
+                              title="Double-click to edit"
                             >
                               <div className="font-medium truncate flex items-center gap-1">
                                 {getStaffName(schedule.user_id)}
@@ -1791,6 +1854,122 @@ export function StaffScheduleManager() {
               disabled={!editPatternForm.user_id || !editPatternForm.client_name || (editPatternForm.recurrence_interval !== 'daily' && editPatternForm.selected_days.length === 0) || updatePatternMutation.isPending}
             >
               {updatePatternMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Individual Schedule Dialog */}
+      <Dialog open={isEditScheduleDialogOpen} onOpenChange={setIsEditScheduleDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Schedule</DialogTitle>
+            <DialogDescription>
+              Modify the details of this scheduled shift.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Staff Member</Label>
+              <div className="mt-1 p-2 bg-muted rounded text-sm">
+                {editingSchedule ? getStaffName(editingSchedule.user_id) : ''}
+              </div>
+            </div>
+            <div>
+              <Label>Date</Label>
+              <div className="mt-1 p-2 bg-muted rounded text-sm">
+                {editingSchedule ? format(parseISO(editingSchedule.start_datetime), "EEEE, d MMMM yyyy") : ''}
+              </div>
+            </div>
+            <div>
+              <Label>Client</Label>
+              <Select 
+                value={editScheduleForm.client_name} 
+                onValueChange={v => setEditScheduleForm(p => ({ ...p, client_name: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select client" />
+                </SelectTrigger>
+                <SelectContent className="bg-background z-50">
+                  {clients.map(client => (
+                    <SelectItem key={client.id} value={client.name}>{client.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Start Time</Label>
+                <Input
+                  type="time"
+                  value={editScheduleForm.start_time}
+                  onChange={e => setEditScheduleForm(p => ({ ...p, start_time: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>End Time</Label>
+                <Input
+                  type="time"
+                  value={editScheduleForm.end_time}
+                  onChange={e => setEditScheduleForm(p => ({ ...p, end_time: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Hourly Rate (optional)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={editScheduleForm.hourly_rate}
+                  onChange={e => setEditScheduleForm(p => ({ ...p, hourly_rate: e.target.value }))}
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <Label>Currency</Label>
+                <Select value={editScheduleForm.currency} onValueChange={v => setEditScheduleForm(p => ({ ...p, currency: v }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background z-50">
+                    <SelectItem value="GBP">GBP</SelectItem>
+                    <SelectItem value="USD">USD</SelectItem>
+                    <SelectItem value="EUR">EUR</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label>Notes (optional)</Label>
+              <Textarea
+                value={editScheduleForm.notes}
+                onChange={e => setEditScheduleForm(p => ({ ...p, notes: e.target.value }))}
+                placeholder="Add any notes..."
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsEditScheduleDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => {
+                if (!editingSchedule) return;
+                const scheduleDate = format(parseISO(editingSchedule.start_datetime), "yyyy-MM-dd");
+                updateScheduleMutation.mutate({
+                  id: editingSchedule.id,
+                  client_name: editScheduleForm.client_name,
+                  start_datetime: `${scheduleDate}T${editScheduleForm.start_time}:00`,
+                  end_datetime: `${scheduleDate}T${editScheduleForm.end_time}:00`,
+                  notes: editScheduleForm.notes || null,
+                  hourly_rate: editScheduleForm.hourly_rate ? parseFloat(editScheduleForm.hourly_rate) : null,
+                  currency: editScheduleForm.currency
+                });
+              }}
+              disabled={!editScheduleForm.client_name || updateScheduleMutation.isPending}
+            >
+              {updateScheduleMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
