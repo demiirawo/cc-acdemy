@@ -580,7 +580,7 @@ export function StaffPayManager() {
                 <TableHead className="text-right">Base Salary</TableHead>
                 <TableHead className="text-right">Bonuses</TableHead>
                 <TableHead className="text-right">Overtime</TableHead>
-                <TableHead className="text-right">Expenses</TableHead>
+                
                 <TableHead className="text-right">Deductions</TableHead>
                 <TableHead className="text-right">Total Pay</TableHead>
                 <TableHead className="text-right">GBP Equiv.</TableHead>
@@ -616,9 +616,6 @@ export function StaffPayManager() {
                     </TableCell>
                     <TableCell className="text-right text-success">
                       {staff.overtime > 0 ? `+${formatCurrency(staff.overtime, staff.currency)}` : '-'}
-                    </TableCell>
-                    <TableCell className="text-right text-success">
-                      {staff.expenses > 0 ? `+${formatCurrency(staff.expenses, staff.currency)}` : '-'}
                     </TableCell>
                     <TableCell className="text-right text-destructive">
                       {staff.deductions > 0 ? `-${formatCurrency(staff.deductions, staff.currency)}` : '-'}
