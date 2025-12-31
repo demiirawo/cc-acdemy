@@ -11,7 +11,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { format, differenceInDays } from "date-fns";
+import { format, eachDayOfInterval, getDay, isWithinInterval, parseISO } from "date-fns";
 import { CalendarIcon, Clock, Palmtree, RefreshCw, AlertCircle, Send, RotateCcw, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -94,6 +94,38 @@ export function StaffRequestForm() {
     }
   });
 
+  // Fetch user's recurring shift patterns to calculate working days
+  const { data: shiftPatterns = [] } = useQuery({
+    queryKey: ["my-shift-patterns", user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      const { data, error } = await supabase
+        .from("recurring_shift_patterns")
+        .select("*")
+        .eq("user_id", user.id);
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user
+  });
+
+  // Fetch user's individual schedules
+  const { data: individualSchedules = [] } = useQuery({
+    queryKey: ["my-schedules", user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      const { data, error } = await supabase
+        .from("staff_schedules")
+        .select("*")
+        .eq("user_id", user.id);
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user
+  });
+
   // Fetch user's requests
   const { data: myRequests = [] } = useQuery({
     queryKey: ["my-staff-requests"],
@@ -108,12 +140,46 @@ export function StaffRequestForm() {
     }
   });
 
-  // Calculate days when dates change
-  const calculateDays = () => {
-    if (startDate && endDate) {
-      const days = differenceInDays(endDate, startDate) + 1;
-      setDaysRequested(days.toString());
-    }
+  // Calculate working days based on user's schedule
+  const calculateWorkingDays = () => {
+    if (!startDate || !endDate) return;
+
+    const daysInRange = eachDayOfInterval({ start: startDate, end: endDate });
+    let workingDays = 0;
+
+    daysInRange.forEach(day => {
+      const dayOfWeek = getDay(day); // 0 = Sunday, 1 = Monday, etc.
+      const dateStr = format(day, "yyyy-MM-dd");
+
+      // Check recurring shift patterns
+      const hasRecurringShift = shiftPatterns.some(pattern => {
+        const patternStart = parseISO(pattern.start_date);
+        const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+        
+        // Check if day is within pattern date range
+        const inDateRange = day >= patternStart && (!patternEnd || day <= patternEnd);
+        
+        // Check if day of week matches (pattern uses 0-6 for days)
+        const dayMatches = pattern.days_of_week?.includes(dayOfWeek);
+        
+        return inDateRange && dayMatches;
+      });
+
+      // Check individual schedules
+      const hasIndividualShift = individualSchedules.some(schedule => {
+        const scheduleStart = parseISO(schedule.start_datetime);
+        const scheduleEnd = parseISO(schedule.end_datetime);
+        return isWithinInterval(day, { start: scheduleStart, end: scheduleEnd }) ||
+               format(scheduleStart, "yyyy-MM-dd") === dateStr;
+      });
+
+      if (hasRecurringShift || hasIndividualShift) {
+        workingDays++;
+      }
+    });
+
+    // If no schedule found, show 0 with a message
+    setDaysRequested(workingDays.toString());
   };
 
   // Submit request mutation
@@ -322,7 +388,6 @@ export function StaffRequestForm() {
                       if (date && endDate && date > endDate) {
                         setEndDate(date);
                       }
-                      setTimeout(calculateDays, 0);
                     }}
                     initialFocus
                     className="p-3 pointer-events-auto"
@@ -351,10 +416,7 @@ export function StaffRequestForm() {
                   <Calendar
                     mode="single"
                     selected={endDate}
-                    onSelect={(date) => {
-                      setEndDate(date);
-                      setTimeout(calculateDays, 0);
-                    }}
+                    onSelect={setEndDate}
                     disabled={(date) => startDate ? date < startDate : false}
                     initialFocus
                     className="p-3 pointer-events-auto"
@@ -364,18 +426,49 @@ export function StaffRequestForm() {
             </div>
           </div>
 
-          {/* Days Requested */}
-          <div className="space-y-2">
-            <Label>How many days are you requesting? <span className="text-destructive">*</span></Label>
-            <Input 
-              type="number"
-              min="0.5"
-              step="0.5"
-              value={daysRequested}
-              onChange={(e) => setDaysRequested(e.target.value)}
-              className="max-w-[200px]"
-            />
-          </div>
+          {/* Days Requested - Auto-calculated for holidays */}
+          {requestType === 'holiday' && (
+            <div className="space-y-2">
+              <Label>Working days in selected period</Label>
+              <div className="flex items-center gap-3">
+                <div className="px-4 py-2 bg-muted rounded-md font-medium min-w-[80px] text-center">
+                  {daysRequested} day{parseFloat(daysRequested) !== 1 ? 's' : ''}
+                </div>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  size="sm"
+                  onClick={calculateWorkingDays}
+                  disabled={!startDate || !endDate}
+                >
+                  Calculate
+                </Button>
+              </div>
+              {startDate && endDate && parseFloat(daysRequested) === 0 && (
+                <p className="text-sm text-amber-600">
+                  No scheduled working days found in this period. Check your schedule patterns.
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Based on your recurring shift patterns and scheduled shifts
+              </p>
+            </div>
+          )}
+
+          {/* Manual days input for non-holiday requests */}
+          {requestType && requestType !== 'holiday' && (
+            <div className="space-y-2">
+              <Label>How many days are you requesting? <span className="text-destructive">*</span></Label>
+              <Input 
+                type="number"
+                min="0.5"
+                step="0.5"
+                value={daysRequested}
+                onChange={(e) => setDaysRequested(e.target.value)}
+                className="max-w-[200px]"
+              />
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex items-center justify-between pt-4 border-t">
