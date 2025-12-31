@@ -1100,6 +1100,8 @@ export type Database = {
           details: string | null
           end_date: string
           id: string
+          linked_holiday_id: string | null
+          overtime_type: string | null
           request_type: Database["public"]["Enums"]["staff_request_type"]
           review_notes: string | null
           reviewed_at: string | null
@@ -1116,6 +1118,8 @@ export type Database = {
           details?: string | null
           end_date: string
           id?: string
+          linked_holiday_id?: string | null
+          overtime_type?: string | null
           request_type: Database["public"]["Enums"]["staff_request_type"]
           review_notes?: string | null
           reviewed_at?: string | null
@@ -1132,6 +1136,8 @@ export type Database = {
           details?: string | null
           end_date?: string
           id?: string
+          linked_holiday_id?: string | null
+          overtime_type?: string | null
           request_type?: Database["public"]["Enums"]["staff_request_type"]
           review_notes?: string | null
           reviewed_at?: string | null
@@ -1142,7 +1148,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "staff_requests_linked_holiday_id_fkey"
+            columns: ["linked_holiday_id"]
+            isOneToOne: false
+            referencedRelation: "staff_holidays"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       staff_schedules: {
         Row: {
@@ -1322,6 +1336,7 @@ export type Database = {
         | "shift_swap"
         | "holiday_paid"
         | "holiday_unpaid"
+        | "overtime"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1467,6 +1482,7 @@ export const Constants = {
         "shift_swap",
         "holiday_paid",
         "holiday_unpaid",
+        "overtime",
       ],
     },
   },

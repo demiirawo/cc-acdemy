@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRole } from "@/hooks/useUserRole";
 
-type RequestType = 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
+type RequestType = 'overtime' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap' | 'overtime_standard' | 'overtime_double_up';
 
 interface StaffMember {
   user_id: string;
@@ -39,20 +39,26 @@ interface StaffRequest {
   reviewed_at: string | null;
   review_notes: string | null;
   created_at: string;
+  linked_holiday_id: string | null;
+  overtime_type: 'standard_hours' | 'outside_hours' | null;
+}
+
+interface ApprovedHoliday {
+  id: string;
+  user_id: string;
+  start_date: string;
+  end_date: string;
+  days_taken: number;
+  notes: string | null;
+  absence_type: string;
 }
 
 const REQUEST_TYPE_INFO = {
-  overtime_standard: {
-    label: "Overtime – Standard",
-    description: "Applies when you work outside of your normal contracted working hours.",
+  overtime: {
+    label: "Overtime",
+    description: "Request overtime pay for covering during an approved holiday period.",
     icon: Clock,
     color: "text-orange-600"
-  },
-  overtime_double_up: {
-    label: "Overtime – Double Up",
-    description: "Applies when you cover another colleague during your regular working hours.",
-    icon: Clock,
-    color: "text-amber-600"
   },
   holiday_paid: {
     label: "Paid Holiday",
@@ -74,8 +80,8 @@ const REQUEST_TYPE_INFO = {
   }
 };
 
-// Types available for new requests (excludes legacy 'holiday')
-const SELECTABLE_REQUEST_TYPES = ['overtime_standard', 'overtime_double_up', 'holiday_paid', 'holiday_unpaid', 'shift_swap'] as const;
+// Types available for new requests
+const SELECTABLE_REQUEST_TYPES = ['overtime', 'holiday_paid', 'holiday_unpaid', 'shift_swap'] as const;
 
 // Legacy type info for displaying old requests
 const LEGACY_REQUEST_TYPE_INFO: Record<string, { label: string; description: string; icon: typeof Clock; color: string }> = {
@@ -84,6 +90,18 @@ const LEGACY_REQUEST_TYPE_INFO: Record<string, { label: string; description: str
     description: "Request time off from work.",
     icon: Palmtree,
     color: "text-green-600"
+  },
+  overtime_standard: {
+    label: "Overtime – Standard Hours",
+    description: "Overtime during standard working hours.",
+    icon: Clock,
+    color: "text-orange-600"
+  },
+  overtime_double_up: {
+    label: "Overtime – Outside Hours",
+    description: "Overtime outside standard working hours.",
+    icon: Clock,
+    color: "text-amber-600"
   }
 };
 
@@ -108,6 +126,7 @@ export function StaffRequestForm() {
   const [endDate, setEndDate] = useState<Date>();
   const [daysRequested, setDaysRequested] = useState("1");
   const [details, setDetails] = useState("");
+  const [linkedHolidayId, setLinkedHolidayId] = useState("");
 
   // Fetch staff members for swap selection
   const { data: staffMembers = [] } = useQuery({
@@ -154,6 +173,59 @@ export function StaffRequestForm() {
     },
     enabled: !!user
   });
+
+  // Fetch approved holidays for overtime linking
+  const { data: approvedHolidays = [] } = useQuery({
+    queryKey: ["approved-holidays-for-overtime"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff_holidays")
+        .select("id, user_id, start_date, end_date, days_taken, notes, absence_type")
+        .eq("status", "approved")
+        .order("start_date", { ascending: false });
+      
+      if (error) throw error;
+      return data as ApprovedHoliday[];
+    }
+  });
+
+  // Get staff members for dropdown display
+  const getHolidayStaffName = (userId: string) => {
+    const staff = staffMembers.find(s => s.user_id === userId);
+    return staff?.display_name || staff?.email || "Unknown";
+  };
+
+  // Calculate overtime type based on selected holiday and user's shift patterns
+  const calculateOvertimeType = (holidayId: string): 'standard_hours' | 'outside_hours' => {
+    const holiday = approvedHolidays.find(h => h.id === holidayId);
+    if (!holiday) return 'outside_hours';
+    
+    // Check if the holiday period overlaps with the user's standard working patterns
+    const holidayStart = parseISO(holiday.start_date);
+    const holidayEnd = parseISO(holiday.end_date);
+    const daysInRange = eachDayOfInterval({ start: holidayStart, end: holidayEnd });
+    
+    let hasStandardHoursOverlap = false;
+    
+    daysInRange.forEach(day => {
+      const dayOfWeek = getDay(day);
+      
+      // Check if this day is part of the current user's recurring shift pattern
+      const hasRecurringShift = shiftPatterns.some(pattern => {
+        const patternStart = parseISO(pattern.start_date);
+        const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+        const inDateRange = day >= patternStart && (!patternEnd || day <= patternEnd);
+        const dayMatches = pattern.days_of_week?.includes(dayOfWeek);
+        return inDateRange && dayMatches;
+      });
+      
+      if (hasRecurringShift) {
+        hasStandardHoursOverlap = true;
+      }
+    });
+    
+    return hasStandardHoursOverlap ? 'standard_hours' : 'outside_hours';
+  };
 
   // Auto-calculate working days when dates change for holiday requests
   useEffect(() => {
@@ -213,11 +285,22 @@ export function StaffRequestForm() {
       if (requestType === 'shift_swap' && !swapWithUserId) {
         throw new Error("Please select who you are swapping shifts with");
       }
+      if (requestType === 'overtime' && !linkedHolidayId) {
+        throw new Error("Please select the approved holiday you are covering");
+      }
+
+      // Calculate overtime type if applicable
+      let overtimeType: 'standard_hours' | 'outside_hours' | null = null;
+      if (requestType === 'overtime' && linkedHolidayId) {
+        overtimeType = calculateOvertimeType(linkedHolidayId);
+      }
 
       const { error } = await supabase.from("staff_requests").insert({
         user_id: user.id,
         request_type: requestType,
         swap_with_user_id: requestType === 'shift_swap' ? swapWithUserId : null,
+        linked_holiday_id: requestType === 'overtime' ? linkedHolidayId : null,
+        overtime_type: overtimeType,
         start_date: format(startDate, "yyyy-MM-dd"),
         end_date: format(endDate, "yyyy-MM-dd"),
         days_requested: parseFloat(daysRequested) || 1,
@@ -298,6 +381,7 @@ export function StaffRequestForm() {
   const resetForm = () => {
     setRequestType("");
     setSwapWithUserId("");
+    setLinkedHolidayId("");
     setStartDate(undefined);
     setEndDate(undefined);
     setDaysRequested("1");
@@ -343,11 +427,7 @@ export function StaffRequestForm() {
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li className="flex items-start gap-2">
                 <span className="font-medium text-orange-600">•</span>
-                <span><strong>Overtime – Standard:</strong> applies when you work outside of your normal contracted working hours.</span>
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="font-medium text-amber-600">•</span>
-                <span><strong>Overtime – Double Up:</strong> applies when you cover another colleague during your regular working hours.</span>
+                <span><strong>Overtime:</strong> Request to cover someone's approved holiday. The system will determine if it's during your standard hours or outside.</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-medium text-green-600">•</span>
@@ -386,6 +466,46 @@ export function StaffRequestForm() {
               </SelectContent>
             </Select>
           </div>
+
+          {/* Overtime - Link to approved holiday */}
+          {requestType === 'overtime' && (
+            <div className="space-y-2">
+              <Label>Which approved holiday are you covering? <span className="text-destructive">*</span></Label>
+              <Select value={linkedHolidayId} onValueChange={setLinkedHolidayId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select an approved holiday..." />
+                </SelectTrigger>
+                <SelectContent className="bg-background">
+                  {approvedHolidays.length === 0 ? (
+                    <div className="p-2 text-sm text-muted-foreground text-center">
+                      No approved holidays available
+                    </div>
+                  ) : (
+                    approvedHolidays.map(holiday => (
+                      <SelectItem key={holiday.id} value={holiday.id}>
+                        <div className="flex flex-col">
+                          <span>{getHolidayStaffName(holiday.user_id)} - {format(new Date(holiday.start_date), 'dd MMM yyyy')}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {format(new Date(holiday.start_date), 'dd MMM')} – {format(new Date(holiday.end_date), 'dd MMM yyyy')} ({holiday.days_taken} days)
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {linkedHolidayId && (
+                <div className="p-3 bg-muted rounded-md text-sm">
+                  <p className="font-medium">Overtime Type: {calculateOvertimeType(linkedHolidayId) === 'standard_hours' ? 'Standard Hours' : 'Outside Standard Hours'}</p>
+                  <p className="text-muted-foreground text-xs mt-1">
+                    {calculateOvertimeType(linkedHolidayId) === 'standard_hours' 
+                      ? 'This holiday falls within your standard working hours.'
+                      : 'This holiday is outside your standard working hours.'}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Shift Swap - Who are you swapping with */}
           {requestType === 'shift_swap' && (

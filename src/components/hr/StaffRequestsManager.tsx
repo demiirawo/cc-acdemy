@@ -14,7 +14,7 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 
-type RequestType = 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
+type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
 
 interface StaffRequest {
   id: string;
@@ -30,6 +30,8 @@ interface StaffRequest {
   reviewed_at: string | null;
   review_notes: string | null;
   created_at: string;
+  linked_holiday_id: string | null;
+  overtime_type: 'standard_hours' | 'outside_hours' | null;
 }
 
 interface UserProfile {
@@ -38,14 +40,19 @@ interface UserProfile {
   email: string | null;
 }
 
-const REQUEST_TYPE_INFO: Record<RequestType, { label: string; icon: typeof Clock; color: string }> = {
+const REQUEST_TYPE_INFO: Record<string, { label: string; icon: typeof Clock; color: string }> = {
+  overtime: {
+    label: "Overtime",
+    icon: Clock,
+    color: "text-orange-600"
+  },
   overtime_standard: {
-    label: "Overtime – Standard",
+    label: "Overtime – Standard Hours (Legacy)",
     icon: Clock,
     color: "text-orange-600"
   },
   overtime_double_up: {
-    label: "Overtime – Double Up",
+    label: "Overtime – Outside Hours (Legacy)",
     icon: Clock,
     color: "text-amber-600"
   },
@@ -310,9 +317,16 @@ export function StaffRequestsManager() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Icon className={`h-4 w-4 ${typeInfo?.color || ''}`} />
-                              <span className="text-sm">{typeInfo?.label || request.request_type}</span>
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-2">
+                                <Icon className={`h-4 w-4 ${typeInfo?.color || ''}`} />
+                                <span className="text-sm">{typeInfo?.label || request.request_type}</span>
+                              </div>
+                              {request.request_type === 'overtime' && request.overtime_type && (
+                                <Badge variant="outline" className="w-fit text-xs">
+                                  {request.overtime_type === 'standard_hours' ? 'Standard Hours' : 'Outside Hours'}
+                                </Badge>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell>{format(new Date(request.start_date), 'dd MMM yyyy')}</TableCell>
