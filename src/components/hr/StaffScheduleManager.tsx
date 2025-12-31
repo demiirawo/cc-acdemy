@@ -1679,27 +1679,38 @@ export function StaffScheduleManager() {
                     const coverage = onHoliday ? getCoverageForHoliday(staff.user_id, day) : null;
                     const coveringFor = getCoveringForInfo(staff.user_id, day);
 
+                    const hasCoverage = coverage && coverage.length > 0;
+                    const needsCoverage = onHoliday && holidayInfo?.status === 'approved' && !hasCoverage;
+
                     return (
                       <div 
                         key={day.toISOString()} 
-                        className={`min-h-[80px] p-1 rounded border ${onHoliday ? 'bg-amber-50 border-amber-200' : 'bg-background border-border'}`}
+                        className={`min-h-[80px] p-1 rounded border ${
+                          onHoliday 
+                            ? hasCoverage
+                              ? 'bg-green-50 border-green-200'
+                              : needsCoverage
+                                ? 'bg-red-50 border-red-200'
+                                : 'bg-amber-50 border-amber-200'
+                            : 'bg-background border-border'
+                        }`}
                       >
                         {/* Holiday indicator with coverage info */}
                         {onHoliday && (
                           <div className="mb-1">
-                            <div className="flex items-center gap-1 text-xs text-amber-700">
+                            <div className={`flex items-center gap-1 text-xs ${hasCoverage ? 'text-green-700' : needsCoverage ? 'text-red-700' : 'text-amber-700'}`}>
                               <Palmtree className="h-3 w-3" />
                               <span className="capitalize">{holidayInfo?.absence_type || 'Holiday'}</span>
                               {holidayInfo?.status === 'pending' && (
                                 <Badge variant="outline" className="text-[10px] py-0 px-1">Pending</Badge>
                               )}
                             </div>
-                            {coverage && coverage.length > 0 ? (
-                              <div className="text-[10px] text-green-700 bg-green-50 rounded px-1 py-0.5 mt-0.5">
+                            {hasCoverage ? (
+                              <div className="text-[10px] text-green-700 bg-green-100 rounded px-1 py-0.5 mt-0.5">
                                 <span className="font-medium">Covered by:</span> {coverage.map(c => c.name).join(', ')}
                               </div>
-                            ) : holidayInfo?.status === 'approved' && (
-                              <div className="text-[10px] text-red-600 bg-red-50 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1">
+                            ) : needsCoverage && (
+                              <div className="text-[10px] text-red-600 bg-red-100 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1">
                                 <AlertTriangle className="h-2.5 w-2.5" />
                                 <span>No cover assigned</span>
                               </div>
