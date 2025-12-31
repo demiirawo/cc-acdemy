@@ -45,3 +45,6 @@ verify_jwt = true
 
 [functions.get-exchange-rates]
 verify_jwt = false
+
+[functions.get-public-holidays]
+verify_jwt = false

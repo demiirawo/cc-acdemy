@@ -15,23 +15,11 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles } from "lucide-react";
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO } from "date-fns";
 
-// Nigerian Public Holidays for 2025
-const NIGERIAN_PUBLIC_HOLIDAYS_2025 = [
-  { date: "2025-01-01", name: "New Year's Day" },
-  { date: "2025-03-30", name: "Eid-el-Fitr (Estimated)" },
-  { date: "2025-03-31", name: "Eid-el-Fitr Holiday (Estimated)" },
-  { date: "2025-04-18", name: "Good Friday" },
-  { date: "2025-04-21", name: "Easter Monday" },
-  { date: "2025-05-01", name: "Workers' Day" },
-  { date: "2025-05-27", name: "Children's Day" },
-  { date: "2025-06-06", name: "Eid-el-Kabir (Estimated)" },
-  { date: "2025-06-07", name: "Eid-el-Kabir Holiday (Estimated)" },
-  { date: "2025-06-12", name: "Democracy Day" },
-  { date: "2025-09-05", name: "Eid-el-Maulud (Estimated)" },
-  { date: "2025-10-01", name: "Independence Day" },
-  { date: "2025-12-25", name: "Christmas Day" },
-  { date: "2025-12-26", name: "Boxing Day" },
-];
+interface PublicHoliday {
+  date: string;
+  name: string;
+  isEstimated?: boolean;
+}
 
 interface PayRecord {
   id: string;
@@ -124,6 +112,9 @@ export function StaffPayManager() {
   const [adjustmentDialogOpen, setAdjustmentDialogOpen] = useState(false);
   const [savingAdjustment, setSavingAdjustment] = useState(false);
   const [readyStaff, setReadyStaff] = useState<Set<string>>(new Set());
+  const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
+  const [loadingHolidays, setLoadingHolidays] = useState(false);
+  const [holidaysYear, setHolidaysYear] = useState(new Date().getFullYear());
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -139,7 +130,48 @@ export function StaffPayManager() {
   useEffect(() => {
     fetchData();
     fetchExchangeRates();
+    fetchPublicHolidays(holidaysYear);
   }, []);
+
+  const fetchPublicHolidays = async (year: number) => {
+    setLoadingHolidays(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('get-public-holidays', {
+        body: {},
+        headers: {},
+      });
+      
+      // Use query params via URL for GET-style request
+      const response = await fetch(
+        `https://pavwwgfgpykakbqkxsal.supabase.co/functions/v1/get-public-holidays?year=${year}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+      
+      if (!response.ok) throw new Error('Failed to fetch holidays');
+      
+      const result = await response.json();
+      
+      if (result?.holidays) {
+        setPublicHolidays(result.holidays);
+        setHolidaysYear(result.year);
+        console.log(`Loaded ${result.holidays.length} holidays for ${result.year} (source: ${result.source})`);
+      }
+    } catch (error) {
+      console.error('Error fetching public holidays:', error);
+      toast({
+        title: "Holiday data unavailable",
+        description: "Using cached holiday data. Refresh to try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingHolidays(false);
+    }
+  };
 
   const fetchExchangeRates = async () => {
     setLoadingRates(true);
@@ -781,37 +813,86 @@ export function StaffPayManager() {
               <AccordionTrigger className="hover:no-underline py-0">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-amber-500" />
-                  <span className="font-medium">Nigerian Public Holidays 2025</span>
+                  <span className="font-medium">Nigerian Public Holidays {holidaysYear}</span>
                   <Badge variant="secondary" className="ml-2">1.5x Overtime Rate</Badge>
+                  {loadingHolidays && (
+                    <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />
+                  )}
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pt-4">
                 <div className="space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    Staff working on any of these public holidays are entitled to overtime pay at <strong>1.5× their usual hourly rate</strong>.
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                    {NIGERIAN_PUBLIC_HOLIDAYS_2025.map((holiday) => {
-                      const holidayDate = parseISO(holiday.date);
-                      const isPast = holidayDate < new Date();
-                      
-                      return (
-                        <div 
-                          key={holiday.date} 
-                          className={`flex items-center justify-between p-2 rounded-md border ${
-                            isPast ? 'bg-muted/30 text-muted-foreground' : 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800'
-                          }`}
-                        >
-                          <span className="text-sm font-medium">{holiday.name}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {format(holidayDate, 'dd MMM')}
-                          </span>
-                        </div>
-                      );
-                    })}
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      Staff working on any of these public holidays are entitled to overtime pay at <strong>1.5× their usual hourly rate</strong>.
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Select
+                        value={holidaysYear.toString()}
+                        onValueChange={(value) => {
+                          const year = parseInt(value);
+                          setHolidaysYear(year);
+                          fetchPublicHolidays(year);
+                        }}
+                      >
+                        <SelectTrigger className="w-24 h-8">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[2025, 2026, 2027].map((year) => (
+                            <SelectItem key={year} value={year.toString()}>
+                              {year}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchPublicHolidays(holidaysYear)}
+                        disabled={loadingHolidays}
+                      >
+                        <RefreshCw className={`h-3 w-3 ${loadingHolidays ? 'animate-spin' : ''}`} />
+                      </Button>
+                    </div>
                   </div>
+                  {loadingHolidays ? (
+                    <div className="flex items-center justify-center py-8">
+                      <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : publicHolidays.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No holiday data available. Click refresh to try again.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {publicHolidays.map((holiday) => {
+                        const holidayDate = parseISO(holiday.date);
+                        const isPast = holidayDate < new Date();
+                        
+                        return (
+                          <div 
+                            key={holiday.date} 
+                            className={`flex items-center justify-between p-2 rounded-md border ${
+                              isPast ? 'bg-muted/30 text-muted-foreground' : 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1">
+                              <span className="text-sm font-medium">{holiday.name}</span>
+                              {holiday.isEstimated && (
+                                <Badge variant="outline" className="text-[10px] px-1 py-0">Est.</Badge>
+                              )}
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {format(holidayDate, 'dd MMM')}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                   <p className="text-xs text-muted-foreground italic">
-                    Note: Islamic holiday dates are estimated and may vary based on moon sighting.
+                    Note: Islamic holiday dates marked "Est." are estimated and may vary based on moon sighting. Data sourced from Nager.Date API.
                   </p>
                 </div>
               </AccordionContent>
