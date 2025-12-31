@@ -40,18 +40,70 @@ interface HRProfile {
 }
 
 // Calculate holiday allowance based on employment length
-// 15 days default for all staff, increases to 18 days after 1+ year of employment
-const calculateHolidayAllowance = (startDate: string | null): number => {
+// 15 days for first year, increases to 18 days after 1+ year of employment
+// Pro-rata accrual based on time within the current holiday year (June 1st - May 31st)
+export const calculateHolidayAllowance = (startDate: string | null): { 
+  annualAllowance: number; 
+  accruedAllowance: number; 
+  yearsEmployed: number;
+  isProRata: boolean;
+} => {
   const DEFAULT_ALLOWANCE = 15;
   const INCREASED_ALLOWANCE = 18;
   
-  if (!startDate) return DEFAULT_ALLOWANCE;
+  if (!startDate) {
+    return { 
+      annualAllowance: DEFAULT_ALLOWANCE, 
+      accruedAllowance: DEFAULT_ALLOWANCE, 
+      yearsEmployed: 0,
+      isProRata: false
+    };
+  }
   
   const start = new Date(startDate);
   const now = new Date();
   const yearsEmployed = (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
   
-  return yearsEmployed >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
+  // Determine annual allowance based on years employed
+  const annualAllowance = yearsEmployed >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
+  
+  // Calculate the current holiday year (June 1st - May 31st)
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth(); // 0-indexed, so June = 5
+  
+  // Holiday year starts on June 1st
+  const holidayYearStart = currentMonth >= 5 
+    ? new Date(currentYear, 5, 1) // June 1st of current year
+    : new Date(currentYear - 1, 5, 1); // June 1st of previous year
+  
+  const holidayYearEnd = currentMonth >= 5
+    ? new Date(currentYear + 1, 4, 31) // May 31st of next year
+    : new Date(currentYear, 4, 31); // May 31st of current year
+  
+  // If employee started before the current holiday year, they get full allowance
+  if (start <= holidayYearStart) {
+    return { 
+      annualAllowance, 
+      accruedAllowance: annualAllowance, 
+      yearsEmployed,
+      isProRata: false
+    };
+  }
+  
+  // If employee started during current holiday year, calculate pro-rata
+  const totalDaysInYear = Math.ceil((holidayYearEnd.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
+  const daysEmployedInYear = Math.ceil((now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+  
+  // Pro-rata calculation: (days employed / total days) * annual allowance
+  const proRataFraction = Math.min(daysEmployedInYear / totalDaysInYear, 1);
+  const accruedAllowance = Math.round(annualAllowance * proRataFraction * 10) / 10; // Round to 1 decimal
+  
+  return { 
+    annualAllowance, 
+    accruedAllowance, 
+    yearsEmployed,
+    isProRata: true
+  };
 };
 
 const ABSENCE_TYPES = [

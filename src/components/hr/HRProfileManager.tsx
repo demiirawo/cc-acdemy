@@ -9,8 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit, UserCircle, AlertCircle, CheckCircle2, X } from "lucide-react";
+import { Plus, Edit, UserCircle, AlertCircle, CheckCircle2, X, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 
 interface HRProfile {
   id: string;
@@ -444,7 +446,46 @@ export function HRProfileManager() {
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell>{hrProfile?.annual_holiday_allowance ? `${hrProfile.annual_holiday_allowance} days` : '-'}</TableCell>
+                      <TableCell>
+                        {hrProfile?.start_date ? (
+                          (() => {
+                            const allowanceInfo = calculateHolidayAllowance(hrProfile.start_date);
+                            return (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <div className="flex items-center gap-1 cursor-help">
+                                      <span>{allowanceInfo.annualAllowance} days</span>
+                                      {allowanceInfo.isProRata && (
+                                        <Badge variant="outline" className="text-xs">
+                                          {allowanceInfo.accruedAllowance} accrued
+                                        </Badge>
+                                      )}
+                                      <Info className="h-3 w-3 text-muted-foreground" />
+                                    </div>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <div className="text-xs space-y-1">
+                                      <p><strong>Annual:</strong> {allowanceInfo.annualAllowance} days</p>
+                                      <p><strong>Accrued:</strong> {allowanceInfo.accruedAllowance} days</p>
+                                      {allowanceInfo.yearsEmployed >= 1 ? (
+                                        <p className="text-success">18 days (1+ year employed)</p>
+                                      ) : (
+                                        <p>15 days (first year)</p>
+                                      )}
+                                      {allowanceInfo.isProRata && (
+                                        <p className="text-warning">Pro-rata: started during this holiday year</p>
+                                      )}
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            );
+                          })()
+                        ) : (
+                          <span className="text-muted-foreground">15 days (default)</span>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <Button variant="ghost" size="sm" onClick={() => handleOpenDialog(user)}>
                           <Edit className="h-4 w-4 mr-1" />
@@ -619,24 +660,61 @@ export function HRProfileManager() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Start Date</Label>
-                <Input
-                  type="date"
-                  value={formData.start_date}
-                  onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Annual Holiday Allowance (days)</Label>
-                <Input
-                  type="number"
-                  value={formData.annual_holiday_allowance}
-                  onChange={(e) => setFormData({ ...formData, annual_holiday_allowance: parseInt(e.target.value) || 0 })}
-                />
-              </div>
+            <div className="space-y-2">
+              <Label>Start Date</Label>
+              <Input
+                type="date"
+                value={formData.start_date}
+                onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Holiday allowance is automatically calculated based on start date
+              </p>
             </div>
+
+            {formData.start_date && (
+              <Card className="bg-muted/50">
+                <CardContent className="p-3">
+                  <div className="text-sm space-y-1">
+                    {(() => {
+                      const allowanceInfo = calculateHolidayAllowance(formData.start_date);
+                      return (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Annual Allowance:</span>
+                            <span className="font-medium">{allowanceInfo.annualAllowance} days</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Accrued to date:</span>
+                            <span className="font-medium">{allowanceInfo.accruedAllowance} days</span>
+                          </div>
+                          {allowanceInfo.yearsEmployed >= 1 ? (
+                            <p className="text-xs text-success mt-2">
+                              ✓ 18 days/year (1+ year employed)
+                            </p>
+                          ) : (
+                            <p className="text-xs text-muted-foreground mt-2">
+                              15 days/year (increases to 18 after 1 year)
+                            </p>
+                          )}
+                          {allowanceInfo.isProRata && (
+                            <p className="text-xs text-warning mt-1">
+                              Pro-rata: employee started during current holiday year (Jun-May)
+                            </p>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {!formData.start_date && (
+              <p className="text-xs text-muted-foreground">
+                No start date set — defaulting to 15 days holiday allowance
+              </p>
+            )}
 
             <div className="space-y-2">
               <Label>Notes</Label>
