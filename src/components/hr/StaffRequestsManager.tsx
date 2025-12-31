@@ -373,17 +373,17 @@ export function StaffRequestsManager() {
                           <TableCell>{format(new Date(request.start_date), 'dd MMM yyyy')}</TableCell>
                           <TableCell>{format(new Date(request.end_date), 'dd MMM yyyy')}</TableCell>
                           <TableCell>{request.days_requested}</TableCell>
-                          <TableCell className="max-w-[200px]">
+                          <TableCell className="max-w-[250px]">
                             {request.request_type === 'overtime' && coveredStaff ? (
                               <div className="text-xs">
                                 <div className="font-medium">{coveredStaff.staffName}'s {coveredStaff.absenceType}</div>
                                 <div className="text-muted-foreground">
                                   {format(new Date(coveredStaff.startDate), 'dd MMM')} – {format(new Date(coveredStaff.endDate), 'dd MMM')}
                                 </div>
-                                {request.details && <div className="truncate mt-1" title={request.details}>{request.details}</div>}
+                                {request.details && <div className="text-muted-foreground mt-1 break-words whitespace-normal">{request.details}</div>}
                               </div>
                             ) : (
-                              <span className="truncate" title={request.details || ''}>{request.details || '-'}</span>
+                              <span className="block break-words whitespace-normal text-sm" title={request.details || ''}>{request.details || '-'}</span>
                             )}
                           </TableCell>
                           <TableCell>
