@@ -84,7 +84,7 @@ interface Client {
 interface StaffRequest {
   id: string;
   user_id: string;
-  request_type: 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'shift_swap';
+  request_type: 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
   swap_with_user_id: string | null;
   start_date: string;
   end_date: string;
@@ -1326,51 +1326,43 @@ export function StaffScheduleManager() {
                           </div>
                         )}
                         
-                        {daySchedules.map(schedule => {
+                        {/* Only show schedules if NOT on holiday - they're not working that day */}
+                        {!onHoliday && daySchedules.map(schedule => {
                           const cost = calculateScheduleCost(schedule);
                           const isFromPattern = schedule.id.startsWith('pattern-');
                           const isPatternOvertime = schedule.is_pattern_overtime;
-                          const hasCoverageIssue = hasHolidayRequestForDay(staff.user_id, day);
                           
                           return (
                             <div 
                               key={schedule.id} 
                               className={`rounded p-1 mb-1 text-xs group relative cursor-pointer hover:ring-2 hover:ring-primary/50 ${
-                                hasCoverageIssue
-                                  ? 'bg-red-100 border-2 border-red-400 text-red-800'
-                                  : isFromPattern 
-                                    ? isPatternOvertime
-                                      ? 'bg-orange-50 border border-orange-300'
-                                      : 'bg-violet-50 border border-violet-300' 
-                                    : 'bg-primary/10 border border-primary/30'
+                                isFromPattern 
+                                  ? isPatternOvertime
+                                    ? 'bg-orange-50 border border-orange-300'
+                                    : 'bg-violet-50 border border-violet-300' 
+                                  : 'bg-primary/10 border border-primary/30'
                               }`}
                               onClick={() => handleScheduleClick(schedule.id)}
                             >
-                              {hasCoverageIssue && (
-                                <div className="flex items-center gap-1 text-red-700 font-medium mb-0.5">
-                                  <AlertTriangle className="h-3 w-3" />
-                                  <span className="text-[10px]">Needs cover</span>
-                                </div>
-                              )}
                               <div className="font-medium truncate flex items-center gap-1">
                                 {schedule.client_name}
-                                {isFromPattern && !hasCoverageIssue && (
+                                {isFromPattern && (
                                   <Infinity className={`h-3 w-3 ${isPatternOvertime ? 'text-orange-500' : 'text-violet-500'}`} />
                                 )}
-                                {isPatternOvertime && !hasCoverageIssue && (
+                                {isPatternOvertime && (
                                   <Clock className="h-3 w-3 text-orange-500" />
                                 )}
                               </div>
-                              <div className={hasCoverageIssue ? 'text-red-600' : 'text-muted-foreground'}>
+                              <div className="text-muted-foreground">
                                 {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
                               </div>
                               {cost !== null && (
-                                <div className={hasCoverageIssue ? 'text-red-600' : 'text-muted-foreground'}>
+                                <div className="text-muted-foreground">
                                   {schedule.currency} {cost.toFixed(2)}
                                 </div>
                               )}
                               {schedule.notes && (
-                                <div className={`italic truncate ${hasCoverageIssue ? 'text-red-600' : 'text-muted-foreground'}`}>{schedule.notes}</div>
+                                <div className="italic truncate text-muted-foreground">{schedule.notes}</div>
                               )}
                               <Button
                                 variant="ghost"
@@ -1415,30 +1407,32 @@ export function StaffScheduleManager() {
                           </div>
                         ))}
 
-                        {/* Staff Requests (Overtime, Holiday, Shift Cover) */}
-                        {getRequestsForStaffDay(staff.user_id, day).map(request => {
-                          const typeInfo = getRequestTypeInfo(request.request_type, request.status);
-                          const IconComponent = typeInfo.icon;
-                          return (
-                            <div 
-                              key={request.id} 
-                              className={`${typeInfo.color} border rounded p-1 mb-1 text-xs`}
-                            >
-                              <div className="flex items-center gap-1 font-medium">
-                                <IconComponent className="h-3 w-3 flex-shrink-0" />
-                                <span className="truncate">{typeInfo.label}</span>
-                              </div>
-                              {request.request_type === 'shift_swap' && request.swap_with_user_id && (
-                                <div className="text-[10px] truncate">
-                                  covering {getStaffName(request.swap_with_user_id)}
+                        {/* Staff Requests - filter out holidays as they're shown above via staff_holidays */}
+                        {getRequestsForStaffDay(staff.user_id, day)
+                          .filter(r => !['holiday', 'holiday_paid', 'holiday_unpaid'].includes(r.request_type))
+                          .map(request => {
+                            const typeInfo = getRequestTypeInfo(request.request_type, request.status);
+                            const IconComponent = typeInfo.icon;
+                            return (
+                              <div 
+                                key={request.id} 
+                                className={`${typeInfo.color} border rounded p-1 mb-1 text-xs`}
+                              >
+                                <div className="flex items-center gap-1 font-medium">
+                                  <IconComponent className="h-3 w-3 flex-shrink-0" />
+                                  <span className="truncate">{typeInfo.label}</span>
                                 </div>
-                              )}
-                              {request.details && (
-                                <div className="text-[10px] italic truncate">{request.details}</div>
-                              )}
-                            </div>
-                          );
-                        })}
+                                {request.request_type === 'shift_swap' && request.swap_with_user_id && (
+                                  <div className="text-[10px] truncate">
+                                    covering {getStaffName(request.swap_with_user_id)}
+                                  </div>
+                                )}
+                                {request.details && (
+                                  <div className="text-[10px] italic truncate">{request.details}</div>
+                                )}
+                              </div>
+                            );
+                          })}
 
                         {!onHoliday && daySchedules.length === 0 && dayOvertime.length === 0 && getRequestsForStaffDay(staff.user_id, day).length === 0 && (
                           <div className="text-xs text-muted-foreground italic flex items-center justify-center h-full">
