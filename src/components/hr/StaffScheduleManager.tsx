@@ -793,13 +793,19 @@ export function StaffScheduleManager() {
   };
 
   const handleScheduleDoubleClick = (schedule: Schedule) => {
+    console.log('Double-click on schedule:', schedule.id, schedule);
+    
     if (schedule.id.startsWith('pattern-')) {
-      // For patterns, just use the single click handler
-      handleScheduleClick(schedule.id);
+      // For patterns, open the pattern editor
+      const parts = schedule.id.split('-');
+      const patternId = parts[1];
+      console.log('Opening pattern editor for:', patternId);
+      openEditPatternDialog(patternId);
       return;
     }
     
     // Open edit dialog for regular schedules
+    console.log('Opening schedule editor');
     setEditingSchedule(schedule);
     const startDate = parseISO(schedule.start_datetime);
     const endDate = parseISO(schedule.end_datetime);
