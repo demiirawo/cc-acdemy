@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRole } from "@/hooks/useUserRole";
 
-type RequestType = 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'shift_swap';
+type RequestType = 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
 
 interface StaffMember {
   user_id: string;
@@ -54,11 +54,17 @@ const REQUEST_TYPE_INFO = {
     icon: Clock,
     color: "text-amber-600"
   },
-  holiday: {
-    label: "Holiday / Time Off",
-    description: "Request time off from work.",
+  holiday_paid: {
+    label: "Paid Holiday",
+    description: "Request paid time off from work (uses your holiday allowance).",
     icon: Palmtree,
     color: "text-green-600"
+  },
+  holiday_unpaid: {
+    label: "Unpaid Holiday",
+    description: "Request unpaid time off from work.",
+    icon: Palmtree,
+    color: "text-yellow-600"
   },
   shift_swap: {
     label: "Shift Swap",
@@ -128,7 +134,7 @@ export function StaffRequestForm() {
 
   // Auto-calculate working days when dates change for holiday requests
   useEffect(() => {
-    if (requestType === 'holiday' && startDate && endDate) {
+    if ((requestType === 'holiday_paid' || requestType === 'holiday_unpaid') && startDate && endDate) {
       const daysInRange = eachDayOfInterval({ start: startDate, end: endDate });
       let workingDays = 0;
 
@@ -235,12 +241,12 @@ export function StaffRequestForm() {
       if (error) throw error;
 
       // If it's a holiday request being approved, sync to staff_holidays
-      if (status === 'approved' && request.request_type === 'holiday') {
+      if (status === 'approved' && (request.request_type === 'holiday_paid' || request.request_type === 'holiday_unpaid' || request.request_type === 'holiday')) {
         const { error: holidayError } = await supabase
           .from("staff_holidays")
           .insert({
             user_id: request.user_id,
-            absence_type: 'holiday',
+            absence_type: request.request_type === 'holiday_unpaid' ? 'unpaid' : 'holiday',
             start_date: request.start_date,
             end_date: request.end_date,
             days_taken: request.days_requested,
@@ -322,7 +328,11 @@ export function StaffRequestForm() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-medium text-green-600">•</span>
-                <span><strong>Holiday:</strong> request time off from work.</span>
+                <span><strong>Paid Holiday:</strong> request paid time off from work (uses your holiday allowance).</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="font-medium text-yellow-600">•</span>
+                <span><strong>Unpaid Holiday:</strong> request unpaid time off from work.</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-medium text-blue-600">•</span>
@@ -452,7 +462,7 @@ export function StaffRequestForm() {
           </div>
 
           {/* Days Requested - Auto-calculated for holidays */}
-          {requestType === 'holiday' && (
+          {(requestType === 'holiday_paid' || requestType === 'holiday_unpaid') && (
             <div className="space-y-2">
               <Label>Working days in selected period</Label>
               <div className="px-4 py-2 bg-muted rounded-md font-medium min-w-[80px] w-fit">

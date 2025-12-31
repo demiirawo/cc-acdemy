@@ -1281,6 +1281,8 @@ export type Database = {
         | "overtime_double_up"
         | "holiday"
         | "shift_swap"
+        | "holiday_paid"
+        | "holiday_unpaid"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1424,6 +1426,8 @@ export const Constants = {
         "overtime_double_up",
         "holiday",
         "shift_swap",
+        "holiday_paid",
+        "holiday_unpaid",
       ],
     },
   },
