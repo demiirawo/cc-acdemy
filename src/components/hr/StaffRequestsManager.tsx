@@ -14,7 +14,7 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 
-type RequestType = 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'shift_swap';
+type RequestType = 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
 
 interface StaffRequest {
   id: string;
@@ -53,6 +53,16 @@ const REQUEST_TYPE_INFO: Record<RequestType, { label: string; icon: typeof Clock
     label: "Holiday / Time Off",
     icon: Palmtree,
     color: "text-green-600"
+  },
+  holiday_paid: {
+    label: "Paid Holiday",
+    icon: Palmtree,
+    color: "text-green-600"
+  },
+  holiday_unpaid: {
+    label: "Unpaid Holiday",
+    icon: Palmtree,
+    color: "text-yellow-600"
   },
   shift_swap: {
     label: "Shift Swap",
