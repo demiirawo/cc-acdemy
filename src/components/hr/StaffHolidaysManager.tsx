@@ -40,15 +40,18 @@ interface HRProfile {
 }
 
 // Calculate holiday allowance based on employment length
-// 15 days default, 18 days after 1 year of employment
+// 15 days default for all staff, increases to 18 days after 1+ year of employment
 const calculateHolidayAllowance = (startDate: string | null): number => {
-  if (!startDate) return 15;
+  const DEFAULT_ALLOWANCE = 15;
+  const INCREASED_ALLOWANCE = 18;
+  
+  if (!startDate) return DEFAULT_ALLOWANCE;
   
   const start = new Date(startDate);
   const now = new Date();
   const yearsEmployed = (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
   
-  return yearsEmployed >= 1 ? 18 : 15;
+  return yearsEmployed >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
 };
 
 const ABSENCE_TYPES = [
