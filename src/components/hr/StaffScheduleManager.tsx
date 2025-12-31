@@ -73,7 +73,7 @@ interface RecurringPattern {
   notes: string | null;
   start_date: string;
   end_date: string | null; // null = indefinite
-  recurrence_interval: 'daily' | 'weekly' | 'biweekly' | 'monthly';
+  recurrence_interval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off';
 }
 
 interface Client {
@@ -129,7 +129,7 @@ export function StaffScheduleManager() {
     currency: "GBP",
     start_date: "",
     end_date: "",
-    recurrence_interval: "weekly" as 'daily' | 'weekly' | 'biweekly' | 'monthly'
+    recurrence_interval: "weekly" as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off'
   });
 
   // Recurring schedule form state
@@ -146,7 +146,8 @@ export function StaffScheduleManager() {
     hourly_rate: "",
     currency: "GBP",
     start_date: format(new Date(), "yyyy-MM-dd"),
-    recurrence_interval: "weekly" as 'daily' | 'weekly' | 'biweekly' | 'monthly'
+    end_date: format(new Date(), "yyyy-MM-dd"),
+    recurrence_interval: "weekly" as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off'
   });
 
   const weekDays = useMemo(() => {
@@ -391,6 +392,51 @@ export function StaffScheduleManager() {
     mutationFn: async (data: typeof recurringForm) => {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error("Not authenticated");
+
+      // Handle one-off (single shift) schedule
+      if (data.recurrence_interval === 'one_off') {
+        // Create schedules for each day in the date range
+        const startDate = parseISO(data.start_date);
+        const endDate = parseISO(data.end_date);
+        const daysInRange = eachDayOfInterval({ start: startDate, end: endDate });
+        
+        if (data.is_overtime) {
+          const overtimeToCreate = daysInRange.map(day => {
+            const [startHour, startMin] = data.start_time.split(':').map(Number);
+            const [endHour, endMin] = data.end_time.split(':').map(Number);
+            const hours = (endHour + endMin / 60) - (startHour + startMin / 60);
+            
+            return {
+              user_id: data.user_id,
+              overtime_date: format(day, "yyyy-MM-dd"),
+              hours: hours,
+              hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
+              currency: data.currency,
+              notes: data.notes ? `${data.client_name}: ${data.notes}` : data.client_name,
+              created_by: userData.user.id
+            };
+          });
+          
+          const { error } = await supabase.from("staff_overtime").insert(overtimeToCreate);
+          if (error) throw error;
+          return { count: overtimeToCreate.length, type: 'overtime' };
+        } else {
+          const schedulesToCreate = daysInRange.map(day => ({
+            user_id: data.user_id,
+            client_name: data.client_name,
+            start_datetime: `${format(day, "yyyy-MM-dd")}T${data.start_time}:00`,
+            end_datetime: `${format(day, "yyyy-MM-dd")}T${data.end_time}:00`,
+            notes: data.notes || null,
+            hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
+            currency: data.currency,
+            created_by: userData.user.id
+          }));
+          
+          const { error } = await supabase.from("staff_schedules").insert(schedulesToCreate);
+          if (error) throw error;
+          return { count: schedulesToCreate.length, type: 'schedule' };
+        }
+      }
 
       // For true indefinite, save as a pattern (no end date)
       if (data.is_indefinite) {
@@ -653,6 +699,7 @@ export function StaffScheduleManager() {
       hourly_rate: "",
       currency: "GBP",
       start_date: format(new Date(), "yyyy-MM-dd"),
+      end_date: format(new Date(), "yyyy-MM-dd"),
       recurrence_interval: "weekly"
     });
   };
@@ -692,7 +739,7 @@ export function StaffScheduleManager() {
       currency: pattern.currency,
       start_date: pattern.start_date,
       end_date: pattern.end_date || "",
-      recurrence_interval: pattern.recurrence_interval || "weekly"
+      recurrence_interval: (pattern.recurrence_interval || "weekly") as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off'
     });
     setIsEditPatternDialogOpen(true);
   };
@@ -932,15 +979,16 @@ export function StaffScheduleManager() {
                     
                     {/* Recurrence Interval */}
                     <div>
-                      <Label>Recurrence Pattern</Label>
+                      <Label>Schedule Type</Label>
                       <Select 
                         value={recurringForm.recurrence_interval} 
-                        onValueChange={v => setRecurringForm(p => ({ ...p, recurrence_interval: v as 'daily' | 'weekly' | 'biweekly' | 'monthly' }))}
+                        onValueChange={v => setRecurringForm(p => ({ ...p, recurrence_interval: v as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off' }))}
                       >
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="bg-background z-50">
+                          <SelectItem value="one_off">One-off shift</SelectItem>
                           <SelectItem value="daily">Every day</SelectItem>
                           <SelectItem value="weekly">Every week</SelectItem>
                           <SelectItem value="biweekly">Every other week</SelectItem>
@@ -948,6 +996,7 @@ export function StaffScheduleManager() {
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground mt-1">
+                        {recurringForm.recurrence_interval === 'one_off' && 'A single shift or series of consecutive days'}
                         {recurringForm.recurrence_interval === 'daily' && 'The shift will repeat every single day'}
                         {recurringForm.recurrence_interval === 'weekly' && 'The shift will repeat on selected days every week'}
                         {recurringForm.recurrence_interval === 'biweekly' && 'The shift will repeat on selected days every other week'}
@@ -955,8 +1004,8 @@ export function StaffScheduleManager() {
                       </p>
                     </div>
 
-                    {/* Select Days - hide for daily recurrence */}
-                    {recurringForm.recurrence_interval !== 'daily' && (
+                    {/* Select Days - hide for daily and one_off recurrence */}
+                    {recurringForm.recurrence_interval !== 'daily' && recurringForm.recurrence_interval !== 'one_off' && (
                       <div>
                         <Label>Select Days</Label>
                         <div className="flex flex-wrap gap-2 mt-2">
@@ -994,35 +1043,53 @@ export function StaffScheduleManager() {
                     </div>
                     
                     {/* Start Date */}
-                    <div>
-                      <Label>Start Date</Label>
-                      <Input
-                        type="date"
-                        value={recurringForm.start_date}
-                        onChange={e => setRecurringForm(p => ({ ...p, start_date: e.target.value }))}
-                      />
-                    </div>
-
-                    {/* Indefinite Toggle */}
-                    <div className="flex items-center space-x-2 p-3 border rounded-md bg-muted/30">
-                      <Checkbox
-                        id="is_indefinite"
-                        checked={recurringForm.is_indefinite}
-                        onCheckedChange={(checked) => setRecurringForm(p => ({ ...p, is_indefinite: checked === true }))}
-                      />
-                      <div className="flex-1">
-                        <Label htmlFor="is_indefinite" className="text-sm font-medium cursor-pointer flex items-center gap-2">
-                          <Infinity className="h-4 w-4" />
-                          Run indefinitely (never-ending)
-                        </Label>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          Shifts will automatically appear on any future week
-                        </p>
+                    <div className={recurringForm.recurrence_interval === 'one_off' ? 'grid grid-cols-2 gap-4' : ''}>
+                      <div>
+                        <Label>{recurringForm.recurrence_interval === 'one_off' ? 'Start Date' : 'Start Date'}</Label>
+                        <Input
+                          type="date"
+                          value={recurringForm.start_date}
+                          onChange={e => setRecurringForm(p => ({ ...p, start_date: e.target.value }))}
+                        />
                       </div>
+                      {recurringForm.recurrence_interval === 'one_off' && (
+                        <div>
+                          <Label>End Date</Label>
+                          <Input
+                            type="date"
+                            value={recurringForm.end_date}
+                            min={recurringForm.start_date}
+                            onChange={e => setRecurringForm(p => ({ ...p, end_date: e.target.value }))}
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Leave same as start date for a single day shift
+                          </p>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Number of Weeks - only show if not indefinite */}
-                    {!recurringForm.is_indefinite && (
+                    {/* Indefinite Toggle - hide for one_off */}
+                    {recurringForm.recurrence_interval !== 'one_off' && (
+                      <div className="flex items-center space-x-2 p-3 border rounded-md bg-muted/30">
+                        <Checkbox
+                          id="is_indefinite"
+                          checked={recurringForm.is_indefinite}
+                          onCheckedChange={(checked) => setRecurringForm(p => ({ ...p, is_indefinite: checked === true }))}
+                        />
+                        <div className="flex-1">
+                          <Label htmlFor="is_indefinite" className="text-sm font-medium cursor-pointer flex items-center gap-2">
+                            <Infinity className="h-4 w-4" />
+                            Run indefinitely (never-ending)
+                          </Label>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Shifts will automatically appear on any future week
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Number of Weeks - only show if not indefinite and not one_off */}
+                    {!recurringForm.is_indefinite && recurringForm.recurrence_interval !== 'one_off' && (
                       <div>
                         <Label>Number of Weeks</Label>
                         <Select 
@@ -1091,21 +1158,30 @@ export function StaffScheduleManager() {
                       />
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      {recurringForm.is_indefinite ? (
+                      {recurringForm.recurrence_interval === 'one_off' ? (
+                        (() => {
+                          const start = parseISO(recurringForm.start_date);
+                          const end = parseISO(recurringForm.end_date);
+                          const days = eachDayOfInterval({ start, end }).length;
+                          return `This will create ${days} ${recurringForm.is_overtime ? 'overtime' : 'schedule'} ${days === 1 ? 'entry' : 'entries'} from ${format(start, "MMM d, yyyy")}${days > 1 ? ` to ${format(end, "MMM d, yyyy")}` : ''}`;
+                        })()
+                      ) : recurringForm.is_indefinite ? (
                         <span className="flex items-center gap-1">
                           <Infinity className="h-3 w-3" />
                           This will create a never-ending pattern starting from {recurringForm.start_date ? format(parseISO(recurringForm.start_date), "MMM d, yyyy") : "today"}
                         </span>
                       ) : (
-                        `This will create ${recurringForm.selected_days.length * recurringForm.weeks_to_create} ${recurringForm.is_overtime ? 'overtime' : 'schedule'} entries starting from ${recurringForm.start_date ? format(parseISO(recurringForm.start_date), "MMM d, yyyy") : "today"}`
+                        `This will create ${(recurringForm.recurrence_interval === 'daily' ? 7 : recurringForm.selected_days.length) * recurringForm.weeks_to_create} ${recurringForm.is_overtime ? 'overtime' : 'schedule'} entries starting from ${recurringForm.start_date ? format(parseISO(recurringForm.start_date), "MMM d, yyyy") : "today"}`
                       )}
                     </div>
                     <Button 
                       onClick={() => createRecurringScheduleMutation.mutate(recurringForm)}
-                      disabled={!recurringForm.user_id || !recurringForm.client_name || (recurringForm.recurrence_interval !== 'daily' && recurringForm.selected_days.length === 0)}
+                      disabled={!recurringForm.user_id || !recurringForm.client_name || (recurringForm.recurrence_interval !== 'daily' && recurringForm.recurrence_interval !== 'one_off' && recurringForm.selected_days.length === 0)}
                       className="w-full"
                     >
-                      {recurringForm.is_indefinite ? (
+                      {recurringForm.recurrence_interval === 'one_off' ? (
+                        `Create ${recurringForm.is_overtime ? 'Overtime' : 'Shift'}`
+                      ) : recurringForm.is_indefinite ? (
                         <>
                           <Infinity className="h-4 w-4 mr-2" />
                           Create Indefinite Pattern
