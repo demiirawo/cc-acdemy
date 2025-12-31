@@ -1040,29 +1040,27 @@ export function StaffScheduleManager() {
                 </Button>
               </div>
 
-              {/* View Mode Toggle - Staff vs Client (only for weekly view) */}
-              {!showLiveView && (
-                <div className="flex border rounded-md">
-                  <Button
-                    variant={viewMode === "staff" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setViewMode("staff")}
-                    className="rounded-r-none"
-                  >
-                    <Users className="h-4 w-4 mr-1" />
-                    Staff View
-                  </Button>
-                  <Button
-                    variant={viewMode === "client" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => setViewMode("client")}
-                    className="rounded-l-none"
-                  >
-                    <Building2 className="h-4 w-4 mr-1" />
-                    Client View
-                  </Button>
-                </div>
-              )}
+              {/* View Mode Toggle - Staff vs Client */}
+              <div className="flex border rounded-md">
+                <Button
+                  variant={viewMode === "staff" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("staff")}
+                  className="rounded-r-none"
+                >
+                  <Users className="h-4 w-4 mr-1" />
+                  Staff View
+                </Button>
+                <Button
+                  variant={viewMode === "client" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("client")}
+                  className="rounded-l-none"
+                >
+                  <Building2 className="h-4 w-4 mr-1" />
+                  Client View
+                </Button>
+              </div>
             </div>
 
             <div className="flex items-center gap-4">
@@ -1380,7 +1378,7 @@ export function StaffScheduleManager() {
                     <>
                       <div className="grid gap-1 mb-2" style={{ gridTemplateColumns: '150px repeat(9, 1fr)' }}>
                         <div className="font-medium text-sm text-muted-foreground p-2">
-                          Staff
+                          {viewMode === "staff" ? "Staff" : "Client"}
                         </div>
                         {timeSlots.map((slot, idx) => (
                           <div 
@@ -1395,8 +1393,8 @@ export function StaffScheduleManager() {
                         ))}
                       </div>
 
-                      {/* Staff Rows with 8 Hour Timeline */}
-                      {filteredStaff.map(staff => {
+                      {/* Staff View - Live */}
+                      {viewMode === "staff" && filteredStaff.map(staff => {
                         const todaySchedules = allSchedules.filter(s => {
                           const scheduleDate = parseISO(s.start_datetime);
                           return s.user_id === staff.user_id && format(scheduleDate, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
@@ -1419,14 +1417,12 @@ export function StaffScheduleManager() {
                               const slotEnd = new Date(slotStart);
                               slotEnd.setHours(slotEnd.getHours() + 1);
                               
-                              // Find schedules that overlap with this hour slot
                               const overlappingSchedules = todaySchedules.filter(s => {
                                 const start = parseISO(s.start_datetime);
                                 const end = parseISO(s.end_datetime);
                                 return start < slotEnd && end > slotStart;
                               });
                               
-                              // Check if currently working (for first slot)
                               const isCurrentlyWorking = slotIdx === 0 && overlappingSchedules.some(s => {
                                 const start = parseISO(s.start_datetime);
                                 const end = parseISO(s.end_datetime);
@@ -1498,10 +1494,118 @@ export function StaffScheduleManager() {
                           </div>
                         );
                       })}
+
+                      {/* Client View - Live */}
+                      {viewMode === "client" && uniqueClients.map(clientName => {
+                        const todaySchedules = allSchedules.filter(s => {
+                          const scheduleDate = parseISO(s.start_datetime);
+                          return s.client_name === clientName && format(scheduleDate, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
+                        });
+                        
+                        return (
+                          <div key={clientName} className="grid gap-1 mb-1" style={{ gridTemplateColumns: '150px repeat(9, 1fr)' }}>
+                            <div className="p-2 text-sm font-medium truncate border-r">
+                              {clientName}
+                            </div>
+                            {timeSlots.map((slot, slotIdx) => {
+                              const slotStart = new Date(now);
+                              slotStart.setHours(slot.hour, 0, 0, 0);
+                              if (slotIdx > 0 && slot.hour < currentHour) {
+                                slotStart.setDate(slotStart.getDate() + 1);
+                              }
+                              const slotEnd = new Date(slotStart);
+                              slotEnd.setHours(slotEnd.getHours() + 1);
+                              
+                              const overlappingSchedules = todaySchedules.filter(s => {
+                                const start = parseISO(s.start_datetime);
+                                const end = parseISO(s.end_datetime);
+                                return start < slotEnd && end > slotStart;
+                              });
+                              
+                              const hasActiveShift = slotIdx === 0 && overlappingSchedules.some(s => {
+                                const start = parseISO(s.start_datetime);
+                                const end = parseISO(s.end_datetime);
+                                return now >= start && now <= end;
+                              });
+                              
+                              return (
+                                <div 
+                                  key={`${clientName}-${slot.hour}`}
+                                  className={`min-h-[60px] p-1 rounded border ${
+                                    hasActiveShift
+                                      ? 'bg-green-100 border-green-300 ring-2 ring-green-500'
+                                      : 'bg-background border-border'
+                                  }`}
+                                >
+                                  {overlappingSchedules.map(schedule => {
+                                    const start = parseISO(schedule.start_datetime);
+                                    const end = parseISO(schedule.end_datetime);
+                                    const isFromPattern = schedule.id.startsWith('pattern-');
+                                    const startsThisHour = start.getHours() === slot.hour;
+                                    const endsThisHour = end.getHours() === slot.hour;
+                                    const staffOnHoliday = isStaffOnHoliday(schedule.user_id, now);
+                                    const isCurrentlyWorking = slotIdx === 0 && now >= start && now <= end;
+                                    
+                                    return (
+                                      <div 
+                                        key={schedule.id}
+                                        className={`rounded p-1 text-xs cursor-pointer hover:ring-2 hover:ring-primary/50 mb-1 ${
+                                          staffOnHoliday
+                                            ? 'bg-amber-100 border border-amber-300'
+                                            : isFromPattern 
+                                              ? 'bg-violet-100 border border-violet-300' 
+                                              : 'bg-primary/20 border border-primary/40'
+                                        } ${isCurrentlyWorking ? 'ring-1 ring-green-500' : ''}`}
+                                        onClick={() => handleScheduleClick(schedule)}
+                                        title={scheduleEditHint}
+                                      >
+                                        <div className="font-medium truncate flex items-center gap-1">
+                                          {getStaffName(schedule.user_id)}
+                                          {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600" />}
+                                          {isFromPattern && !staffOnHoliday && <Infinity className="h-3 w-3 text-violet-500" />}
+                                        </div>
+                                        {staffOnHoliday && (
+                                          <div className="text-[10px] text-amber-700">On holiday</div>
+                                        )}
+                                        {!staffOnHoliday && startsThisHour && (
+                                          <div className="text-[10px] text-green-700">
+                                            Starts {format(start, "HH:mm")}
+                                          </div>
+                                        )}
+                                        {!staffOnHoliday && endsThisHour && (
+                                          <div className="text-[10px] text-red-700">
+                                            Ends {format(end, "HH:mm")}
+                                          </div>
+                                        )}
+                                        {!staffOnHoliday && !startsThisHour && !endsThisHour && isCurrentlyWorking && (
+                                          <div className="text-[10px] text-green-700 font-medium">
+                                            Working now
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                  {overlappingSchedules.length === 0 && (
+                                    <div className="text-[10px] text-muted-foreground italic h-full flex items-center justify-center">
+                                      —
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
                       
-                      {filteredStaff.length === 0 && (
+                      {viewMode === "staff" && filteredStaff.length === 0 && (
                         <div className="text-center py-8 text-muted-foreground">
                           No staff members found
+                        </div>
+                      )}
+                      
+                      {viewMode === "client" && uniqueClients.length === 0 && (
+                        <div className="text-center py-8 text-muted-foreground">
+                          No client schedules found for today
                         </div>
                       )}
                     </>
