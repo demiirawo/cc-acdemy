@@ -825,6 +825,41 @@ export type Database = {
         }
         Relationships: []
       }
+      shift_pattern_exceptions: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          exception_date: string
+          exception_type: string
+          id: string
+          pattern_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          exception_date: string
+          exception_type?: string
+          id?: string
+          pattern_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          exception_date?: string
+          exception_type?: string
+          id?: string
+          pattern_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_pattern_exceptions_pattern_id_fkey"
+            columns: ["pattern_id"]
+            isOneToOne: false
+            referencedRelation: "recurring_shift_patterns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       spaces: {
         Row: {
           created_at: string
