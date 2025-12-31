@@ -248,7 +248,7 @@ export function StaffScheduleManager() {
     }
   });
 
-  // Fetch staff requests (pending and approved)
+  // Fetch staff requests (pending and approved) with linked holiday info
   const { data: staffRequests = [] } = useQuery({
     queryKey: ["staff-requests-for-schedule", currentWeekStart.toISOString()],
     queryFn: async () => {
@@ -260,7 +260,7 @@ export function StaffScheduleManager() {
         .in("status", ["approved", "pending"]);
       
       if (error) throw error;
-      return data as StaffRequest[];
+      return data as (StaffRequest & { linked_holiday_id: string | null })[];
     }
   });
 
@@ -858,6 +858,61 @@ export function StaffScheduleManager() {
     });
   };
 
+  // Get who is covering for a staff member on holiday for a specific day
+  const getCoverageForHoliday = (holidayUserId: string, day: Date) => {
+    // Find the holiday for this user on this day
+    const holiday = holidays.find(h => {
+      if (h.user_id !== holidayUserId) return false;
+      const start = parseISO(h.start_date);
+      const end = parseISO(h.end_date);
+      return isWithinInterval(day, { start, end });
+    });
+    
+    if (!holiday) return null;
+    
+    // Find approved overtime requests linked to this holiday
+    const coverageRequests = staffRequests.filter(r => 
+      r.linked_holiday_id === holiday.id && 
+      r.status === 'approved' &&
+      (r.request_type === 'overtime_standard' || r.request_type === 'overtime_double_up')
+    );
+    
+    if (coverageRequests.length === 0) return null;
+    
+    // Return covering staff info
+    return coverageRequests.map(r => ({
+      userId: r.user_id,
+      name: getStaffName(r.user_id),
+      type: r.request_type
+    }));
+  };
+
+  // Get who a staff member is covering for (when they have approved overtime)
+  const getCoveringForInfo = (userId: string, day: Date) => {
+    const relevantRequests = staffRequests.filter(r => {
+      if (r.user_id !== userId) return false;
+      if (r.status !== 'approved') return false;
+      if (r.request_type !== 'overtime_standard' && r.request_type !== 'overtime_double_up') return false;
+      if (!r.linked_holiday_id) return false;
+      const start = parseISO(r.start_date);
+      const end = parseISO(r.end_date);
+      return isWithinInterval(day, { start, end }) || isSameDay(day, start) || isSameDay(day, end);
+    });
+    
+    if (relevantRequests.length === 0) return null;
+    
+    // Find who they're covering
+    return relevantRequests.map(req => {
+      const linkedHoliday = holidays.find(h => h.id === req.linked_holiday_id);
+      if (!linkedHoliday) return null;
+      return {
+        holidayUserId: linkedHoliday.user_id,
+        holidayUserName: getStaffName(linkedHoliday.user_id),
+        overtimeType: req.request_type
+      };
+    }).filter(Boolean);
+  };
+
   const calculateScheduleCost = (schedule: Schedule) => {
     if (!schedule.hourly_rate) return null;
     const hours = differenceInHours(parseISO(schedule.end_datetime), parseISO(schedule.start_datetime));
@@ -1232,19 +1287,42 @@ export function StaffScheduleManager() {
                     const dayOvertime = getOvertimeForStaffDay(staff.user_id, day);
                     const onHoliday = isStaffOnHoliday(staff.user_id, day);
                     const holidayInfo = getHolidayInfo(staff.user_id, day);
+                    const coverage = onHoliday ? getCoverageForHoliday(staff.user_id, day) : null;
+                    const coveringFor = getCoveringForInfo(staff.user_id, day);
 
                     return (
                       <div 
                         key={day.toISOString()} 
                         className={`min-h-[80px] p-1 rounded border ${onHoliday ? 'bg-amber-50 border-amber-200' : 'bg-background border-border'}`}
                       >
+                        {/* Holiday indicator with coverage info */}
                         {onHoliday && (
-                          <div className="flex items-center gap-1 text-xs text-amber-700 mb-1">
-                            <Palmtree className="h-3 w-3" />
-                            <span className="capitalize">{holidayInfo?.absence_type || 'Holiday'}</span>
-                            {holidayInfo?.status === 'pending' && (
-                              <Badge variant="outline" className="text-[10px] py-0 px-1">Pending</Badge>
+                          <div className="mb-1">
+                            <div className="flex items-center gap-1 text-xs text-amber-700">
+                              <Palmtree className="h-3 w-3" />
+                              <span className="capitalize">{holidayInfo?.absence_type || 'Holiday'}</span>
+                              {holidayInfo?.status === 'pending' && (
+                                <Badge variant="outline" className="text-[10px] py-0 px-1">Pending</Badge>
+                              )}
+                            </div>
+                            {coverage && coverage.length > 0 ? (
+                              <div className="text-[10px] text-green-700 bg-green-50 rounded px-1 py-0.5 mt-0.5">
+                                <span className="font-medium">Covered by:</span> {coverage.map(c => c.name).join(', ')}
+                              </div>
+                            ) : holidayInfo?.status === 'approved' && (
+                              <div className="text-[10px] text-red-600 bg-red-50 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1">
+                                <AlertTriangle className="h-2.5 w-2.5" />
+                                <span>No cover assigned</span>
+                              </div>
                             )}
+                          </div>
+                        )}
+
+                        {/* Covering for someone indicator */}
+                        {coveringFor && coveringFor.length > 0 && (
+                          <div className="text-[10px] text-blue-700 bg-blue-50 rounded px-1 py-0.5 mb-1 flex items-center gap-1">
+                            <Users className="h-2.5 w-2.5" />
+                            <span>Covering: {coveringFor.map(c => c?.holidayUserName).join(', ')}</span>
                           </div>
                         )}
                         
@@ -1392,6 +1470,8 @@ export function StaffScheduleManager() {
                           const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
                           const isFromPattern = schedule.id.startsWith('pattern-');
                           const isPatternOvertime = schedule.is_pattern_overtime;
+                          const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
+                          const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
                           
                           return (
                             <div 
@@ -1409,21 +1489,45 @@ export function StaffScheduleManager() {
                               <div className="font-medium truncate flex items-center gap-1">
                                 {getStaffName(schedule.user_id)}
                                 {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600" />}
-                                {isFromPattern && (
+                                {isFromPattern && !staffOnHoliday && (
                                   <Infinity className={`h-3 w-3 ${isPatternOvertime ? 'text-orange-500' : 'text-violet-500'}`} />
                                 )}
-                                {isPatternOvertime && <Clock className="h-3 w-3 text-orange-500" />}
+                                {isPatternOvertime && !staffOnHoliday && <Clock className="h-3 w-3 text-orange-500" />}
                               </div>
-                              <div className="text-muted-foreground">
-                                {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
-                              </div>
-                              {cost !== null && (
-                                <div className="text-muted-foreground">
-                                  {schedule.currency} {cost.toFixed(2)}
+                              
+                              {/* Holiday/Coverage info for client view */}
+                              {staffOnHoliday && (
+                                <div className="mt-0.5">
+                                  <div className="text-[10px] text-amber-700 capitalize">
+                                    {holidayInfo?.absence_type || 'On holiday'}
+                                  </div>
+                                  {coverage && coverage.length > 0 ? (
+                                    <div className="text-[10px] text-green-700 bg-green-50 rounded px-1 py-0.5 mt-0.5">
+                                      <span className="font-medium">Cover:</span> {coverage.map(c => c.name).join(', ')}
+                                    </div>
+                                  ) : (
+                                    <div className="text-[10px] text-red-600 bg-red-50 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1">
+                                      <AlertTriangle className="h-2.5 w-2.5" />
+                                      <span>No cover</span>
+                                    </div>
+                                  )}
                                 </div>
                               )}
-                              {schedule.notes && (
-                                <div className="text-muted-foreground italic truncate">{schedule.notes}</div>
+                              
+                              {!staffOnHoliday && (
+                                <>
+                                  <div className="text-muted-foreground">
+                                    {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
+                                  </div>
+                                  {cost !== null && (
+                                    <div className="text-muted-foreground">
+                                      {schedule.currency} {cost.toFixed(2)}
+                                    </div>
+                                  )}
+                                  {schedule.notes && (
+                                    <div className="text-muted-foreground italic truncate">{schedule.notes}</div>
+                                  )}
+                                </>
                               )}
                               <Button
                                 variant="ghost"
