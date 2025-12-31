@@ -88,6 +88,7 @@ export function StaffPayManager() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   const [exchangeRates, setExchangeRates] = useState<ExchangeRates>(FALLBACK_RATES);
+  const [manualRates, setManualRates] = useState<ExchangeRates>({});
   const [ratesDate, setRatesDate] = useState<string | null>(null);
   const [loadingRates, setLoadingRates] = useState(false);
   const { toast } = useToast();
@@ -127,9 +128,34 @@ export function StaffPayManager() {
     }
   };
 
-  // Convert amount from source currency to GBP
+  // Get currencies used in the current payroll
+  const currenciesInPayroll = useMemo(() => {
+    const currencies = new Set<string>();
+    hrProfiles.forEach(hr => {
+      if (hr.base_salary && hr.base_salary > 0 && hr.base_currency !== 'GBP') {
+        currencies.add(hr.base_currency);
+      }
+    });
+    return Array.from(currencies);
+  }, [hrProfiles]);
+
+  const handleManualRateChange = (currency: string, value: string) => {
+    const numValue = parseFloat(value);
+    if (!isNaN(numValue) && numValue > 0) {
+      setManualRates(prev => ({ ...prev, [currency]: numValue }));
+    } else if (value === '') {
+      // Clear manual rate to use API rate
+      setManualRates(prev => {
+        const newRates = { ...prev };
+        delete newRates[currency];
+        return newRates;
+      });
+    }
+  };
+
+  // Convert amount from source currency to GBP using manual rate if set, otherwise API rate
   const convertToGBP = (amount: number, currency: string): number => {
-    const rate = exchangeRates[currency] || 1;
+    const rate = manualRates[currency] ?? exchangeRates[currency] ?? 1;
     return amount * rate;
   };
 
@@ -239,7 +265,7 @@ export function StaffPayManager() {
         records: userRecords
       };
     });
-  }, [hrProfiles, userProfiles, monthRecords, exchangeRates]);
+  }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates]);
 
   // Total payroll for the month (converted to GBP)
   const totalPayroll = useMemo(() => {
@@ -488,6 +514,54 @@ export function StaffPayManager() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Manual Currency Rate Inputs */}
+      {currenciesInPayroll.length > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-sm font-medium mb-3">Manual Currency Conversion Rates (to GBP)</div>
+            <div className="flex flex-wrap gap-4">
+              {currenciesInPayroll.map(currency => {
+                const currInfo = CURRENCIES.find(c => c.code === currency);
+                const currentRate = manualRates[currency] ?? exchangeRates[currency] ?? 0;
+                const isManual = currency in manualRates;
+                
+                return (
+                  <div key={currency} className="flex items-center gap-2">
+                    <Label className="text-sm whitespace-nowrap min-w-[60px]">
+                      1 {currInfo?.symbol || currency} =
+                    </Label>
+                    <div className="flex items-center gap-1">
+                      <span className="text-muted-foreground">£</span>
+                      <Input
+                        type="number"
+                        step="0.0001"
+                        value={isManual ? manualRates[currency] : ''}
+                        placeholder={currentRate.toFixed(6)}
+                        onChange={(e) => handleManualRateChange(currency, e.target.value)}
+                        className="w-28 h-8 text-sm"
+                      />
+                    </div>
+                    {isManual && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-8 px-2 text-xs"
+                        onClick={() => handleManualRateChange(currency, '')}
+                      >
+                        Reset
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Leave empty to use API rates. Enter a value to override.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Payroll Table */}
       <Card>
