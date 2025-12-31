@@ -448,8 +448,25 @@ export function MyHRProfile() {
                  startDate <= holidayYearEnd;
         }).reduce((sum, h) => sum + Number(h.days_taken), 0);
         
-        const annualAllowance = hrProfile.annual_holiday_allowance || 28;
-        unusedHolidayDays = Math.max(0, annualAllowance - holidaysTakenInYear);
+        // Calculate accrued allowance for the holiday year
+        // For staff who started during the holiday year, calculate pro-rata based on days worked
+        const employeeStartDate = hrProfile.start_date ? new Date(hrProfile.start_date) : null;
+        const yearsEmployed = employeeStartDate 
+          ? (holidayYearEnd.getTime() - employeeStartDate.getTime()) / (1000 * 60 * 60 * 24 * 365)
+          : 0;
+        const baseAllowance = yearsEmployed >= 1 ? 18 : 15;
+        
+        let effectiveAllowance = baseAllowance;
+        
+        // If employee started after the holiday year began, calculate pro-rata
+        if (employeeStartDate && employeeStartDate > holidayYearStart) {
+          const totalDaysInYear = Math.ceil((holidayYearEnd.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
+          const daysEmployedInYear = Math.ceil((holidayYearEnd.getTime() - employeeStartDate.getTime()) / (1000 * 60 * 60 * 24));
+          const proRataFraction = Math.min(daysEmployedInYear / totalDaysInYear, 1);
+          effectiveAllowance = Math.round(baseAllowance * proRataFraction * 10) / 10;
+        }
+        
+        unusedHolidayDays = Math.max(0, effectiveAllowance - holidaysTakenInYear);
         // Unused holiday pay = Base Pay / 20 * unused days
         unusedHolidayPayout = (monthlyBaseSalary / 20) * unusedHolidayDays;
       }
