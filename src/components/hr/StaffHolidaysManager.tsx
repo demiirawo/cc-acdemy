@@ -41,7 +41,7 @@ interface HRProfile {
 
 // Calculate holiday allowance based on employment length
 // 15 days for first year, increases to 18 days after 1+ year of employment
-// Accrual based on time elapsed since start of current holiday year (June 1st - May 31st)
+// Accrual is pro-rated from employee start date (or June 1 if they started before current holiday year)
 export const calculateHolidayAllowance = (startDate: string | null): { 
   annualAllowance: number; 
   accruedAllowance: number; 
@@ -68,12 +68,11 @@ export const calculateHolidayAllowance = (startDate: string | null): {
     : new Date(currentYear, 4, 31); // May 31st of current year
   
   const totalDaysInYear = Math.ceil((holidayYearEnd.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
-  const daysElapsedInYear = Math.ceil((now.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
-  
-  // Fraction of holiday year that has elapsed since June 1st
-  const accrualFraction = Math.min(daysElapsedInYear / totalDaysInYear, 1);
   
   if (!startDate) {
+    // No start date - assume they've been here a while, accrue from June 1
+    const daysElapsedInYear = Math.ceil((now.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
+    const accrualFraction = Math.min(daysElapsedInYear / totalDaysInYear, 1);
     return { 
       annualAllowance: DEFAULT_ALLOWANCE, 
       accruedAllowance: Math.round(DEFAULT_ALLOWANCE * accrualFraction * 10) / 10, 
@@ -91,8 +90,33 @@ export const calculateHolidayAllowance = (startDate: string | null): {
   // Determine annual allowance based on years employed
   const annualAllowance = yearsEmployed >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
   
-  // Accrued allowance = fraction of year elapsed since June 1st * annual allowance (same for ALL staff)
-  const accruedAllowance = Math.round(annualAllowance * accrualFraction * 10) / 10; // Round to 1 decimal
+  // Calculate accrual start date: the later of (employee start date, holiday year start)
+  const accrualStartDate = start > holidayYearStart ? start : holidayYearStart;
+  
+  // If employee hasn't started yet (start date in future), no accrual
+  if (start > now) {
+    return { 
+      annualAllowance, 
+      accruedAllowance: 0, 
+      yearsEmployed: 0,
+      isProRata: true,
+      holidayYearStart,
+      daysElapsedInYear: 0,
+      totalDaysInYear
+    };
+  }
+  
+  // Days elapsed since accrual start (employee start or June 1, whichever is later)
+  const daysElapsedSinceAccrualStart = Math.max(0, Math.ceil((now.getTime() - accrualStartDate.getTime()) / (1000 * 60 * 60 * 24)));
+  
+  // Fraction of holiday year that the employee has been accruing
+  const accrualFraction = Math.min(daysElapsedSinceAccrualStart / totalDaysInYear, 1);
+  
+  // Accrued allowance = days worked in year / total days in year * annual allowance
+  const accruedAllowance = Math.round(annualAllowance * accrualFraction * 10) / 10;
+  
+  // For display purposes, show days elapsed since the holiday year start (not accrual start)
+  const daysElapsedInYear = Math.ceil((now.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
   
   return { 
     annualAllowance, 
