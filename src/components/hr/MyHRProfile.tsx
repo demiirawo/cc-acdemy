@@ -515,7 +515,20 @@ export function MyHRProfile() {
         </Card>
 
         <Card>
-          
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Calendar className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Holiday Allowance</p>
+                <p className="font-medium">
+                  {totalHolidaysTaken} / {hrProfile.annual_holiday_allowance || 28} days used
+                  <span className="text-muted-foreground text-sm ml-1">({holidayRemaining} remaining)</span>
+                </p>
+              </div>
+            </div>
+          </CardContent>
         </Card>
 
         <Card>
