@@ -768,6 +768,33 @@ export type Database = {
         }
         Relationships: []
       }
+      staff_client_assignments: {
+        Row: {
+          client_name: string
+          created_at: string
+          id: string
+          notes: string | null
+          staff_user_id: string
+          updated_at: string
+        }
+        Insert: {
+          client_name: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          staff_user_id: string
+          updated_at?: string
+        }
+        Update: {
+          client_name?: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          staff_user_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       staff_holidays: {
         Row: {
           absence_type: Database["public"]["Enums"]["absence_type"]
