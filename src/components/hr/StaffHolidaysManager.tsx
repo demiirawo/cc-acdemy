@@ -33,6 +33,24 @@ interface UserProfile {
   email: string | null;
 }
 
+interface HRProfile {
+  user_id: string;
+  start_date: string | null;
+  annual_holiday_allowance: number | null;
+}
+
+// Calculate holiday allowance based on employment length
+// 15 days default, 18 days after 1 year of employment
+const calculateHolidayAllowance = (startDate: string | null): number => {
+  if (!startDate) return 15;
+  
+  const start = new Date(startDate);
+  const now = new Date();
+  const yearsEmployed = (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
+  
+  return yearsEmployed >= 1 ? 18 : 15;
+};
+
 const ABSENCE_TYPES = [
   { value: 'holiday', label: 'Holiday' },
   { value: 'sick', label: 'Sick Leave' },
@@ -50,8 +68,9 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export function StaffHolidaysManager() {
-  const [holidays, setHolidays] = useState<(Holiday & { user?: UserProfile })[]>([]);
+  const [holidays, setHolidays] = useState<(Holiday & { user?: UserProfile; hrProfile?: HRProfile })[]>([]);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
+  const [hrProfiles, setHRProfiles] = useState<HRProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const { toast } = useToast();
@@ -78,6 +97,13 @@ export function StaffHolidaysManager() {
       if (usersError) throw usersError;
       setUserProfiles(users || []);
 
+      const { data: hrData, error: hrError } = await supabase
+        .from('hr_profiles')
+        .select('user_id, start_date, annual_holiday_allowance');
+
+      if (hrError) throw hrError;
+      setHRProfiles(hrData || []);
+
       const { data: holidayData, error: holidayError } = await supabase
         .from('staff_holidays')
         .select('*')
@@ -87,7 +113,8 @@ export function StaffHolidaysManager() {
 
       const mergedHolidays = (holidayData || []).map(h => ({
         ...h,
-        user: users?.find(u => u.user_id === h.user_id)
+        user: users?.find(u => u.user_id === h.user_id),
+        hrProfile: hrData?.find(hr => hr.user_id === h.user_id)
       }));
 
       setHolidays(mergedHolidays);
