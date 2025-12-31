@@ -12,9 +12,9 @@ serve(async (req) => {
   }
 
   try {
-    // Fetch latest exchange rates from Frankfurter API (free, no API key needed)
-    // Base is EUR by default, we'll convert everything to GBP
-    const response = await fetch('https://api.frankfurter.app/latest?to=GBP,USD,EUR,INR,AED,AUD,CAD,PHP,ZAR,NGN');
+    // Frankfurter API only supports major currencies, not AED or NGN
+    // We'll fetch what's available and add manual rates for others
+    const response = await fetch('https://api.frankfurter.app/latest?to=GBP,USD,INR,AUD,CAD,PHP,ZAR');
     
     if (!response.ok) {
       throw new Error(`Failed to fetch exchange rates: ${response.statusText}`);
@@ -27,17 +27,21 @@ serve(async (req) => {
     const eurToGbp = data.rates.GBP;
     
     // Calculate rates relative to GBP (how much 1 unit of each currency is worth in GBP)
+    // For currencies not in Frankfurter, use approximate fixed rates based on current market
     const gbpRates: Record<string, number> = {
       GBP: 1,
       EUR: eurToGbp, // 1 EUR = X GBP
-      USD: eurToGbp / data.rates.USD, // Convert via EUR
+      USD: eurToGbp / data.rates.USD,
       INR: eurToGbp / data.rates.INR,
-      AED: eurToGbp / data.rates.AED,
       AUD: eurToGbp / data.rates.AUD,
       CAD: eurToGbp / data.rates.CAD,
       PHP: eurToGbp / data.rates.PHP,
       ZAR: eurToGbp / data.rates.ZAR,
-      NGN: eurToGbp / data.rates.NGN,
+      // AED and NGN are not supported by Frankfurter, use approximate rates
+      // AED is pegged to USD at ~3.67, so 1 AED = 1 USD / 3.67
+      AED: (eurToGbp / data.rates.USD) / 3.6725,
+      // NGN fluctuates significantly - using approximate rate of ~1600 NGN per GBP
+      NGN: 1 / 1600,
     };
     
     console.log('Calculated GBP rates:', gbpRates);
@@ -46,7 +50,8 @@ serve(async (req) => {
       rates: gbpRates,
       base: 'GBP',
       date: data.date,
-      success: true
+      success: true,
+      note: 'AED and NGN rates are approximate (not available from primary API)'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
