@@ -462,19 +462,7 @@ export function MyHRProfile() {
         </Card>
 
         <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Calendar className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Holiday Balance</p>
-                <p className="font-medium">
-                  {holidayRemaining} / {hrProfile.annual_holiday_allowance || 28} days
-                </p>
-              </div>
-            </div>
-          </CardContent>
+          
         </Card>
 
         <Card>
@@ -499,7 +487,7 @@ export function MyHRProfile() {
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5 text-primary" />
-              <CardTitle className="text-lg">12-Month Pay Preview</CardTitle>
+              <CardTitle className="text-lg">12-Month Pay Forecast</CardTitle>
             </div>
             <CardDescription>Estimated pay for the next 12 months (subject to final processing)</CardDescription>
           </CardHeader>
