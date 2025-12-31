@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -602,27 +603,14 @@ export function StaffPayManager() {
           return startDate >= holidayYearStart && startDate <= holidayYearEnd;
         }).reduce((sum, h) => sum + Number(h.days_taken), 0);
         
-        // Get user's HR profile for start date
+        // Get user's HR profile for start date and use calculateHolidayAllowance for consistency
         const userHRFull = hrProfilesFull.find(p => p.user_id === hr.user_id);
-        const employeeStartDate = userHRFull?.start_date ? new Date(userHRFull.start_date) : null;
+        const employeeStartDateStr = userHRFull?.start_date || null;
         
-        // Calculate years employed by end of holiday year
-        const yearsEmployed = employeeStartDate 
-          ? (holidayYearEnd.getTime() - employeeStartDate.getTime()) / (1000 * 60 * 60 * 24 * 365)
-          : 0;
-        const baseAllowance = yearsEmployed >= 1 ? 18 : 15;
+        // Calculate accrued allowance using the same logic as StaffHolidaysManager
+        const { accruedAllowance } = calculateHolidayAllowance(employeeStartDateStr);
         
-        let effectiveAllowance = baseAllowance;
-        
-        // If employee started after the holiday year began, calculate pro-rata accrued allowance
-        if (employeeStartDate && employeeStartDate > holidayYearStart) {
-          const totalDaysInYear = Math.ceil((holidayYearEnd.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
-          const daysEmployedInYear = Math.ceil((holidayYearEnd.getTime() - employeeStartDate.getTime()) / (1000 * 60 * 60 * 24));
-          const proRataFraction = Math.min(daysEmployedInYear / totalDaysInYear, 1);
-          effectiveAllowance = Math.round(baseAllowance * proRataFraction * 10) / 10;
-        }
-        
-        unusedHolidayDays = Math.max(0, effectiveAllowance - userHolidaysTaken);
+        unusedHolidayDays = Math.max(0, accruedAllowance - userHolidaysTaken);
         
         // Unused holiday pay = Base Pay / 20 * unused days
         unusedHolidayPayout = (monthlyBaseSalary / 20) * unusedHolidayDays;
