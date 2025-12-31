@@ -11,8 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, Clock, Palmtree, Trash2, Users, Building2, Repeat } from "lucide-react";
+import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay } from "date-fns";
+import { Plus, ChevronLeft, ChevronRight, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity } from "lucide-react";
 
 interface Schedule {
   id: string;
@@ -56,6 +56,21 @@ interface HRProfile {
   user_id: string;
   base_salary: number | null;
   base_currency: string;
+}
+
+interface RecurringPattern {
+  id: string;
+  user_id: string;
+  client_name: string;
+  days_of_week: number[];
+  start_time: string;
+  end_time: string;
+  hourly_rate: number | null;
+  currency: string;
+  is_overtime: boolean;
+  notes: string | null;
+  start_date: string;
+  end_date: string | null; // null = indefinite
 }
 
 interface Client {
@@ -107,7 +122,8 @@ export function StaffScheduleManager() {
     is_overtime: false,
     notes: "",
     hourly_rate: "",
-    currency: "GBP"
+    currency: "GBP",
+    start_date: format(new Date(), "yyyy-MM-dd")
   });
 
   // Overtime form state
@@ -218,9 +234,76 @@ export function StaffScheduleManager() {
     }
   });
 
+  // Fetch recurring shift patterns
+  const { data: recurringPatterns = [] } = useQuery({
+    queryKey: ["recurring-shift-patterns"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("recurring_shift_patterns")
+        .select("*")
+        .order("created_at", { ascending: false });
+      
+      if (error) throw error;
+      return data as RecurringPattern[];
+    }
+  });
+
+  // Generate virtual schedules from recurring patterns for the current week
+  const virtualSchedulesFromPatterns = useMemo(() => {
+    const virtualSchedules: Schedule[] = [];
+    
+    for (const pattern of recurringPatterns) {
+      const patternStartDate = parseISO(pattern.start_date);
+      const patternEndDate = pattern.end_date ? parseISO(pattern.end_date) : null;
+      
+      for (const day of weekDays) {
+        const dayOfWeek = getDay(day);
+        
+        // Check if this day is in the pattern
+        if (!pattern.days_of_week.includes(dayOfWeek)) continue;
+        
+        // Check if day is within the pattern's date range
+        if (isBefore(day, patternStartDate)) continue;
+        if (patternEndDate && isAfter(day, patternEndDate)) continue;
+        
+        // Create virtual schedule entry
+        const startDatetime = `${format(day, "yyyy-MM-dd")}T${pattern.start_time}`;
+        const endDatetime = `${format(day, "yyyy-MM-dd")}T${pattern.end_time}`;
+        
+        virtualSchedules.push({
+          id: `pattern-${pattern.id}-${format(day, "yyyy-MM-dd")}`,
+          user_id: pattern.user_id,
+          client_name: pattern.client_name,
+          start_datetime: startDatetime,
+          end_datetime: endDatetime,
+          notes: pattern.notes,
+          hourly_rate: pattern.hourly_rate,
+          currency: pattern.currency
+        });
+      }
+    }
+    
+    return virtualSchedules;
+  }, [recurringPatterns, weekDays]);
+
+  // Combine real schedules with virtual ones from patterns
+  const allSchedules = useMemo(() => {
+    // Filter out duplicates - if there's a real schedule at the same time, use that
+    const realScheduleKeys = new Set(
+      schedules.map(s => `${s.user_id}-${format(parseISO(s.start_datetime), "yyyy-MM-dd-HH:mm")}`)
+    );
+    
+    const uniqueVirtual = virtualSchedulesFromPatterns.filter(vs => {
+      const key = `${vs.user_id}-${format(parseISO(vs.start_datetime), "yyyy-MM-dd-HH:mm")}`;
+      return !realScheduleKeys.has(key);
+    });
+    
+    return [...schedules, ...uniqueVirtual];
+  }, [schedules, virtualSchedulesFromPatterns]);
+
   // Get unique clients from schedules
   const uniqueClients = useMemo(() => {
-    const clients = new Set(schedules.map(s => s.client_name));
+    const clients = new Set(allSchedules.map(s => s.client_name));
     return Array.from(clients).sort();
   }, [schedules]);
 
@@ -260,20 +343,44 @@ export function StaffScheduleManager() {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error("Not authenticated");
 
-      // For indefinite, create 52 weeks (1 year) of schedules
-      const weeksToCreate = data.is_indefinite ? 52 : data.weeks_to_create;
-      const startDate = currentWeekStart;
+      // For true indefinite, save as a pattern (no end date)
+      if (data.is_indefinite) {
+        const { error } = await supabase.from("recurring_shift_patterns").insert({
+          user_id: data.user_id,
+          client_name: data.client_name,
+          days_of_week: data.selected_days,
+          start_time: data.start_time,
+          end_time: data.end_time,
+          hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
+          currency: data.currency,
+          is_overtime: data.is_overtime,
+          notes: data.notes || null,
+          start_date: data.start_date,
+          end_date: null, // null = indefinite
+          created_by: userData.user.id
+        });
+
+        if (error) throw error;
+        return { type: 'pattern', indefinite: true };
+      }
+
+      // For fixed duration, create individual entries
+      const weeksToCreate = data.weeks_to_create;
+      const startDate = parseISO(data.start_date);
 
       if (data.is_overtime) {
         // Create overtime entries
         const overtimeToCreate: any[] = [];
         
         for (let week = 0; week < weeksToCreate; week++) {
-          const weekStart = addWeeks(startDate, week);
+          const weekStart = addWeeks(startOfWeek(startDate, { weekStartsOn: 1 }), week);
           
           for (const dayOfWeek of data.selected_days) {
             const daysToAdd = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
             const scheduleDate = addDays(weekStart, daysToAdd);
+            
+            // Skip if before start date
+            if (isBefore(scheduleDate, startDate)) continue;
             
             // Calculate hours from start and end time
             const [startHour, startMin] = data.start_time.split(':').map(Number);
@@ -305,11 +412,14 @@ export function StaffScheduleManager() {
         const schedulesToCreate: any[] = [];
 
         for (let week = 0; week < weeksToCreate; week++) {
-          const weekStart = addWeeks(startDate, week);
+          const weekStart = addWeeks(startOfWeek(startDate, { weekStartsOn: 1 }), week);
           
           for (const dayOfWeek of data.selected_days) {
             const daysToAdd = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
             const scheduleDate = addDays(weekStart, daysToAdd);
+            
+            // Skip if before start date
+            if (isBefore(scheduleDate, startDate)) continue;
             
             const startDatetime = `${format(scheduleDate, "yyyy-MM-dd")}T${data.start_time}:00`;
             const endDatetime = `${format(scheduleDate, "yyyy-MM-dd")}T${data.end_time}:00`;
@@ -340,12 +450,29 @@ export function StaffScheduleManager() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["staff-schedules"] });
       queryClient.invalidateQueries({ queryKey: ["staff-overtime"] });
+      queryClient.invalidateQueries({ queryKey: ["recurring-shift-patterns"] });
       setIsRecurringDialogOpen(false);
       resetRecurringForm();
-      toast.success(`Created ${result.count} recurring ${result.type} entries`);
+      if ('indefinite' in result) {
+        toast.success("Created indefinite recurring pattern - shifts will generate automatically");
+      } else {
+        toast.success(`Created ${result.count} recurring ${result.type} entries`);
+      }
     },
     onError: (error) => {
       toast.error("Failed to create recurring schedule: " + error.message);
+    }
+  });
+
+  // Delete recurring pattern mutation
+  const deletePatternMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("recurring_shift_patterns").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["recurring-shift-patterns"] });
+      toast.success("Recurring pattern deleted");
     }
   });
 
@@ -426,7 +553,8 @@ export function StaffScheduleManager() {
       is_overtime: false,
       notes: "",
       hourly_rate: "",
-      currency: "GBP"
+      currency: "GBP",
+      start_date: format(new Date(), "yyyy-MM-dd")
     });
   };
 
@@ -460,14 +588,14 @@ export function StaffScheduleManager() {
   };
 
   const getSchedulesForStaffDay = (userId: string, day: Date) => {
-    return schedules.filter(s => {
+    return allSchedules.filter(s => {
       const scheduleDate = parseISO(s.start_datetime);
       return s.user_id === userId && format(scheduleDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd");
     });
   };
 
   const getSchedulesForClientDay = (clientName: string, day: Date) => {
-    return schedules.filter(s => {
+    return allSchedules.filter(s => {
       const scheduleDate = parseISO(s.start_datetime);
       return s.client_name === clientName && format(scheduleDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd");
     });
@@ -747,16 +875,32 @@ export function StaffScheduleManager() {
                       </div>
                     </div>
                     
+                    {/* Start Date */}
+                    <div>
+                      <Label>Start Date</Label>
+                      <Input
+                        type="date"
+                        value={recurringForm.start_date}
+                        onChange={e => setRecurringForm(p => ({ ...p, start_date: e.target.value }))}
+                      />
+                    </div>
+
                     {/* Indefinite Toggle */}
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 p-3 border rounded-md bg-muted/30">
                       <Checkbox
                         id="is_indefinite"
                         checked={recurringForm.is_indefinite}
                         onCheckedChange={(checked) => setRecurringForm(p => ({ ...p, is_indefinite: checked === true }))}
                       />
-                      <Label htmlFor="is_indefinite" className="text-sm font-normal cursor-pointer">
-                        Run indefinitely (creates 52 weeks)
-                      </Label>
+                      <div className="flex-1">
+                        <Label htmlFor="is_indefinite" className="text-sm font-medium cursor-pointer flex items-center gap-2">
+                          <Infinity className="h-4 w-4" />
+                          Run indefinitely (never-ending)
+                        </Label>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Shifts will automatically appear on any future week
+                        </p>
+                      </div>
                     </div>
 
                     {/* Number of Weeks - only show if not indefinite */}
@@ -777,6 +921,7 @@ export function StaffScheduleManager() {
                             <SelectItem value="8">8 weeks</SelectItem>
                             <SelectItem value="12">12 weeks</SelectItem>
                             <SelectItem value="26">26 weeks (6 months)</SelectItem>
+                            <SelectItem value="52">52 weeks (1 year)</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -828,15 +973,28 @@ export function StaffScheduleManager() {
                       />
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      This will create {recurringForm.selected_days.length * (recurringForm.is_indefinite ? 52 : recurringForm.weeks_to_create)} {recurringForm.is_overtime ? 'overtime' : 'schedule'} entries
-                      starting from {format(currentWeekStart, "MMM d, yyyy")}
+                      {recurringForm.is_indefinite ? (
+                        <span className="flex items-center gap-1">
+                          <Infinity className="h-3 w-3" />
+                          This will create a never-ending pattern starting from {recurringForm.start_date ? format(parseISO(recurringForm.start_date), "MMM d, yyyy") : "today"}
+                        </span>
+                      ) : (
+                        `This will create ${recurringForm.selected_days.length * recurringForm.weeks_to_create} ${recurringForm.is_overtime ? 'overtime' : 'schedule'} entries starting from ${recurringForm.start_date ? format(parseISO(recurringForm.start_date), "MMM d, yyyy") : "today"}`
+                      )}
                     </div>
                     <Button 
                       onClick={() => createRecurringScheduleMutation.mutate(recurringForm)}
                       disabled={!recurringForm.user_id || !recurringForm.client_name || recurringForm.selected_days.length === 0}
                       className="w-full"
                     >
-                      Create Recurring {recurringForm.is_overtime ? 'Overtime' : 'Schedule'}
+                      {recurringForm.is_indefinite ? (
+                        <>
+                          <Infinity className="h-4 w-4 mr-2" />
+                          Create Indefinite Pattern
+                        </>
+                      ) : (
+                        `Create Recurring ${recurringForm.is_overtime ? 'Overtime' : 'Schedule'}`
+                      )}
                     </Button>
                   </div>
                 </DialogContent>
@@ -989,12 +1147,20 @@ export function StaffScheduleManager() {
                         
                         {daySchedules.map(schedule => {
                           const cost = calculateScheduleCost(schedule);
+                          const isFromPattern = schedule.id.startsWith('pattern-');
                           return (
                             <div 
                               key={schedule.id} 
-                              className="bg-primary/10 border border-primary/30 rounded p-1 mb-1 text-xs group relative"
+                              className={`rounded p-1 mb-1 text-xs group relative ${
+                                isFromPattern 
+                                  ? 'bg-violet-50 border border-violet-300' 
+                                  : 'bg-primary/10 border border-primary/30'
+                              }`}
                             >
-                              <div className="font-medium truncate">{schedule.client_name}</div>
+                              <div className="font-medium truncate flex items-center gap-1">
+                                {schedule.client_name}
+                                {isFromPattern && <Infinity className="h-3 w-3 text-violet-500" />}
+                              </div>
                               <div className="text-muted-foreground">
                                 {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
                               </div>
@@ -1006,14 +1172,16 @@ export function StaffScheduleManager() {
                               {schedule.notes && (
                                 <div className="text-muted-foreground italic truncate">{schedule.notes}</div>
                               )}
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
-                                onClick={() => deleteScheduleMutation.mutate(schedule.id)}
-                              >
-                                <Trash2 className="h-3 w-3 text-destructive" />
-                              </Button>
+                              {!isFromPattern && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
+                                  onClick={() => deleteScheduleMutation.mutate(schedule.id)}
+                                >
+                                  <Trash2 className="h-3 w-3 text-destructive" />
+                                </Button>
+                              )}
                             </div>
                           );
                         })}
@@ -1074,6 +1242,7 @@ export function StaffScheduleManager() {
                         {daySchedules.map(schedule => {
                           const cost = calculateScheduleCost(schedule);
                           const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
+                          const isFromPattern = schedule.id.startsWith('pattern-');
                           
                           return (
                             <div 
@@ -1081,12 +1250,15 @@ export function StaffScheduleManager() {
                               className={`rounded p-1 mb-1 text-xs group relative ${
                                 staffOnHoliday 
                                   ? 'bg-amber-100 border border-amber-300' 
-                                  : 'bg-primary/10 border border-primary/30'
+                                  : isFromPattern
+                                    ? 'bg-violet-50 border border-violet-300'
+                                    : 'bg-primary/10 border border-primary/30'
                               }`}
                             >
                               <div className="font-medium truncate flex items-center gap-1">
                                 {getStaffName(schedule.user_id)}
                                 {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600" />}
+                                {isFromPattern && <Infinity className="h-3 w-3 text-violet-500" />}
                               </div>
                               <div className="text-muted-foreground">
                                 {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
@@ -1099,14 +1271,16 @@ export function StaffScheduleManager() {
                               {schedule.notes && (
                                 <div className="text-muted-foreground italic truncate">{schedule.notes}</div>
                               )}
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
-                                onClick={() => deleteScheduleMutation.mutate(schedule.id)}
-                              >
-                                <Trash2 className="h-3 w-3 text-destructive" />
-                              </Button>
+                              {!isFromPattern && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
+                                  onClick={() => deleteScheduleMutation.mutate(schedule.id)}
+                                >
+                                  <Trash2 className="h-3 w-3 text-destructive" />
+                                </Button>
+                              )}
                             </div>
                           );
                         })}
@@ -1145,6 +1319,10 @@ export function StaffScheduleManager() {
           <span>Scheduled Shift</span>
         </div>
         <div className="flex items-center gap-2">
+          <div className="w-4 h-4 rounded bg-violet-50 border border-violet-300" />
+          <span className="flex items-center gap-1">Recurring Pattern <Infinity className="h-3 w-3" /></span>
+        </div>
+        <div className="flex items-center gap-2">
           <div className="w-4 h-4 rounded bg-orange-100 border border-orange-300" />
           <span>Overtime</span>
         </div>
@@ -1153,6 +1331,46 @@ export function StaffScheduleManager() {
           <span>Holiday/Absence</span>
         </div>
       </div>
+
+      {/* Active Recurring Patterns */}
+      {recurringPatterns.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Infinity className="h-5 w-5" />
+              Active Recurring Patterns
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {recurringPatterns.map(pattern => (
+                <div key={pattern.id} className="flex items-center justify-between p-3 border rounded-md bg-muted/30">
+                  <div className="flex-1">
+                    <div className="font-medium">
+                      {getStaffName(pattern.user_id)} → {pattern.client_name}
+                      {pattern.is_overtime && <Badge variant="outline" className="ml-2 text-orange-600">Overtime</Badge>}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {DAYS_OF_WEEK.filter(d => pattern.days_of_week.includes(d.value)).map(d => d.label).join(", ")} • {pattern.start_time} - {pattern.end_time}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      From {format(parseISO(pattern.start_date), "MMM d, yyyy")}
+                      {pattern.end_date ? ` to ${format(parseISO(pattern.end_date), "MMM d, yyyy")}` : " (indefinite)"}
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => deletePatternMutation.mutate(pattern.id)}
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
