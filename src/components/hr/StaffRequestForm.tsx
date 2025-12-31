@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -126,6 +126,40 @@ export function StaffRequestForm() {
     enabled: !!user
   });
 
+  // Auto-calculate working days when dates change for holiday requests
+  useEffect(() => {
+    if (requestType === 'holiday' && startDate && endDate) {
+      const daysInRange = eachDayOfInterval({ start: startDate, end: endDate });
+      let workingDays = 0;
+
+      daysInRange.forEach(day => {
+        const dayOfWeek = getDay(day);
+        const dateStr = format(day, "yyyy-MM-dd");
+
+        const hasRecurringShift = shiftPatterns.some(pattern => {
+          const patternStart = parseISO(pattern.start_date);
+          const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+          const inDateRange = day >= patternStart && (!patternEnd || day <= patternEnd);
+          const dayMatches = pattern.days_of_week?.includes(dayOfWeek);
+          return inDateRange && dayMatches;
+        });
+
+        const hasIndividualShift = individualSchedules.some(schedule => {
+          const scheduleStart = parseISO(schedule.start_datetime);
+          const scheduleEnd = parseISO(schedule.end_datetime);
+          return isWithinInterval(day, { start: scheduleStart, end: scheduleEnd }) ||
+                 format(scheduleStart, "yyyy-MM-dd") === dateStr;
+        });
+
+        if (hasRecurringShift || hasIndividualShift) {
+          workingDays++;
+        }
+      });
+
+      setDaysRequested(workingDays.toString());
+    }
+  }, [requestType, startDate, endDate, shiftPatterns, individualSchedules]);
+
   // Fetch user's requests
   const { data: myRequests = [] } = useQuery({
     queryKey: ["my-staff-requests"],
@@ -139,48 +173,6 @@ export function StaffRequestForm() {
       return data as StaffRequest[];
     }
   });
-
-  // Calculate working days based on user's schedule
-  const calculateWorkingDays = () => {
-    if (!startDate || !endDate) return;
-
-    const daysInRange = eachDayOfInterval({ start: startDate, end: endDate });
-    let workingDays = 0;
-
-    daysInRange.forEach(day => {
-      const dayOfWeek = getDay(day); // 0 = Sunday, 1 = Monday, etc.
-      const dateStr = format(day, "yyyy-MM-dd");
-
-      // Check recurring shift patterns
-      const hasRecurringShift = shiftPatterns.some(pattern => {
-        const patternStart = parseISO(pattern.start_date);
-        const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-        
-        // Check if day is within pattern date range
-        const inDateRange = day >= patternStart && (!patternEnd || day <= patternEnd);
-        
-        // Check if day of week matches (pattern uses 0-6 for days)
-        const dayMatches = pattern.days_of_week?.includes(dayOfWeek);
-        
-        return inDateRange && dayMatches;
-      });
-
-      // Check individual schedules
-      const hasIndividualShift = individualSchedules.some(schedule => {
-        const scheduleStart = parseISO(schedule.start_datetime);
-        const scheduleEnd = parseISO(schedule.end_datetime);
-        return isWithinInterval(day, { start: scheduleStart, end: scheduleEnd }) ||
-               format(scheduleStart, "yyyy-MM-dd") === dateStr;
-      });
-
-      if (hasRecurringShift || hasIndividualShift) {
-        workingDays++;
-      }
-    });
-
-    // If no schedule found, show 0 with a message
-    setDaysRequested(workingDays.toString());
-  };
 
   // Submit request mutation
   const submitRequestMutation = useMutation({
@@ -430,19 +422,12 @@ export function StaffRequestForm() {
           {requestType === 'holiday' && (
             <div className="space-y-2">
               <Label>Working days in selected period</Label>
-              <div className="flex items-center gap-3">
-                <div className="px-4 py-2 bg-muted rounded-md font-medium min-w-[80px] text-center">
-                  {daysRequested} day{parseFloat(daysRequested) !== 1 ? 's' : ''}
-                </div>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm"
-                  onClick={calculateWorkingDays}
-                  disabled={!startDate || !endDate}
-                >
-                  Calculate
-                </Button>
+              <div className="px-4 py-2 bg-muted rounded-md font-medium min-w-[80px] w-fit">
+                {startDate && endDate ? (
+                  <>{daysRequested} day{parseFloat(daysRequested) !== 1 ? 's' : ''}</>
+                ) : (
+                  <span className="text-muted-foreground">Select dates above</span>
+                )}
               </div>
               {startDate && endDate && parseFloat(daysRequested) === 0 && (
                 <p className="text-sm text-amber-600">
@@ -450,7 +435,7 @@ export function StaffRequestForm() {
                 </p>
               )}
               <p className="text-xs text-muted-foreground">
-                Based on your recurring shift patterns and scheduled shifts
+                Automatically calculated based on your shift patterns
               </p>
             </div>
           )}
