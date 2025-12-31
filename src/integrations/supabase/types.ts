@@ -870,6 +870,56 @@ export type Database = {
         }
         Relationships: []
       }
+      staff_overtime: {
+        Row: {
+          created_at: string
+          created_by: string
+          currency: string
+          hourly_rate: number | null
+          hours: number
+          id: string
+          notes: string | null
+          overtime_date: string
+          schedule_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          currency?: string
+          hourly_rate?: number | null
+          hours: number
+          id?: string
+          notes?: string | null
+          overtime_date: string
+          schedule_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          currency?: string
+          hourly_rate?: number | null
+          hours?: number
+          id?: string
+          notes?: string | null
+          overtime_date?: string
+          schedule_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_overtime_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "staff_schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       staff_pay_records: {
         Row: {
           amount: number
@@ -910,6 +960,48 @@ export type Database = {
           pay_period_end?: string | null
           pay_period_start?: string | null
           record_type?: Database["public"]["Enums"]["pay_record_type"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      staff_schedules: {
+        Row: {
+          client_name: string
+          created_at: string
+          created_by: string
+          currency: string
+          end_datetime: string
+          hourly_rate: number | null
+          id: string
+          notes: string | null
+          start_datetime: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          client_name: string
+          created_at?: string
+          created_by: string
+          currency?: string
+          end_datetime: string
+          hourly_rate?: number | null
+          id?: string
+          notes?: string | null
+          start_datetime: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          client_name?: string
+          created_at?: string
+          created_by?: string
+          currency?: string
+          end_datetime?: string
+          hourly_rate?: number | null
+          id?: string
+          notes?: string | null
+          start_datetime?: string
           updated_at?: string
           user_id?: string
         }
