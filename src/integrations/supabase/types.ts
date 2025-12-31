@@ -291,6 +291,48 @@ export type Database = {
         }
         Relationships: []
       }
+      hr_profiles: {
+        Row: {
+          annual_holiday_allowance: number | null
+          base_currency: string
+          created_at: string
+          department: string | null
+          employee_id: string | null
+          id: string
+          job_title: string | null
+          notes: string | null
+          start_date: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          annual_holiday_allowance?: number | null
+          base_currency?: string
+          created_at?: string
+          department?: string | null
+          employee_id?: string | null
+          id?: string
+          job_title?: string | null
+          notes?: string | null
+          start_date?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          annual_holiday_allowance?: number | null
+          base_currency?: string
+          created_at?: string
+          department?: string | null
+          employee_id?: string | null
+          id?: string
+          job_title?: string | null
+          notes?: string | null
+          start_date?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       page_audit_log: {
         Row: {
           created_at: string | null
@@ -726,6 +768,96 @@ export type Database = {
         }
         Relationships: []
       }
+      staff_holidays: {
+        Row: {
+          absence_type: Database["public"]["Enums"]["absence_type"]
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          days_taken: number
+          end_date: string
+          id: string
+          notes: string | null
+          start_date: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          absence_type?: Database["public"]["Enums"]["absence_type"]
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          days_taken: number
+          end_date: string
+          id?: string
+          notes?: string | null
+          start_date: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          absence_type?: Database["public"]["Enums"]["absence_type"]
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          days_taken?: number
+          end_date?: string
+          id?: string
+          notes?: string | null
+          start_date?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      staff_pay_records: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string
+          currency: string
+          description: string | null
+          id: string
+          pay_date: string
+          pay_period_end: string | null
+          pay_period_start: string | null
+          record_type: Database["public"]["Enums"]["pay_record_type"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          created_by: string
+          currency?: string
+          description?: string | null
+          id?: string
+          pay_date: string
+          pay_period_end?: string | null
+          pay_period_start?: string | null
+          record_type?: Database["public"]["Enums"]["pay_record_type"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string
+          currency?: string
+          description?: string | null
+          id?: string
+          pay_date?: string
+          pay_period_end?: string | null
+          pay_period_start?: string | null
+          record_type?: Database["public"]["Enums"]["pay_record_type"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string | null
@@ -845,7 +977,16 @@ export type Database = {
       }
     }
     Enums: {
+      absence_type:
+        | "holiday"
+        | "sick"
+        | "personal"
+        | "maternity"
+        | "paternity"
+        | "unpaid"
+        | "other"
       app_role: "business_manager" | "consultant" | "admin" | "client"
+      pay_record_type: "salary" | "bonus" | "deduction" | "expense" | "overtime"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -973,7 +1114,17 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      absence_type: [
+        "holiday",
+        "sick",
+        "personal",
+        "maternity",
+        "paternity",
+        "unpaid",
+        "other",
+      ],
       app_role: ["business_manager", "consultant", "admin", "client"],
+      pay_record_type: ["salary", "bonus", "deduction", "expense", "overtime"],
     },
   },
 } as const
