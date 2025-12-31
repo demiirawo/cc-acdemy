@@ -274,7 +274,7 @@ export function MyHRProfile() {
                     <TableHead>Amount</TableHead>
                     <TableHead>Pay Date</TableHead>
                     <TableHead>Pay Period</TableHead>
-                    <TableHead>Description</TableHead>
+                    <TableHead>Reason/Description</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -303,7 +303,16 @@ export function MyHRProfile() {
                               ? `${format(new Date(record.pay_period_start), 'dd MMM')} - ${format(new Date(record.pay_period_end), 'dd MMM yyyy')}`
                               : '-'}
                           </TableCell>
-                          <TableCell className="max-w-[200px] truncate">{record.description || '-'}</TableCell>
+                          <TableCell className="max-w-[250px]">
+                            {record.description ? (
+                              <span className={
+                                record.record_type === 'bonus' ? 'text-success' :
+                                record.record_type === 'deduction' ? 'text-destructive' : ''
+                              }>
+                                {record.description}
+                              </span>
+                            ) : '-'}
+                          </TableCell>
                         </TableRow>
                       );
                     })
