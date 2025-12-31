@@ -833,7 +833,7 @@ export function StaffScheduleManager() {
         };
       case 'shift_swap':
         return { 
-          label: 'Shift Swap', 
+          label: 'Shift Cover', 
           color: isPending ? 'bg-blue-50 border-blue-200 border-dashed text-blue-600' : 'bg-blue-100 border-blue-300 text-blue-700', 
           icon: RefreshCw 
         };
@@ -1415,7 +1415,7 @@ export function StaffScheduleManager() {
                           </div>
                         ))}
 
-                        {/* Staff Requests (Overtime, Holiday, Shift Swap) */}
+                        {/* Staff Requests (Overtime, Holiday, Shift Cover) */}
                         {getRequestsForStaffDay(staff.user_id, day).map(request => {
                           const typeInfo = getRequestTypeInfo(request.request_type, request.status);
                           const IconComponent = typeInfo.icon;
@@ -1430,7 +1430,7 @@ export function StaffScheduleManager() {
                               </div>
                               {request.request_type === 'shift_swap' && request.swap_with_user_id && (
                                 <div className="text-[10px] truncate">
-                                  with {getStaffName(request.swap_with_user_id)}
+                                  covering {getStaffName(request.swap_with_user_id)}
                                 </div>
                               )}
                               {request.details && (
