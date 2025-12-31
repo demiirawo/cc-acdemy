@@ -6,8 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay } from "date-fns";
 
 interface MonthlyPayPreview {
@@ -132,7 +132,7 @@ export function MyHRProfile() {
   const [recurringPatterns, setRecurringPatterns] = useState<RecurringShiftPattern[]>([]);
   const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
-  
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
 
   useEffect(() => {
     if (user) {
@@ -462,6 +462,17 @@ export function MyHRProfile() {
     return previews;
   }, [hrProfile, staffSchedules, recurringPatterns, patternExceptions, publicHolidays, payRecords]);
 
+  const toggleMonth = (monthKey: string) => {
+    setExpandedMonths(prev => {
+      const next = new Set(prev);
+      if (next.has(monthKey)) {
+        next.delete(monthKey);
+      } else {
+        next.add(monthKey);
+      }
+      return next;
+    });
+  };
 
   const formatCurrency = (amount: number, currency: string) => {
     const symbol = CURRENCIES[currency] || '';
@@ -587,60 +598,62 @@ export function MyHRProfile() {
             </div>
             <CardDescription>Estimated pay for the next 12 months (subject to final processing)</CardDescription>
           </CardHeader>
-          <CardContent>
-            <Accordion type="single" collapsible defaultValue={format(new Date(), 'yyyy-MM')} className="space-y-2">
-              {monthlyPreviews.map((preview) => {
-                const monthKey = format(preview.month, 'yyyy-MM');
-                const isCurrentMonth = format(new Date(), 'yyyy-MM') === monthKey;
+          <CardContent className="space-y-2">
+            {monthlyPreviews.map((preview) => {
+              const monthKey = format(preview.month, 'yyyy-MM');
+              const isExpanded = expandedMonths.has(monthKey);
+              const isCurrentMonth = format(new Date(), 'yyyy-MM') === monthKey;
 
-                const getStatusBadge = (status: 'pending' | 'ready' | 'paid') => {
-                  if (status === 'paid') {
-                    return (
-                      <Badge variant="outline" className="bg-success/20 text-success border-success">
-                        <CheckCircle className="h-3 w-3 mr-1" />
-                        Paid
-                      </Badge>
-                    );
-                  } else if (status === 'ready') {
-                    return (
-                      <Badge variant="outline" className="bg-amber-500/20 text-amber-600 border-amber-500">
-                        <Clock className="h-3 w-3 mr-1" />
-                        Ready
-                      </Badge>
-                    );
-                  } else {
-                    return (
-                      <Badge variant="outline" className="bg-muted text-muted-foreground border-muted-foreground">
-                        <AlertCircle className="h-3 w-3 mr-1" />
-                        Pending
-                      </Badge>
-                    );
-                  }
-                };
+              const getStatusBadge = (status: 'pending' | 'ready' | 'paid') => {
+                if (status === 'paid') {
+                  return (
+                    <Badge variant="outline" className="bg-success/20 text-success border-success">
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                      Paid
+                    </Badge>
+                  );
+                } else if (status === 'ready') {
+                  return (
+                    <Badge variant="outline" className="bg-amber-500/20 text-amber-600 border-amber-500">
+                      <Clock className="h-3 w-3 mr-1" />
+                      Ready
+                    </Badge>
+                  );
+                } else {
+                  return (
+                    <Badge variant="outline" className="bg-muted text-muted-foreground border-muted-foreground">
+                      <AlertCircle className="h-3 w-3 mr-1" />
+                      Pending
+                    </Badge>
+                  );
+                }
+              };
 
-                return (
-                  <AccordionItem key={monthKey} value={monthKey} className={`border rounded-lg ${isCurrentMonth ? 'border-primary bg-primary/5' : ''}`}>
-                    <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-muted/50">
-                      <div className="flex items-center justify-between w-full pr-2">
-                        <div className="flex items-center gap-3">
-                          <span className="font-medium">{preview.monthLabel}</span>
-                          {isCurrentMonth && (
-                            <Badge variant="outline" className="text-xs">Current</Badge>
-                          )}
-                          {preview.isJunePayroll && (
-                            <Badge variant="secondary" className="text-xs bg-green-100 text-green-700">Holiday Year End</Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          {getStatusBadge(preview.payrollStatus)}
-                          <span className="font-bold text-lg">
-                            {formatCurrency(preview.totalPay, preview.currency)}
-                          </span>
-                        </div>
+              return (
+                <Collapsible key={monthKey} open={isExpanded} onOpenChange={() => toggleMonth(monthKey)}>
+                  <CollapsibleTrigger className="w-full">
+                    <div className={`flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors ${isCurrentMonth ? 'border-primary bg-primary/5' : ''}`}>
+                      <div className="flex items-center gap-3">
+                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        <span className="font-medium">{preview.monthLabel}</span>
+                        {isCurrentMonth && (
+                          <Badge variant="outline" className="text-xs">Current</Badge>
+                        )}
+                        {preview.isJunePayroll && (
+                          <Badge variant="secondary" className="text-xs bg-green-100 text-green-700">Holiday Year End</Badge>
+                        )}
                       </div>
-                    </AccordionTrigger>
-                    <AccordionContent className="px-4 pb-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                      <div className="flex items-center gap-3">
+                        {getStatusBadge(preview.payrollStatus)}
+                        <span className="font-bold text-lg">
+                          {formatCurrency(preview.totalPay, preview.currency)}
+                        </span>
+                      </div>
+                    </div>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="px-4 pb-4 pt-2 ml-7 border-l-2 border-muted">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Left column - Breakdown */}
                         <div className="space-y-3">
                           <div className="flex justify-between items-center py-2 border-b">
@@ -721,11 +734,11 @@ export function MyHRProfile() {
                           )}
                         </div>
                       </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                );
-              })}
-            </Accordion>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              );
+            })}
           </CardContent>
         </Card>
       )}
