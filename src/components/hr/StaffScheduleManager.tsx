@@ -971,12 +971,50 @@ export function StaffScheduleManager() {
       const linkedHoliday = holidays.find(h => h.id === req.linked_holiday_id);
       if (!linkedHoliday) return null;
       
-      // Get the schedules for the person on holiday for this day
-      const coveredSchedules = allSchedules.filter(s => {
+      // Get the schedules for the person on holiday for this day from allSchedules
+      let coveredSchedules = allSchedules.filter(s => {
         if (s.user_id !== linkedHoliday.user_id) return false;
         const scheduleDate = parseISO(s.start_datetime);
         return format(scheduleDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd");
       });
+      
+      // If no schedules found, check recurring patterns for what shifts would normally occur
+      if (coveredSchedules.length === 0) {
+        const dayOfWeek = getDay(day);
+        const dateStr = format(day, "yyyy-MM-dd");
+        
+        const matchingPatterns = recurringPatterns.filter(pattern => {
+          if (pattern.user_id !== linkedHoliday.user_id) return false;
+          const patternStartDate = parseISO(pattern.start_date);
+          const patternEndDate = pattern.end_date ? parseISO(pattern.end_date) : null;
+          
+          // Check date range
+          if (isBefore(day, patternStartDate)) return false;
+          if (patternEndDate && isAfter(day, patternEndDate)) return false;
+          
+          // Check if day matches pattern
+          if (pattern.recurrence_interval === 'daily') return true;
+          if (pattern.recurrence_interval === 'weekly') return pattern.days_of_week.includes(dayOfWeek);
+          if (pattern.recurrence_interval === 'biweekly') {
+            if (!pattern.days_of_week.includes(dayOfWeek)) return false;
+            const weeksDiff = differenceInWeeks(startOfWeek(day, { weekStartsOn: 1 }), startOfWeek(patternStartDate, { weekStartsOn: 1 }));
+            return weeksDiff % 2 === 0;
+          }
+          return false;
+        });
+        
+        // Convert patterns to schedule-like objects
+        coveredSchedules = matchingPatterns.map(pattern => ({
+          id: `pattern-${pattern.id}-${dateStr}`,
+          user_id: pattern.user_id,
+          client_name: pattern.client_name,
+          start_datetime: `${dateStr}T${pattern.start_time}`,
+          end_datetime: `${dateStr}T${pattern.end_time}`,
+          notes: pattern.notes,
+          hourly_rate: pattern.hourly_rate,
+          currency: pattern.currency
+        }));
+      }
       
       return {
         holidayUserId: linkedHoliday.user_id,
@@ -1738,11 +1776,17 @@ export function StaffScheduleManager() {
                               <Users className="h-2.5 w-2.5 flex-shrink-0" />
                               <span>Covering: {cover?.holidayUserName}</span>
                             </div>
-                            {cover?.shifts && cover.shifts.length > 0 && cover.shifts.map((shift, shiftIdx) => (
-                              <div key={shiftIdx} className="ml-3 text-blue-600">
-                                {shift.clientName} ({shift.startTime} - {shift.endTime})
+                            {cover?.shifts && cover.shifts.length > 0 ? (
+                              cover.shifts.map((shift, shiftIdx) => (
+                                <div key={shiftIdx} className="ml-3 text-blue-600">
+                                  {shift.clientName} ({shift.startTime} - {shift.endTime})
+                                </div>
+                              ))
+                            ) : (
+                              <div className="ml-3 text-blue-500 italic">
+                                No shifts defined for {cover?.holidayUserName}
                               </div>
-                            ))}
+                            )}
                           </div>
                         ))}
                         
