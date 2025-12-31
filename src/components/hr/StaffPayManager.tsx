@@ -45,6 +45,26 @@ interface StaffSchedule {
   client_name: string;
 }
 
+interface RecurringShiftPattern {
+  id: string;
+  user_id: string;
+  days_of_week: number[];
+  start_time: string;
+  end_time: string;
+  start_date: string;
+  end_date: string | null;
+  hourly_rate: number | null;
+  currency: string;
+  client_name: string;
+}
+
+interface ShiftPatternException {
+  id: string;
+  pattern_id: string;
+  exception_date: string;
+  exception_type: string;
+}
+
 interface UserProfile {
   user_id: string;
   display_name: string | null;
@@ -126,6 +146,8 @@ export function StaffPayManager() {
   const [loadingHolidays, setLoadingHolidays] = useState(false);
   const [holidaysYear, setHolidaysYear] = useState(new Date().getFullYear());
   const [staffSchedules, setStaffSchedules] = useState<StaffSchedule[]>([]);
+  const [recurringPatterns, setRecurringPatterns] = useState<RecurringShiftPattern[]>([]);
+  const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -283,6 +305,28 @@ export function StaffPayManager() {
       } else {
         setStaffSchedules(schedules || []);
       }
+
+      // Fetch recurring shift patterns
+      const { data: patterns, error: patternsError } = await supabase
+        .from('recurring_shift_patterns')
+        .select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, hourly_rate, currency, client_name');
+      
+      if (patternsError) {
+        console.error('Error fetching recurring patterns:', patternsError);
+      } else {
+        setRecurringPatterns(patterns || []);
+      }
+
+      // Fetch pattern exceptions
+      const { data: exceptions, error: exceptionsError } = await supabase
+        .from('shift_pattern_exceptions')
+        .select('id, pattern_id, exception_date, exception_type');
+      
+      if (exceptionsError) {
+        console.error('Error fetching pattern exceptions:', exceptionsError);
+      } else {
+        setPatternExceptions(exceptions || []);
+      }
     } catch (error) {
       console.error('Error fetching pay records:', error);
       toast({
@@ -314,7 +358,14 @@ export function StaffPayManager() {
     // Create a set of public holiday dates for quick lookup (format: YYYY-MM-DD)
     const holidayDatesSet = new Set(publicHolidays.map(h => h.date));
     
-    // Helper to calculate hours worked from a schedule
+    // Helper to calculate hours from time strings (HH:MM:SS format)
+    const calculateHoursFromTime = (startTime: string, endTime: string): number => {
+      const [startH, startM] = startTime.split(':').map(Number);
+      const [endH, endM] = endTime.split(':').map(Number);
+      return (endH + endM / 60) - (startH + startM / 60);
+    };
+    
+    // Helper to calculate hours worked from a schedule datetime
     const calculateHours = (start: string, end: string): number => {
       const startTime = new Date(start);
       const endTime = new Date(end);
@@ -323,13 +374,65 @@ export function StaffPayManager() {
     
     // Helper to get schedule date in YYYY-MM-DD format (handles both ISO and Postgres formats)
     const getScheduleDate = (datetime: string): string => {
-      // Parse the datetime and format as YYYY-MM-DD
       const date = new Date(datetime);
       return format(date, 'yyyy-MM-dd');
     };
     
+    // Create a set of exception dates per pattern for quick lookup
+    const exceptionsMap = new Map<string, Set<string>>();
+    patternExceptions.forEach(ex => {
+      if (!exceptionsMap.has(ex.pattern_id)) {
+        exceptionsMap.set(ex.pattern_id, new Set());
+      }
+      exceptionsMap.get(ex.pattern_id)!.add(ex.exception_date);
+    });
+    
+    // Generate virtual schedules from recurring patterns for the selected month
+    const generateVirtualSchedules = (userId: string): Array<{ date: string; hours: number; hourlyRate: number | null }> => {
+      const virtualSchedules: Array<{ date: string; hours: number; hourlyRate: number | null }> = [];
+      
+      // Get patterns for this user
+      const userPatterns = recurringPatterns.filter(p => p.user_id === userId);
+      
+      // Iterate through each day of the month
+      let currentDate = new Date(monthStart);
+      while (currentDate <= monthEnd) {
+        const dateStr = format(currentDate, 'yyyy-MM-dd');
+        const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        
+        // Check each pattern
+        userPatterns.forEach(pattern => {
+          // Check if pattern is active for this date
+          const patternStart = parseISO(pattern.start_date);
+          const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+          
+          if (currentDate >= patternStart && (!patternEnd || currentDate <= patternEnd)) {
+            // Check if this day of week is in the pattern
+            if (pattern.days_of_week.includes(dayOfWeek)) {
+              // Check for exceptions
+              const patternExceptions = exceptionsMap.get(pattern.id);
+              if (!patternExceptions || !patternExceptions.has(dateStr)) {
+                const hours = calculateHoursFromTime(pattern.start_time, pattern.end_time);
+                virtualSchedules.push({
+                  date: dateStr,
+                  hours,
+                  hourlyRate: pattern.hourly_rate
+                });
+              }
+            }
+          }
+        });
+        
+        // Move to next day
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      return virtualSchedules;
+    };
+    
     console.log('Holiday dates set:', Array.from(holidayDatesSet));
     console.log('Staff schedules count:', staffSchedules.length);
+    console.log('Recurring patterns count:', recurringPatterns.length);
     
     return staffWithHR.map(hr => {
       const userProfile = userProfiles.find(u => u.user_id === hr.user_id);
@@ -354,16 +457,21 @@ export function StaffPayManager() {
         return s.user_id === hr.user_id && scheduleDate >= monthStart && scheduleDate <= monthEnd;
       });
       
-      console.log(`User ${userProfile?.display_name}: ${userSchedules.length} schedules in month`);
+      // Generate virtual schedules from recurring patterns
+      const virtualSchedules = generateVirtualSchedules(hr.user_id);
+      
+      // Create a set of dates that already have actual schedules (to avoid double counting)
+      const actualScheduleDates = new Set(userSchedules.map(s => getScheduleDate(s.start_datetime)));
+      
+      console.log(`User ${userProfile?.display_name}: ${userSchedules.length} actual schedules, ${virtualSchedules.length} virtual schedules`);
       
       // Calculate holiday overtime (0.5x extra for each hour worked on a public holiday)
-      // Since they already get paid for regular work, holiday overtime adds the extra 0.5x
       let holidayOvertimeHours = 0;
       const holidayShifts: Array<{ date: string; hours: number; holidayName: string }> = [];
       
+      // Check actual schedules
       userSchedules.forEach(schedule => {
         const scheduleDate = getScheduleDate(schedule.start_datetime);
-        console.log(`  Checking schedule date: ${scheduleDate}, is holiday: ${holidayDatesSet.has(scheduleDate)}`);
         if (holidayDatesSet.has(scheduleDate)) {
           const hours = calculateHours(schedule.start_datetime, schedule.end_datetime);
           holidayOvertimeHours += hours;
@@ -373,12 +481,26 @@ export function StaffPayManager() {
             hours,
             holidayName: holiday?.name || 'Public Holiday'
           });
-          console.log(`  HOLIDAY MATCH: ${scheduleDate} - ${hours} hours`);
+          console.log(`  HOLIDAY MATCH (actual): ${scheduleDate} - ${hours} hours`);
+        }
+      });
+      
+      // Check virtual schedules from recurring patterns (only if no actual schedule exists for that date)
+      virtualSchedules.forEach(virtual => {
+        if (holidayDatesSet.has(virtual.date) && !actualScheduleDates.has(virtual.date)) {
+          holidayOvertimeHours += virtual.hours;
+          const holiday = publicHolidays.find(h => h.date === virtual.date);
+          holidayShifts.push({
+            date: virtual.date,
+            hours: virtual.hours,
+            holidayName: holiday?.name || 'Public Holiday'
+          });
+          console.log(`  HOLIDAY MATCH (pattern): ${virtual.date} - ${virtual.hours} hours`);
         }
       });
       
       // Use schedule's hourly rate if available, otherwise estimate from salary
-      const hourlyRate = userSchedules[0]?.hourly_rate || estimatedHourlyRate;
+      const hourlyRate = userSchedules[0]?.hourly_rate || virtualSchedules[0]?.hourlyRate || estimatedHourlyRate;
       // Holiday overtime bonus = 0.5x hourly rate for each hour worked on holiday
       const holidayOvertimeBonus = holidayOvertimeHours * hourlyRate * 0.5;
       
@@ -422,7 +544,7 @@ export function StaffPayManager() {
         records: userRecords
       };
     });
-  }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd]);
+  }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions]);
 
   // Total payroll for the month (converted to GBP)
   const totalPayroll = useMemo(() => {
