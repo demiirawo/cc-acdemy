@@ -692,15 +692,26 @@ export function StaffScheduleManager() {
     }
   });
 
+  // Helper to parse virtual pattern schedule IDs (format: pattern-{uuid}-{yyyy-MM-dd})
+  const parsePatternScheduleId = (id: string): { patternId: string; dateStr: string } | null => {
+    if (!id.startsWith('pattern-')) return null;
+    const rest = id.slice('pattern-'.length); // Remove 'pattern-' prefix
+    // Date is always last 10 chars (yyyy-MM-dd)
+    if (rest.length < 11) return null; // Need at least uuid + '-' + date
+    const dateStr = rest.slice(-10);
+    // Validate date format
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
+    // Pattern ID is everything before the last dash and date
+    const patternId = rest.slice(0, -(10 + 1)); // Remove '-yyyy-MM-dd'
+    if (!patternId) return null;
+    return { patternId, dateStr };
+  };
+
   // Handler for delete button clicks - shows confirmation for pattern-based shifts
   const handleDeleteClick = (scheduleId: string) => {
-    const isFromPattern = scheduleId.startsWith('pattern-');
-    if (isFromPattern) {
-      // Extract pattern ID and date from the schedule ID (format: pattern-{patternId}-{date})
-      const parts = scheduleId.split('-');
-      const patternId = parts[1];
-      const exceptionDate = parts.slice(2).join('-'); // Rejoin date parts (yyyy-MM-dd)
-      setDeleteTarget({ id: scheduleId, isPattern: true, patternId, exceptionDate });
+    const parsed = parsePatternScheduleId(scheduleId);
+    if (parsed) {
+      setDeleteTarget({ id: scheduleId, isPattern: true, patternId: parsed.patternId, exceptionDate: parsed.dateStr });
       setIsDeleteConfirmOpen(true);
     } else {
       // Direct delete for non-pattern schedules
@@ -785,38 +796,25 @@ export function StaffScheduleManager() {
     setIsEditPatternDialogOpen(true);
   };
 
-  const handleScheduleClick = (scheduleId: string) => {
-    if (scheduleId.startsWith('pattern-')) {
-      // Extract pattern ID from the schedule ID (format: pattern-{patternId}-{date})
-      const parts = scheduleId.split('-');
-      const patternId = parts[1];
-      openEditPatternDialog(patternId);
+  const handleScheduleClick = (schedule: Schedule) => {
+    const parsed = parsePatternScheduleId(schedule.id);
+    if (parsed) {
+      openEditPatternDialog(parsed.patternId);
+    } else {
+      // Open edit dialog for regular schedules
+      setEditingSchedule(schedule);
+      const startDate = parseISO(schedule.start_datetime);
+      const endDate = parseISO(schedule.end_datetime);
+      setEditScheduleForm({
+        client_name: schedule.client_name,
+        start_time: format(startDate, "HH:mm"),
+        end_time: format(endDate, "HH:mm"),
+        notes: schedule.notes || "",
+        hourly_rate: schedule.hourly_rate?.toString() || "",
+        currency: schedule.currency
+      });
+      setIsEditScheduleDialogOpen(true);
     }
-    // Non-pattern schedules are handled by double-click
-  };
-
-  const handleScheduleDoubleClick = (schedule: Schedule) => {
-    if (schedule.id.startsWith('pattern-')) {
-      // For patterns, open the pattern editor
-      const parts = schedule.id.split('-');
-      const patternId = parts[1];
-      openEditPatternDialog(patternId);
-      return;
-    }
-
-    // Open edit dialog for regular schedules
-    setEditingSchedule(schedule);
-    const startDate = parseISO(schedule.start_datetime);
-    const endDate = parseISO(schedule.end_datetime);
-    setEditScheduleForm({
-      client_name: schedule.client_name,
-      start_time: format(startDate, "HH:mm"),
-      end_time: format(endDate, "HH:mm"),
-      notes: schedule.notes || "",
-      hourly_rate: schedule.hourly_rate?.toString() || "",
-      currency: schedule.currency
-    });
-    setIsEditScheduleDialogOpen(true);
   };
 
   const navigateWeek = (direction: "prev" | "next") => {
@@ -1407,8 +1405,8 @@ export function StaffScheduleManager() {
                                     : 'bg-violet-50 border border-violet-300' 
                                   : 'bg-primary/10 border border-primary/30'
                               }`}
-                              onClick={isMobile ? () => handleScheduleDoubleClick(schedule) : undefined}
-                              onDoubleClick={!isMobile ? () => handleScheduleDoubleClick(schedule) : undefined}
+                              onClick={() => handleScheduleClick(schedule)}
+                              onDoubleClick={() => handleScheduleClick(schedule)}
                               title={scheduleEditHint}
                             >
                               <div className="font-medium truncate flex items-center gap-1">
@@ -1546,8 +1544,8 @@ export function StaffScheduleManager() {
                                       : 'bg-violet-50 border border-violet-300'
                                     : 'bg-primary/10 border border-primary/30'
                               }`}
-                              onClick={isMobile ? () => handleScheduleDoubleClick(schedule) : undefined}
-                              onDoubleClick={!isMobile ? () => handleScheduleDoubleClick(schedule) : undefined}
+                              onClick={() => handleScheduleClick(schedule)}
+                              onDoubleClick={() => handleScheduleClick(schedule)}
                               title={scheduleEditHint}
                             >
                               <div className="font-medium truncate flex items-center gap-1">
