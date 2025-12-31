@@ -96,7 +96,7 @@ export function StaffScheduleManager() {
   const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [isRecurringDialogOpen, setIsRecurringDialogOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; isPattern: boolean; patternId?: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; isPattern: boolean; patternId?: string; exceptionDate?: string } | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<string>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("staff");
 
@@ -228,9 +228,27 @@ export function StaffScheduleManager() {
     }
   });
 
+  // Fetch shift pattern exceptions
+  const { data: shiftExceptions = [] } = useQuery({
+    queryKey: ["shift-pattern-exceptions"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("shift_pattern_exceptions")
+        .select("*");
+      
+      if (error) throw error;
+      return data as { id: string; pattern_id: string; exception_date: string; exception_type: string }[];
+    }
+  });
+
   // Generate virtual schedules from recurring patterns for the current week
   const virtualSchedulesFromPatterns = useMemo(() => {
     const virtualSchedules: Schedule[] = [];
+    
+    // Create a set of exception keys for fast lookup
+    const exceptionKeys = new Set(
+      shiftExceptions.map(e => `${e.pattern_id}-${e.exception_date}`)
+    );
     
     for (const pattern of recurringPatterns) {
       const patternStartDate = parseISO(pattern.start_date);
@@ -238,6 +256,7 @@ export function StaffScheduleManager() {
       
       for (const day of weekDays) {
         const dayOfWeek = getDay(day);
+        const dateStr = format(day, "yyyy-MM-dd");
         
         // Check if this day is in the pattern
         if (!pattern.days_of_week.includes(dayOfWeek)) continue;
@@ -246,12 +265,15 @@ export function StaffScheduleManager() {
         if (isBefore(day, patternStartDate)) continue;
         if (patternEndDate && isAfter(day, patternEndDate)) continue;
         
+        // Check if there's an exception for this date
+        if (exceptionKeys.has(`${pattern.id}-${dateStr}`)) continue;
+        
         // Create virtual schedule entry
-        const startDatetime = `${format(day, "yyyy-MM-dd")}T${pattern.start_time}`;
-        const endDatetime = `${format(day, "yyyy-MM-dd")}T${pattern.end_time}`;
+        const startDatetime = `${dateStr}T${pattern.start_time}`;
+        const endDatetime = `${dateStr}T${pattern.end_time}`;
         
         virtualSchedules.push({
-          id: `pattern-${pattern.id}-${format(day, "yyyy-MM-dd")}`,
+          id: `pattern-${pattern.id}-${dateStr}`,
           user_id: pattern.user_id,
           client_name: pattern.client_name,
           start_datetime: startDatetime,
@@ -264,7 +286,7 @@ export function StaffScheduleManager() {
     }
     
     return virtualSchedules;
-  }, [recurringPatterns, weekDays]);
+  }, [recurringPatterns, weekDays, shiftExceptions]);
 
   // Combine real schedules with virtual ones from patterns
   const allSchedules = useMemo(() => {
@@ -426,6 +448,27 @@ export function StaffScheduleManager() {
     }
   });
 
+  // Create shift exception mutation (for deleting single shift from pattern)
+  const createExceptionMutation = useMutation({
+    mutationFn: async ({ patternId, exceptionDate }: { patternId: string; exceptionDate: string }) => {
+      const { data: userData } = await supabase.auth.getUser();
+      const { error } = await supabase.from("shift_pattern_exceptions").insert({
+        pattern_id: patternId,
+        exception_date: exceptionDate,
+        exception_type: 'deleted',
+        created_by: userData.user?.id
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["shift-pattern-exceptions"] });
+      toast.success("Shift removed from schedule");
+    },
+    onError: (error) => {
+      toast.error("Failed to remove shift: " + error.message);
+    }
+  });
+
   // Delete schedule mutation
   const deleteScheduleMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -454,9 +497,11 @@ export function StaffScheduleManager() {
   const handleDeleteClick = (scheduleId: string) => {
     const isFromPattern = scheduleId.startsWith('pattern-');
     if (isFromPattern) {
-      // Extract pattern ID from the schedule ID (format: pattern-{patternId}-{date})
-      const patternId = scheduleId.split('-')[1];
-      setDeleteTarget({ id: scheduleId, isPattern: true, patternId });
+      // Extract pattern ID and date from the schedule ID (format: pattern-{patternId}-{date})
+      const parts = scheduleId.split('-');
+      const patternId = parts[1];
+      const exceptionDate = parts.slice(2).join('-'); // Rejoin date parts (yyyy-MM-dd)
+      setDeleteTarget({ id: scheduleId, isPattern: true, patternId, exceptionDate });
       setIsDeleteConfirmOpen(true);
     } else {
       // Direct delete for non-pattern schedules
@@ -470,10 +515,13 @@ export function StaffScheduleManager() {
     if (deleteEntireSeries && deleteTarget.patternId) {
       // Delete the entire pattern
       deletePatternMutation.mutate(deleteTarget.patternId);
+    } else if (!deleteEntireSeries && deleteTarget.patternId && deleteTarget.exceptionDate) {
+      // Create an exception for just this shift
+      createExceptionMutation.mutate({
+        patternId: deleteTarget.patternId,
+        exceptionDate: deleteTarget.exceptionDate
+      });
     }
-    // Note: For "just this shift" on a pattern, we'd need to create an exception - 
-    // but for now patterns are virtual so we can't delete individual instances without tracking exceptions
-    // We could implement this later with an exceptions table
     
     setIsDeleteConfirmOpen(false);
     setDeleteTarget(null);
