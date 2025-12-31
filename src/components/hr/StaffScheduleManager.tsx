@@ -1325,160 +1325,181 @@ export function StaffScheduleManager() {
         </CardContent>
       </Card>
 
-      {/* Live View Panel - Shows when Today is clicked */}
-      {showLiveView && (
-        <Card className="border-primary/50 bg-primary/5">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Clock className="h-5 w-5 text-primary animate-pulse" />
-              Live View - {format(new Date(), "EEEE, MMMM d, yyyy 'at' HH:mm")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Currently Working */}
-              <div>
-                <h3 className="font-semibold text-sm text-muted-foreground mb-3 flex items-center gap-2">
-                  <Users className="h-4 w-4" />
-                  Currently Working
-                </h3>
-                <div className="space-y-2">
-                  {(() => {
-                    const now = new Date();
-                    const currentlyWorking = allSchedules.filter(s => {
-                      const start = parseISO(s.start_datetime);
-                      const end = parseISO(s.end_datetime);
-                      return now >= start && now <= end;
-                    });
-                    
-                    if (currentlyWorking.length === 0) {
-                      return (
-                        <p className="text-sm text-muted-foreground italic py-4">
-                          No staff currently on shift
-                        </p>
-                      );
-                    }
-                    
-                    return currentlyWorking.map(schedule => {
-                      const start = parseISO(schedule.start_datetime);
-                      const end = parseISO(schedule.end_datetime);
-                      const hoursRemaining = Math.max(0, differenceInHours(end, now));
-                      const isFromPattern = schedule.id.startsWith('pattern-');
-                      
-                      return (
-                        <div 
-                          key={schedule.id} 
-                          className={`p-3 rounded-lg border ${isFromPattern ? 'bg-violet-50 border-violet-200' : 'bg-green-50 border-green-200'}`}
-                        >
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="font-medium">{getStaffName(schedule.user_id)}</p>
-                              <p className="text-sm text-muted-foreground">
-                                @ {schedule.client_name}
-                              </p>
-                            </div>
-                            <Badge variant="outline" className="bg-background">
-                              {format(start, "HH:mm")} - {format(end, "HH:mm")}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            ~{hoursRemaining}h remaining
-                          </p>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
-              
-              {/* Upcoming in Next 8 Hours */}
-              <div>
-                <h3 className="font-semibold text-sm text-muted-foreground mb-3 flex items-center gap-2">
-                  <Calendar className="h-4 w-4" />
-                  Starting in Next 8 Hours
-                </h3>
-                <div className="space-y-2">
-                  {(() => {
-                    const now = new Date();
-                    const eightHoursFromNow = addDays(now, 8/24); // Add 8 hours
-                    const upcomingShifts = allSchedules.filter(s => {
-                      const start = parseISO(s.start_datetime);
-                      return start > now && start <= eightHoursFromNow;
-                    }).sort((a, b) => parseISO(a.start_datetime).getTime() - parseISO(b.start_datetime).getTime());
-                    
-                    if (upcomingShifts.length === 0) {
-                      return (
-                        <p className="text-sm text-muted-foreground italic py-4">
-                          No shifts starting in the next 8 hours
-                        </p>
-                      );
-                    }
-                    
-                    return upcomingShifts.map(schedule => {
-                      const start = parseISO(schedule.start_datetime);
-                      const end = parseISO(schedule.end_datetime);
-                      const hoursUntilStart = Math.max(0, differenceInHours(start, now));
-                      const minutesUntilStart = Math.floor((start.getTime() - now.getTime()) / (1000 * 60));
-                      const isFromPattern = schedule.id.startsWith('pattern-');
-                      
-                      return (
-                        <div 
-                          key={schedule.id} 
-                          className={`p-3 rounded-lg border ${isFromPattern ? 'bg-violet-50 border-violet-200' : 'bg-amber-50 border-amber-200'}`}
-                        >
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="font-medium">{getStaffName(schedule.user_id)}</p>
-                              <p className="text-sm text-muted-foreground">
-                                @ {schedule.client_name}
-                              </p>
-                            </div>
-                            <Badge variant="outline" className="bg-background">
-                              {format(start, "HH:mm")} - {format(end, "HH:mm")}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Starts in {hoursUntilStart > 0 ? `${hoursUntilStart}h ${minutesUntilStart % 60}m` : `${minutesUntilStart}m`}
-                          </p>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
-            </div>
-            
-            <div className="mt-4 pt-4 border-t">
-              <Button variant="outline" size="sm" onClick={() => setShowLiveView(false)}>
-                Close Live View
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
-      {/* Gantt-style Timeline */}
-      <Card>
+      {/* Gantt-style Timeline or Live View */}
+      <Card className={showLiveView ? "border-primary/50" : ""}>
         <CardHeader>
-          <CardTitle>
-            {viewMode === "staff" ? "Staff Schedule Timeline" : "Client Schedule Timeline"}
+          <CardTitle className="flex items-center gap-2">
+            {showLiveView && <Clock className="h-5 w-5 text-primary animate-pulse" />}
+            {showLiveView 
+              ? `Live View - ${format(new Date(), "EEEE, MMMM d, yyyy")} (Now: ${format(new Date(), "HH:mm")})`
+              : (viewMode === "staff" ? "Staff Schedule Timeline" : "Client Schedule Timeline")
+            }
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <div className="min-w-[900px]">
-              {/* Header Row */}
-              <div className="grid grid-cols-8 gap-1 mb-2">
-                <div className="font-medium text-sm text-muted-foreground p-2">
-                  {viewMode === "staff" ? "Staff" : "Client"}
-                </div>
-                {weekDays.map(day => (
-                  <div key={day.toISOString()} className="font-medium text-sm text-center p-2 bg-muted rounded">
-                    <div>{format(day, "EEE")}</div>
-                    <div className="text-xs">{format(day, "d MMM")}</div>
-                  </div>
-                ))}
+          {/* Live View - 8 Hour Timeline */}
+          {showLiveView ? (
+            <div className="overflow-x-auto">
+              <div className="min-w-[900px]">
+                {/* 8 Hour Time Slots Header */}
+                {(() => {
+                  const now = new Date();
+                  const currentHour = now.getHours();
+                  const timeSlots = Array.from({ length: 9 }, (_, i) => {
+                    const hour = (currentHour + i) % 24;
+                    return { hour, label: `${hour.toString().padStart(2, '0')}:00` };
+                  });
+                  
+                  return (
+                    <>
+                      <div className="grid gap-1 mb-2" style={{ gridTemplateColumns: '150px repeat(9, 1fr)' }}>
+                        <div className="font-medium text-sm text-muted-foreground p-2">
+                          Staff
+                        </div>
+                        {timeSlots.map((slot, idx) => (
+                          <div 
+                            key={slot.hour} 
+                            className={`font-medium text-sm text-center p-2 rounded ${
+                              idx === 0 ? 'bg-primary text-primary-foreground' : 'bg-muted'
+                            }`}
+                          >
+                            <div>{slot.label}</div>
+                            {idx === 0 && <div className="text-xs">NOW</div>}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Staff Rows with 8 Hour Timeline */}
+                      {filteredStaff.map(staff => {
+                        const todaySchedules = allSchedules.filter(s => {
+                          const scheduleDate = parseISO(s.start_datetime);
+                          return s.user_id === staff.user_id && format(scheduleDate, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
+                        });
+                        
+                        const onHoliday = isStaffOnHoliday(staff.user_id, now);
+                        
+                        return (
+                          <div key={staff.user_id} className="grid gap-1 mb-1" style={{ gridTemplateColumns: '150px repeat(9, 1fr)' }}>
+                            <div className={`p-2 text-sm font-medium truncate border-r flex items-center gap-1 ${onHoliday ? 'text-amber-700' : ''}`}>
+                              {staff.display_name || staff.email}
+                              {onHoliday && <Palmtree className="h-3 w-3 text-amber-600" />}
+                            </div>
+                            {timeSlots.map((slot, slotIdx) => {
+                              const slotStart = new Date(now);
+                              slotStart.setHours(slot.hour, 0, 0, 0);
+                              if (slotIdx > 0 && slot.hour < currentHour) {
+                                slotStart.setDate(slotStart.getDate() + 1);
+                              }
+                              const slotEnd = new Date(slotStart);
+                              slotEnd.setHours(slotEnd.getHours() + 1);
+                              
+                              // Find schedules that overlap with this hour slot
+                              const overlappingSchedules = todaySchedules.filter(s => {
+                                const start = parseISO(s.start_datetime);
+                                const end = parseISO(s.end_datetime);
+                                return start < slotEnd && end > slotStart;
+                              });
+                              
+                              // Check if currently working (for first slot)
+                              const isCurrentlyWorking = slotIdx === 0 && overlappingSchedules.some(s => {
+                                const start = parseISO(s.start_datetime);
+                                const end = parseISO(s.end_datetime);
+                                return now >= start && now <= end;
+                              });
+                              
+                              return (
+                                <div 
+                                  key={`${staff.user_id}-${slot.hour}`}
+                                  className={`min-h-[60px] p-1 rounded border ${
+                                    onHoliday 
+                                      ? 'bg-amber-50 border-amber-200' 
+                                      : isCurrentlyWorking
+                                        ? 'bg-green-100 border-green-300 ring-2 ring-green-500'
+                                        : 'bg-background border-border'
+                                  }`}
+                                >
+                                  {onHoliday && slotIdx === 0 && (
+                                    <div className="text-[10px] text-amber-700 font-medium">On holiday</div>
+                                  )}
+                                  {!onHoliday && overlappingSchedules.map(schedule => {
+                                    const start = parseISO(schedule.start_datetime);
+                                    const end = parseISO(schedule.end_datetime);
+                                    const isFromPattern = schedule.id.startsWith('pattern-');
+                                    const startsThisHour = start.getHours() === slot.hour;
+                                    const endsThisHour = end.getHours() === slot.hour;
+                                    
+                                    return (
+                                      <div 
+                                        key={schedule.id}
+                                        className={`rounded p-1 text-xs cursor-pointer hover:ring-2 hover:ring-primary/50 ${
+                                          isFromPattern 
+                                            ? 'bg-violet-100 border border-violet-300' 
+                                            : 'bg-primary/20 border border-primary/40'
+                                        } ${isCurrentlyWorking ? 'ring-1 ring-green-500' : ''}`}
+                                        onClick={() => handleScheduleClick(schedule)}
+                                        title={scheduleEditHint}
+                                      >
+                                        <div className="font-medium truncate flex items-center gap-1">
+                                          {schedule.client_name}
+                                          {isFromPattern && <Infinity className="h-3 w-3 text-violet-500" />}
+                                        </div>
+                                        {startsThisHour && (
+                                          <div className="text-[10px] text-green-700">
+                                            Starts {format(start, "HH:mm")}
+                                          </div>
+                                        )}
+                                        {endsThisHour && (
+                                          <div className="text-[10px] text-red-700">
+                                            Ends {format(end, "HH:mm")}
+                                          </div>
+                                        )}
+                                        {!startsThisHour && !endsThisHour && isCurrentlyWorking && (
+                                          <div className="text-[10px] text-green-700 font-medium">
+                                            Working now
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                  {!onHoliday && overlappingSchedules.length === 0 && (
+                                    <div className="text-[10px] text-muted-foreground italic h-full flex items-center justify-center">
+                                      —
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                      
+                      {filteredStaff.length === 0 && (
+                        <div className="text-center py-8 text-muted-foreground">
+                          No staff members found
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
+            </div>
+          ) : (
+            /* Regular Weekly Gantt View */
+            <div className="overflow-x-auto">
+              <div className="min-w-[900px]">
+                {/* Header Row */}
+                <div className="grid grid-cols-8 gap-1 mb-2">
+                  <div className="font-medium text-sm text-muted-foreground p-2">
+                    {viewMode === "staff" ? "Staff" : "Client"}
+                  </div>
+                  {weekDays.map(day => (
+                    <div key={day.toISOString()} className="font-medium text-sm text-center p-2 bg-muted rounded">
+                      <div>{format(day, "EEE")}</div>
+                      <div className="text-xs">{format(day, "d MMM")}</div>
+                    </div>
+                  ))}
+                </div>
 
               {/* Staff View */}
               {viewMode === "staff" && filteredStaff.map(staff => (
@@ -1771,6 +1792,7 @@ export function StaffScheduleManager() {
               )}
             </div>
           </div>
+          )}
         </CardContent>
       </Card>
 
