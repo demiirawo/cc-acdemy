@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, Calculator, FileText } from "lucide-react";
+import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, Calculator, FileText, RefreshCw } from "lucide-react";
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO } from "date-fns";
 
 interface PayRecord {
@@ -41,6 +41,10 @@ interface HRProfile {
   pay_frequency: string | null;
 }
 
+interface ExchangeRates {
+  [currency: string]: number;
+}
+
 const RECORD_TYPES = [
   { value: 'salary', label: 'Base Salary', icon: DollarSign, positive: true },
   { value: 'bonus', label: 'Bonus', icon: TrendingUp, positive: true },
@@ -62,6 +66,20 @@ const CURRENCIES = [
   { code: 'NGN', symbol: '₦' },
 ];
 
+// Fallback rates if API fails
+const FALLBACK_RATES: ExchangeRates = {
+  GBP: 1,
+  EUR: 0.85,
+  USD: 0.79,
+  INR: 0.0095,
+  AED: 0.21,
+  AUD: 0.52,
+  CAD: 0.58,
+  PHP: 0.014,
+  ZAR: 0.044,
+  NGN: 0.00052,
+};
+
 export function StaffPayManager() {
   const [payRecords, setPayRecords] = useState<(PayRecord & { user?: UserProfile })[]>([]);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
@@ -69,6 +87,9 @@ export function StaffPayManager() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date());
+  const [exchangeRates, setExchangeRates] = useState<ExchangeRates>(FALLBACK_RATES);
+  const [ratesDate, setRatesDate] = useState<string | null>(null);
+  const [loadingRates, setLoadingRates] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -83,7 +104,34 @@ export function StaffPayManager() {
 
   useEffect(() => {
     fetchData();
+    fetchExchangeRates();
   }, []);
+
+  const fetchExchangeRates = async () => {
+    setLoadingRates(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('get-exchange-rates');
+      
+      if (error) throw error;
+      
+      if (data?.rates) {
+        setExchangeRates(data.rates);
+        setRatesDate(data.date || null);
+        console.log('Exchange rates loaded:', data);
+      }
+    } catch (error) {
+      console.error('Error fetching exchange rates:', error);
+      // Keep using fallback rates
+    } finally {
+      setLoadingRates(false);
+    }
+  };
+
+  // Convert amount from source currency to GBP
+  const convertToGBP = (amount: number, currency: string): number => {
+    const rate = exchangeRates[currency] || 1;
+    return amount * rate;
+  };
 
   const fetchData = async () => {
     try {
@@ -171,6 +219,9 @@ export function StaffPayManager() {
       const totalPay = monthlyBaseSalary + bonuses + overtime + expenses - deductions;
       const hasSalaryRecord = salaryRecords.length > 0;
       
+      // Convert total pay to GBP for aggregation
+      const totalPayInGBP = convertToGBP(totalPay, hr.base_currency);
+      
       return {
         userId: hr.user_id,
         displayName: userProfile?.display_name || userProfile?.email || 'Unknown',
@@ -183,15 +234,16 @@ export function StaffPayManager() {
         expenses,
         deductions,
         totalPay,
+        totalPayInGBP,
         hasSalaryRecord,
         records: userRecords
       };
     });
-  }, [hrProfiles, userProfiles, monthRecords]);
+  }, [hrProfiles, userProfiles, monthRecords, exchangeRates]);
 
-  // Total payroll for the month
+  // Total payroll for the month (converted to GBP)
   const totalPayroll = useMemo(() => {
-    return payrollSummary.reduce((sum, s) => sum + s.totalPay, 0);
+    return payrollSummary.reduce((sum, s) => sum + s.totalPayInGBP, 0);
   }, [payrollSummary]);
 
   const handleOpenDialog = () => {
@@ -394,12 +446,27 @@ export function StaffPayManager() {
         </div>
       </div>
 
+      {/* Exchange Rate Info */}
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <span>Exchange rates: {ratesDate ? `Updated ${ratesDate}` : 'Using fallback rates'}</span>
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={fetchExchangeRates} 
+          disabled={loadingRates}
+          className="h-7 px-2"
+        >
+          <RefreshCw className={`h-3 w-3 ${loadingRates ? 'animate-spin' : ''}`} />
+        </Button>
+      </div>
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4">
-            <div className="text-sm text-muted-foreground">Total Payroll</div>
-            <div className="text-2xl font-bold">{formatCurrency(totalPayroll, 'GBP')}</div>
+            <div className="text-sm text-muted-foreground">Total Payroll (GBP)</div>
+            <div className="text-2xl font-bold">£{totalPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div className="text-xs text-muted-foreground mt-1">Converted from all currencies</div>
           </CardContent>
         </Card>
         <Card>
@@ -442,13 +509,14 @@ export function StaffPayManager() {
                 <TableHead className="text-right">Expenses</TableHead>
                 <TableHead className="text-right">Deductions</TableHead>
                 <TableHead className="text-right">Total Pay</TableHead>
+                <TableHead className="text-right">GBP Equiv.</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {payrollSummary.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     No staff with salary configured. Set up HR profiles first.
                   </TableCell>
                 </TableRow>
@@ -482,6 +550,9 @@ export function StaffPayManager() {
                       {staff.deductions > 0 ? `-${formatCurrency(staff.deductions, staff.currency)}` : '-'}
                     </TableCell>
                     <TableCell className="text-right font-bold">{formatCurrency(staff.totalPay, staff.currency)}</TableCell>
+                    <TableCell className="text-right font-medium text-muted-foreground">
+                      {staff.currency !== 'GBP' ? `£${staff.totalPayInGBP.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+                    </TableCell>
                     <TableCell>
                       {!staff.hasSalaryRecord && (
                         <Button variant="ghost" size="sm" onClick={() => handleRunPayroll(staff.userId)}>
