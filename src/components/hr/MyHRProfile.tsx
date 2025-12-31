@@ -10,6 +10,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw } from "lucide-react";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay } from "date-fns";
+import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 interface MonthlyPayPreview {
   month: Date;
   monthLabel: string;
@@ -528,7 +529,7 @@ export function MyHRProfile() {
         </CardContent>
       </Card>;
   }
-  const holidayRemaining = (hrProfile.annual_holiday_allowance || 28) - totalHolidaysTaken;
+  const allowanceInfo = calculateHolidayAllowance(hrProfile.start_date);
   return <div className="space-y-6">
       {/* Profile Overview */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -571,8 +572,8 @@ export function MyHRProfile() {
               <div>
                 <p className="text-sm text-muted-foreground">Holiday Allowance (Jun-May)</p>
                 <p className="font-medium">
-                  {totalHolidaysTaken} / {hrProfile.annual_holiday_allowance || 28} days used
-                  <span className="text-muted-foreground text-sm ml-1">({holidayRemaining} remaining)</span>
+                  {totalHolidaysTaken} / {allowanceInfo.annualAllowance} days used
+                  <span className="text-muted-foreground text-sm ml-1">({allowanceInfo.accruedAllowance} accrued)</span>
                 </p>
               </div>
             </div>
