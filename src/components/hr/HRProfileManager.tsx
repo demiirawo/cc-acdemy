@@ -83,6 +83,7 @@ export function HRProfileManager() {
 
   const [formData, setFormData] = useState({
     user_id: '',
+    display_name: '',
     employee_id: '',
     job_title: '',
     start_date: '',
@@ -168,6 +169,7 @@ export function HRProfileManager() {
       setEditingProfile(existingHR);
       setFormData({
         user_id: existingHR.user_id,
+        display_name: userProfile.display_name || '',
         employee_id: existingHR.employee_id || '',
         job_title: existingHR.job_title || '',
         start_date: existingHR.start_date || '',
@@ -181,6 +183,7 @@ export function HRProfileManager() {
       setEditingProfile(null);
       setFormData({
         user_id: userProfile.user_id,
+        display_name: userProfile.display_name || '',
         employee_id: '',
         job_title: '',
         start_date: '',
@@ -254,6 +257,16 @@ export function HRProfileManager() {
     }
 
     try {
+      // Update display name in profiles table
+      if (formData.display_name.trim()) {
+        const { error: profileUpdateError } = await supabase
+          .from('profiles')
+          .update({ display_name: formData.display_name.trim() })
+          .eq('user_id', formData.user_id);
+
+        if (profileUpdateError) throw profileUpdateError;
+      }
+
       const profileData = {
         user_id: formData.user_id,
         employee_id: formData.employee_id || null,
@@ -463,6 +476,16 @@ export function HRProfileManager() {
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+
+            <div className="space-y-2">
+              <Label>Display Name</Label>
+              <Input
+                value={formData.display_name}
+                onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
+                placeholder="How their name appears in the system"
+              />
+              <p className="text-xs text-muted-foreground">This is how the staff member's name will appear throughout the system</p>
+            </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
