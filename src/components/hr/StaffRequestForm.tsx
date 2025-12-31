@@ -212,6 +212,16 @@ export function StaffRequestForm() {
     mutationFn: async ({ requestId, status, notes }: { requestId: string; status: 'approved' | 'rejected'; notes?: string }) => {
       if (!user) throw new Error("Not authenticated");
 
+      // Get the request details first
+      const { data: request, error: fetchError } = await supabase
+        .from("staff_requests")
+        .select("*")
+        .eq("id", requestId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // Update the request status
       const { error } = await supabase
         .from("staff_requests")
         .update({
@@ -223,9 +233,32 @@ export function StaffRequestForm() {
         .eq("id", requestId);
 
       if (error) throw error;
+
+      // If it's a holiday request being approved, sync to staff_holidays
+      if (status === 'approved' && request.request_type === 'holiday') {
+        const { error: holidayError } = await supabase
+          .from("staff_holidays")
+          .insert({
+            user_id: request.user_id,
+            absence_type: 'holiday',
+            start_date: request.start_date,
+            end_date: request.end_date,
+            days_taken: request.days_requested,
+            status: 'approved',
+            notes: request.details,
+            approved_by: user.id,
+            approved_at: new Date().toISOString()
+          });
+
+        if (holidayError) {
+          console.error('Failed to sync to staff_holidays:', holidayError);
+          // Don't throw - the request is already approved, just log the sync failure
+        }
+      }
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["my-staff-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-holidays"] });
       toast.success(`Request ${variables.status}`);
     },
     onError: (error) => {
