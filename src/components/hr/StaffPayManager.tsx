@@ -321,10 +321,15 @@ export function StaffPayManager() {
       return (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
     };
     
-    // Helper to get schedule date in YYYY-MM-DD format
+    // Helper to get schedule date in YYYY-MM-DD format (handles both ISO and Postgres formats)
     const getScheduleDate = (datetime: string): string => {
-      return datetime.split('T')[0];
+      // Parse the datetime and format as YYYY-MM-DD
+      const date = new Date(datetime);
+      return format(date, 'yyyy-MM-dd');
     };
+    
+    console.log('Holiday dates set:', Array.from(holidayDatesSet));
+    console.log('Staff schedules count:', staffSchedules.length);
     
     return staffWithHR.map(hr => {
       const userProfile = userProfiles.find(u => u.user_id === hr.user_id);
@@ -345,9 +350,11 @@ export function StaffPayManager() {
       
       // Get staff schedules for this user in the selected month
       const userSchedules = staffSchedules.filter(s => {
-        const scheduleDate = parseISO(s.start_datetime);
+        const scheduleDate = new Date(s.start_datetime);
         return s.user_id === hr.user_id && scheduleDate >= monthStart && scheduleDate <= monthEnd;
       });
+      
+      console.log(`User ${userProfile?.display_name}: ${userSchedules.length} schedules in month`);
       
       // Calculate holiday overtime (0.5x extra for each hour worked on a public holiday)
       // Since they already get paid for regular work, holiday overtime adds the extra 0.5x
@@ -356,6 +363,7 @@ export function StaffPayManager() {
       
       userSchedules.forEach(schedule => {
         const scheduleDate = getScheduleDate(schedule.start_datetime);
+        console.log(`  Checking schedule date: ${scheduleDate}, is holiday: ${holidayDatesSet.has(scheduleDate)}`);
         if (holidayDatesSet.has(scheduleDate)) {
           const hours = calculateHours(schedule.start_datetime, schedule.end_datetime);
           holidayOvertimeHours += hours;
@@ -365,6 +373,7 @@ export function StaffPayManager() {
             hours,
             holidayName: holiday?.name || 'Public Holiday'
           });
+          console.log(`  HOLIDAY MATCH: ${scheduleDate} - ${hours} hours`);
         }
       });
       
