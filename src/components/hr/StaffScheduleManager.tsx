@@ -1004,40 +1004,65 @@ export function StaffScheduleManager() {
                 <ChevronRight className="h-4 w-4" />
               </Button>
               <Button 
-                variant={showLiveView ? "default" : "ghost"} 
+                variant="ghost" 
                 size="sm" 
                 onClick={() => {
                   setCurrentWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }));
-                  setShowLiveView(!showLiveView);
                 }}
               >
-                <Clock className="h-4 w-4 mr-1" />
                 Today
               </Button>
             </div>
 
             <div className="flex items-center gap-2">
-              {/* View Mode Toggle */}
+              {/* Timeline Toggle - Weekly vs Live */}
               <div className="flex border rounded-md">
                 <Button
-                  variant={viewMode === "staff" ? "default" : "ghost"}
+                  variant={!showLiveView ? "default" : "ghost"}
                   size="sm"
-                  onClick={() => setViewMode("staff")}
+                  onClick={() => setShowLiveView(false)}
                   className="rounded-r-none"
                 >
-                  <Users className="h-4 w-4 mr-1" />
-                  Staff View
+                  <Calendar className="h-4 w-4 mr-1" />
+                  Weekly
                 </Button>
                 <Button
-                  variant={viewMode === "client" ? "default" : "ghost"}
+                  variant={showLiveView ? "default" : "ghost"}
                   size="sm"
-                  onClick={() => setViewMode("client")}
+                  onClick={() => {
+                    setCurrentWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }));
+                    setShowLiveView(true);
+                  }}
                   className="rounded-l-none"
                 >
-                  <Building2 className="h-4 w-4 mr-1" />
-                  Client View
+                  <Clock className="h-4 w-4 mr-1" />
+                  Live
                 </Button>
               </div>
+
+              {/* View Mode Toggle - Staff vs Client (only for weekly view) */}
+              {!showLiveView && (
+                <div className="flex border rounded-md">
+                  <Button
+                    variant={viewMode === "staff" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setViewMode("staff")}
+                    className="rounded-r-none"
+                  >
+                    <Users className="h-4 w-4 mr-1" />
+                    Staff View
+                  </Button>
+                  <Button
+                    variant={viewMode === "client" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setViewMode("client")}
+                    className="rounded-l-none"
+                  >
+                    <Building2 className="h-4 w-4 mr-1" />
+                    Client View
+                  </Button>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-4">
