@@ -74,8 +74,8 @@ const REQUEST_TYPE_INFO = {
     color: "text-yellow-600"
   },
   shift_swap: {
-    label: "Shift Swap",
-    description: "Request to swap shifts with another staff member.",
+    label: "Shift Cover",
+    description: "Request to cover shifts for another staff member.",
     icon: RefreshCw,
     color: "text-blue-600"
   }
@@ -386,11 +386,11 @@ export function StaffRequestForm() {
       if (!user) throw new Error("Not authenticated");
       if (!requestType) throw new Error("Please select a request type");
       
-      // Validation for shift swap
+      // Validation for shift cover
       if (requestType === 'shift_swap') {
-        if (!swapWithUserId) throw new Error("Please select who you are swapping shifts with");
+        if (!swapWithUserId) throw new Error("Please select whose shifts you are covering");
         if (!swapStartDate || !swapEndDate) throw new Error("Please select a date range");
-        if (selectedSwapShifts.length === 0) throw new Error("Please select at least one shift to swap");
+        if (selectedSwapShifts.length === 0) throw new Error("Please select at least one shift to cover");
       } else if (requestType !== 'overtime') {
         if (!startDate) throw new Error("Please select a start date");
         if (!endDate) throw new Error("Please select an end date");
@@ -682,11 +682,11 @@ export function StaffRequestForm() {
             </div>
           )}
 
-          {/* Shift Swap - Who are you swapping with */}
+          {/* Shift Cover - Who are you covering */}
           {requestType === 'shift_swap' && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Who are you swapping shifts with? <span className="text-destructive">*</span></Label>
+                <Label>Whose shifts are you covering? <span className="text-destructive">*</span></Label>
                 <Select 
                   value={swapWithUserId} 
                   onValueChange={(val) => {
@@ -778,10 +778,10 @@ export function StaffRequestForm() {
                     </div>
                   </div>
 
-                  {/* Shifts to swap */}
+                  {/* Shifts to cover */}
                   {swapStartDate && swapEndDate && (
                     <div className="space-y-2">
-                      <Label>Select shifts to swap <span className="text-destructive">*</span></Label>
+                      <Label>Select shifts to cover <span className="text-destructive">*</span></Label>
                       {availableSwapShifts.length === 0 ? (
                         <div className="p-4 bg-muted rounded-md text-sm text-muted-foreground text-center">
                           No shifts found for {getStaffName(swapWithUserId)} in this date range

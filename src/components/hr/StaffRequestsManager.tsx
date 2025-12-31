@@ -81,7 +81,7 @@ const REQUEST_TYPE_INFO: Record<string, { label: string; icon: typeof Clock; col
     color: "text-yellow-600"
   },
   shift_swap: {
-    label: "Shift Swap",
+    label: "Shift Cover",
     icon: RefreshCw,
     color: "text-blue-600"
   }
@@ -168,45 +168,26 @@ export function StaffRequestsManager() {
 
       if (error) throw error;
 
-      // If it's a shift swap being approved, actually swap the schedules
+      // If it's a shift cover being approved, assign the covered staff's shifts to the covering staff
       if (status === 'approved' && request.request_type === 'shift_swap' && request.swap_with_user_id) {
-        // Fetch schedules for both users within the date range
+        // request.user_id = the staff member who is COVERING
+        // request.swap_with_user_id = the staff member being COVERED (whose shifts need to be taken over)
         const startDate = request.start_date;
         const endDate = request.end_date;
         
-        // Get requesting user's schedules in the date range
-        const { data: requesterSchedules, error: reqSchedError } = await supabase
-          .from("staff_schedules")
-          .select("*")
-          .eq("user_id", request.user_id)
-          .gte("start_datetime", startDate)
-          .lte("start_datetime", endDate + "T23:59:59");
-        
-        if (reqSchedError) console.error('Error fetching requester schedules:', reqSchedError);
-        
-        // Get swap partner's schedules in the date range
-        const { data: partnerSchedules, error: partSchedError } = await supabase
+        // Get the covered staff's schedules in the date range
+        const { data: coveredSchedules, error: coveredSchedError } = await supabase
           .from("staff_schedules")
           .select("*")
           .eq("user_id", request.swap_with_user_id)
           .gte("start_datetime", startDate)
           .lte("start_datetime", endDate + "T23:59:59");
         
-        if (partSchedError) console.error('Error fetching partner schedules:', partSchedError);
+        if (coveredSchedError) console.error('Error fetching covered staff schedules:', coveredSchedError);
         
-        // Swap the user_id on requester's schedules to partner
-        if (requesterSchedules && requesterSchedules.length > 0) {
-          for (const schedule of requesterSchedules) {
-            await supabase
-              .from("staff_schedules")
-              .update({ user_id: request.swap_with_user_id })
-              .eq("id", schedule.id);
-          }
-        }
-        
-        // Swap the user_id on partner's schedules to requester
-        if (partnerSchedules && partnerSchedules.length > 0) {
-          for (const schedule of partnerSchedules) {
+        // Reassign the covered staff's schedules to the covering staff
+        if (coveredSchedules && coveredSchedules.length > 0) {
+          for (const schedule of coveredSchedules) {
             await supabase
               .from("staff_schedules")
               .update({ user_id: request.user_id })
@@ -214,7 +195,7 @@ export function StaffRequestsManager() {
           }
         }
         
-        console.log(`Shift swap completed: swapped ${requesterSchedules?.length || 0} + ${partnerSchedules?.length || 0} schedules`);
+        console.log(`Shift cover completed: ${coveredSchedules?.length || 0} schedules reassigned to covering staff`);
       }
 
       // If it's a holiday request being approved, sync to staff_holidays
@@ -340,7 +321,7 @@ export function StaffRequestsManager() {
         <div>
           <h2 className="text-xl font-semibold">Staff Requests</h2>
           <p className="text-sm text-muted-foreground">
-            Review and approve staff overtime, holiday, and shift swap requests
+            Review and approve staff overtime, holiday, and shift cover requests
           </p>
         </div>
       </div>
@@ -531,7 +512,7 @@ export function StaffRequestsManager() {
 
               {selectedRequest.request_type === 'shift_swap' && selectedRequest.swap_with_user_id && (
                 <div>
-                  <Label className="text-muted-foreground">Swapping With</Label>
+                  <Label className="text-muted-foreground">Covering For</Label>
                   <p className="font-medium">{getStaffName(selectedRequest.swap_with_user_id)}</p>
                 </div>
               )}
