@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useUserRole } from "@/hooks/useUserRole";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -8,9 +9,17 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users } from "lucide-react";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay } from "date-fns";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
+
+interface UserProfile {
+  user_id: string;
+  display_name: string | null;
+  email: string | null;
+}
+
 interface MonthlyPayPreview {
   month: Date;
   monthLabel: string;
@@ -161,6 +170,7 @@ export function MyHRProfile() {
   const {
     user
   } = useAuth();
+  const { isAdmin } = useUserRole();
   const {
     toast
   } = useToast();
@@ -176,23 +186,55 @@ export function MyHRProfile() {
   const [staffRequests, setStaffRequests] = useState<StaffRequest[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
+  
+  // Admin staff selection
+  const [allStaff, setAllStaff] = useState<UserProfile[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+
+  // Fetch all staff for admin dropdown
   useEffect(() => {
-    if (user) {
-      fetchData();
+    const fetchAllStaff = async () => {
+      if (!isAdmin) return;
+      
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, display_name, email')
+        .order('display_name');
+      
+      if (profiles) {
+        setAllStaff(profiles);
+      }
+    };
+    
+    fetchAllStaff();
+  }, [isAdmin]);
+
+  // Set initial selected user
+  useEffect(() => {
+    if (user && !selectedUserId) {
+      setSelectedUserId(user.id);
     }
-  }, [user]);
-  const fetchData = async () => {
+  }, [user, selectedUserId]);
+
+  // Fetch data when selected user changes
+  useEffect(() => {
+    if (selectedUserId) {
+      fetchData(selectedUserId);
+    }
+  }, [selectedUserId]);
+  const fetchData = async (targetUserId: string) => {
+    setLoading(true);
     try {
       // Fetch HR profile
       const {
         data: profile
-      } = await supabase.from('hr_profiles').select('*').eq('user_id', user?.id).maybeSingle();
+      } = await supabase.from('hr_profiles').select('*').eq('user_id', targetUserId).maybeSingle();
       setHRProfile(profile);
 
       // Fetch holidays
       const {
         data: holidayData
-      } = await supabase.from('staff_holidays').select('*').eq('user_id', user?.id).order('start_date', {
+      } = await supabase.from('staff_holidays').select('*').eq('user_id', targetUserId).order('start_date', {
         ascending: false
       });
       setHolidays(holidayData || []);
@@ -223,7 +265,7 @@ export function MyHRProfile() {
       // Fetch pay records
       const {
         data: payData
-      } = await supabase.from('staff_pay_records').select('*').eq('user_id', user?.id).order('pay_date', {
+      } = await supabase.from('staff_pay_records').select('*').eq('user_id', targetUserId).order('pay_date', {
         ascending: false
       });
       setPayRecords(payData || []);
@@ -231,13 +273,13 @@ export function MyHRProfile() {
       // Fetch staff schedules for this user
       const {
         data: schedules
-      } = await supabase.from('staff_schedules').select('id, user_id, start_datetime, end_datetime').eq('user_id', user?.id);
+      } = await supabase.from('staff_schedules').select('id, user_id, start_datetime, end_datetime').eq('user_id', targetUserId);
       setStaffSchedules(schedules || []);
 
       // Fetch recurring patterns for this user
       const {
         data: patterns
-      } = await supabase.from('recurring_shift_patterns').select('id, user_id, days_of_week, start_time, end_time, start_date, end_date').eq('user_id', user?.id);
+      } = await supabase.from('recurring_shift_patterns').select('id, user_id, days_of_week, start_time, end_time, start_date, end_date').eq('user_id', targetUserId);
       setRecurringPatterns(patterns || []);
 
       // Fetch pattern exceptions
@@ -247,12 +289,14 @@ export function MyHRProfile() {
           data: exceptions
         } = await supabase.from('shift_pattern_exceptions').select('id, pattern_id, exception_date').in('pattern_id', patternIds);
         setPatternExceptions(exceptions || []);
+      } else {
+        setPatternExceptions([]);
       }
 
       // Fetch staff requests
       const {
         data: requestsData
-      } = await supabase.from('staff_requests').select('*').eq('user_id', user?.id).order('created_at', {
+      } = await supabase.from('staff_requests').select('*').eq('user_id', targetUserId).order('created_at', {
         ascending: false
       });
       setStaffRequests(requestsData || []);
@@ -260,7 +304,7 @@ export function MyHRProfile() {
       // Fetch recurring bonuses
       const {
         data: bonusesData
-      } = await supabase.from('recurring_bonuses').select('*').eq('user_id', user?.id);
+      } = await supabase.from('recurring_bonuses').select('*').eq('user_id', targetUserId);
       setRecurringBonuses(bonusesData || []);
 
       // Fetch public holidays for next 12 months (current year + next year if needed)
@@ -520,19 +564,84 @@ export function MyHRProfile() {
         </Card>
       </div>;
   }
+  // Get selected user's display name for the header
+  const selectedUserName = allStaff.find(s => s.user_id === selectedUserId)?.display_name || 
+                           allStaff.find(s => s.user_id === selectedUserId)?.email || 
+                           'Staff Member';
+
   if (!hrProfile) {
-    return <Card>
+    return <div className="space-y-6">
+      {/* Admin Staff Selector */}
+      {isAdmin && allStaff.length > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Users className="h-5 w-5 text-primary" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm text-muted-foreground mb-1">View Staff Profile</p>
+                <Select value={selectedUserId || ''} onValueChange={setSelectedUserId}>
+                  <SelectTrigger className="w-full max-w-md">
+                    <SelectValue placeholder="Select a staff member" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background border z-50">
+                    {allStaff.map((staff) => (
+                      <SelectItem key={staff.user_id} value={staff.user_id}>
+                        {staff.display_name || staff.email || 'Unknown'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      
+      <Card>
         <CardContent className="p-12 text-center">
           <UserCircle className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
           <h3 className="text-lg font-medium mb-2">No HR Profile Found</h3>
           <p className="text-muted-foreground">
-            Your HR profile has not been set up yet. Please contact your administrator.
+            {isAdmin && selectedUserId !== user?.id 
+              ? `${selectedUserName}'s HR profile has not been set up yet.`
+              : 'Your HR profile has not been set up yet. Please contact your administrator.'}
           </p>
         </CardContent>
-      </Card>;
+      </Card>
+    </div>;
   }
   const allowanceInfo = calculateHolidayAllowance(hrProfile.start_date);
   return <div className="space-y-6">
+      {/* Admin Staff Selector */}
+      {isAdmin && allStaff.length > 0 && (
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <Users className="h-5 w-5 text-primary" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm text-muted-foreground mb-1">View Staff Profile</p>
+                <Select value={selectedUserId || ''} onValueChange={setSelectedUserId}>
+                  <SelectTrigger className="w-full max-w-md">
+                    <SelectValue placeholder="Select a staff member" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background border z-50">
+                    {allStaff.map((staff) => (
+                      <SelectItem key={staff.user_id} value={staff.user_id}>
+                        {staff.display_name || staff.email || 'Unknown'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Profile Overview */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
