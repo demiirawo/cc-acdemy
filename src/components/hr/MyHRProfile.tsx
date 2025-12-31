@@ -6,9 +6,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle } from "lucide-react";
-import { format, startOfMonth, endOfMonth, parseISO, addMonths } from "date-fns";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay } from "date-fns";
 
+interface MonthlyPayPreview {
+  month: Date;
+  monthLabel: string;
+  monthlyBaseSalary: number;
+  dailyRate: number;
+  bonuses: number;
+  deductions: number;
+  holidayOvertimeDays: number;
+  holidayOvertimeBonus: number;
+  holidayShifts: Array<{ date: string; holidayName: string }>;
+  totalPay: number;
+  payrollStatus: 'pending' | 'ready' | 'paid';
+  currency: string;
+}
 interface HRProfile {
   id: string;
   employee_id: string | null;
@@ -114,7 +129,7 @@ export function MyHRProfile() {
   const [recurringPatterns, setRecurringPatterns] = useState<RecurringShiftPattern[]>([]);
   const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
-  const [payrollStatus, setPayrollStatus] = useState<'pending' | 'ready' | 'paid'>('pending');
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
 
   useEffect(() => {
     if (user) {
@@ -190,27 +205,8 @@ export function MyHRProfile() {
         setPatternExceptions(exceptions || []);
       }
 
-      // Fetch public holidays for current year
+      // Fetch public holidays for next 12 months (current year + next year if needed)
       await fetchPublicHolidays();
-
-      // Determine payroll status for current month
-      const currentMonthStart = startOfMonth(new Date());
-      const currentMonthEnd = endOfMonth(new Date());
-      
-      const currentMonthRecords = (payData || []).filter(r => {
-        const payDate = parseISO(r.pay_date);
-        return payDate >= currentMonthStart && payDate <= currentMonthEnd;
-      });
-      
-      const hasSalaryRecord = currentMonthRecords.some(r => r.record_type === 'salary');
-      
-      if (hasSalaryRecord) {
-        setPayrollStatus('paid');
-      } else {
-        // Check if there are any records at all for this month (bonuses, etc.)
-        // For now, default to pending - admin would need to mark as ready
-        setPayrollStatus('pending');
-      }
       
     } catch (error) {
       console.error('Error fetching HR data:', error);
@@ -226,33 +222,55 @@ export function MyHRProfile() {
 
   const fetchPublicHolidays = async () => {
     try {
-      const year = new Date().getFullYear();
-      const response = await fetch(
-        `https://pavwwgfgpykakbqkxsal.supabase.co/functions/v1/get-public-holidays?year=${year}`,
+      const currentYear = new Date().getFullYear();
+      const nextYear = currentYear + 1;
+      
+      // Fetch current year
+      const response1 = await fetch(
+        `https://pavwwgfgpykakbqkxsal.supabase.co/functions/v1/get-public-holidays?year=${currentYear}`,
         {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
         }
       );
       
-      if (response.ok) {
-        const result = await response.json();
-        if (result?.holidays) {
-          setPublicHolidays(result.holidays);
+      // Fetch next year
+      const response2 = await fetch(
+        `https://pavwwgfgpykakbqkxsal.supabase.co/functions/v1/get-public-holidays?year=${nextYear}`,
+        {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+      
+      const allHolidays: PublicHoliday[] = [];
+      
+      if (response1.ok) {
+        const result1 = await response1.json();
+        if (result1?.holidays) {
+          allHolidays.push(...result1.holidays);
         }
       }
+      
+      if (response2.ok) {
+        const result2 = await response2.json();
+        if (result2?.holidays) {
+          allHolidays.push(...result2.holidays);
+        }
+      }
+      
+      setPublicHolidays(allHolidays);
     } catch (error) {
       console.error('Error fetching public holidays:', error);
     }
   };
 
-  // Calculate pay preview for current month
-  const payPreview = useMemo(() => {
-    if (!hrProfile || !hrProfile.base_salary) return null;
+  // Calculate pay preview for the next 12 months
+  const monthlyPreviews = useMemo((): MonthlyPayPreview[] => {
+    if (!hrProfile || !hrProfile.base_salary) return [];
 
-    const currentMonth = new Date();
-    const monthStart = startOfMonth(currentMonth);
-    const monthEnd = endOfMonth(currentMonth);
+    const previews: MonthlyPayPreview[] = [];
+    const now = new Date();
 
     // Calculate monthly base salary based on pay frequency
     let monthlyBaseSalary = hrProfile.base_salary;
@@ -265,7 +283,7 @@ export function MyHRProfile() {
     }
 
     const dailyRate = monthlyBaseSalary / 20;
-    const holidayDatesSet = new Set(publicHolidays.map(h => h.date));
+    const holidayDatesMap = new Map(publicHolidays.map(h => [h.date, h.name]));
 
     // Create exceptions map
     const exceptionsMap = new Map<string, Set<string>>();
@@ -276,109 +294,135 @@ export function MyHRProfile() {
       exceptionsMap.get(ex.pattern_id)!.add(ex.exception_date);
     });
 
-    // Generate virtual schedules from recurring patterns
-    const virtualSchedules: Array<{ date: string }> = [];
-    let currentDate = new Date(monthStart);
-    
-    while (currentDate <= monthEnd) {
-      const dateStr = format(currentDate, 'yyyy-MM-dd');
-      const dayOfWeek = currentDate.getDay();
+    for (let i = 0; i < 12; i++) {
+      const targetMonth = addMonths(now, i);
+      const monthStart = startOfMonth(targetMonth);
+      const monthEnd = endOfMonth(targetMonth);
+      const monthKey = format(targetMonth, 'yyyy-MM');
 
-      recurringPatterns.forEach(pattern => {
-        const patternStart = parseISO(pattern.start_date);
-        const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+      // Generate virtual schedules from recurring patterns for this month
+      const virtualScheduleDates: string[] = [];
+      const monthDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
-        if (currentDate >= patternStart && (!patternEnd || currentDate <= patternEnd)) {
-          if (pattern.days_of_week.includes(dayOfWeek)) {
-            const patternExceptions = exceptionsMap.get(pattern.id);
-            if (!patternExceptions || !patternExceptions.has(dateStr)) {
-              virtualSchedules.push({ date: dateStr });
+      for (const day of monthDays) {
+        const dateStr = format(day, 'yyyy-MM-dd');
+        const dayOfWeek = getDay(day);
+
+        for (const pattern of recurringPatterns) {
+          const patternStart = parseISO(pattern.start_date);
+          const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+
+          if (day >= patternStart && (!patternEnd || day <= patternEnd)) {
+            if (pattern.days_of_week.includes(dayOfWeek)) {
+              const patternExs = exceptionsMap.get(pattern.id);
+              if (!patternExs || !patternExs.has(dateStr)) {
+                virtualScheduleDates.push(dateStr);
+                break; // Only add date once even if multiple patterns match
+              }
             }
           }
         }
+      }
+
+      // Get actual schedules in this month
+      const userSchedulesInMonth = staffSchedules.filter(s => {
+        const scheduleDate = new Date(s.start_datetime);
+        return scheduleDate >= monthStart && scheduleDate <= monthEnd;
       });
 
-      currentDate.setDate(currentDate.getDate() + 1);
+      const actualScheduleDates = new Set(userSchedulesInMonth.map(s => format(new Date(s.start_datetime), 'yyyy-MM-dd')));
+
+      // Count holiday days
+      const countedHolidayDates = new Set<string>();
+      const holidayShifts: Array<{ date: string; holidayName: string }> = [];
+
+      // Check actual schedules
+      for (const schedule of userSchedulesInMonth) {
+        const scheduleDate = format(new Date(schedule.start_datetime), 'yyyy-MM-dd');
+        if (holidayDatesMap.has(scheduleDate) && !countedHolidayDates.has(scheduleDate)) {
+          countedHolidayDates.add(scheduleDate);
+          holidayShifts.push({
+            date: scheduleDate,
+            holidayName: holidayDatesMap.get(scheduleDate) || 'Public Holiday'
+          });
+        }
+      }
+
+      // Check virtual schedules
+      for (const dateStr of virtualScheduleDates) {
+        if (holidayDatesMap.has(dateStr) && !actualScheduleDates.has(dateStr) && !countedHolidayDates.has(dateStr)) {
+          countedHolidayDates.add(dateStr);
+          holidayShifts.push({
+            date: dateStr,
+            holidayName: holidayDatesMap.get(dateStr) || 'Public Holiday'
+          });
+        }
+      }
+
+      const holidayOvertimeDays = countedHolidayDates.size;
+      const holidayOvertimeBonus = holidayOvertimeDays * dailyRate * 1.5;
+
+      // Get bonuses and deductions for this month
+      const monthRecords = payRecords.filter(r => {
+        const payDate = parseISO(r.pay_date);
+        return payDate >= monthStart && payDate <= monthEnd;
+      });
+
+      const bonuses = monthRecords
+        .filter(r => r.record_type === 'bonus')
+        .reduce((sum, r) => sum + r.amount, 0);
+      
+      const deductions = monthRecords
+        .filter(r => r.record_type === 'deduction')
+        .reduce((sum, r) => sum + r.amount, 0);
+
+      const totalPay = monthlyBaseSalary + bonuses + holidayOvertimeBonus - deductions;
+
+      // Determine payroll status
+      let payrollStatus: 'pending' | 'ready' | 'paid' = 'pending';
+      const hasSalaryRecord = monthRecords.some(r => r.record_type === 'salary');
+      
+      if (hasSalaryRecord) {
+        payrollStatus = 'paid';
+      } else {
+        const today = new Date();
+        if (today > monthEnd) {
+          payrollStatus = 'ready';
+        } else if (format(today, 'yyyy-MM') === monthKey && today.getDate() >= 25) {
+          payrollStatus = 'ready';
+        }
+      }
+
+      previews.push({
+        month: targetMonth,
+        monthLabel: format(targetMonth, 'MMMM yyyy'),
+        monthlyBaseSalary,
+        dailyRate,
+        bonuses,
+        deductions,
+        holidayOvertimeDays,
+        holidayOvertimeBonus,
+        holidayShifts,
+        totalPay,
+        payrollStatus,
+        currency: hrProfile.base_currency
+      });
     }
 
-    // Get actual schedules in month
-    const getScheduleDate = (datetime: string): string => {
-      const date = new Date(datetime);
-      return format(date, 'yyyy-MM-dd');
-    };
-
-    const userSchedulesInMonth = staffSchedules.filter(s => {
-      const scheduleDate = new Date(s.start_datetime);
-      return scheduleDate >= monthStart && scheduleDate <= monthEnd;
-    });
-
-    const actualScheduleDates = new Set(userSchedulesInMonth.map(s => getScheduleDate(s.start_datetime)));
-
-    // Count holiday days
-    let holidayOvertimeDays = 0;
-    const holidayShifts: Array<{ date: string; holidayName: string }> = [];
-    const countedHolidayDates = new Set<string>();
-
-    // Check actual schedules
-    userSchedulesInMonth.forEach(schedule => {
-      const scheduleDate = getScheduleDate(schedule.start_datetime);
-      if (holidayDatesSet.has(scheduleDate) && !countedHolidayDates.has(scheduleDate)) {
-        holidayOvertimeDays += 1;
-        countedHolidayDates.add(scheduleDate);
-        const holiday = publicHolidays.find(h => h.date === scheduleDate);
-        holidayShifts.push({
-          date: scheduleDate,
-          holidayName: holiday?.name || 'Public Holiday'
-        });
-      }
-    });
-
-    // Check virtual schedules
-    virtualSchedules.forEach(virtual => {
-      if (holidayDatesSet.has(virtual.date) && !actualScheduleDates.has(virtual.date) && !countedHolidayDates.has(virtual.date)) {
-        holidayOvertimeDays += 1;
-        countedHolidayDates.add(virtual.date);
-        const holiday = publicHolidays.find(h => h.date === virtual.date);
-        holidayShifts.push({
-          date: virtual.date,
-          holidayName: holiday?.name || 'Public Holiday'
-        });
-      }
-    });
-
-    const holidayOvertimeBonus = holidayOvertimeDays * dailyRate * 1.5;
-
-    // Get bonuses and deductions for current month
-    const currentMonthStart = startOfMonth(currentMonth);
-    const currentMonthEnd = endOfMonth(currentMonth);
-    
-    const currentMonthRecords = payRecords.filter(r => {
-      const payDate = parseISO(r.pay_date);
-      return payDate >= currentMonthStart && payDate <= currentMonthEnd;
-    });
-
-    const bonuses = currentMonthRecords
-      .filter(r => r.record_type === 'bonus')
-      .reduce((sum, r) => sum + r.amount, 0);
-    
-    const deductions = currentMonthRecords
-      .filter(r => r.record_type === 'deduction')
-      .reduce((sum, r) => sum + r.amount, 0);
-
-    const totalPay = monthlyBaseSalary + bonuses + holidayOvertimeBonus - deductions;
-
-    return {
-      monthlyBaseSalary,
-      dailyRate,
-      bonuses,
-      deductions,
-      holidayOvertimeDays,
-      holidayOvertimeBonus,
-      holidayShifts,
-      totalPay,
-      currency: hrProfile.base_currency
-    };
+    return previews;
   }, [hrProfile, staffSchedules, recurringPatterns, patternExceptions, publicHolidays, payRecords]);
+
+  const toggleMonth = (monthKey: string) => {
+    setExpandedMonths(prev => {
+      const next = new Set(prev);
+      if (next.has(monthKey)) {
+        next.delete(monthKey);
+      } else {
+        next.add(monthKey);
+      }
+      return next;
+    });
+  };
 
   const formatCurrency = (amount: number, currency: string) => {
     const symbol = CURRENCIES[currency] || '';
@@ -487,96 +531,135 @@ export function MyHRProfile() {
         </Card>
       </div>
 
-      {/* Pay Preview Section */}
-      {payPreview && (
+      {/* 12-Month Pay Preview Section */}
+      {monthlyPreviews.length > 0 && (
         <Card className="border-2 border-primary/20">
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-primary" />
-                <CardTitle className="text-lg">Pay Preview - {format(new Date(), 'MMMM yyyy')}</CardTitle>
-              </div>
-              <Badge 
-                variant="outline"
-                className={
-                  payrollStatus === 'paid' 
-                    ? 'bg-success/20 text-success border-success' 
-                    : payrollStatus === 'ready'
-                    ? 'bg-amber-500/20 text-amber-600 border-amber-500'
-                    : 'bg-muted text-muted-foreground border-muted-foreground'
-                }
-              >
-                {payrollStatus === 'paid' && <CheckCircle className="h-3 w-3 mr-1" />}
-                {payrollStatus === 'ready' && <Clock className="h-3 w-3 mr-1" />}
-                {payrollStatus === 'pending' && <AlertCircle className="h-3 w-3 mr-1" />}
-                {payrollStatus.charAt(0).toUpperCase() + payrollStatus.slice(1)}
-              </Badge>
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-primary" />
+              <CardTitle className="text-lg">12-Month Pay Preview</CardTitle>
             </div>
-            <CardDescription>Estimated pay for the current month (subject to final processing)</CardDescription>
+            <CardDescription>Estimated pay for the next 12 months (subject to final processing)</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Left column - Breakdown */}
-              <div className="space-y-3">
-                <div className="flex justify-between items-center py-2 border-b">
-                  <span className="text-muted-foreground">Base Salary</span>
-                  <span className="font-medium">{formatCurrency(payPreview.monthlyBaseSalary, payPreview.currency)}</span>
-                </div>
-                
-                {payPreview.bonuses > 0 && (
-                  <div className="flex justify-between items-center py-2 border-b">
-                    <span className="text-muted-foreground">Bonuses</span>
-                    <span className="font-medium text-success">+{formatCurrency(payPreview.bonuses, payPreview.currency)}</span>
-                  </div>
-                )}
-                
-                {payPreview.holidayOvertimeBonus > 0 && (
-                  <div className="flex justify-between items-center py-2 border-b">
-                    <div>
-                      <span className="text-muted-foreground">Holiday Overtime</span>
-                      <span className="text-xs text-muted-foreground ml-2">
-                        ({payPreview.holidayOvertimeDays} day{payPreview.holidayOvertimeDays !== 1 ? 's' : ''} @ 1.5x)
-                      </span>
-                    </div>
-                    <span className="font-medium text-amber-600">+{formatCurrency(payPreview.holidayOvertimeBonus, payPreview.currency)}</span>
-                  </div>
-                )}
-                
-                {payPreview.deductions > 0 && (
-                  <div className="flex justify-between items-center py-2 border-b">
-                    <span className="text-muted-foreground">Deductions</span>
-                    <span className="font-medium text-destructive">-{formatCurrency(payPreview.deductions, payPreview.currency)}</span>
-                  </div>
-                )}
-                
-                <div className="flex justify-between items-center py-3 bg-primary/5 rounded-lg px-3 mt-2">
-                  <span className="font-semibold">Estimated Total</span>
-                  <span className="font-bold text-lg">{formatCurrency(payPreview.totalPay, payPreview.currency)}</span>
-                </div>
-              </div>
+          <CardContent className="space-y-2">
+            {monthlyPreviews.map((preview) => {
+              const monthKey = format(preview.month, 'yyyy-MM');
+              const isExpanded = expandedMonths.has(monthKey);
+              const isCurrentMonth = format(new Date(), 'yyyy-MM') === monthKey;
 
-              {/* Right column - Holiday shifts details */}
-              <div>
-                {payPreview.holidayShifts.length > 0 ? (
-                  <div className="space-y-2">
-                    <h4 className="font-medium text-sm text-muted-foreground mb-3">Public Holiday Shifts</h4>
-                    {payPreview.holidayShifts.map((shift, idx) => (
-                      <div key={idx} className="flex items-center gap-2 text-sm py-1.5 px-2 bg-amber-500/10 rounded">
-                        <Calendar className="h-4 w-4 text-amber-600" />
-                        <span>{format(parseISO(shift.date), 'dd MMM yyyy')}</span>
-                        <span className="text-muted-foreground">-</span>
-                        <span className="text-amber-600">{shift.holidayName}</span>
+              const getStatusBadge = (status: 'pending' | 'ready' | 'paid') => {
+                if (status === 'paid') {
+                  return (
+                    <Badge variant="outline" className="bg-success/20 text-success border-success">
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                      Paid
+                    </Badge>
+                  );
+                } else if (status === 'ready') {
+                  return (
+                    <Badge variant="outline" className="bg-amber-500/20 text-amber-600 border-amber-500">
+                      <Clock className="h-3 w-3 mr-1" />
+                      Ready
+                    </Badge>
+                  );
+                } else {
+                  return (
+                    <Badge variant="outline" className="bg-muted text-muted-foreground border-muted-foreground">
+                      <AlertCircle className="h-3 w-3 mr-1" />
+                      Pending
+                    </Badge>
+                  );
+                }
+              };
+
+              return (
+                <Collapsible key={monthKey} open={isExpanded} onOpenChange={() => toggleMonth(monthKey)}>
+                  <CollapsibleTrigger className="w-full">
+                    <div className={`flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors ${isCurrentMonth ? 'border-primary bg-primary/5' : ''}`}>
+                      <div className="flex items-center gap-3">
+                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        <span className="font-medium">{preview.monthLabel}</span>
+                        {isCurrentMonth && (
+                          <Badge variant="outline" className="text-xs">Current</Badge>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-6 text-muted-foreground">
-                    <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No public holiday shifts this month</p>
-                  </div>
-                )}
-              </div>
-            </div>
+                      <div className="flex items-center gap-3">
+                        {getStatusBadge(preview.payrollStatus)}
+                        <span className="font-bold text-lg">
+                          {formatCurrency(preview.totalPay, preview.currency)}
+                        </span>
+                      </div>
+                    </div>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="px-4 pb-4 pt-2 ml-7 border-l-2 border-muted">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Left column - Breakdown */}
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center py-2 border-b">
+                            <span className="text-muted-foreground">Base Salary</span>
+                            <span className="font-medium">{formatCurrency(preview.monthlyBaseSalary, preview.currency)}</span>
+                          </div>
+                          
+                          {preview.bonuses > 0 && (
+                            <div className="flex justify-between items-center py-2 border-b">
+                              <span className="text-muted-foreground">Bonuses</span>
+                              <span className="font-medium text-success">+{formatCurrency(preview.bonuses, preview.currency)}</span>
+                            </div>
+                          )}
+                          
+                          {preview.holidayOvertimeBonus > 0 && (
+                            <div className="flex justify-between items-center py-2 border-b">
+                              <div>
+                                <span className="text-muted-foreground">Holiday Overtime</span>
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  ({preview.holidayOvertimeDays} day{preview.holidayOvertimeDays !== 1 ? 's' : ''} @ 1.5x)
+                                </span>
+                              </div>
+                              <span className="font-medium text-amber-600">+{formatCurrency(preview.holidayOvertimeBonus, preview.currency)}</span>
+                            </div>
+                          )}
+                          
+                          {preview.deductions > 0 && (
+                            <div className="flex justify-between items-center py-2 border-b">
+                              <span className="text-muted-foreground">Deductions</span>
+                              <span className="font-medium text-destructive">-{formatCurrency(preview.deductions, preview.currency)}</span>
+                            </div>
+                          )}
+                          
+                          <div className="flex justify-between items-center py-3 bg-primary/5 rounded-lg px-3 mt-2">
+                            <span className="font-semibold">Estimated Total</span>
+                            <span className="font-bold text-lg">{formatCurrency(preview.totalPay, preview.currency)}</span>
+                          </div>
+                        </div>
+
+                        {/* Right column - Holiday shifts details */}
+                        <div>
+                          {preview.holidayShifts.length > 0 ? (
+                            <div className="space-y-2">
+                              <h4 className="font-medium text-sm text-muted-foreground mb-3">Public Holiday Shifts</h4>
+                              {preview.holidayShifts.map((shift, idx) => (
+                                <div key={idx} className="flex items-center gap-2 text-sm py-1.5 px-2 bg-amber-500/10 rounded">
+                                  <Calendar className="h-4 w-4 text-amber-600" />
+                                  <span>{format(parseISO(shift.date), 'dd MMM yyyy')}</span>
+                                  <span className="text-muted-foreground">-</span>
+                                  <span className="text-amber-600">{shift.holidayName}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-center py-6 text-muted-foreground">
+                              <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                              <p className="text-sm">No public holiday shifts this month</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              );
+            })}
           </CardContent>
         </Card>
       )}
