@@ -12,8 +12,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle } from "lucide-react";
+import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths } from "date-fns";
+import { Plus, ChevronLeft, ChevronRight, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar } from "lucide-react";
 
 interface Schedule {
   id: string;
@@ -73,6 +73,7 @@ interface RecurringPattern {
   notes: string | null;
   start_date: string;
   end_date: string | null; // null = indefinite
+  recurrence_interval: 'daily' | 'weekly' | 'biweekly' | 'monthly';
 }
 
 interface Client {
@@ -127,7 +128,8 @@ export function StaffScheduleManager() {
     hourly_rate: "",
     currency: "GBP",
     start_date: "",
-    end_date: ""
+    end_date: "",
+    recurrence_interval: "weekly" as 'daily' | 'weekly' | 'biweekly' | 'monthly'
   });
 
   // Recurring schedule form state
@@ -143,7 +145,8 @@ export function StaffScheduleManager() {
     notes: "",
     hourly_rate: "",
     currency: "GBP",
-    start_date: format(new Date(), "yyyy-MM-dd")
+    start_date: format(new Date(), "yyyy-MM-dd"),
+    recurrence_interval: "weekly" as 'daily' | 'weekly' | 'biweekly' | 'monthly'
   });
 
   const weekDays = useMemo(() => {
@@ -299,17 +302,44 @@ export function StaffScheduleManager() {
     for (const pattern of recurringPatterns) {
       const patternStartDate = parseISO(pattern.start_date);
       const patternEndDate = pattern.end_date ? parseISO(pattern.end_date) : null;
+      const recurrenceInterval = pattern.recurrence_interval || 'weekly';
       
       for (const day of weekDays) {
         const dayOfWeek = getDay(day);
         const dateStr = format(day, "yyyy-MM-dd");
         
-        // Check if this day is in the pattern
-        if (!pattern.days_of_week.includes(dayOfWeek)) continue;
-        
         // Check if day is within the pattern's date range
         if (isBefore(day, patternStartDate)) continue;
         if (patternEndDate && isAfter(day, patternEndDate)) continue;
+        
+        // Check recurrence interval
+        let shouldInclude = false;
+        
+        if (recurrenceInterval === 'daily') {
+          // Daily: include every day
+          shouldInclude = true;
+        } else if (recurrenceInterval === 'weekly') {
+          // Weekly: check if this day is in the pattern's days_of_week
+          shouldInclude = pattern.days_of_week.includes(dayOfWeek);
+        } else if (recurrenceInterval === 'biweekly') {
+          // Biweekly: check if this day is in the pattern's days_of_week AND it's an even week from start
+          if (pattern.days_of_week.includes(dayOfWeek)) {
+            const weeksDiff = differenceInWeeks(startOfWeek(day, { weekStartsOn: 1 }), startOfWeek(patternStartDate, { weekStartsOn: 1 }));
+            shouldInclude = weeksDiff % 2 === 0;
+          }
+        } else if (recurrenceInterval === 'monthly') {
+          // Monthly: check if this day is in the pattern's days_of_week AND it's the same week of the month as the start
+          if (pattern.days_of_week.includes(dayOfWeek)) {
+            const startDayOfMonth = getDate(patternStartDate);
+            const currentDayOfMonth = getDate(day);
+            // Same week number in month (1-7 = week 1, 8-14 = week 2, etc.)
+            const startWeekOfMonth = Math.ceil(startDayOfMonth / 7);
+            const currentWeekOfMonth = Math.ceil(currentDayOfMonth / 7);
+            shouldInclude = startWeekOfMonth === currentWeekOfMonth;
+          }
+        }
+        
+        if (!shouldInclude) continue;
         
         // Check if there's an exception for this date
         if (exceptionKeys.has(`${pattern.id}-${dateStr}`)) continue;
@@ -367,7 +397,7 @@ export function StaffScheduleManager() {
         const { error } = await supabase.from("recurring_shift_patterns").insert({
           user_id: data.user_id,
           client_name: data.client_name,
-          days_of_week: data.selected_days,
+          days_of_week: data.recurrence_interval === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : data.selected_days,
           start_time: data.start_time,
           end_time: data.end_time,
           hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
@@ -376,7 +406,8 @@ export function StaffScheduleManager() {
           notes: data.notes || null,
           start_date: data.start_date,
           end_date: null, // null = indefinite
-          created_by: userData.user.id
+          created_by: userData.user.id,
+          recurrence_interval: data.recurrence_interval
         });
 
         if (error) throw error;
@@ -503,7 +534,7 @@ export function StaffScheduleManager() {
         .update({
           user_id: data.user_id,
           client_name: data.client_name,
-          days_of_week: data.selected_days,
+          days_of_week: data.recurrence_interval === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : data.selected_days,
           start_time: data.start_time,
           end_time: data.end_time,
           hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
@@ -511,7 +542,8 @@ export function StaffScheduleManager() {
           is_overtime: data.is_overtime,
           notes: data.notes || null,
           start_date: data.start_date,
-          end_date: data.end_date || null
+          end_date: data.end_date || null,
+          recurrence_interval: data.recurrence_interval
         })
         .eq("id", data.id);
 
@@ -620,7 +652,8 @@ export function StaffScheduleManager() {
       notes: "",
       hourly_rate: "",
       currency: "GBP",
-      start_date: format(new Date(), "yyyy-MM-dd")
+      start_date: format(new Date(), "yyyy-MM-dd"),
+      recurrence_interval: "weekly"
     });
   };
 
@@ -658,7 +691,8 @@ export function StaffScheduleManager() {
       hourly_rate: pattern.hourly_rate?.toString() || "",
       currency: pattern.currency,
       start_date: pattern.start_date,
-      end_date: pattern.end_date || ""
+      end_date: pattern.end_date || "",
+      recurrence_interval: pattern.recurrence_interval || "weekly"
     });
     setIsEditPatternDialogOpen(true);
   };
@@ -895,22 +929,51 @@ export function StaffScheduleManager() {
                         <p className="text-xs text-muted-foreground mt-1">No clients found. Add clients in the system first.</p>
                       )}
                     </div>
+                    
+                    {/* Recurrence Interval */}
                     <div>
-                      <Label>Select Days</Label>
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {DAYS_OF_WEEK.map(day => (
-                          <Button
-                            key={day.value}
-                            type="button"
-                            variant={recurringForm.selected_days.includes(day.value) ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => toggleRecurringDay(day.value)}
-                          >
-                            {day.label}
-                          </Button>
-                        ))}
-                      </div>
+                      <Label>Recurrence Pattern</Label>
+                      <Select 
+                        value={recurringForm.recurrence_interval} 
+                        onValueChange={v => setRecurringForm(p => ({ ...p, recurrence_interval: v as 'daily' | 'weekly' | 'biweekly' | 'monthly' }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-background z-50">
+                          <SelectItem value="daily">Every day</SelectItem>
+                          <SelectItem value="weekly">Every week</SelectItem>
+                          <SelectItem value="biweekly">Every other week</SelectItem>
+                          <SelectItem value="monthly">Every month (same week)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {recurringForm.recurrence_interval === 'daily' && 'The shift will repeat every single day'}
+                        {recurringForm.recurrence_interval === 'weekly' && 'The shift will repeat on selected days every week'}
+                        {recurringForm.recurrence_interval === 'biweekly' && 'The shift will repeat on selected days every other week'}
+                        {recurringForm.recurrence_interval === 'monthly' && 'The shift will repeat on selected days in the same week of each month'}
+                      </p>
                     </div>
+
+                    {/* Select Days - hide for daily recurrence */}
+                    {recurringForm.recurrence_interval !== 'daily' && (
+                      <div>
+                        <Label>Select Days</Label>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {DAYS_OF_WEEK.map(day => (
+                            <Button
+                              key={day.value}
+                              type="button"
+                              variant={recurringForm.selected_days.includes(day.value) ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => toggleRecurringDay(day.value)}
+                            >
+                              {day.label}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <Label>Start Time</Label>
@@ -1039,7 +1102,7 @@ export function StaffScheduleManager() {
                     </div>
                     <Button 
                       onClick={() => createRecurringScheduleMutation.mutate(recurringForm)}
-                      disabled={!recurringForm.user_id || !recurringForm.client_name || recurringForm.selected_days.length === 0}
+                      disabled={!recurringForm.user_id || !recurringForm.client_name || (recurringForm.recurrence_interval !== 'daily' && recurringForm.selected_days.length === 0)}
                       className="w-full"
                     >
                       {recurringForm.is_indefinite ? (
@@ -1416,22 +1479,51 @@ export function StaffScheduleManager() {
                 </SelectContent>
               </Select>
             </div>
+            
+            {/* Recurrence Interval */}
             <div>
-              <Label>Select Days</Label>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {DAYS_OF_WEEK.map(day => (
-                  <Button
-                    key={day.value}
-                    type="button"
-                    variant={editPatternForm.selected_days.includes(day.value) ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => toggleEditPatternDay(day.value)}
-                  >
-                    {day.label}
-                  </Button>
-                ))}
-              </div>
+              <Label>Recurrence Pattern</Label>
+              <Select 
+                value={editPatternForm.recurrence_interval} 
+                onValueChange={v => setEditPatternForm(p => ({ ...p, recurrence_interval: v as 'daily' | 'weekly' | 'biweekly' | 'monthly' }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-background z-50">
+                  <SelectItem value="daily">Every day</SelectItem>
+                  <SelectItem value="weekly">Every week</SelectItem>
+                  <SelectItem value="biweekly">Every other week</SelectItem>
+                  <SelectItem value="monthly">Every month (same week)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                {editPatternForm.recurrence_interval === 'daily' && 'The shift will repeat every single day'}
+                {editPatternForm.recurrence_interval === 'weekly' && 'The shift will repeat on selected days every week'}
+                {editPatternForm.recurrence_interval === 'biweekly' && 'The shift will repeat on selected days every other week'}
+                {editPatternForm.recurrence_interval === 'monthly' && 'The shift will repeat on selected days in the same week of each month'}
+              </p>
             </div>
+
+            {/* Select Days - hide for daily recurrence */}
+            {editPatternForm.recurrence_interval !== 'daily' && (
+              <div>
+                <Label>Select Days</Label>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {DAYS_OF_WEEK.map(day => (
+                    <Button
+                      key={day.value}
+                      type="button"
+                      variant={editPatternForm.selected_days.includes(day.value) ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => toggleEditPatternDay(day.value)}
+                    >
+                      {day.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Start Time</Label>
@@ -1522,7 +1614,7 @@ export function StaffScheduleManager() {
             </Button>
             <Button 
               onClick={() => editingPattern && updatePatternMutation.mutate({ ...editPatternForm, id: editingPattern.id })}
-              disabled={!editPatternForm.user_id || !editPatternForm.client_name || editPatternForm.selected_days.length === 0 || updatePatternMutation.isPending}
+              disabled={!editPatternForm.user_id || !editPatternForm.client_name || (editPatternForm.recurrence_interval !== 'daily' && editPatternForm.selected_days.length === 0) || updatePatternMutation.isPending}
             >
               {updatePatternMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>

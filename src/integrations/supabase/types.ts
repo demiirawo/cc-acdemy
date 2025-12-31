@@ -793,6 +793,7 @@ export type Database = {
           id: string
           is_overtime: boolean
           notes: string | null
+          recurrence_interval: string
           start_date: string
           start_time: string
           updated_at: string
@@ -810,6 +811,7 @@ export type Database = {
           id?: string
           is_overtime?: boolean
           notes?: string | null
+          recurrence_interval?: string
           start_date: string
           start_time: string
           updated_at?: string
@@ -827,6 +829,7 @@ export type Database = {
           id?: string
           is_overtime?: boolean
           notes?: string | null
+          recurrence_interval?: string
           start_date?: string
           start_time?: string
           updated_at?: string
