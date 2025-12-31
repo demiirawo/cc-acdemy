@@ -42,3 +42,6 @@ verify_jwt = false
 
 [functions.get-user-profiles]
 verify_jwt = true
+
+[functions.get-exchange-rates]
+verify_jwt = false
