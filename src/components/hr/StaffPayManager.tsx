@@ -11,8 +11,27 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles } from "lucide-react";
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO } from "date-fns";
+
+// Nigerian Public Holidays for 2025
+const NIGERIAN_PUBLIC_HOLIDAYS_2025 = [
+  { date: "2025-01-01", name: "New Year's Day" },
+  { date: "2025-03-30", name: "Eid-el-Fitr (Estimated)" },
+  { date: "2025-03-31", name: "Eid-el-Fitr Holiday (Estimated)" },
+  { date: "2025-04-18", name: "Good Friday" },
+  { date: "2025-04-21", name: "Easter Monday" },
+  { date: "2025-05-01", name: "Workers' Day" },
+  { date: "2025-05-27", name: "Children's Day" },
+  { date: "2025-06-06", name: "Eid-el-Kabir (Estimated)" },
+  { date: "2025-06-07", name: "Eid-el-Kabir Holiday (Estimated)" },
+  { date: "2025-06-12", name: "Democracy Day" },
+  { date: "2025-09-05", name: "Eid-el-Maulud (Estimated)" },
+  { date: "2025-10-01", name: "Independence Day" },
+  { date: "2025-12-25", name: "Christmas Day" },
+  { date: "2025-12-26", name: "Boxing Day" },
+];
 
 interface PayRecord {
   id: string;
@@ -753,6 +772,53 @@ export function StaffPayManager() {
           </CardContent>
         </Card>
       )}
+
+      {/* Public Holidays Accordion */}
+      <Card>
+        <CardContent className="p-4">
+          <Accordion type="single" collapsible className="w-full">
+            <AccordionItem value="public-holidays" className="border-none">
+              <AccordionTrigger className="hover:no-underline py-0">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-amber-500" />
+                  <span className="font-medium">Nigerian Public Holidays 2025</span>
+                  <Badge variant="secondary" className="ml-2">1.5x Overtime Rate</Badge>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="pt-4">
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    Staff working on any of these public holidays are entitled to overtime pay at <strong>1.5× their usual hourly rate</strong>.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {NIGERIAN_PUBLIC_HOLIDAYS_2025.map((holiday) => {
+                      const holidayDate = parseISO(holiday.date);
+                      const isPast = holidayDate < new Date();
+                      
+                      return (
+                        <div 
+                          key={holiday.date} 
+                          className={`flex items-center justify-between p-2 rounded-md border ${
+                            isPast ? 'bg-muted/30 text-muted-foreground' : 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800'
+                          }`}
+                        >
+                          <span className="text-sm font-medium">{holiday.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {format(holidayDate, 'dd MMM')}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground italic">
+                    Note: Islamic holiday dates are estimated and may vary based on moon sighting.
+                  </p>
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </CardContent>
+      </Card>
 
       {/* Payroll Table */}
       <Card>
