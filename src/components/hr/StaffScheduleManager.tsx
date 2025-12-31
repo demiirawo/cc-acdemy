@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
@@ -93,22 +94,11 @@ const DAYS_OF_WEEK = [
 export function StaffScheduleManager() {
   const queryClient = useQueryClient();
   const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
-  const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
-  const [isOvertimeDialogOpen, setIsOvertimeDialogOpen] = useState(false);
   const [isRecurringDialogOpen, setIsRecurringDialogOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; isPattern: boolean; patternId?: string } | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<string>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("staff");
-  
-  // Schedule form state
-  const [scheduleForm, setScheduleForm] = useState({
-    user_id: "",
-    client_name: "",
-    start_datetime: "",
-    end_datetime: "",
-    notes: "",
-    hourly_rate: "",
-    currency: "GBP"
-  });
 
   // Recurring schedule form state
   const [recurringForm, setRecurringForm] = useState({
@@ -124,16 +114,6 @@ export function StaffScheduleManager() {
     hourly_rate: "",
     currency: "GBP",
     start_date: format(new Date(), "yyyy-MM-dd")
-  });
-
-  // Overtime form state
-  const [overtimeForm, setOvertimeForm] = useState({
-    user_id: "",
-    overtime_date: "",
-    hours: "",
-    hourly_rate: "",
-    currency: "GBP",
-    notes: ""
   });
 
   const weekDays = useMemo(() => {
@@ -307,36 +287,6 @@ export function StaffScheduleManager() {
     return Array.from(clients).sort();
   }, [schedules]);
 
-  // Create schedule mutation
-  const createScheduleMutation = useMutation({
-    mutationFn: async (data: typeof scheduleForm) => {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) throw new Error("Not authenticated");
-
-      const { error } = await supabase.from("staff_schedules").insert({
-        user_id: data.user_id,
-        client_name: data.client_name,
-        start_datetime: data.start_datetime,
-        end_datetime: data.end_datetime,
-        notes: data.notes || null,
-        hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
-        currency: data.currency,
-        created_by: userData.user.id
-      });
-      
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["staff-schedules"] });
-      setIsScheduleDialogOpen(false);
-      resetScheduleForm();
-      toast.success("Schedule created successfully");
-    },
-    onError: (error) => {
-      toast.error("Failed to create schedule: " + error.message);
-    }
-  });
-
   // Create recurring schedule mutation
   const createRecurringScheduleMutation = useMutation({
     mutationFn: async (data: typeof recurringForm) => {
@@ -476,35 +426,6 @@ export function StaffScheduleManager() {
     }
   });
 
-  // Create overtime mutation
-  const createOvertimeMutation = useMutation({
-    mutationFn: async (data: typeof overtimeForm) => {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) throw new Error("Not authenticated");
-
-      const { error } = await supabase.from("staff_overtime").insert({
-        user_id: data.user_id,
-        overtime_date: data.overtime_date,
-        hours: parseFloat(data.hours),
-        hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
-        currency: data.currency,
-        notes: data.notes || null,
-        created_by: userData.user.id
-      });
-      
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["staff-overtime"] });
-      setIsOvertimeDialogOpen(false);
-      resetOvertimeForm();
-      toast.success("Overtime entry added successfully");
-    },
-    onError: (error) => {
-      toast.error("Failed to add overtime: " + error.message);
-    }
-  });
-
   // Delete schedule mutation
   const deleteScheduleMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -529,16 +450,33 @@ export function StaffScheduleManager() {
     }
   });
 
-  const resetScheduleForm = () => {
-    setScheduleForm({
-      user_id: "",
-      client_name: "",
-      start_datetime: "",
-      end_datetime: "",
-      notes: "",
-      hourly_rate: "",
-      currency: "GBP"
-    });
+  // Handler for delete button clicks - shows confirmation for pattern-based shifts
+  const handleDeleteClick = (scheduleId: string) => {
+    const isFromPattern = scheduleId.startsWith('pattern-');
+    if (isFromPattern) {
+      // Extract pattern ID from the schedule ID (format: pattern-{patternId}-{date})
+      const patternId = scheduleId.split('-')[1];
+      setDeleteTarget({ id: scheduleId, isPattern: true, patternId });
+      setIsDeleteConfirmOpen(true);
+    } else {
+      // Direct delete for non-pattern schedules
+      deleteScheduleMutation.mutate(scheduleId);
+    }
+  };
+
+  const handleDeleteConfirm = (deleteEntireSeries: boolean) => {
+    if (!deleteTarget) return;
+    
+    if (deleteEntireSeries && deleteTarget.patternId) {
+      // Delete the entire pattern
+      deletePatternMutation.mutate(deleteTarget.patternId);
+    }
+    // Note: For "just this shift" on a pattern, we'd need to create an exception - 
+    // but for now patterns are virtual so we can't delete individual instances without tracking exceptions
+    // We could implement this later with an exceptions table
+    
+    setIsDeleteConfirmOpen(false);
+    setDeleteTarget(null);
   };
 
   const resetRecurringForm = () => {
@@ -555,17 +493,6 @@ export function StaffScheduleManager() {
       hourly_rate: "",
       currency: "GBP",
       start_date: format(new Date(), "yyyy-MM-dd")
-    });
-  };
-
-  const resetOvertimeForm = () => {
-    setOvertimeForm({
-      user_id: "",
-      overtime_date: "",
-      hours: "",
-      hourly_rate: "",
-      currency: "GBP",
-      notes: ""
     });
   };
 
@@ -697,109 +624,12 @@ export function StaffScheduleManager() {
                 </Select>
               )}
 
-              <Dialog open={isScheduleDialogOpen} onOpenChange={setIsScheduleDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Schedule
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Add Schedule</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div>
-                      <Label>Staff Member</Label>
-                      <Select value={scheduleForm.user_id} onValueChange={v => setScheduleForm(p => ({ ...p, user_id: v }))}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select staff" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {staffMembers.map(staff => (
-                            <SelectItem key={staff.user_id} value={staff.user_id}>
-                              {staff.display_name || staff.email}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label>Client Name</Label>
-                      <Input
-                        value={scheduleForm.client_name}
-                        onChange={e => setScheduleForm(p => ({ ...p, client_name: e.target.value }))}
-                        placeholder="Enter client name"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label>Start Date & Time</Label>
-                        <Input
-                          type="datetime-local"
-                          value={scheduleForm.start_datetime}
-                          onChange={e => setScheduleForm(p => ({ ...p, start_datetime: e.target.value }))}
-                        />
-                      </div>
-                      <div>
-                        <Label>End Date & Time</Label>
-                        <Input
-                          type="datetime-local"
-                          value={scheduleForm.end_datetime}
-                          onChange={e => setScheduleForm(p => ({ ...p, end_datetime: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label>Hourly Rate (optional)</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={scheduleForm.hourly_rate}
-                          onChange={e => setScheduleForm(p => ({ ...p, hourly_rate: e.target.value }))}
-                          placeholder="0.00"
-                        />
-                      </div>
-                      <div>
-                        <Label>Currency</Label>
-                        <Select value={scheduleForm.currency} onValueChange={v => setScheduleForm(p => ({ ...p, currency: v }))}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="GBP">GBP</SelectItem>
-                            <SelectItem value="USD">USD</SelectItem>
-                            <SelectItem value="EUR">EUR</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div>
-                      <Label>Notes (optional)</Label>
-                      <Textarea
-                        value={scheduleForm.notes}
-                        onChange={e => setScheduleForm(p => ({ ...p, notes: e.target.value }))}
-                        placeholder="Add any notes..."
-                      />
-                    </div>
-                    <Button 
-                      onClick={() => createScheduleMutation.mutate(scheduleForm)}
-                      disabled={!scheduleForm.user_id || !scheduleForm.client_name || !scheduleForm.start_datetime || !scheduleForm.end_datetime}
-                      className="w-full"
-                    >
-                      Create Schedule
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
-
               {/* Recurring Schedule Dialog */}
               <Dialog open={isRecurringDialogOpen} onOpenChange={setIsRecurringDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline">
+                  <Button>
                     <Repeat className="h-4 w-4 mr-2" />
-                    Recurring
+                    Add Schedule
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
@@ -999,97 +829,6 @@ export function StaffScheduleManager() {
                   </div>
                 </DialogContent>
               </Dialog>
-
-              <Dialog open={isOvertimeDialogOpen} onOpenChange={setIsOvertimeDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline">
-                    <Clock className="h-4 w-4 mr-2" />
-                    Add Overtime
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Add Overtime Entry</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4">
-                    <div>
-                      <Label>Staff Member</Label>
-                      <Select value={overtimeForm.user_id} onValueChange={v => setOvertimeForm(p => ({ ...p, user_id: v }))}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select staff" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {staffMembers.map(staff => (
-                            <SelectItem key={staff.user_id} value={staff.user_id}>
-                              {staff.display_name || staff.email}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label>Date</Label>
-                        <Input
-                          type="date"
-                          value={overtimeForm.overtime_date}
-                          onChange={e => setOvertimeForm(p => ({ ...p, overtime_date: e.target.value }))}
-                        />
-                      </div>
-                      <div>
-                        <Label>Hours</Label>
-                        <Input
-                          type="number"
-                          step="0.5"
-                          value={overtimeForm.hours}
-                          onChange={e => setOvertimeForm(p => ({ ...p, hours: e.target.value }))}
-                          placeholder="0"
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label>Hourly Rate (optional)</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={overtimeForm.hourly_rate}
-                          onChange={e => setOvertimeForm(p => ({ ...p, hourly_rate: e.target.value }))}
-                          placeholder="0.00"
-                        />
-                      </div>
-                      <div>
-                        <Label>Currency</Label>
-                        <Select value={overtimeForm.currency} onValueChange={v => setOvertimeForm(p => ({ ...p, currency: v }))}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="GBP">GBP</SelectItem>
-                            <SelectItem value="USD">USD</SelectItem>
-                            <SelectItem value="EUR">EUR</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-                    <div>
-                      <Label>Notes (optional)</Label>
-                      <Textarea
-                        value={overtimeForm.notes}
-                        onChange={e => setOvertimeForm(p => ({ ...p, notes: e.target.value }))}
-                        placeholder="Reason for overtime..."
-                      />
-                    </div>
-                    <Button 
-                      onClick={() => createOvertimeMutation.mutate(overtimeForm)}
-                      disabled={!overtimeForm.user_id || !overtimeForm.overtime_date || !overtimeForm.hours}
-                      className="w-full"
-                    >
-                      Add Overtime
-                    </Button>
-                  </div>
-                </DialogContent>
-              </Dialog>
             </div>
           </div>
         </CardContent>
@@ -1172,16 +911,14 @@ export function StaffScheduleManager() {
                               {schedule.notes && (
                                 <div className="text-muted-foreground italic truncate">{schedule.notes}</div>
                               )}
-                              {!isFromPattern && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
-                                  onClick={() => deleteScheduleMutation.mutate(schedule.id)}
-                                >
-                                  <Trash2 className="h-3 w-3 text-destructive" />
-                                </Button>
-                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
+                                onClick={() => handleDeleteClick(schedule.id)}
+                              >
+                                <Trash2 className="h-3 w-3 text-destructive" />
+                              </Button>
                             </div>
                           );
                         })}
@@ -1271,16 +1008,14 @@ export function StaffScheduleManager() {
                               {schedule.notes && (
                                 <div className="text-muted-foreground italic truncate">{schedule.notes}</div>
                               )}
-                              {!isFromPattern && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
-                                  onClick={() => deleteScheduleMutation.mutate(schedule.id)}
-                                >
-                                  <Trash2 className="h-3 w-3 text-destructive" />
-                                </Button>
-                              )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
+                                onClick={() => handleDeleteClick(schedule.id)}
+                              >
+                                <Trash2 className="h-3 w-3 text-destructive" />
+                              </Button>
                             </div>
                           );
                         })}
@@ -1371,6 +1106,27 @@ export function StaffScheduleManager() {
           </CardContent>
         </Card>
       )}
+
+      {/* Delete Confirmation Dialog for Recurring Shifts */}
+      <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Recurring Shift</AlertDialogTitle>
+            <AlertDialogDescription>
+              This shift is part of a recurring pattern. What would you like to do?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => handleDeleteConfirm(true)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete Entire Series
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
