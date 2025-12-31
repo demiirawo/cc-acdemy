@@ -74,6 +74,29 @@ const REQUEST_TYPE_INFO = {
   }
 };
 
+// Types available for new requests (excludes legacy 'holiday')
+const SELECTABLE_REQUEST_TYPES = ['overtime_standard', 'overtime_double_up', 'holiday_paid', 'holiday_unpaid', 'shift_swap'] as const;
+
+// Legacy type info for displaying old requests
+const LEGACY_REQUEST_TYPE_INFO: Record<string, { label: string; description: string; icon: typeof Clock; color: string }> = {
+  holiday: {
+    label: "Holiday / Time Off",
+    description: "Request time off from work.",
+    icon: Palmtree,
+    color: "text-green-600"
+  }
+};
+
+// Helper to get type info including legacy types
+const getRequestTypeInfo = (type: string) => {
+  return REQUEST_TYPE_INFO[type as keyof typeof REQUEST_TYPE_INFO] || LEGACY_REQUEST_TYPE_INFO[type] || {
+    label: type,
+    description: "",
+    icon: Clock,
+    color: "text-muted-foreground"
+  };
+};
+
 export function StaffRequestForm() {
   const { user } = useAuth();
   const { isAdmin } = useUserRole();
@@ -349,14 +372,17 @@ export function StaffRequestForm() {
                 <SelectValue placeholder="Select request type..." />
               </SelectTrigger>
               <SelectContent className="bg-background">
-                {Object.entries(REQUEST_TYPE_INFO).map(([key, info]) => (
-                  <SelectItem key={key} value={key}>
-                    <div className="flex items-center gap-2">
-                      <info.icon className={cn("h-4 w-4", info.color)} />
-                      {info.label}
-                    </div>
-                  </SelectItem>
-                ))}
+                {SELECTABLE_REQUEST_TYPES.map((key) => {
+                  const info = REQUEST_TYPE_INFO[key];
+                  return (
+                    <SelectItem key={key} value={key}>
+                      <div className="flex items-center gap-2">
+                        <info.icon className={cn("h-4 w-4", info.color)} />
+                        {info.label}
+                      </div>
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
@@ -484,7 +510,7 @@ export function StaffRequestForm() {
           )}
 
           {/* Manual days input for non-holiday requests */}
-          {requestType && requestType !== 'holiday' && (
+          {requestType && !['holiday', 'holiday_paid', 'holiday_unpaid'].includes(requestType) && (
             <div className="space-y-2">
               <Label>How many days are you requesting? <span className="text-destructive">*</span></Label>
               <Input 
@@ -528,7 +554,8 @@ export function StaffRequestForm() {
           ) : (
             <div className="space-y-3">
               {myRequests.map(request => {
-                const typeInfo = REQUEST_TYPE_INFO[request.request_type];
+                const typeInfo = getRequestTypeInfo(request.request_type);
+                const TypeIcon = typeInfo.icon;
                 const isMyRequest = request.user_id === user?.id;
                 
                 return (
@@ -536,7 +563,7 @@ export function StaffRequestForm() {
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1 space-y-1">
                         <div className="flex items-center gap-2">
-                          <typeInfo.icon className={cn("h-4 w-4", typeInfo.color)} />
+                          <TypeIcon className={cn("h-4 w-4", typeInfo.color)} />
                           <span className="font-medium">{typeInfo.label}</span>
                           {getStatusBadge(request.status)}
                         </div>
