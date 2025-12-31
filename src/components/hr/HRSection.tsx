@@ -6,11 +6,12 @@ import { StaffPayManager } from "./StaffPayManager";
 import { HRProfileManager } from "./HRProfileManager";
 import { MyHRProfile } from "./MyHRProfile";
 import { StaffScheduleManager } from "./StaffScheduleManager";
-import { Calendar, DollarSign, Users, User, CalendarClock } from "lucide-react";
+import { StaffRequestForm } from "./StaffRequestForm";
+import { Calendar, DollarSign, Users, User, CalendarClock, Send } from "lucide-react";
 
 export function HRSection() {
   const { isAdmin } = useUserRole();
-  const [activeTab, setActiveTab] = useState(isAdmin ? "profiles" : "my-profile");
+  const [activeTab, setActiveTab] = useState(isAdmin ? "profiles" : "requests");
 
   return (
     <div className="flex-1 overflow-auto p-6">
@@ -18,12 +19,12 @@ export function HRSection() {
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-foreground">HR Management</h1>
           <p className="text-muted-foreground mt-1">
-            {isAdmin ? "Manage staff holidays, pay, schedules and profiles" : "View your HR profile and records"}
+            {isAdmin ? "Manage staff holidays, pay, schedules and profiles" : "View your HR profile, submit requests and view records"}
           </p>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-5' : 'grid-cols-1'} mb-6`}>
+          <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-6' : 'grid-cols-2'} mb-6`}>
             {isAdmin && (
               <>
                 <TabsTrigger value="profiles" className="flex items-center gap-2">
@@ -44,6 +45,10 @@ export function HRSection() {
                 </TabsTrigger>
               </>
             )}
+            <TabsTrigger value="requests" className="flex items-center gap-2">
+              <Send className="h-4 w-4" />
+              Requests
+            </TabsTrigger>
             <TabsTrigger value="my-profile" className="flex items-center gap-2">
               <User className="h-4 w-4" />
               My HR Profile
@@ -66,6 +71,10 @@ export function HRSection() {
               </TabsContent>
             </>
           )}
+          
+          <TabsContent value="requests" className="mt-0">
+            <StaffRequestForm />
+          </TabsContent>
           
           <TabsContent value="my-profile" className="mt-0">
             <MyHRProfile />
