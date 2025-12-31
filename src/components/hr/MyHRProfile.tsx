@@ -7,8 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw } from "lucide-react";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay } from "date-fns";
 interface MonthlyPayPreview {
   month: Date;
@@ -82,37 +81,6 @@ interface PublicHoliday {
   date: string;
   name: string;
 }
-
-interface StaffRequest {
-  id: string;
-  request_type: string;
-  start_date: string;
-  end_date: string;
-  days_requested: number;
-  status: string;
-  details: string | null;
-  review_notes: string | null;
-  created_at: string;
-}
-
-interface RecurringBonus {
-  id: string;
-  user_id: string;
-  amount: number;
-  currency: string;
-  description: string | null;
-  start_date: string;
-  end_date: string | null;
-}
-
-const REQUEST_TYPES: Record<string, string> = {
-  'overtime_standard': 'Overtime (Standard)',
-  'overtime_double_up': 'Overtime (Double Up)',
-  'holiday': 'Holiday',
-  'shift_swap': 'Shift Swap',
-  'holiday_paid': 'Holiday (Paid)',
-  'holiday_unpaid': 'Holiday (Unpaid)'
-};
 const CURRENCIES: Record<string, string> = {
   'GBP': '£',
   'USD': '$',
@@ -175,8 +143,6 @@ export function MyHRProfile() {
   const [recurringPatterns, setRecurringPatterns] = useState<RecurringShiftPattern[]>([]);
   const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
-  const [staffRequests, setStaffRequests] = useState<StaffRequest[]>([]);
-  const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
   useEffect(() => {
     if (user) {
@@ -232,20 +198,6 @@ export function MyHRProfile() {
         } = await supabase.from('shift_pattern_exceptions').select('id, pattern_id, exception_date').in('pattern_id', patternIds);
         setPatternExceptions(exceptions || []);
       }
-
-      // Fetch staff requests for this user
-      const {
-        data: requestsData
-      } = await supabase.from('staff_requests').select('*').eq('user_id', user?.id).order('created_at', {
-        ascending: false
-      });
-      setStaffRequests(requestsData || []);
-
-      // Fetch recurring bonuses for this user
-      const {
-        data: recurringBonusesData
-      } = await supabase.from('recurring_bonuses').select('*').eq('user_id', user?.id);
-      setRecurringBonuses(recurringBonusesData || []);
 
       // Fetch public holidays for next 12 months (current year + next year if needed)
       await fetchPublicHolidays();
@@ -400,17 +352,7 @@ export function MyHRProfile() {
         const payDate = parseISO(r.pay_date);
         return payDate >= monthStart && payDate <= monthEnd;
       });
-      const payRecordBonuses = monthRecords.filter(r => r.record_type === 'bonus').reduce((sum, r) => sum + r.amount, 0);
-      
-      // Calculate recurring bonuses for this month
-      const activeRecurringBonuses = recurringBonuses.filter(rb => {
-        const bonusStart = parseISO(rb.start_date);
-        const bonusEnd = rb.end_date ? parseISO(rb.end_date) : null;
-        // Bonus is active if month falls within its range
-        return bonusStart <= monthEnd && (!bonusEnd || bonusEnd >= monthStart);
-      }).reduce((sum, rb) => sum + rb.amount, 0);
-      
-      const bonuses = payRecordBonuses + activeRecurringBonuses;
+      const bonuses = monthRecords.filter(r => r.record_type === 'bonus').reduce((sum, r) => sum + r.amount, 0);
       const deductions = monthRecords.filter(r => r.record_type === 'deduction').reduce((sum, r) => sum + r.amount, 0);
       const totalPay = monthlyBaseSalary + bonuses + holidayOvertimeBonus - deductions;
 
@@ -443,7 +385,7 @@ export function MyHRProfile() {
       });
     }
     return previews;
-  }, [hrProfile, staffSchedules, recurringPatterns, patternExceptions, publicHolidays, payRecords, recurringBonuses]);
+  }, [hrProfile, staffSchedules, recurringPatterns, patternExceptions, publicHolidays, payRecords]);
   const toggleMonth = (monthKey: string) => {
     setExpandedMonths(prev => {
       const next = new Set(prev);
@@ -553,192 +495,210 @@ export function MyHRProfile() {
       </div>
 
       {/* 12-Month Pay Preview Section */}
-      {monthlyPreviews.length > 0 && (
-        <Accordion type="single" collapsible className="w-full">
-          <AccordionItem value="pay-preview" className="border-2 border-primary/20 rounded-lg">
-            <AccordionTrigger className="px-6 py-4 hover:no-underline">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-primary" />
-                <span className="text-lg font-semibold">12-Month Pay Preview</span>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="px-6 pb-6">
-              <p className="text-sm text-muted-foreground mb-4">Estimated pay for the next 12 months (subject to final processing)</p>
-              <div className="space-y-2">
-                {monthlyPreviews.map(preview => {
-                  const monthKey = format(preview.month, 'yyyy-MM');
-                  const isExpanded = expandedMonths.has(monthKey);
-                  const isCurrentMonth = format(new Date(), 'yyyy-MM') === monthKey;
-                  const getStatusBadge = (status: 'pending' | 'ready' | 'paid') => {
-                    if (status === 'paid') {
-                      return <Badge variant="outline" className="bg-success/20 text-success border-success">
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              Paid
-                            </Badge>;
-                    } else if (status === 'ready') {
-                      return <Badge variant="outline" className="bg-amber-500/20 text-amber-600 border-amber-500">
-                              <Clock className="h-3 w-3 mr-1" />
-                              Ready
-                            </Badge>;
-                    } else {
-                      return <Badge variant="outline" className="bg-muted text-muted-foreground border-muted-foreground">
-                              <AlertCircle className="h-3 w-3 mr-1" />
-                              Pending
-                            </Badge>;
-                    }
-                  };
-                  return <Collapsible key={monthKey} open={isExpanded} onOpenChange={() => toggleMonth(monthKey)}>
-                          <CollapsibleTrigger className="w-full">
-                            <div className={`flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors ${isCurrentMonth ? 'border-primary bg-primary/5' : ''}`}>
-                              <div className="flex items-center gap-3">
-                                {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                <span className="font-medium">{preview.monthLabel}</span>
-                                {isCurrentMonth && <Badge variant="outline" className="text-xs">Current</Badge>}
-                              </div>
-                              <div className="flex items-center gap-3">
-                                {getStatusBadge(preview.payrollStatus)}
-                                <span className="font-bold text-lg">
-                                  {formatCurrency(preview.totalPay, preview.currency)}
-                                </span>
-                              </div>
-                            </div>
-                          </CollapsibleTrigger>
-                          <CollapsibleContent>
-                            <div className="px-4 pb-4 pt-2 ml-7 border-l-2 border-muted">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* Left column - Breakdown */}
-                                <div className="space-y-3">
-                                  <div className="flex justify-between items-center py-2 border-b">
-                                    <span className="text-muted-foreground">Base Salary</span>
-                                    <span className="font-medium">{formatCurrency(preview.monthlyBaseSalary, preview.currency)}</span>
-                                  </div>
-                                  
-                                  {preview.bonuses > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Bonuses</span>
-                                      <span className="font-medium text-success">+{formatCurrency(preview.bonuses, preview.currency)}</span>
-                                    </div>}
-                                  
-                                  {preview.holidayOvertimeBonus > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      
-                                      <span className="font-medium text-amber-600">+{formatCurrency(preview.holidayOvertimeBonus, preview.currency)}</span>
-                                    </div>}
-                                  
-                                  {preview.deductions > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Deductions</span>
-                                      <span className="font-medium text-destructive">-{formatCurrency(preview.deductions, preview.currency)}</span>
-                                    </div>}
-                                  
-                                  <div className="flex justify-between items-center py-3 bg-primary/5 rounded-lg px-3 mt-2">
-                                    <span className="font-semibold">Estimated Total</span>
-                                    <span className="font-bold text-lg">{formatCurrency(preview.totalPay, preview.currency)}</span>
-                                  </div>
-                                </div>
-
-                                {/* Right column - Holiday shifts details */}
-                                <div>
-                                  {preview.holidayShifts.length > 0 ? <div className="space-y-2">
-                                      <h4 className="font-medium text-sm text-muted-foreground mb-3">Public Holiday Shifts</h4>
-                                      {preview.holidayShifts.map((shift, idx) => <div key={idx} className="flex items-center gap-2 text-sm py-1.5 px-2 bg-amber-500/10 rounded">
-                                          <Calendar className="h-4 w-4 text-amber-600" />
-                                          <span>{format(parseISO(shift.date), 'dd MMM yyyy')}</span>
-                                          <span className="text-muted-foreground">-</span>
-                                          <span className="text-amber-600">{shift.holidayName}</span>
-                                        </div>)}
-                                    </div> : <div className="text-center py-6 text-muted-foreground">
-                                      <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                                      <p className="text-sm">No public holiday shifts this month</p>
-                                    </div>}
-                                </div>
-                              </div>
-                            </div>
-                          </CollapsibleContent>
-                        </Collapsible>;
-                })}
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-      )}
-
-      {/* My Requests Summary */}
-      <Accordion type="single" collapsible className="w-full">
-        <AccordionItem value="requests-summary" className="border-2 border-primary/20 rounded-lg">
-          <AccordionTrigger className="px-6 py-4 hover:no-underline">
+      {monthlyPreviews.length > 0 && <Card className="border-2 border-primary/20">
+          <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
-              <span className="text-lg font-semibold">My Requests</span>
-              {staffRequests.length > 0 && (
-                <Badge variant="secondary" className="ml-2">{staffRequests.length}</Badge>
-              )}
+              <TrendingUp className="h-5 w-5 text-primary" />
+              <CardTitle className="text-lg">12-Month Pay Preview</CardTitle>
             </div>
-          </AccordionTrigger>
-          <AccordionContent className="px-6 pb-6">
-            <p className="text-sm text-muted-foreground mb-4">Your submitted requests for holidays, overtime, shift swaps, etc.</p>
-            
-            {staffRequests.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>No requests found</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {staffRequests.map(request => {
-                  const getStatusBadge = (status: string) => {
-                    if (status === 'approved') {
-                      return <Badge variant="outline" className="bg-success/20 text-success border-success">
-                        <CheckCircle className="h-3 w-3 mr-1" />
-                        Approved
-                      </Badge>;
-                    } else if (status === 'rejected') {
-                      return <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive">
-                        <AlertCircle className="h-3 w-3 mr-1" />
-                        Rejected
-                      </Badge>;
-                    } else {
-                      return <Badge variant="outline" className="bg-amber-500/20 text-amber-600 border-amber-500">
-                        <Clock className="h-3 w-3 mr-1" />
-                        Pending
-                      </Badge>;
-                    }
-                  };
-
-                  const getTypeIcon = (type: string) => {
-                    if (type.includes('overtime')) return <Clock className="h-4 w-4 text-primary" />;
-                    if (type.includes('holiday')) return <Calendar className="h-4 w-4 text-primary" />;
-                    if (type === 'shift_swap') return <RefreshCw className="h-4 w-4 text-primary" />;
-                    return <FileText className="h-4 w-4 text-primary" />;
-                  };
-
-                  return (
-                    <div key={request.id} className="flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors">
+            <CardDescription>Estimated pay for the next 12 months (subject to final processing)</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {monthlyPreviews.map(preview => {
+          const monthKey = format(preview.month, 'yyyy-MM');
+          const isExpanded = expandedMonths.has(monthKey);
+          const isCurrentMonth = format(new Date(), 'yyyy-MM') === monthKey;
+          const getStatusBadge = (status: 'pending' | 'ready' | 'paid') => {
+            if (status === 'paid') {
+              return <Badge variant="outline" className="bg-success/20 text-success border-success">
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                      Paid
+                    </Badge>;
+            } else if (status === 'ready') {
+              return;
+            } else {
+              return <Badge variant="outline" className="bg-muted text-muted-foreground border-muted-foreground">
+                      <AlertCircle className="h-3 w-3 mr-1" />
+                      Pending
+                    </Badge>;
+            }
+          };
+          return <Collapsible key={monthKey} open={isExpanded} onOpenChange={() => toggleMonth(monthKey)}>
+                  <CollapsibleTrigger className="w-full">
+                    <div className={`flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors ${isCurrentMonth ? 'border-primary bg-primary/5' : ''}`}>
                       <div className="flex items-center gap-3">
-                        {getTypeIcon(request.request_type)}
-                        <div>
-                          <p className="font-medium">{REQUEST_TYPES[request.request_type] || request.request_type}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {format(parseISO(request.start_date), 'dd MMM yyyy')}
-                            {request.start_date !== request.end_date && ` - ${format(parseISO(request.end_date), 'dd MMM yyyy')}`}
-                            {request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`}
-                          </p>
-                          {request.details && (
-                            <p className="text-xs text-muted-foreground mt-1">{request.details}</p>
-                          )}
-                        </div>
+                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        <span className="font-medium">{preview.monthLabel}</span>
+                        {isCurrentMonth && <Badge variant="outline" className="text-xs">Current</Badge>}
                       </div>
                       <div className="flex items-center gap-3">
-                        {getStatusBadge(request.status)}
-                        <span className="text-xs text-muted-foreground">
-                          {format(parseISO(request.created_at), 'dd MMM yyyy')}
+                        {getStatusBadge(preview.payrollStatus)}
+                        <span className="font-bold text-lg">
+                          {formatCurrency(preview.totalPay, preview.currency)}
                         </span>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="px-4 pb-4 pt-2 ml-7 border-l-2 border-muted">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Left column - Breakdown */}
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center py-2 border-b">
+                            <span className="text-muted-foreground">Base Salary</span>
+                            <span className="font-medium">{formatCurrency(preview.monthlyBaseSalary, preview.currency)}</span>
+                          </div>
+                          
+                          {preview.bonuses > 0 && <div className="flex justify-between items-center py-2 border-b">
+                              <span className="text-muted-foreground">Bonuses</span>
+                              <span className="font-medium text-success">+{formatCurrency(preview.bonuses, preview.currency)}</span>
+                            </div>}
+                          
+                          {preview.holidayOvertimeBonus > 0 && <div className="flex justify-between items-center py-2 border-b">
+                              
+                              <span className="font-medium text-amber-600">+{formatCurrency(preview.holidayOvertimeBonus, preview.currency)}</span>
+                            </div>}
+                          
+                          {preview.deductions > 0 && <div className="flex justify-between items-center py-2 border-b">
+                              <span className="text-muted-foreground">Deductions</span>
+                              <span className="font-medium text-destructive">-{formatCurrency(preview.deductions, preview.currency)}</span>
+                            </div>}
+                          
+                          <div className="flex justify-between items-center py-3 bg-primary/5 rounded-lg px-3 mt-2">
+                            <span className="font-semibold">Estimated Total</span>
+                            <span className="font-bold text-lg">{formatCurrency(preview.totalPay, preview.currency)}</span>
+                          </div>
+                        </div>
 
+                        {/* Right column - Holiday shifts details */}
+                        <div>
+                          {preview.holidayShifts.length > 0 ? <div className="space-y-2">
+                              <h4 className="font-medium text-sm text-muted-foreground mb-3">Public Holiday Shifts</h4>
+                              {preview.holidayShifts.map((shift, idx) => <div key={idx} className="flex items-center gap-2 text-sm py-1.5 px-2 bg-amber-500/10 rounded">
+                                  <Calendar className="h-4 w-4 text-amber-600" />
+                                  <span>{format(parseISO(shift.date), 'dd MMM yyyy')}</span>
+                                  <span className="text-muted-foreground">-</span>
+                                  <span className="text-amber-600">{shift.holidayName}</span>
+                                </div>)}
+                            </div> : <div className="text-center py-6 text-muted-foreground">
+                              <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                              <p className="text-sm">No public holiday shifts this month</p>
+                            </div>}
+                        </div>
+                      </div>
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>;
+        })}
+          </CardContent>
+        </Card>}
+
+      {/* Detailed Information */}
+      <Tabs defaultValue="pay" className="w-full">
+        <TabsList>
+          <TabsTrigger value="pay" className="flex items-center gap-2">
+            <DollarSign className="h-4 w-4" />
+            My Pay Records
+          </TabsTrigger>
+          <TabsTrigger value="holidays" className="flex items-center gap-2">
+            <Calendar className="h-4 w-4" />
+            My Holidays/Absences
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="pay" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Pay Records</CardTitle>
+              <CardDescription>Your salary, bonuses, and deductions</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Pay Date</TableHead>
+                    <TableHead>Pay Period</TableHead>
+                    <TableHead>Reason/Description</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {payRecords.length === 0 ? <TableRow>
+                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                        No pay records found.
+                      </TableCell>
+                    </TableRow> : payRecords.map(record => {
+                  const typeInfo = RECORD_TYPES[record.record_type] || {
+                    label: record.record_type,
+                    positive: true
+                  };
+                  return <TableRow key={record.id}>
+                          <TableCell>
+                            <Badge variant={typeInfo.positive ? "default" : "destructive"}>
+                              {typeInfo.label}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className={typeInfo.positive ? "text-success font-medium" : "text-destructive font-medium"}>
+                            {typeInfo.positive ? '+' : '-'}{formatCurrency(record.amount, record.currency)}
+                          </TableCell>
+                          <TableCell>{format(new Date(record.pay_date), 'dd MMM yyyy')}</TableCell>
+                          <TableCell>
+                            {record.pay_period_start && record.pay_period_end ? `${format(new Date(record.pay_period_start), 'dd MMM')} - ${format(new Date(record.pay_period_end), 'dd MMM yyyy')}` : '-'}
+                          </TableCell>
+                          <TableCell className="max-w-[250px]">
+                            {record.description ? <span className={record.record_type === 'bonus' ? 'text-success' : record.record_type === 'deduction' ? 'text-destructive' : ''}>
+                                {record.description}
+                              </span> : '-'}
+                          </TableCell>
+                        </TableRow>;
+                })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="holidays" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Holidays & Absences</CardTitle>
+              <CardDescription>Your leave history</CardDescription>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Start Date</TableHead>
+                    <TableHead>End Date</TableHead>
+                    <TableHead>Days</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Notes</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {holidays.length === 0 ? <TableRow>
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                        No holiday/absence records found.
+                      </TableCell>
+                    </TableRow> : holidays.map(holiday => <TableRow key={holiday.id}>
+                        <TableCell>{ABSENCE_TYPES[holiday.absence_type] || holiday.absence_type}</TableCell>
+                        <TableCell>{format(new Date(holiday.start_date), 'dd MMM yyyy')}</TableCell>
+                        <TableCell>{format(new Date(holiday.end_date), 'dd MMM yyyy')}</TableCell>
+                        <TableCell>{holiday.days_taken}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className={holiday.status === 'approved' ? 'bg-success/20 text-success border-success' : holiday.status === 'rejected' ? 'bg-destructive/20 text-destructive border-destructive' : 'bg-warning/20 text-warning-foreground border-warning'}>
+                            {holiday.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="max-w-[200px] truncate">{holiday.notes || '-'}</TableCell>
+                      </TableRow>)}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>;
 }
