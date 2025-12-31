@@ -58,6 +58,11 @@ interface HRProfile {
   base_currency: string;
 }
 
+interface Client {
+  id: string;
+  name: string;
+}
+
 type ViewMode = "staff" | "client";
 
 const DAYS_OF_WEEK = [
@@ -98,6 +103,8 @@ export function StaffScheduleManager() {
     end_time: "17:00",
     selected_days: [] as number[],
     weeks_to_create: 4,
+    is_indefinite: false,
+    is_overtime: false,
     notes: "",
     hourly_rate: "",
     currency: "GBP"
@@ -119,6 +126,20 @@ export function StaffScheduleManager() {
       end: endOfWeek(currentWeekStart, { weekStartsOn: 1 })
     });
   }, [currentWeekStart]);
+
+  // Fetch clients from database
+  const { data: clients = [] } = useQuery({
+    queryKey: ["clients"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("clients")
+        .select("id, name")
+        .order("name");
+      
+      if (error) throw error;
+      return data as Client[];
+    }
+  });
 
   // Fetch staff members
   const { data: staffMembers = [] } = useQuery({
@@ -239,47 +260,89 @@ export function StaffScheduleManager() {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error("Not authenticated");
 
-      const schedulesToCreate: any[] = [];
+      // For indefinite, create 52 weeks (1 year) of schedules
+      const weeksToCreate = data.is_indefinite ? 52 : data.weeks_to_create;
       const startDate = currentWeekStart;
 
-      for (let week = 0; week < data.weeks_to_create; week++) {
-        const weekStart = addWeeks(startDate, week);
+      if (data.is_overtime) {
+        // Create overtime entries
+        const overtimeToCreate: any[] = [];
         
-        for (const dayOfWeek of data.selected_days) {
-          // Find the date for this day of the week
-          const daysToAdd = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Adjust for Monday start
-          const scheduleDate = addDays(weekStart, daysToAdd);
+        for (let week = 0; week < weeksToCreate; week++) {
+          const weekStart = addWeeks(startDate, week);
           
-          const startDatetime = `${format(scheduleDate, "yyyy-MM-dd")}T${data.start_time}:00`;
-          const endDatetime = `${format(scheduleDate, "yyyy-MM-dd")}T${data.end_time}:00`;
+          for (const dayOfWeek of data.selected_days) {
+            const daysToAdd = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+            const scheduleDate = addDays(weekStart, daysToAdd);
+            
+            // Calculate hours from start and end time
+            const [startHour, startMin] = data.start_time.split(':').map(Number);
+            const [endHour, endMin] = data.end_time.split(':').map(Number);
+            const hours = (endHour + endMin / 60) - (startHour + startMin / 60);
 
-          schedulesToCreate.push({
-            user_id: data.user_id,
-            client_name: data.client_name,
-            start_datetime: startDatetime,
-            end_datetime: endDatetime,
-            notes: data.notes || null,
-            hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
-            currency: data.currency,
-            created_by: userData.user.id
-          });
+            overtimeToCreate.push({
+              user_id: data.user_id,
+              overtime_date: format(scheduleDate, "yyyy-MM-dd"),
+              hours: hours,
+              hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
+              currency: data.currency,
+              notes: data.notes ? `${data.client_name}: ${data.notes}` : data.client_name,
+              created_by: userData.user.id
+            });
+          }
         }
+
+        if (overtimeToCreate.length === 0) {
+          throw new Error("No overtime entries to create. Please select at least one day.");
+        }
+
+        const { error } = await supabase.from("staff_overtime").insert(overtimeToCreate);
+        if (error) throw error;
+
+        return { count: overtimeToCreate.length, type: 'overtime' };
+      } else {
+        // Create regular schedule entries
+        const schedulesToCreate: any[] = [];
+
+        for (let week = 0; week < weeksToCreate; week++) {
+          const weekStart = addWeeks(startDate, week);
+          
+          for (const dayOfWeek of data.selected_days) {
+            const daysToAdd = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+            const scheduleDate = addDays(weekStart, daysToAdd);
+            
+            const startDatetime = `${format(scheduleDate, "yyyy-MM-dd")}T${data.start_time}:00`;
+            const endDatetime = `${format(scheduleDate, "yyyy-MM-dd")}T${data.end_time}:00`;
+
+            schedulesToCreate.push({
+              user_id: data.user_id,
+              client_name: data.client_name,
+              start_datetime: startDatetime,
+              end_datetime: endDatetime,
+              notes: data.notes || null,
+              hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
+              currency: data.currency,
+              created_by: userData.user.id
+            });
+          }
+        }
+
+        if (schedulesToCreate.length === 0) {
+          throw new Error("No schedules to create. Please select at least one day.");
+        }
+
+        const { error } = await supabase.from("staff_schedules").insert(schedulesToCreate);
+        if (error) throw error;
+
+        return { count: schedulesToCreate.length, type: 'schedule' };
       }
-
-      if (schedulesToCreate.length === 0) {
-        throw new Error("No schedules to create. Please select at least one day.");
-      }
-
-      const { error } = await supabase.from("staff_schedules").insert(schedulesToCreate);
-      if (error) throw error;
-
-      return schedulesToCreate.length;
     },
-    onSuccess: (count) => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["staff-schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-overtime"] });
       setIsRecurringDialogOpen(false);
       resetRecurringForm();
-      toast.success(`Created ${count} recurring schedule entries`);
+      toast.success(`Created ${result.count} recurring ${result.type} entries`);
     },
     onError: (error) => {
       toast.error("Failed to create recurring schedule: " + error.message);
@@ -357,8 +420,10 @@ export function StaffScheduleManager() {
       client_name: "",
       start_time: "09:00",
       end_time: "17:00",
-      selected_days: [],
+      selected_days: [] as number[],
       weeks_to_create: 4,
+      is_indefinite: false,
+      is_overtime: false,
       notes: "",
       hourly_rate: "",
       currency: "GBP"
@@ -609,7 +674,7 @@ export function StaffScheduleManager() {
                     Recurring
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-md">
+                <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Create Recurring Schedule</DialogTitle>
                   </DialogHeader>
@@ -620,7 +685,7 @@ export function StaffScheduleManager() {
                         <SelectTrigger>
                           <SelectValue placeholder="Select staff" />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent className="bg-background z-50">
                           {staffMembers.map(staff => (
                             <SelectItem key={staff.user_id} value={staff.user_id}>
                               {staff.display_name || staff.email}
@@ -630,12 +695,22 @@ export function StaffScheduleManager() {
                       </Select>
                     </div>
                     <div>
-                      <Label>Client Name</Label>
-                      <Input
-                        value={recurringForm.client_name}
-                        onChange={e => setRecurringForm(p => ({ ...p, client_name: e.target.value }))}
-                        placeholder="Enter client name"
-                      />
+                      <Label>Client</Label>
+                      <Select value={recurringForm.client_name} onValueChange={v => setRecurringForm(p => ({ ...p, client_name: v }))}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select client" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-background z-50">
+                          {clients.map(client => (
+                            <SelectItem key={client.id} value={client.name}>
+                              {client.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {clients.length === 0 && (
+                        <p className="text-xs text-muted-foreground mt-1">No clients found. Add clients in the system first.</p>
+                      )}
                     </div>
                     <div>
                       <Label>Select Days</Label>
@@ -671,24 +746,54 @@ export function StaffScheduleManager() {
                         />
                       </div>
                     </div>
-                    <div>
-                      <Label>Number of Weeks</Label>
-                      <Select 
-                        value={recurringForm.weeks_to_create.toString()} 
-                        onValueChange={v => setRecurringForm(p => ({ ...p, weeks_to_create: parseInt(v) }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="1">1 week</SelectItem>
-                          <SelectItem value="2">2 weeks</SelectItem>
-                          <SelectItem value="4">4 weeks</SelectItem>
-                          <SelectItem value="8">8 weeks</SelectItem>
-                          <SelectItem value="12">12 weeks</SelectItem>
-                        </SelectContent>
-                      </Select>
+                    
+                    {/* Indefinite Toggle */}
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="is_indefinite"
+                        checked={recurringForm.is_indefinite}
+                        onCheckedChange={(checked) => setRecurringForm(p => ({ ...p, is_indefinite: checked === true }))}
+                      />
+                      <Label htmlFor="is_indefinite" className="text-sm font-normal cursor-pointer">
+                        Run indefinitely (creates 52 weeks)
+                      </Label>
                     </div>
+
+                    {/* Number of Weeks - only show if not indefinite */}
+                    {!recurringForm.is_indefinite && (
+                      <div>
+                        <Label>Number of Weeks</Label>
+                        <Select 
+                          value={recurringForm.weeks_to_create.toString()} 
+                          onValueChange={v => setRecurringForm(p => ({ ...p, weeks_to_create: parseInt(v) }))}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent className="bg-background z-50">
+                            <SelectItem value="1">1 week</SelectItem>
+                            <SelectItem value="2">2 weeks</SelectItem>
+                            <SelectItem value="4">4 weeks</SelectItem>
+                            <SelectItem value="8">8 weeks</SelectItem>
+                            <SelectItem value="12">12 weeks</SelectItem>
+                            <SelectItem value="26">26 weeks (6 months)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+
+                    {/* Overtime Toggle */}
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="is_overtime"
+                        checked={recurringForm.is_overtime}
+                        onCheckedChange={(checked) => setRecurringForm(p => ({ ...p, is_overtime: checked === true }))}
+                      />
+                      <Label htmlFor="is_overtime" className="text-sm font-normal cursor-pointer">
+                        Mark as overtime
+                      </Label>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <Label>Hourly Rate (optional)</Label>
@@ -706,7 +811,7 @@ export function StaffScheduleManager() {
                           <SelectTrigger>
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="bg-background z-50">
                             <SelectItem value="GBP">GBP</SelectItem>
                             <SelectItem value="USD">USD</SelectItem>
                             <SelectItem value="EUR">EUR</SelectItem>
@@ -723,7 +828,7 @@ export function StaffScheduleManager() {
                       />
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      This will create {recurringForm.selected_days.length * recurringForm.weeks_to_create} schedule entries
+                      This will create {recurringForm.selected_days.length * (recurringForm.is_indefinite ? 52 : recurringForm.weeks_to_create)} {recurringForm.is_overtime ? 'overtime' : 'schedule'} entries
                       starting from {format(currentWeekStart, "MMM d, yyyy")}
                     </div>
                     <Button 
@@ -731,7 +836,7 @@ export function StaffScheduleManager() {
                       disabled={!recurringForm.user_id || !recurringForm.client_name || recurringForm.selected_days.length === 0}
                       className="w-full"
                     >
-                      Create Recurring Schedule
+                      Create Recurring {recurringForm.is_overtime ? 'Overtime' : 'Schedule'}
                     </Button>
                   </div>
                 </DialogContent>
