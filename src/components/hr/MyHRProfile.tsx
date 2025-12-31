@@ -23,6 +23,8 @@ interface MonthlyPayPreview {
     date: string;
     holidayName: string;
   }>;
+  unusedHolidayPayout: number;
+  unusedHolidayDays: number;
   totalPay: number;
   payrollStatus: 'pending' | 'ready' | 'paid';
   currency: string;
@@ -194,9 +196,27 @@ export function MyHRProfile() {
       });
       setHolidays(holidayData || []);
 
-      // Calculate total holidays taken this year
-      const thisYear = new Date().getFullYear();
-      const holidaysThisYear = (holidayData || []).filter(h => h.status === 'approved' && h.absence_type === 'holiday' && new Date(h.start_date).getFullYear() === thisYear).reduce((sum, h) => sum + Number(h.days_taken), 0);
+      // Calculate total holidays taken this holiday year (June 1 to May 31)
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth(); // 0-indexed, June = 5
+      
+      // Holiday year starts June 1st
+      // If we're before June, the holiday year started last year
+      const holidayYearStart = currentMonth < 5 
+        ? new Date(currentYear - 1, 5, 1) // June 1st of previous year
+        : new Date(currentYear, 5, 1); // June 1st of current year
+      const holidayYearEnd = currentMonth < 5
+        ? new Date(currentYear, 4, 31) // May 31st of current year
+        : new Date(currentYear + 1, 4, 31); // May 31st of next year
+      
+      const holidaysThisYear = (holidayData || []).filter(h => {
+        const startDate = new Date(h.start_date);
+        return h.status === 'approved' && 
+               h.absence_type === 'holiday' && 
+               startDate >= holidayYearStart && 
+               startDate <= holidayYearEnd;
+      }).reduce((sum, h) => sum + Number(h.days_taken), 0);
       setTotalHolidaysTaken(holidaysThisYear);
 
       // Fetch pay records
@@ -407,7 +427,33 @@ export function MyHRProfile() {
       
       const bonuses = oneOffBonuses + activeRecurringBonuses;
       const deductions = monthRecords.filter(r => r.record_type === 'deduction').reduce((sum, r) => sum + r.amount, 0);
-      const totalPay = monthlyBaseSalary + bonuses + holidayOvertimeBonus - deductions;
+      
+      // Calculate unused holiday payout for June (end of holiday year)
+      // Holiday year runs June 1 to May 31, so June payroll includes payout for unused days
+      let unusedHolidayPayout = 0;
+      let unusedHolidayDays = 0;
+      const targetMonthNum = targetMonth.getMonth(); // 0-indexed, June = 5
+      
+      if (targetMonthNum === 5) { // June
+        // Calculate holidays taken in the holiday year ending May 31 of the same year
+        const holidayYearStart = new Date(targetMonth.getFullYear() - 1, 5, 1); // June 1 of previous year
+        const holidayYearEnd = new Date(targetMonth.getFullYear(), 4, 31); // May 31 of current year
+        
+        const holidaysTakenInYear = holidays.filter(h => {
+          const startDate = parseISO(h.start_date);
+          return h.status === 'approved' && 
+                 h.absence_type === 'holiday' && 
+                 startDate >= holidayYearStart && 
+                 startDate <= holidayYearEnd;
+        }).reduce((sum, h) => sum + Number(h.days_taken), 0);
+        
+        const annualAllowance = hrProfile.annual_holiday_allowance || 28;
+        unusedHolidayDays = Math.max(0, annualAllowance - holidaysTakenInYear);
+        // Unused holiday pay = Base Pay / 20 * unused days
+        unusedHolidayPayout = (monthlyBaseSalary / 20) * unusedHolidayDays;
+      }
+      
+      const totalPay = monthlyBaseSalary + bonuses + holidayOvertimeBonus + unusedHolidayPayout - deductions;
 
       // Determine payroll status
       let payrollStatus: 'pending' | 'ready' | 'paid' = 'pending';
@@ -432,13 +478,15 @@ export function MyHRProfile() {
         holidayOvertimeDays,
         holidayOvertimeBonus,
         holidayShifts,
+        unusedHolidayPayout,
+        unusedHolidayDays,
         totalPay,
         payrollStatus,
         currency: hrProfile.base_currency
       });
     }
     return previews;
-  }, [hrProfile, staffSchedules, recurringPatterns, patternExceptions, publicHolidays, payRecords, recurringBonuses]);
+  }, [hrProfile, staffSchedules, recurringPatterns, patternExceptions, publicHolidays, payRecords, recurringBonuses, holidays]);
   const toggleMonth = (monthKey: string) => {
     setExpandedMonths(prev => {
       const next = new Set(prev);
@@ -521,7 +569,7 @@ export function MyHRProfile() {
                 <Calendar className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Holiday Allowance</p>
+                <p className="text-sm text-muted-foreground">Holiday Allowance (Jun-May)</p>
                 <p className="font-medium">
                   {totalHolidaysTaken} / {hrProfile.annual_holiday_allowance || 28} days used
                   <span className="text-muted-foreground text-sm ml-1">({holidayRemaining} remaining)</span>
@@ -612,8 +660,13 @@ export function MyHRProfile() {
                                     </div>}
                                   
                                   {preview.holidayOvertimeBonus > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      
+                                      <span className="text-muted-foreground">Public Holiday Overtime ({preview.holidayOvertimeDays} days)</span>
                                       <span className="font-medium text-amber-600">+{formatCurrency(preview.holidayOvertimeBonus, preview.currency)}</span>
+                                    </div>}
+                                  
+                                  {preview.unusedHolidayPayout > 0 && <div className="flex justify-between items-center py-2 border-b">
+                                      <span className="text-muted-foreground">Unused Holiday Payout ({preview.unusedHolidayDays} days)</span>
+                                      <span className="font-medium text-success">+{formatCurrency(preview.unusedHolidayPayout, preview.currency)}</span>
                                     </div>}
                                   
                                   {preview.deductions > 0 && <div className="flex justify-between items-center py-2 border-b">
