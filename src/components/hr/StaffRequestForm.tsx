@@ -261,6 +261,18 @@ export function StaffRequestForm() {
     }
   }, [requestType, startDate, endDate, shiftPatterns, individualSchedules]);
 
+  // Auto-populate dates from selected holiday for overtime requests
+  useEffect(() => {
+    if (requestType === 'overtime' && linkedHolidayId) {
+      const holiday = approvedHolidays.find(h => h.id === linkedHolidayId);
+      if (holiday) {
+        setStartDate(parseISO(holiday.start_date));
+        setEndDate(parseISO(holiday.end_date));
+        setDaysRequested(holiday.days_taken.toString());
+      }
+    }
+  }, [requestType, linkedHolidayId, approvedHolidays]);
+
   // Fetch user's requests
   const { data: myRequests = [] } = useQuery({
     queryKey: ["my-staff-requests"],
@@ -529,16 +541,27 @@ export function StaffRequestForm() {
                 </div>
               )}
 
-              {linkedHolidayId && (
-                <div className="p-3 bg-muted rounded-md text-sm">
-                  <p className="font-medium">Overtime Type: {calculateOvertimeType(linkedHolidayId) === 'standard_hours' ? 'Standard Hours' : 'Outside Standard Hours'}</p>
-                  <p className="text-muted-foreground text-xs mt-1">
-                    {calculateOvertimeType(linkedHolidayId) === 'standard_hours' 
-                      ? 'This holiday falls within your standard working hours.'
-                      : 'This holiday is outside your standard working hours.'}
-                  </p>
-                </div>
-              )}
+              {linkedHolidayId && (() => {
+                const holiday = approvedHolidays.find(h => h.id === linkedHolidayId);
+                return (
+                  <div className="p-3 bg-muted rounded-md text-sm space-y-2">
+                    <div>
+                      <p className="font-medium">Covering Period</p>
+                      <p className="text-muted-foreground">
+                        {holiday ? `${format(parseISO(holiday.start_date), 'dd MMM yyyy')} – ${format(parseISO(holiday.end_date), 'dd MMM yyyy')} (${holiday.days_taken} day${holiday.days_taken !== 1 ? 's' : ''})` : 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="font-medium">Overtime Type: {calculateOvertimeType(linkedHolidayId) === 'standard_hours' ? 'Standard Hours' : 'Outside Standard Hours'}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {calculateOvertimeType(linkedHolidayId) === 'standard_hours' 
+                          ? 'This holiday falls within your standard working hours.'
+                          : 'This holiday is outside your standard working hours.'}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -577,70 +600,72 @@ export function StaffRequestForm() {
             />
           </div>
 
-          {/* Dates Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Start Date <span className="text-destructive">*</span></Label>
-              <p className="text-sm text-muted-foreground">Please enter start date of request</p>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !startDate && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {startDate ? format(startDate, "dd/MM/yyyy") : "dd/mm/yyyy"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0 bg-background" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={startDate}
-                    onSelect={(date) => {
-                      setStartDate(date);
-                      if (date && endDate && date > endDate) {
-                        setEndDate(date);
-                      }
-                    }}
-                    initialFocus
-                    className="p-3 pointer-events-auto"
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
+          {/* Dates Row - Hidden for overtime since dates come from the holiday */}
+          {requestType !== 'overtime' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Start Date <span className="text-destructive">*</span></Label>
+                <p className="text-sm text-muted-foreground">Please enter start date of request</p>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !startDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {startDate ? format(startDate, "dd/MM/yyyy") : "dd/mm/yyyy"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0 bg-background" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={startDate}
+                      onSelect={(date) => {
+                        setStartDate(date);
+                        if (date && endDate && date > endDate) {
+                          setEndDate(date);
+                        }
+                      }}
+                      initialFocus
+                      className="p-3 pointer-events-auto"
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
 
-            <div className="space-y-2">
-              <Label>End Date</Label>
-              <p className="text-sm text-muted-foreground">Please enter end date of request</p>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !endDate && "text-muted-foreground"
-                    )}
-                  >
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {endDate ? format(endDate, "dd/MM/yyyy") : "dd/mm/yyyy"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0 bg-background" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={endDate}
-                    onSelect={setEndDate}
-                    disabled={(date) => startDate ? date < startDate : false}
-                    initialFocus
-                    className="p-3 pointer-events-auto"
-                  />
-                </PopoverContent>
-              </Popover>
+              <div className="space-y-2">
+                <Label>End Date</Label>
+                <p className="text-sm text-muted-foreground">Please enter end date of request</p>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !endDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {endDate ? format(endDate, "dd/MM/yyyy") : "dd/mm/yyyy"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0 bg-background" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={endDate}
+                      onSelect={setEndDate}
+                      disabled={(date) => startDate ? date < startDate : false}
+                      initialFocus
+                      className="p-3 pointer-events-auto"
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Days Requested - Auto-calculated for holidays */}
           {(requestType === 'holiday_paid' || requestType === 'holiday_unpaid') && (
@@ -664,8 +689,8 @@ export function StaffRequestForm() {
             </div>
           )}
 
-          {/* Manual days input for non-holiday requests */}
-          {requestType && !['holiday', 'holiday_paid', 'holiday_unpaid'].includes(requestType) && (
+          {/* Manual days input for shift swap only - overtime and holidays are auto-calculated */}
+          {requestType === 'shift_swap' && (
             <div className="space-y-2">
               <Label>How many days are you requesting? <span className="text-destructive">*</span></Label>
               <Input 
