@@ -24,6 +24,7 @@ interface Schedule {
   notes: string | null;
   hourly_rate: number | null;
   currency: string;
+  is_pattern_overtime?: boolean; // For virtual schedules from overtime patterns
 }
 
 interface Overtime {
@@ -280,7 +281,8 @@ export function StaffScheduleManager() {
           end_datetime: endDatetime,
           notes: pattern.notes,
           hourly_rate: pattern.hourly_rate,
-          currency: pattern.currency
+          currency: pattern.currency,
+          is_pattern_overtime: pattern.is_overtime
         });
       }
     }
@@ -935,18 +937,26 @@ export function StaffScheduleManager() {
                         {daySchedules.map(schedule => {
                           const cost = calculateScheduleCost(schedule);
                           const isFromPattern = schedule.id.startsWith('pattern-');
+                          const isPatternOvertime = schedule.is_pattern_overtime;
                           return (
                             <div 
                               key={schedule.id} 
                               className={`rounded p-1 mb-1 text-xs group relative ${
                                 isFromPattern 
-                                  ? 'bg-violet-50 border border-violet-300' 
+                                  ? isPatternOvertime
+                                    ? 'bg-orange-50 border border-orange-300'
+                                    : 'bg-violet-50 border border-violet-300' 
                                   : 'bg-primary/10 border border-primary/30'
                               }`}
                             >
                               <div className="font-medium truncate flex items-center gap-1">
                                 {schedule.client_name}
-                                {isFromPattern && <Infinity className="h-3 w-3 text-violet-500" />}
+                                {isFromPattern && (
+                                  <Infinity className={`h-3 w-3 ${isPatternOvertime ? 'text-orange-500' : 'text-violet-500'}`} />
+                                )}
+                                {isPatternOvertime && (
+                                  <Clock className="h-3 w-3 text-orange-500" />
+                                )}
                               </div>
                               <div className="text-muted-foreground">
                                 {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
@@ -1028,6 +1038,7 @@ export function StaffScheduleManager() {
                           const cost = calculateScheduleCost(schedule);
                           const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
                           const isFromPattern = schedule.id.startsWith('pattern-');
+                          const isPatternOvertime = schedule.is_pattern_overtime;
                           
                           return (
                             <div 
@@ -1036,14 +1047,19 @@ export function StaffScheduleManager() {
                                 staffOnHoliday 
                                   ? 'bg-amber-100 border border-amber-300' 
                                   : isFromPattern
-                                    ? 'bg-violet-50 border border-violet-300'
+                                    ? isPatternOvertime
+                                      ? 'bg-orange-50 border border-orange-300'
+                                      : 'bg-violet-50 border border-violet-300'
                                     : 'bg-primary/10 border border-primary/30'
                               }`}
                             >
                               <div className="font-medium truncate flex items-center gap-1">
                                 {getStaffName(schedule.user_id)}
                                 {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600" />}
-                                {isFromPattern && <Infinity className="h-3 w-3 text-violet-500" />}
+                                {isFromPattern && (
+                                  <Infinity className={`h-3 w-3 ${isPatternOvertime ? 'text-orange-500' : 'text-violet-500'}`} />
+                                )}
+                                {isPatternOvertime && <Clock className="h-3 w-3 text-orange-500" />}
                               </div>
                               <div className="text-muted-foreground">
                                 {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
@@ -1103,11 +1119,15 @@ export function StaffScheduleManager() {
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 rounded bg-violet-50 border border-violet-300" />
-          <span className="flex items-center gap-1">Recurring Pattern <Infinity className="h-3 w-3" /></span>
+          <span className="flex items-center gap-1">Recurring Shift <Infinity className="h-3 w-3 text-violet-500" /></span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-4 h-4 rounded bg-orange-50 border border-orange-300" />
+          <span className="flex items-center gap-1">Recurring Overtime <Infinity className="h-3 w-3 text-orange-500" /> <Clock className="h-3 w-3 text-orange-500" /></span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 rounded bg-orange-100 border border-orange-300" />
-          <span>Overtime</span>
+          <span>One-off Overtime</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 rounded bg-amber-50 border border-amber-200" />
