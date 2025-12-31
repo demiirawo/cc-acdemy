@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { format, eachDayOfInterval, getDay, isWithinInterval, parseISO } from "date-fns";
 import { CalendarIcon, Clock, Palmtree, RefreshCw, AlertCircle, Send, RotateCcw, Check, X } from "lucide-react";
@@ -128,6 +129,9 @@ export function StaffRequestForm() {
   const [details, setDetails] = useState("");
   const [linkedHolidayId, setLinkedHolidayId] = useState("");
   const [coveringStaffId, setCoveringStaffId] = useState("");
+  const [swapStartDate, setSwapStartDate] = useState<Date>();
+  const [swapEndDate, setSwapEndDate] = useState<Date>();
+  const [selectedSwapShifts, setSelectedSwapShifts] = useState<string[]>([]);
   // Fetch staff members for swap selection
   const { data: staffMembers = [] } = useQuery({
     queryKey: ["staff-members-for-requests"],
@@ -191,8 +195,97 @@ export function StaffRequestForm() {
     enabled: !!coveringStaffId
   });
 
+  // Fetch swap partner's schedules for shift swap
+  const { data: swapPartnerSchedules = [] } = useQuery({
+    queryKey: ["swap-partner-schedules", swapWithUserId, swapStartDate?.toISOString(), swapEndDate?.toISOString()],
+    queryFn: async () => {
+      if (!swapWithUserId || !swapStartDate || !swapEndDate) return [];
+      const { data, error } = await supabase
+        .from("staff_schedules")
+        .select("*")
+        .eq("user_id", swapWithUserId)
+        .gte("start_datetime", format(swapStartDate, "yyyy-MM-dd"))
+        .lte("start_datetime", format(swapEndDate, "yyyy-MM-dd") + "T23:59:59")
+        .order("start_datetime");
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!swapWithUserId && !!swapStartDate && !!swapEndDate
+  });
+
+  // Fetch swap partner's recurring patterns to generate virtual shifts
+  const { data: swapPartnerPatterns = [] } = useQuery({
+    queryKey: ["swap-partner-patterns", swapWithUserId],
+    queryFn: async () => {
+      if (!swapWithUserId) return [];
+      const { data, error } = await supabase
+        .from("recurring_shift_patterns")
+        .select("*")
+        .eq("user_id", swapWithUserId);
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!swapWithUserId
+  });
+
   // Get staff members who have approved holidays (for the covering dropdown)
   const staffWithHolidays = staffMembers.filter(s => s.user_id !== user?.id);
+
+  // Generate available shifts to swap from partner's schedules and patterns
+  const availableSwapShifts = (() => {
+    if (!swapStartDate || !swapEndDate || !swapWithUserId) return [];
+    
+    const shifts: { id: string; date: Date; startTime: string; endTime: string; clientName: string; isPattern: boolean }[] = [];
+    
+    // Add individual schedules
+    swapPartnerSchedules.forEach(schedule => {
+      shifts.push({
+        id: schedule.id,
+        date: parseISO(schedule.start_datetime),
+        startTime: format(parseISO(schedule.start_datetime), "HH:mm"),
+        endTime: format(parseISO(schedule.end_datetime), "HH:mm"),
+        clientName: schedule.client_name,
+        isPattern: false
+      });
+    });
+    
+    // Generate virtual shifts from patterns
+    const daysInRange = eachDayOfInterval({ start: swapStartDate, end: swapEndDate });
+    swapPartnerPatterns.forEach(pattern => {
+      const patternStart = parseISO(pattern.start_date);
+      const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+      
+      daysInRange.forEach(day => {
+        const dayOfWeek = getDay(day);
+        
+        // Check if day is within pattern range
+        if (day < patternStart) return;
+        if (patternEnd && day > patternEnd) return;
+        
+        // Check if this day matches the pattern
+        if (!pattern.days_of_week?.includes(dayOfWeek)) return;
+        
+        // Check if there's already an individual schedule for this day/time
+        const hasIndividual = swapPartnerSchedules.some(s => 
+          format(parseISO(s.start_datetime), "yyyy-MM-dd") === format(day, "yyyy-MM-dd")
+        );
+        if (hasIndividual) return;
+        
+        shifts.push({
+          id: `pattern-${pattern.id}-${format(day, "yyyy-MM-dd")}`,
+          date: day,
+          startTime: pattern.start_time,
+          endTime: pattern.end_time,
+          clientName: pattern.client_name,
+          isPattern: true
+        });
+      });
+    });
+    
+    return shifts.sort((a, b) => a.date.getTime() - b.date.getTime());
+  })();
 
 
   // Calculate overtime type based on selected holiday and user's shift patterns
@@ -292,11 +385,17 @@ export function StaffRequestForm() {
     mutationFn: async () => {
       if (!user) throw new Error("Not authenticated");
       if (!requestType) throw new Error("Please select a request type");
-      if (!startDate) throw new Error("Please select a start date");
-      if (!endDate) throw new Error("Please select an end date");
-      if (requestType === 'shift_swap' && !swapWithUserId) {
-        throw new Error("Please select who you are swapping shifts with");
+      
+      // Validation for shift swap
+      if (requestType === 'shift_swap') {
+        if (!swapWithUserId) throw new Error("Please select who you are swapping shifts with");
+        if (!swapStartDate || !swapEndDate) throw new Error("Please select a date range");
+        if (selectedSwapShifts.length === 0) throw new Error("Please select at least one shift to swap");
+      } else if (requestType !== 'overtime') {
+        if (!startDate) throw new Error("Please select a start date");
+        if (!endDate) throw new Error("Please select an end date");
       }
+      
       if (requestType === 'overtime' && !linkedHolidayId) {
         throw new Error("Please select the approved holiday you are covering");
       }
@@ -307,16 +406,31 @@ export function StaffRequestForm() {
         overtimeType = calculateOvertimeType(linkedHolidayId);
       }
 
+      // Build details for shift swap including selected shifts
+      let requestDetails = details;
+      if (requestType === 'shift_swap' && selectedSwapShifts.length > 0) {
+        const shiftDetails = availableSwapShifts
+          .filter(s => selectedSwapShifts.includes(s.id))
+          .map(s => `${format(s.date, "dd MMM yyyy")} ${s.startTime}-${s.endTime} (${s.clientName})`)
+          .join("; ");
+        requestDetails = details ? `${details}\n\nShifts: ${shiftDetails}` : `Shifts: ${shiftDetails}`;
+      }
+
+      // Determine dates for shift swap
+      const requestStartDate = requestType === 'shift_swap' ? swapStartDate : startDate;
+      const requestEndDate = requestType === 'shift_swap' ? swapEndDate : endDate;
+      const requestDays = requestType === 'shift_swap' ? selectedSwapShifts.length : parseFloat(daysRequested) || 1;
+
       const { error } = await supabase.from("staff_requests").insert({
         user_id: user.id,
         request_type: requestType,
         swap_with_user_id: requestType === 'shift_swap' ? swapWithUserId : null,
         linked_holiday_id: requestType === 'overtime' ? linkedHolidayId : null,
         overtime_type: overtimeType,
-        start_date: format(startDate, "yyyy-MM-dd"),
-        end_date: format(endDate, "yyyy-MM-dd"),
-        days_requested: parseFloat(daysRequested) || 1,
-        details: details || null
+        start_date: format(requestStartDate!, "yyyy-MM-dd"),
+        end_date: format(requestEndDate!, "yyyy-MM-dd"),
+        days_requested: requestDays,
+        details: requestDetails || null
       });
 
       if (error) throw error;
@@ -399,6 +513,9 @@ export function StaffRequestForm() {
     setEndDate(undefined);
     setDaysRequested("1");
     setDetails("");
+    setSwapStartDate(undefined);
+    setSwapEndDate(undefined);
+    setSelectedSwapShifts([]);
   };
 
   const getStaffName = (userId: string) => {
@@ -567,22 +684,151 @@ export function StaffRequestForm() {
 
           {/* Shift Swap - Who are you swapping with */}
           {requestType === 'shift_swap' && (
-            <div className="space-y-2">
-              <Label>Who are you swapping shifts with? <span className="text-destructive">*</span></Label>
-              <Select value={swapWithUserId} onValueChange={setSwapWithUserId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select staff member..." />
-                </SelectTrigger>
-                <SelectContent className="bg-background">
-                  {staffMembers
-                    .filter(s => s.user_id !== user?.id)
-                    .map(staff => (
-                      <SelectItem key={staff.user_id} value={staff.user_id}>
-                        {staff.display_name || staff.email}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Who are you swapping shifts with? <span className="text-destructive">*</span></Label>
+                <Select 
+                  value={swapWithUserId} 
+                  onValueChange={(val) => {
+                    setSwapWithUserId(val);
+                    setSelectedSwapShifts([]);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select staff member..." />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background">
+                    {staffMembers
+                      .filter(s => s.user_id !== user?.id)
+                      .map(staff => (
+                        <SelectItem key={staff.user_id} value={staff.user_id}>
+                          {staff.display_name || staff.email}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Date range for shift swap */}
+              {swapWithUserId && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Start Date <span className="text-destructive">*</span></Label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              "w-full justify-start text-left font-normal",
+                              !swapStartDate && "text-muted-foreground"
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {swapStartDate ? format(swapStartDate, "dd/MM/yyyy") : "Select start date"}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0 bg-background" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={swapStartDate}
+                            onSelect={(date) => {
+                              setSwapStartDate(date);
+                              setSelectedSwapShifts([]);
+                              if (date && swapEndDate && date > swapEndDate) {
+                                setSwapEndDate(date);
+                              }
+                            }}
+                            initialFocus
+                            className="p-3 pointer-events-auto"
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>End Date <span className="text-destructive">*</span></Label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            className={cn(
+                              "w-full justify-start text-left font-normal",
+                              !swapEndDate && "text-muted-foreground"
+                            )}
+                          >
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {swapEndDate ? format(swapEndDate, "dd/MM/yyyy") : "Select end date"}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0 bg-background" align="start">
+                          <Calendar
+                            mode="single"
+                            selected={swapEndDate}
+                            onSelect={(date) => {
+                              setSwapEndDate(date);
+                              setSelectedSwapShifts([]);
+                            }}
+                            disabled={(date) => swapStartDate ? date < swapStartDate : false}
+                            initialFocus
+                            className="p-3 pointer-events-auto"
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  </div>
+
+                  {/* Shifts to swap */}
+                  {swapStartDate && swapEndDate && (
+                    <div className="space-y-2">
+                      <Label>Select shifts to swap <span className="text-destructive">*</span></Label>
+                      {availableSwapShifts.length === 0 ? (
+                        <div className="p-4 bg-muted rounded-md text-sm text-muted-foreground text-center">
+                          No shifts found for {getStaffName(swapWithUserId)} in this date range
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-[200px] overflow-y-auto border rounded-md p-3">
+                          {availableSwapShifts.map(shift => (
+                            <div 
+                              key={shift.id} 
+                              className="flex items-center space-x-3 p-2 rounded hover:bg-muted/50"
+                            >
+                              <Checkbox
+                                id={shift.id}
+                                checked={selectedSwapShifts.includes(shift.id)}
+                                onCheckedChange={(checked) => {
+                                  if (checked) {
+                                    setSelectedSwapShifts(prev => [...prev, shift.id]);
+                                  } else {
+                                    setSelectedSwapShifts(prev => prev.filter(id => id !== shift.id));
+                                  }
+                                }}
+                              />
+                              <label 
+                                htmlFor={shift.id} 
+                                className="flex-1 text-sm cursor-pointer"
+                              >
+                                <div className="font-medium">
+                                  {format(shift.date, "EEE, dd MMM yyyy")}
+                                </div>
+                                <div className="text-muted-foreground text-xs">
+                                  {shift.startTime} - {shift.endTime} • {shift.clientName}
+                                  {shift.isPattern && <span className="ml-1 text-primary">(Recurring)</span>}
+                                </div>
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {selectedSwapShifts.length > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          {selectedSwapShifts.length} shift{selectedSwapShifts.length !== 1 ? 's' : ''} selected
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
 
@@ -600,8 +846,8 @@ export function StaffRequestForm() {
             />
           </div>
 
-          {/* Dates Row - Hidden for overtime since dates come from the holiday */}
-          {requestType !== 'overtime' && (
+          {/* Dates Row - Hidden for overtime and shift_swap since they have their own date handling */}
+          {requestType !== 'overtime' && requestType !== 'shift_swap' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Start Date <span className="text-destructive">*</span></Label>
