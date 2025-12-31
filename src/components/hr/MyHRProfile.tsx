@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay } from "date-fns";
 interface MonthlyPayPreview {
@@ -495,106 +496,112 @@ export function MyHRProfile() {
       </div>
 
       {/* 12-Month Pay Preview Section */}
-      {monthlyPreviews.length > 0 && <Card className="border-2 border-primary/20">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-primary" />
-              <CardTitle className="text-lg">12-Month Pay Preview</CardTitle>
-            </div>
-            <CardDescription>Estimated pay for the next 12 months (subject to final processing)</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {monthlyPreviews.map(preview => {
-          const monthKey = format(preview.month, 'yyyy-MM');
-          const isExpanded = expandedMonths.has(monthKey);
-          const isCurrentMonth = format(new Date(), 'yyyy-MM') === monthKey;
-          const getStatusBadge = (status: 'pending' | 'ready' | 'paid') => {
-            if (status === 'paid') {
-              return <Badge variant="outline" className="bg-success/20 text-success border-success">
-                      <CheckCircle className="h-3 w-3 mr-1" />
-                      Paid
-                    </Badge>;
-            } else if (status === 'ready') {
-              return <Badge variant="outline" className="bg-amber-500/20 text-amber-600 border-amber-500">
-                      <Clock className="h-3 w-3 mr-1" />
-                      Ready
-                    </Badge>;
-            } else {
-              return <Badge variant="outline" className="bg-muted text-muted-foreground border-muted-foreground">
-                      <AlertCircle className="h-3 w-3 mr-1" />
-                      Pending
-                    </Badge>;
-            }
-          };
-          return <Collapsible key={monthKey} open={isExpanded} onOpenChange={() => toggleMonth(monthKey)}>
-                  <CollapsibleTrigger className="w-full">
-                    <div className={`flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors ${isCurrentMonth ? 'border-primary bg-primary/5' : ''}`}>
-                      <div className="flex items-center gap-3">
-                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                        <span className="font-medium">{preview.monthLabel}</span>
-                        {isCurrentMonth && <Badge variant="outline" className="text-xs">Current</Badge>}
-                      </div>
-                      <div className="flex items-center gap-3">
-                        {getStatusBadge(preview.payrollStatus)}
-                        <span className="font-bold text-lg">
-                          {formatCurrency(preview.totalPay, preview.currency)}
-                        </span>
-                      </div>
-                    </div>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <div className="px-4 pb-4 pt-2 ml-7 border-l-2 border-muted">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Left column - Breakdown */}
-                        <div className="space-y-3">
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span className="text-muted-foreground">Base Salary</span>
-                            <span className="font-medium">{formatCurrency(preview.monthlyBaseSalary, preview.currency)}</span>
-                          </div>
-                          
-                          {preview.bonuses > 0 && <div className="flex justify-between items-center py-2 border-b">
-                              <span className="text-muted-foreground">Bonuses</span>
-                              <span className="font-medium text-success">+{formatCurrency(preview.bonuses, preview.currency)}</span>
-                            </div>}
-                          
-                          {preview.holidayOvertimeBonus > 0 && <div className="flex justify-between items-center py-2 border-b">
-                              
-                              <span className="font-medium text-amber-600">+{formatCurrency(preview.holidayOvertimeBonus, preview.currency)}</span>
-                            </div>}
-                          
-                          {preview.deductions > 0 && <div className="flex justify-between items-center py-2 border-b">
-                              <span className="text-muted-foreground">Deductions</span>
-                              <span className="font-medium text-destructive">-{formatCurrency(preview.deductions, preview.currency)}</span>
-                            </div>}
-                          
-                          <div className="flex justify-between items-center py-3 bg-primary/5 rounded-lg px-3 mt-2">
-                            <span className="font-semibold">Estimated Total</span>
-                            <span className="font-bold text-lg">{formatCurrency(preview.totalPay, preview.currency)}</span>
-                          </div>
-                        </div>
+      {monthlyPreviews.length > 0 && (
+        <Accordion type="single" collapsible className="w-full">
+          <AccordionItem value="pay-preview" className="border-2 border-primary/20 rounded-lg">
+            <AccordionTrigger className="px-6 py-4 hover:no-underline">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-primary" />
+                <span className="text-lg font-semibold">12-Month Pay Preview</span>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="px-6 pb-6">
+              <p className="text-sm text-muted-foreground mb-4">Estimated pay for the next 12 months (subject to final processing)</p>
+              <div className="space-y-2">
+                {monthlyPreviews.map(preview => {
+                  const monthKey = format(preview.month, 'yyyy-MM');
+                  const isExpanded = expandedMonths.has(monthKey);
+                  const isCurrentMonth = format(new Date(), 'yyyy-MM') === monthKey;
+                  const getStatusBadge = (status: 'pending' | 'ready' | 'paid') => {
+                    if (status === 'paid') {
+                      return <Badge variant="outline" className="bg-success/20 text-success border-success">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Paid
+                            </Badge>;
+                    } else if (status === 'ready') {
+                      return <Badge variant="outline" className="bg-amber-500/20 text-amber-600 border-amber-500">
+                              <Clock className="h-3 w-3 mr-1" />
+                              Ready
+                            </Badge>;
+                    } else {
+                      return <Badge variant="outline" className="bg-muted text-muted-foreground border-muted-foreground">
+                              <AlertCircle className="h-3 w-3 mr-1" />
+                              Pending
+                            </Badge>;
+                    }
+                  };
+                  return <Collapsible key={monthKey} open={isExpanded} onOpenChange={() => toggleMonth(monthKey)}>
+                          <CollapsibleTrigger className="w-full">
+                            <div className={`flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors ${isCurrentMonth ? 'border-primary bg-primary/5' : ''}`}>
+                              <div className="flex items-center gap-3">
+                                {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                                <span className="font-medium">{preview.monthLabel}</span>
+                                {isCurrentMonth && <Badge variant="outline" className="text-xs">Current</Badge>}
+                              </div>
+                              <div className="flex items-center gap-3">
+                                {getStatusBadge(preview.payrollStatus)}
+                                <span className="font-bold text-lg">
+                                  {formatCurrency(preview.totalPay, preview.currency)}
+                                </span>
+                              </div>
+                            </div>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <div className="px-4 pb-4 pt-2 ml-7 border-l-2 border-muted">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Left column - Breakdown */}
+                                <div className="space-y-3">
+                                  <div className="flex justify-between items-center py-2 border-b">
+                                    <span className="text-muted-foreground">Base Salary</span>
+                                    <span className="font-medium">{formatCurrency(preview.monthlyBaseSalary, preview.currency)}</span>
+                                  </div>
+                                  
+                                  {preview.bonuses > 0 && <div className="flex justify-between items-center py-2 border-b">
+                                      <span className="text-muted-foreground">Bonuses</span>
+                                      <span className="font-medium text-success">+{formatCurrency(preview.bonuses, preview.currency)}</span>
+                                    </div>}
+                                  
+                                  {preview.holidayOvertimeBonus > 0 && <div className="flex justify-between items-center py-2 border-b">
+                                      
+                                      <span className="font-medium text-amber-600">+{formatCurrency(preview.holidayOvertimeBonus, preview.currency)}</span>
+                                    </div>}
+                                  
+                                  {preview.deductions > 0 && <div className="flex justify-between items-center py-2 border-b">
+                                      <span className="text-muted-foreground">Deductions</span>
+                                      <span className="font-medium text-destructive">-{formatCurrency(preview.deductions, preview.currency)}</span>
+                                    </div>}
+                                  
+                                  <div className="flex justify-between items-center py-3 bg-primary/5 rounded-lg px-3 mt-2">
+                                    <span className="font-semibold">Estimated Total</span>
+                                    <span className="font-bold text-lg">{formatCurrency(preview.totalPay, preview.currency)}</span>
+                                  </div>
+                                </div>
 
-                        {/* Right column - Holiday shifts details */}
-                        <div>
-                          {preview.holidayShifts.length > 0 ? <div className="space-y-2">
-                              <h4 className="font-medium text-sm text-muted-foreground mb-3">Public Holiday Shifts</h4>
-                              {preview.holidayShifts.map((shift, idx) => <div key={idx} className="flex items-center gap-2 text-sm py-1.5 px-2 bg-amber-500/10 rounded">
-                                  <Calendar className="h-4 w-4 text-amber-600" />
-                                  <span>{format(parseISO(shift.date), 'dd MMM yyyy')}</span>
-                                  <span className="text-muted-foreground">-</span>
-                                  <span className="text-amber-600">{shift.holidayName}</span>
-                                </div>)}
-                            </div> : <div className="text-center py-6 text-muted-foreground">
-                              <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                              <p className="text-sm">No public holiday shifts this month</p>
-                            </div>}
-                        </div>
-                      </div>
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>;
-        })}
-          </CardContent>
-        </Card>}
+                                {/* Right column - Holiday shifts details */}
+                                <div>
+                                  {preview.holidayShifts.length > 0 ? <div className="space-y-2">
+                                      <h4 className="font-medium text-sm text-muted-foreground mb-3">Public Holiday Shifts</h4>
+                                      {preview.holidayShifts.map((shift, idx) => <div key={idx} className="flex items-center gap-2 text-sm py-1.5 px-2 bg-amber-500/10 rounded">
+                                          <Calendar className="h-4 w-4 text-amber-600" />
+                                          <span>{format(parseISO(shift.date), 'dd MMM yyyy')}</span>
+                                          <span className="text-muted-foreground">-</span>
+                                          <span className="text-amber-600">{shift.holidayName}</span>
+                                        </div>)}
+                                    </div> : <div className="text-center py-6 text-muted-foreground">
+                                      <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                                      <p className="text-sm">No public holiday shifts this month</p>
+                                    </div>}
+                                </div>
+                              </div>
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>;
+                })}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      )}
 
     </div>;
 }
