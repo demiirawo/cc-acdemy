@@ -168,13 +168,63 @@ export function StaffRequestsManager() {
 
       if (error) throw error;
 
+      // If it's a shift swap being approved, actually swap the schedules
+      if (status === 'approved' && request.request_type === 'shift_swap' && request.swap_with_user_id) {
+        // Fetch schedules for both users within the date range
+        const startDate = request.start_date;
+        const endDate = request.end_date;
+        
+        // Get requesting user's schedules in the date range
+        const { data: requesterSchedules, error: reqSchedError } = await supabase
+          .from("staff_schedules")
+          .select("*")
+          .eq("user_id", request.user_id)
+          .gte("start_datetime", startDate)
+          .lte("start_datetime", endDate + "T23:59:59");
+        
+        if (reqSchedError) console.error('Error fetching requester schedules:', reqSchedError);
+        
+        // Get swap partner's schedules in the date range
+        const { data: partnerSchedules, error: partSchedError } = await supabase
+          .from("staff_schedules")
+          .select("*")
+          .eq("user_id", request.swap_with_user_id)
+          .gte("start_datetime", startDate)
+          .lte("start_datetime", endDate + "T23:59:59");
+        
+        if (partSchedError) console.error('Error fetching partner schedules:', partSchedError);
+        
+        // Swap the user_id on requester's schedules to partner
+        if (requesterSchedules && requesterSchedules.length > 0) {
+          for (const schedule of requesterSchedules) {
+            await supabase
+              .from("staff_schedules")
+              .update({ user_id: request.swap_with_user_id })
+              .eq("id", schedule.id);
+          }
+        }
+        
+        // Swap the user_id on partner's schedules to requester
+        if (partnerSchedules && partnerSchedules.length > 0) {
+          for (const schedule of partnerSchedules) {
+            await supabase
+              .from("staff_schedules")
+              .update({ user_id: request.user_id })
+              .eq("id", schedule.id);
+          }
+        }
+        
+        console.log(`Shift swap completed: swapped ${requesterSchedules?.length || 0} + ${partnerSchedules?.length || 0} schedules`);
+      }
+
       // If it's a holiday request being approved, sync to staff_holidays
-      if (status === 'approved' && request.request_type === 'holiday') {
+      if (status === 'approved' && (request.request_type === 'holiday' || request.request_type === 'holiday_paid' || request.request_type === 'holiday_unpaid')) {
+        const absenceType: 'holiday' | 'unpaid_leave' = request.request_type === 'holiday_unpaid' ? 'unpaid_leave' : 'holiday';
         const { error: holidayError } = await supabase
           .from("staff_holidays")
-          .insert({
+          .insert([{
             user_id: request.user_id,
-            absence_type: 'holiday',
+            absence_type: absenceType as 'holiday' | 'maternity' | 'other' | 'paternity' | 'personal' | 'sick' | 'unpaid',
             start_date: request.start_date,
             end_date: request.end_date,
             days_taken: request.days_requested,
@@ -182,7 +232,7 @@ export function StaffRequestsManager() {
             notes: request.details,
             approved_by: user.id,
             approved_at: new Date().toISOString()
-          });
+          }]);
 
         if (holidayError) {
           console.error('Failed to sync to staff_holidays:', holidayError);
@@ -192,6 +242,8 @@ export function StaffRequestsManager() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
       queryClient.invalidateQueries({ queryKey: ["my-staff-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-schedule"] });
       toast.success(`Request ${variables.status}`);
       setReviewDialogOpen(false);
       setSelectedRequest(null);
