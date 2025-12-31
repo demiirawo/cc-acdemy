@@ -62,7 +62,7 @@ export function StaffScheduleManager() {
   const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [isOvertimeDialogOpen, setIsOvertimeDialogOpen] = useState(false);
-  const [selectedStaff, setSelectedStaff] = useState<string>("");
+  const [selectedStaff, setSelectedStaff] = useState<string>("all");
   
   // Schedule form state
   const [scheduleForm, setScheduleForm] = useState({
@@ -321,7 +321,7 @@ export function StaffScheduleManager() {
     return hours * schedule.hourly_rate;
   };
 
-  const filteredStaff = selectedStaff 
+  const filteredStaff = selectedStaff && selectedStaff !== "all"
     ? staffMembers.filter(s => s.user_id === selectedStaff)
     : staffMembers;
 
@@ -352,7 +352,7 @@ export function StaffScheduleManager() {
                   <SelectValue placeholder="All Staff" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Staff</SelectItem>
+                  <SelectItem value="all">All Staff</SelectItem>
                   {staffMembers.map(staff => (
                     <SelectItem key={staff.user_id} value={staff.user_id}>
                       {staff.display_name || staff.email}
