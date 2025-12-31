@@ -832,7 +832,7 @@ export function RealKnowledgeBaseSidebar({
                 )}
                 onClick={() => handleItemSelect({
                   ...item,
-                  type: item.id === 'chat' ? 'space' : 'page' // Use 'space' for special pages like chat to avoid page fetch
+                  type: ['chat', 'hr', 'home', 'recent', 'tags', 'recycling-bin', 'user-management', 'whiteboard', 'glossary', 'settings'].includes(item.id) ? 'space' : 'page'
                 })}
               >
                 <Icon className="h-4 w-4 text-sidebar-foreground/70" />
