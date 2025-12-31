@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Check, X, Clock, Palmtree, RefreshCw, Eye } from "lucide-react";
+import { Check, X, Clock, Palmtree, RefreshCw, Eye, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -163,6 +163,28 @@ export function StaffRequestsManager() {
     }
   });
 
+  // Delete request mutation
+  const deleteMutation = useMutation({
+    mutationFn: async (requestId: string) => {
+      const { error } = await supabase
+        .from("staff_requests")
+        .delete()
+        .eq("id", requestId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["my-staff-requests"] });
+      toast.success("Request deleted");
+      setReviewDialogOpen(false);
+      setSelectedRequest(null);
+    },
+    onError: (error) => {
+      toast.error("Failed to delete request: " + error.message);
+    }
+  });
+
   const getStaffName = (userId: string) => {
     const profile = userProfiles.find(p => p.user_id === userId);
     return profile?.display_name || profile?.email || "Unknown";
@@ -298,8 +320,8 @@ export function StaffRequestsManager() {
                             {format(new Date(request.created_at), 'dd MMM yyyy')}
                           </TableCell>
                           <TableCell>
-                            {request.status === 'pending' ? (
-                              <div className="flex gap-1">
+                            <div className="flex gap-1">
+                              {request.status === 'pending' ? (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -309,16 +331,27 @@ export function StaffRequestsManager() {
                                   <Eye className="h-4 w-4 mr-1" />
                                   Review
                                 </Button>
-                              </div>
-                            ) : (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => openReviewDialog(request)}
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            )}
+                              ) : (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => openReviewDialog(request)}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => deleteMutation.mutate(request.id)}
+                                    className="text-destructive hover:text-destructive"
+                                    disabled={deleteMutation.isPending}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
