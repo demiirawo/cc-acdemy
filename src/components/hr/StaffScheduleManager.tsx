@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle } from "lucide-react";
 
 interface Schedule {
   id: string;
@@ -675,6 +675,18 @@ export function StaffScheduleManager() {
     }
   };
 
+  // Check if staff has a holiday request for a specific day (coverage issue)
+  const hasHolidayRequestForDay = (userId: string, day: Date) => {
+    return staffRequests.some(r => {
+      if (r.user_id !== userId) return false;
+      if (r.request_type !== 'holiday') return false;
+      if (r.status === 'rejected') return false;
+      const start = parseISO(r.start_date);
+      const end = parseISO(r.end_date);
+      return isWithinInterval(day, { start, end }) || isSameDay(day, start) || isSameDay(day, end);
+    });
+  };
+
   const calculateScheduleCost = (schedule: Schedule) => {
     if (!schedule.hourly_rate) return null;
     const hours = differenceInHours(parseISO(schedule.end_datetime), parseISO(schedule.start_datetime));
@@ -1011,36 +1023,46 @@ export function StaffScheduleManager() {
                           const cost = calculateScheduleCost(schedule);
                           const isFromPattern = schedule.id.startsWith('pattern-');
                           const isPatternOvertime = schedule.is_pattern_overtime;
+                          const hasCoverageIssue = hasHolidayRequestForDay(staff.user_id, day);
+                          
                           return (
                             <div 
                               key={schedule.id} 
                               className={`rounded p-1 mb-1 text-xs group relative ${
-                                isFromPattern 
-                                  ? isPatternOvertime
-                                    ? 'bg-orange-50 border border-orange-300'
-                                    : 'bg-violet-50 border border-violet-300' 
-                                  : 'bg-primary/10 border border-primary/30'
+                                hasCoverageIssue
+                                  ? 'bg-red-100 border-2 border-red-400 text-red-800'
+                                  : isFromPattern 
+                                    ? isPatternOvertime
+                                      ? 'bg-orange-50 border border-orange-300'
+                                      : 'bg-violet-50 border border-violet-300' 
+                                    : 'bg-primary/10 border border-primary/30'
                               }`}
                             >
+                              {hasCoverageIssue && (
+                                <div className="flex items-center gap-1 text-red-700 font-medium mb-0.5">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  <span className="text-[10px]">Needs cover</span>
+                                </div>
+                              )}
                               <div className="font-medium truncate flex items-center gap-1">
                                 {schedule.client_name}
-                                {isFromPattern && (
+                                {isFromPattern && !hasCoverageIssue && (
                                   <Infinity className={`h-3 w-3 ${isPatternOvertime ? 'text-orange-500' : 'text-violet-500'}`} />
                                 )}
-                                {isPatternOvertime && (
+                                {isPatternOvertime && !hasCoverageIssue && (
                                   <Clock className="h-3 w-3 text-orange-500" />
                                 )}
                               </div>
-                              <div className="text-muted-foreground">
+                              <div className={hasCoverageIssue ? 'text-red-600' : 'text-muted-foreground'}>
                                 {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
                               </div>
                               {cost !== null && (
-                                <div className="text-muted-foreground">
+                                <div className={hasCoverageIssue ? 'text-red-600' : 'text-muted-foreground'}>
                                   {schedule.currency} {cost.toFixed(2)}
                                 </div>
                               )}
                               {schedule.notes && (
-                                <div className="text-muted-foreground italic truncate">{schedule.notes}</div>
+                                <div className={`italic truncate ${hasCoverageIssue ? 'text-red-600' : 'text-muted-foreground'}`}>{schedule.notes}</div>
                               )}
                               <Button
                                 variant="ghost"
