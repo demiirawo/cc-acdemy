@@ -1067,57 +1067,23 @@ export function StaffScheduleManager() {
         </div>
       </div>
 
-      {/* Active Recurring Patterns */}
-      {recurringPatterns.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Infinity className="h-5 w-5" />
-              Active Recurring Patterns
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {recurringPatterns.map(pattern => (
-                <div key={pattern.id} className="flex items-center justify-between p-3 border rounded-md bg-muted/30">
-                  <div className="flex-1">
-                    <div className="font-medium">
-                      {getStaffName(pattern.user_id)} → {pattern.client_name}
-                      {pattern.is_overtime && <Badge variant="outline" className="ml-2 text-orange-600">Overtime</Badge>}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {DAYS_OF_WEEK.filter(d => pattern.days_of_week.includes(d.value)).map(d => d.label).join(", ")} • {pattern.start_time} - {pattern.end_time}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      From {format(parseISO(pattern.start_date), "MMM d, yyyy")}
-                      {pattern.end_date ? ` to ${format(parseISO(pattern.end_date), "MMM d, yyyy")}` : " (indefinite)"}
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => deletePatternMutation.mutate(pattern.id)}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Delete Confirmation Dialog for Recurring Shifts */}
       <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Recurring Shift</AlertDialogTitle>
             <AlertDialogDescription>
-              This shift is part of a recurring pattern. What would you like to do?
+              This shift is part of a recurring pattern. Would you like to delete just this shift or the entire series?
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col sm:flex-row gap-2">
             <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
+            <Button 
+              variant="outline"
+              onClick={() => handleDeleteConfirm(false)}
+            >
+              Delete Just This Shift
+            </Button>
             <AlertDialogAction 
               onClick={() => handleDeleteConfirm(true)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
