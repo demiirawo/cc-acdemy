@@ -12,7 +12,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat } from "lucide-react";
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO } from "date-fns";
 
 interface PublicHoliday {
@@ -123,8 +125,13 @@ interface AdjustmentEditState {
   currency: string;
   bonusAmount: number;
   bonusComment: string;
+  bonusRecurring: boolean;
+  bonusRecurringMonths: number;
   deductionAmount: number;
   deductionComment: string;
+  overtimeOverrideEnabled: boolean;
+  overtimeOverrideAmount: number;
+  calculatedOvertime: number;
 }
 
 export function StaffPayManager() {
@@ -758,6 +765,10 @@ export function StaffPayManager() {
   const handleOpenAdjustmentDialog = (staff: typeof payrollSummary[0]) => {
     const bonusRecord = staff.records.find(r => r.record_type === 'bonus');
     const deductionRecord = staff.records.find(r => r.record_type === 'deduction');
+    const overtimeRecord = staff.records.find(r => r.record_type === 'overtime');
+    
+    // Check if overtime was manually overridden (has an overtime record)
+    const hasOvertimeOverride = overtimeRecord !== undefined;
     
     setAdjustmentEdit({
       staffId: staff.userId,
@@ -765,8 +776,13 @@ export function StaffPayManager() {
       currency: staff.currency,
       bonusAmount: staff.bonuses,
       bonusComment: bonusRecord?.description || '',
+      bonusRecurring: false,
+      bonusRecurringMonths: 3,
       deductionAmount: staff.deductions,
-      deductionComment: deductionRecord?.description || ''
+      deductionComment: deductionRecord?.description || '',
+      overtimeOverrideEnabled: hasOvertimeOverride,
+      overtimeOverrideAmount: hasOvertimeOverride ? staff.overtime : staff.holidayOvertimeBonus,
+      calculatedOvertime: staff.holidayOvertimeBonus
     });
     setAdjustmentDialogOpen(true);
   };
@@ -784,7 +800,7 @@ export function StaffPayManager() {
       const payPeriodStart = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
       const payPeriodEnd = payDate;
 
-      // Handle bonus changes
+      // Handle bonus changes for current month
       const existingBonusRecord = staff.records.find(r => r.record_type === 'bonus');
       
       if (adjustmentEdit.bonusAmount > 0) {
@@ -813,11 +829,90 @@ export function StaffPayManager() {
             });
           if (error) throw error;
         }
+
+        // Handle recurring bonus - create records for future months
+        if (adjustmentEdit.bonusRecurring && adjustmentEdit.bonusRecurringMonths > 0) {
+          const recurringRecords = [];
+          for (let i = 1; i <= adjustmentEdit.bonusRecurringMonths; i++) {
+            const futureMonth = addMonths(selectedMonth, i);
+            const futurePayDate = format(endOfMonth(futureMonth), 'yyyy-MM-dd');
+            const futurePeriodStart = format(startOfMonth(futureMonth), 'yyyy-MM-dd');
+            
+            recurringRecords.push({
+              user_id: adjustmentEdit.staffId,
+              record_type: 'bonus' as any,
+              amount: adjustmentEdit.bonusAmount,
+              currency: staff.currency,
+              description: `${adjustmentEdit.bonusComment || 'Recurring bonus'} (recurring)`,
+              pay_date: futurePayDate,
+              pay_period_start: futurePeriodStart,
+              pay_period_end: futurePayDate,
+              created_by: user?.id!
+            });
+          }
+          
+          if (recurringRecords.length > 0) {
+            const { error } = await supabase
+              .from('staff_pay_records')
+              .insert(recurringRecords);
+            if (error) throw error;
+          }
+        }
       } else if (existingBonusRecord && adjustmentEdit.bonusAmount === 0) {
         const { error } = await supabase
           .from('staff_pay_records')
           .delete()
           .eq('id', existingBonusRecord.id);
+        if (error) throw error;
+      }
+
+      // Handle overtime override
+      const existingOvertimeRecord = staff.records.find(r => r.record_type === 'overtime');
+      
+      if (adjustmentEdit.overtimeOverrideEnabled) {
+        // Calculate the override delta (difference from calculated overtime)
+        const overtimeDelta = adjustmentEdit.overtimeOverrideAmount - adjustmentEdit.calculatedOvertime;
+        
+        if (overtimeDelta !== 0) {
+          if (existingOvertimeRecord) {
+            const { error } = await supabase
+              .from('staff_pay_records')
+              .update({
+                amount: overtimeDelta,
+                description: 'Manual overtime adjustment'
+              })
+              .eq('id', existingOvertimeRecord.id);
+            if (error) throw error;
+          } else {
+            const { error } = await supabase
+              .from('staff_pay_records')
+              .insert({
+                user_id: adjustmentEdit.staffId,
+                record_type: 'overtime' as any,
+                amount: overtimeDelta,
+                currency: staff.currency,
+                description: 'Manual overtime adjustment',
+                pay_date: payDate,
+                pay_period_start: payPeriodStart,
+                pay_period_end: payPeriodEnd,
+                created_by: user?.id!
+              });
+            if (error) throw error;
+          }
+        } else if (existingOvertimeRecord) {
+          // Delta is 0, remove the override record
+          const { error } = await supabase
+            .from('staff_pay_records')
+            .delete()
+            .eq('id', existingOvertimeRecord.id);
+          if (error) throw error;
+        }
+      } else if (existingOvertimeRecord) {
+        // Override disabled, remove the override record
+        const { error } = await supabase
+          .from('staff_pay_records')
+          .delete()
+          .eq('id', existingOvertimeRecord.id);
         if (error) throw error;
       }
 
@@ -858,7 +953,11 @@ export function StaffPayManager() {
         if (error) throw error;
       }
 
-      toast({ title: "Success", description: "Adjustments saved" });
+      const successMessage = adjustmentEdit.bonusRecurring && adjustmentEdit.bonusRecurringMonths > 0
+        ? `Adjustments saved. Bonus will recur for ${adjustmentEdit.bonusRecurringMonths} additional month(s).`
+        : "Adjustments saved";
+      
+      toast({ title: "Success", description: successMessage });
       setAdjustmentDialogOpen(false);
       setAdjustmentEdit(null);
       fetchData();
@@ -1383,13 +1482,63 @@ export function StaffPayManager() {
 
           {adjustmentEdit && (
             <div className="space-y-6 py-4">
+              {/* Overtime Override Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-amber-500" />
+                    <Label className="text-base font-medium">Overtime</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="overtime-override" className="text-sm text-muted-foreground">
+                      Manual Override
+                    </Label>
+                    <Switch
+                      id="overtime-override"
+                      checked={adjustmentEdit.overtimeOverrideEnabled}
+                      onCheckedChange={(checked) => setAdjustmentEdit({
+                        ...adjustmentEdit,
+                        overtimeOverrideEnabled: checked,
+                        overtimeOverrideAmount: checked ? adjustmentEdit.overtimeOverrideAmount : adjustmentEdit.calculatedOvertime
+                      })}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2 pl-6">
+                  <div className="text-sm text-muted-foreground mb-2">
+                    Auto-calculated: {CURRENCIES.find(c => c.code === adjustmentEdit.currency)?.symbol || '£'}
+                    {adjustmentEdit.calculatedOvertime.toFixed(2)} (holiday OT)
+                  </div>
+                  {adjustmentEdit.overtimeOverrideEnabled && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">
+                        {CURRENCIES.find(c => c.code === adjustmentEdit.currency)?.symbol || '£'}
+                      </span>
+                      <Input
+                        type="number"
+                        value={adjustmentEdit.overtimeOverrideAmount || ''}
+                        onChange={(e) => setAdjustmentEdit({
+                          ...adjustmentEdit,
+                          overtimeOverrideAmount: parseFloat(e.target.value) || 0
+                        })}
+                        className="w-32"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                      />
+                      <span className="text-xs text-muted-foreground">Total overtime amount</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {/* Bonus Section */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-success" />
                   <Label className="text-base font-medium">Bonus</Label>
                 </div>
-                <div className="space-y-2 pl-6">
+                <div className="space-y-3 pl-6">
                   <div className="flex items-center gap-2">
                     <span className="text-muted-foreground">
                       {CURRENCIES.find(c => c.code === adjustmentEdit.currency)?.symbol || '£'}
@@ -1417,6 +1566,51 @@ export function StaffPayManager() {
                     rows={2}
                     className="text-sm"
                   />
+                  
+                  {/* Recurring Bonus Option */}
+                  {adjustmentEdit.bonusAmount > 0 && (
+                    <div className="border rounded-lg p-3 bg-muted/30 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="bonus-recurring"
+                          checked={adjustmentEdit.bonusRecurring}
+                          onCheckedChange={(checked) => setAdjustmentEdit({
+                            ...adjustmentEdit,
+                            bonusRecurring: checked === true
+                          })}
+                        />
+                        <Label htmlFor="bonus-recurring" className="text-sm flex items-center gap-1 cursor-pointer">
+                          <Repeat className="h-3 w-3" />
+                          Make this bonus recurring
+                        </Label>
+                      </div>
+                      
+                      {adjustmentEdit.bonusRecurring && (
+                        <div className="flex items-center gap-2 pl-6">
+                          <Label className="text-sm text-muted-foreground">Repeat for</Label>
+                          <Select
+                            value={adjustmentEdit.bonusRecurringMonths.toString()}
+                            onValueChange={(value) => setAdjustmentEdit({
+                              ...adjustmentEdit,
+                              bonusRecurringMonths: parseInt(value)
+                            })}
+                          >
+                            <SelectTrigger className="w-24">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="1">1 month</SelectItem>
+                              <SelectItem value="2">2 months</SelectItem>
+                              <SelectItem value="3">3 months</SelectItem>
+                              <SelectItem value="6">6 months</SelectItem>
+                              <SelectItem value="11">11 months</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <span className="text-xs text-muted-foreground">additional</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 
