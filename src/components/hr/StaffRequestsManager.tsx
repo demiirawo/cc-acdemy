@@ -40,6 +40,15 @@ interface UserProfile {
   email: string | null;
 }
 
+interface LinkedHoliday {
+  id: string;
+  user_id: string;
+  start_date: string;
+  end_date: string;
+  days_taken: number;
+  absence_type: string;
+}
+
 const REQUEST_TYPE_INFO: Record<string, { label: string; icon: typeof Clock; color: string }> = {
   overtime: {
     label: "Overtime",
@@ -116,6 +125,19 @@ export function StaffRequestsManager() {
       
       if (error) throw error;
       return data as UserProfile[];
+    }
+  });
+
+  // Fetch linked holidays for overtime requests
+  const { data: linkedHolidays = [] } = useQuery({
+    queryKey: ["linked-holidays-for-requests"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff_holidays")
+        .select("id, user_id, start_date, end_date, days_taken, absence_type");
+      
+      if (error) throw error;
+      return data as LinkedHoliday[];
     }
   });
 
@@ -205,6 +227,19 @@ export function StaffRequestsManager() {
   const getStaffName = (userId: string) => {
     const profile = userProfiles.find(p => p.user_id === userId);
     return profile?.display_name || profile?.email || "Unknown";
+  };
+
+  const getCoveredStaffInfo = (linkedHolidayId: string | null) => {
+    if (!linkedHolidayId) return null;
+    const holiday = linkedHolidays.find(h => h.id === linkedHolidayId);
+    if (!holiday) return null;
+    return {
+      staffName: getStaffName(holiday.user_id),
+      startDate: holiday.start_date,
+      endDate: holiday.end_date,
+      days: holiday.days_taken,
+      absenceType: holiday.absence_type
+    };
   };
 
   const openReviewDialog = (request: StaffRequest) => {
@@ -305,6 +340,7 @@ export function StaffRequestsManager() {
                     filteredRequests.map(request => {
                       const typeInfo = REQUEST_TYPE_INFO[request.request_type];
                       const Icon = typeInfo?.icon || Clock;
+                      const coveredStaff = getCoveredStaffInfo(request.linked_holiday_id);
                       
                       return (
                         <TableRow key={request.id}>
@@ -313,6 +349,11 @@ export function StaffRequestsManager() {
                             {request.request_type === 'shift_swap' && request.swap_with_user_id && (
                               <div className="text-xs text-muted-foreground">
                                 ↔ {getStaffName(request.swap_with_user_id)}
+                              </div>
+                            )}
+                            {request.request_type === 'overtime' && coveredStaff && (
+                              <div className="text-xs text-muted-foreground">
+                                Covering: {coveredStaff.staffName}
                               </div>
                             )}
                           </TableCell>
@@ -332,8 +373,18 @@ export function StaffRequestsManager() {
                           <TableCell>{format(new Date(request.start_date), 'dd MMM yyyy')}</TableCell>
                           <TableCell>{format(new Date(request.end_date), 'dd MMM yyyy')}</TableCell>
                           <TableCell>{request.days_requested}</TableCell>
-                          <TableCell className="max-w-[200px] truncate" title={request.details || ''}>
-                            {request.details || '-'}
+                          <TableCell className="max-w-[200px]">
+                            {request.request_type === 'overtime' && coveredStaff ? (
+                              <div className="text-xs">
+                                <div className="font-medium">{coveredStaff.staffName}'s {coveredStaff.absenceType}</div>
+                                <div className="text-muted-foreground">
+                                  {format(new Date(coveredStaff.startDate), 'dd MMM')} – {format(new Date(coveredStaff.endDate), 'dd MMM')}
+                                </div>
+                                {request.details && <div className="truncate mt-1" title={request.details}>{request.details}</div>}
+                              </div>
+                            ) : (
+                              <span className="truncate" title={request.details || ''}>{request.details || '-'}</span>
+                            )}
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className={STATUS_COLORS[request.status] || ''}>
@@ -432,6 +483,20 @@ export function StaffRequestsManager() {
                   <p className="font-medium">{getStaffName(selectedRequest.swap_with_user_id)}</p>
                 </div>
               )}
+
+              {selectedRequest.request_type === 'overtime' && (() => {
+                const coveredStaff = getCoveredStaffInfo(selectedRequest.linked_holiday_id);
+                if (!coveredStaff) return null;
+                return (
+                  <div className="p-3 bg-muted rounded-md">
+                    <Label className="text-muted-foreground">Covering For</Label>
+                    <p className="font-medium mt-1">{coveredStaff.staffName}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {coveredStaff.absenceType} from {format(new Date(coveredStaff.startDate), 'dd MMM yyyy')} to {format(new Date(coveredStaff.endDate), 'dd MMM yyyy')} ({coveredStaff.days} days)
+                    </p>
+                  </div>
+                );
+              })()}
 
               {selectedRequest.details && (
                 <div>
