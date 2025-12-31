@@ -465,7 +465,8 @@ export function StaffPayManager() {
       
       console.log(`User ${userProfile?.display_name}: ${userSchedules.length} actual schedules, ${virtualSchedules.length} virtual schedules`);
       
-      // Calculate holiday overtime: 1.5 × (Base Salary / 20) per holiday day worked
+      // Calculate holiday overtime bonus: 0.5 × (Base Salary / 20) per holiday day worked
+      // Base day pay is already in salary, so we only add the 0.5x overtime bonus
       // Daily rate = monthlyBaseSalary / 20 (assuming 20 working days per month)
       const dailyRate = monthlyBaseSalary / 20;
       let holidayOvertimeDays = 0;
@@ -501,8 +502,9 @@ export function StaffPayManager() {
         }
       });
       
-      // Holiday overtime bonus = 1.5 × daily rate × number of holiday days worked
-      const holidayOvertimeBonus = holidayOvertimeDays * dailyRate * 1.5;
+      // Holiday overtime bonus = 0.5 × daily rate × number of holiday days worked
+      // (Base day pay is already included in monthly salary, so we only add the overtime portion)
+      const holidayOvertimeBonus = holidayOvertimeDays * dailyRate * 0.5;
       
       // Sum additions and deductions from records
       const salaryRecords = userRecords.filter(r => r.record_type === 'salary');
@@ -1028,7 +1030,7 @@ export function StaffPayManager() {
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-amber-500" />
                   <span className="font-medium">Nigerian Public Holidays {holidaysYear}</span>
-                  <Badge variant="secondary" className="ml-2">1.5x Overtime Rate</Badge>
+                  <Badge variant="secondary" className="ml-2">+0.5x Overtime Bonus</Badge>
                   {loadingHolidays && (
                     <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />
                   )}
@@ -1205,7 +1207,7 @@ export function StaffPayManager() {
                               +{formatCurrency(staff.holidayOvertimeBonus, staff.currency)}
                             </span>
                             <span className="text-[10px] text-muted-foreground">
-                              {staff.holidayOvertimeDays} day{staff.holidayOvertimeDays !== 1 ? 's' : ''} @ 1.5x
+                              {staff.holidayOvertimeDays} day{staff.holidayOvertimeDays !== 1 ? 's' : ''} @ +0.5x
                             </span>
                           </div>
                         ) : '-'}

@@ -360,7 +360,8 @@ export function MyHRProfile() {
       }
 
       const holidayOvertimeDays = countedHolidayDates.size;
-      const holidayOvertimeBonus = holidayOvertimeDays * dailyRate * 1.5;
+      // Base day pay is already in salary, so we only add the 0.5x overtime bonus
+      const holidayOvertimeBonus = holidayOvertimeDays * dailyRate * 0.5;
 
       // Get bonuses and deductions for this month
       const monthRecords = payRecords.filter(r => {
@@ -613,7 +614,7 @@ export function MyHRProfile() {
                               <div>
                                 <span className="text-muted-foreground">Holiday Overtime</span>
                                 <span className="text-xs text-muted-foreground ml-2">
-                                  ({preview.holidayOvertimeDays} day{preview.holidayOvertimeDays !== 1 ? 's' : ''} @ 1.5x)
+                                  ({preview.holidayOvertimeDays} day{preview.holidayOvertimeDays !== 1 ? 's' : ''} @ 0.5x bonus)
                                 </span>
                               </div>
                               <span className="font-medium text-amber-600">+{formatCurrency(preview.holidayOvertimeBonus, preview.currency)}</span>
