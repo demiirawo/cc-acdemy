@@ -594,7 +594,7 @@ export function MyHRProfile() {
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5 text-primary" />
-              <CardTitle className="text-lg">12-Month Pay Preview</CardTitle>
+              <CardTitle className="text-lg">12 MONTH PAY SUMMARY</CardTitle>
             </div>
             <CardDescription>Estimated pay for the next 12 months (subject to final processing)</CardDescription>
           </CardHeader>
