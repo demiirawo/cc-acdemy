@@ -20,6 +20,9 @@ interface MonthlyPayPreview {
   holidayOvertimeDays: number;
   holidayOvertimeBonus: number;
   holidayShifts: Array<{ date: string; holidayName: string }>;
+  unusedHolidayPayout: number;
+  unusedHolidayDays: number;
+  isJunePayroll: boolean;
   totalPay: number;
   payrollStatus: 'pending' | 'ready' | 'paid';
   currency: string;
@@ -157,14 +160,25 @@ export function MyHRProfile() {
 
       setHolidays(holidayData || []);
 
-      // Calculate total holidays taken this year
-      const thisYear = new Date().getFullYear();
+      // Calculate total holidays taken for current holiday year (June 1 to June 1)
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth(); // 0-indexed, so June = 5
+      
+      // Holiday year starts June 1. If we're before June, holiday year started last year
+      const holidayYearStart = currentMonth >= 5 
+        ? new Date(currentYear, 5, 1)  // June 1 of current year
+        : new Date(currentYear - 1, 5, 1);  // June 1 of previous year
+      const holidayYearEnd = new Date(holidayYearStart.getFullYear() + 1, 5, 1); // June 1 of next year
+      
       const holidaysThisYear = (holidayData || [])
-        .filter(h => 
-          h.status === 'approved' && 
-          h.absence_type === 'holiday' &&
-          new Date(h.start_date).getFullYear() === thisYear
-        )
+        .filter(h => {
+          const startDate = new Date(h.start_date);
+          return h.status === 'approved' && 
+            h.absence_type === 'holiday' &&
+            startDate >= holidayYearStart &&
+            startDate < holidayYearEnd;
+        })
         .reduce((sum, h) => sum + Number(h.days_taken), 0);
       
       setTotalHolidaysTaken(holidaysThisYear);
@@ -284,6 +298,7 @@ export function MyHRProfile() {
 
     const dailyRate = monthlyBaseSalary / 20;
     const holidayDatesMap = new Map(publicHolidays.map(h => [h.date, h.name]));
+    const annualHolidayAllowance = hrProfile.annual_holiday_allowance || 28;
 
     // Create exceptions map
     const exceptionsMap = new Map<string, Set<string>>();
@@ -299,6 +314,11 @@ export function MyHRProfile() {
       const monthStart = startOfMonth(targetMonth);
       const monthEnd = endOfMonth(targetMonth);
       const monthKey = format(targetMonth, 'yyyy-MM');
+      const targetYear = targetMonth.getFullYear();
+      const targetMonthNum = targetMonth.getMonth(); // 0-indexed, June = 5
+
+      // Check if this is a June payroll (end of holiday year)
+      const isJunePayroll = targetMonthNum === 5;
 
       // Generate virtual schedules from recurring patterns for this month
       const virtualScheduleDates: string[] = [];
@@ -363,6 +383,32 @@ export function MyHRProfile() {
       // Base day pay is already in salary, so we only add the 0.5x overtime bonus
       const holidayOvertimeBonus = holidayOvertimeDays * dailyRate * 0.5;
 
+      // Calculate unused holiday payout for June payroll
+      // Holiday year ends June 1, so June payroll includes payout for unused days
+      let unusedHolidayPayout = 0;
+      let unusedHolidayDays = 0;
+      
+      if (isJunePayroll) {
+        // For the holiday year ending on June 1 of this month's year
+        // Calculate holidays taken from June 1 of previous year to June 1 of this year
+        const holidayYearStart = new Date(targetYear - 1, 5, 1); // June 1 of previous year
+        const holidayYearEnd = new Date(targetYear, 5, 1); // June 1 of this year
+        
+        const holidaysTakenInYear = holidays
+          .filter(h => {
+            const startDate = new Date(h.start_date);
+            return h.status === 'approved' && 
+              h.absence_type === 'holiday' &&
+              startDate >= holidayYearStart &&
+              startDate < holidayYearEnd;
+          })
+          .reduce((sum, h) => sum + Number(h.days_taken), 0);
+        
+        unusedHolidayDays = Math.max(0, annualHolidayAllowance - holidaysTakenInYear);
+        // Holiday pay = (Base Salary / 20) * Remaining Holiday Balance
+        unusedHolidayPayout = dailyRate * unusedHolidayDays;
+      }
+
       // Get bonuses and deductions for this month
       const monthRecords = payRecords.filter(r => {
         const payDate = parseISO(r.pay_date);
@@ -377,7 +423,7 @@ export function MyHRProfile() {
         .filter(r => r.record_type === 'deduction')
         .reduce((sum, r) => sum + r.amount, 0);
 
-      const totalPay = monthlyBaseSalary + bonuses + holidayOvertimeBonus - deductions;
+      const totalPay = monthlyBaseSalary + bonuses + holidayOvertimeBonus + unusedHolidayPayout - deductions;
 
       // Determine payroll status
       let payrollStatus: 'pending' | 'ready' | 'paid' = 'pending';
@@ -404,6 +450,9 @@ export function MyHRProfile() {
         holidayOvertimeDays,
         holidayOvertimeBonus,
         holidayShifts,
+        unusedHolidayPayout,
+        unusedHolidayDays,
+        isJunePayroll,
         totalPay,
         payrollStatus,
         currency: hrProfile.base_currency
@@ -508,6 +557,13 @@ export function MyHRProfile() {
                 <p className="font-medium">
                   {holidayRemaining} / {hrProfile.annual_holiday_allowance || 28} days
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  Year: {(() => {
+                    const now = new Date();
+                    const year = now.getMonth() >= 5 ? now.getFullYear() : now.getFullYear() - 1;
+                    return `Jun ${year} - Jun ${year + 1}`;
+                  })()}
+                </p>
               </div>
             </div>
           </CardContent>
@@ -583,6 +639,9 @@ export function MyHRProfile() {
                         {isCurrentMonth && (
                           <Badge variant="outline" className="text-xs">Current</Badge>
                         )}
+                        {preview.isJunePayroll && (
+                          <Badge variant="secondary" className="text-xs bg-green-100 text-green-700">Holiday Year End</Badge>
+                        )}
                       </div>
                       <div className="flex items-center gap-3">
                         {getStatusBadge(preview.payrollStatus)}
@@ -618,6 +677,25 @@ export function MyHRProfile() {
                                 </span>
                               </div>
                               <span className="font-medium text-amber-600">+{formatCurrency(preview.holidayOvertimeBonus, preview.currency)}</span>
+                            </div>
+                          )}
+
+                          {preview.isJunePayroll && preview.unusedHolidayPayout > 0 && (
+                            <div className="flex justify-between items-center py-2 border-b bg-green-500/10 rounded px-2">
+                              <div>
+                                <span className="text-muted-foreground">Unused Holiday Payout</span>
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  ({preview.unusedHolidayDays} day{preview.unusedHolidayDays !== 1 ? 's' : ''} @ daily rate)
+                                </span>
+                              </div>
+                              <span className="font-medium text-green-600">+{formatCurrency(preview.unusedHolidayPayout, preview.currency)}</span>
+                            </div>
+                          )}
+
+                          {preview.isJunePayroll && preview.unusedHolidayDays === 0 && (
+                            <div className="flex justify-between items-center py-2 border-b text-muted-foreground text-sm">
+                              <span>Unused Holiday Payout</span>
+                              <span>No unused days</span>
                             </div>
                           )}
                           
