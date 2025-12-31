@@ -35,6 +35,16 @@ interface PayRecord {
   created_at: string;
 }
 
+interface StaffSchedule {
+  id: string;
+  user_id: string;
+  start_datetime: string;
+  end_datetime: string;
+  hourly_rate: number | null;
+  currency: string;
+  client_name: string;
+}
+
 interface UserProfile {
   user_id: string;
   display_name: string | null;
@@ -115,6 +125,7 @@ export function StaffPayManager() {
   const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
   const [loadingHolidays, setLoadingHolidays] = useState(false);
   const [holidaysYear, setHolidaysYear] = useState(new Date().getFullYear());
+  const [staffSchedules, setStaffSchedules] = useState<StaffSchedule[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -132,6 +143,15 @@ export function StaffPayManager() {
     fetchExchangeRates();
     fetchPublicHolidays(holidaysYear);
   }, []);
+
+  // Fetch holidays when selected month's year changes
+  useEffect(() => {
+    const selectedYear = selectedMonth.getFullYear();
+    if (selectedYear !== holidaysYear) {
+      setHolidaysYear(selectedYear);
+      fetchPublicHolidays(selectedYear);
+    }
+  }, [selectedMonth]);
 
   const fetchPublicHolidays = async (year: number) => {
     setLoadingHolidays(true);
@@ -252,6 +272,17 @@ export function StaffPayManager() {
       }));
 
       setPayRecords(mergedRecords);
+
+      // Fetch staff schedules
+      const { data: schedules, error: schedulesError } = await supabase
+        .from('staff_schedules')
+        .select('id, user_id, start_datetime, end_datetime, hourly_rate, currency, client_name');
+      
+      if (schedulesError) {
+        console.error('Error fetching schedules:', schedulesError);
+      } else {
+        setStaffSchedules(schedules || []);
+      }
     } catch (error) {
       console.error('Error fetching pay records:', error);
       toast({
@@ -280,6 +311,21 @@ export function StaffPayManager() {
     // Get staff with HR profiles (who have salary configured)
     const staffWithHR = hrProfiles.filter(hr => hr.base_salary && hr.base_salary > 0);
     
+    // Create a set of public holiday dates for quick lookup (format: YYYY-MM-DD)
+    const holidayDatesSet = new Set(publicHolidays.map(h => h.date));
+    
+    // Helper to calculate hours worked from a schedule
+    const calculateHours = (start: string, end: string): number => {
+      const startTime = new Date(start);
+      const endTime = new Date(end);
+      return (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+    };
+    
+    // Helper to get schedule date in YYYY-MM-DD format
+    const getScheduleDate = (datetime: string): string => {
+      return datetime.split('T')[0];
+    };
+    
     return staffWithHR.map(hr => {
       const userProfile = userProfiles.find(u => u.user_id === hr.user_id);
       const userRecords = monthRecords.filter(r => r.user_id === hr.user_id);
@@ -294,6 +340,39 @@ export function StaffPayManager() {
         monthlyBaseSalary = (hr.base_salary || 0) * 2.17;
       }
       
+      // Calculate hourly rate from monthly salary (assuming ~173 working hours/month)
+      const estimatedHourlyRate = monthlyBaseSalary / 173;
+      
+      // Get staff schedules for this user in the selected month
+      const userSchedules = staffSchedules.filter(s => {
+        const scheduleDate = parseISO(s.start_datetime);
+        return s.user_id === hr.user_id && scheduleDate >= monthStart && scheduleDate <= monthEnd;
+      });
+      
+      // Calculate holiday overtime (0.5x extra for each hour worked on a public holiday)
+      // Since they already get paid for regular work, holiday overtime adds the extra 0.5x
+      let holidayOvertimeHours = 0;
+      const holidayShifts: Array<{ date: string; hours: number; holidayName: string }> = [];
+      
+      userSchedules.forEach(schedule => {
+        const scheduleDate = getScheduleDate(schedule.start_datetime);
+        if (holidayDatesSet.has(scheduleDate)) {
+          const hours = calculateHours(schedule.start_datetime, schedule.end_datetime);
+          holidayOvertimeHours += hours;
+          const holiday = publicHolidays.find(h => h.date === scheduleDate);
+          holidayShifts.push({
+            date: scheduleDate,
+            hours,
+            holidayName: holiday?.name || 'Public Holiday'
+          });
+        }
+      });
+      
+      // Use schedule's hourly rate if available, otherwise estimate from salary
+      const hourlyRate = userSchedules[0]?.hourly_rate || estimatedHourlyRate;
+      // Holiday overtime bonus = 0.5x hourly rate for each hour worked on holiday
+      const holidayOvertimeBonus = holidayOvertimeHours * hourlyRate * 0.5;
+      
       // Sum additions and deductions from records
       const salaryRecords = userRecords.filter(r => r.record_type === 'salary');
       const bonusRecords = userRecords.filter(r => r.record_type === 'bonus');
@@ -307,7 +386,8 @@ export function StaffPayManager() {
       const expenses = expenseRecords.reduce((sum, r) => sum + r.amount, 0);
       const deductions = deductionRecords.reduce((sum, r) => sum + r.amount, 0);
       
-      const totalPay = monthlyBaseSalary + bonuses + overtime + expenses - deductions;
+      // Total pay now includes holiday overtime bonus
+      const totalPay = monthlyBaseSalary + bonuses + overtime + expenses + holidayOvertimeBonus - deductions;
       const hasSalaryRecord = salaryRecords.length > 0;
       
       // Convert total pay to GBP for aggregation
@@ -324,13 +404,16 @@ export function StaffPayManager() {
         overtime,
         expenses,
         deductions,
+        holidayOvertimeBonus,
+        holidayOvertimeHours,
+        holidayShifts,
         totalPay,
         totalPayInGBP,
         hasSalaryRecord,
         records: userRecords
       };
     });
-  }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates]);
+  }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd]);
 
   // Total payroll for the month (converted to GBP)
   const totalPayroll = useMemo(() => {
@@ -918,7 +1001,7 @@ export function StaffPayManager() {
                 <TableHead className="text-right">Base Salary</TableHead>
                 <TableHead className="text-right">Bonuses</TableHead>
                 <TableHead className="text-right">Overtime</TableHead>
-                
+                <TableHead className="text-right">Holiday OT</TableHead>
                 <TableHead className="text-right">Deductions</TableHead>
                 <TableHead className="text-right">Total Pay</TableHead>
                 <TableHead className="text-right">GBP Equiv.</TableHead>
@@ -928,7 +1011,7 @@ export function StaffPayManager() {
             <TableBody>
               {payrollSummary.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
                     No staff with salary configured. Set up HR profiles first.
                   </TableCell>
                 </TableRow>
@@ -983,6 +1066,18 @@ export function StaffPayManager() {
                       </TableCell>
                       <TableCell className="text-right text-success">
                         {staff.overtime > 0 ? `+${formatCurrency(staff.overtime, staff.currency)}` : '-'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {staff.holidayOvertimeBonus > 0 ? (
+                          <div className="flex flex-col items-end">
+                            <span className="text-amber-600 dark:text-amber-400">
+                              +{formatCurrency(staff.holidayOvertimeBonus, staff.currency)}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {staff.holidayOvertimeHours.toFixed(1)}h @ 1.5x
+                            </span>
+                          </div>
+                        ) : '-'}
                       </TableCell>
                       <TableCell className="text-right text-destructive">
                         {staff.deductions > 0 ? `-${formatCurrency(staff.deductions, staff.currency)}` : '-'}
