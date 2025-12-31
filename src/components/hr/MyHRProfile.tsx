@@ -16,6 +16,7 @@ interface HRProfile {
   department: string | null;
   start_date: string | null;
   base_currency: string;
+  base_salary: number | null;
   annual_holiday_allowance: number | null;
   notes: string | null;
 }
@@ -197,11 +198,15 @@ export function MyHRProfile() {
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-primary/10 rounded-lg">
-                <UserCircle className="h-5 w-5 text-primary" />
+                <DollarSign className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Employee ID</p>
-                <p className="font-medium">{hrProfile.employee_id || 'Not set'}</p>
+                <p className="text-sm text-muted-foreground">Base Salary</p>
+                <p className="font-medium">
+                  {hrProfile.base_salary 
+                    ? formatCurrency(hrProfile.base_salary, hrProfile.base_currency)
+                    : 'Not set'}
+                </p>
               </div>
             </div>
           </CardContent>
