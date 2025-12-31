@@ -639,18 +639,39 @@ export function StaffScheduleManager() {
     });
   };
 
-  const getRequestTypeInfo = (type: string) => {
+  const getRequestTypeInfo = (type: string, status: string) => {
+    const isPending = status === 'pending';
     switch (type) {
       case 'overtime_standard':
-        return { label: 'OT - Standard', color: 'bg-orange-100 border-orange-300 text-orange-700', icon: Clock };
+        return { 
+          label: 'OT - Standard', 
+          color: isPending ? 'bg-orange-50 border-orange-200 border-dashed text-orange-600' : 'bg-orange-100 border-orange-300 text-orange-700', 
+          icon: Clock 
+        };
       case 'overtime_double_up':
-        return { label: 'OT - Double Up', color: 'bg-amber-100 border-amber-300 text-amber-700', icon: Clock };
+        return { 
+          label: 'OT - Double Up', 
+          color: isPending ? 'bg-amber-50 border-amber-200 border-dashed text-amber-600' : 'bg-amber-100 border-amber-300 text-amber-700', 
+          icon: Clock 
+        };
       case 'holiday':
-        return { label: 'Holiday', color: 'bg-green-100 border-green-300 text-green-700', icon: Palmtree };
+        return { 
+          label: 'Holiday', 
+          color: isPending ? 'bg-green-50 border-green-200 border-dashed text-green-600' : 'bg-green-100 border-green-300 text-green-700', 
+          icon: Palmtree 
+        };
       case 'shift_swap':
-        return { label: 'Shift Swap', color: 'bg-blue-100 border-blue-300 text-blue-700', icon: RefreshCw };
+        return { 
+          label: 'Shift Swap', 
+          color: isPending ? 'bg-blue-50 border-blue-200 border-dashed text-blue-600' : 'bg-blue-100 border-blue-300 text-blue-700', 
+          icon: RefreshCw 
+        };
       default:
-        return { label: 'Request', color: 'bg-gray-100 border-gray-300 text-gray-700', icon: Send };
+        return { 
+          label: 'Request', 
+          color: isPending ? 'bg-gray-50 border-gray-200 border-dashed text-gray-600' : 'bg-gray-100 border-gray-300 text-gray-700', 
+          icon: Send 
+        };
     }
   };
 
@@ -1063,7 +1084,7 @@ export function StaffScheduleManager() {
 
                         {/* Staff Requests (Overtime, Holiday, Shift Swap) */}
                         {getRequestsForStaffDay(staff.user_id, day).map(request => {
-                          const typeInfo = getRequestTypeInfo(request.request_type);
+                          const typeInfo = getRequestTypeInfo(request.request_type, request.status);
                           const IconComponent = typeInfo.icon;
                           return (
                             <div 
@@ -1071,14 +1092,8 @@ export function StaffScheduleManager() {
                               className={`${typeInfo.color} border rounded p-1 mb-1 text-xs`}
                             >
                               <div className="flex items-center gap-1 font-medium">
-                                <IconComponent className="h-3 w-3" />
+                                <IconComponent className="h-3 w-3 flex-shrink-0" />
                                 <span className="truncate">{typeInfo.label}</span>
-                                {request.status === 'pending' && (
-                                  <Badge variant="outline" className="text-[10px] py-0 px-1 ml-auto">Pending</Badge>
-                                )}
-                                {request.status === 'approved' && (
-                                  <Badge className="text-[10px] py-0 px-1 ml-auto bg-green-600">Approved</Badge>
-                                )}
                               </div>
                               {request.request_type === 'shift_swap' && request.swap_with_user_id && (
                                 <div className="text-[10px] truncate">
