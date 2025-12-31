@@ -95,6 +95,16 @@ interface StaffRequest {
   created_at: string;
 }
 
+interface RecurringBonus {
+  id: string;
+  user_id: string;
+  amount: number;
+  currency: string;
+  description: string | null;
+  start_date: string;
+  end_date: string | null;
+}
+
 const REQUEST_TYPES: Record<string, string> = {
   'overtime_standard': 'Overtime (Standard)',
   'overtime_double_up': 'Overtime (Double Up)',
@@ -166,6 +176,7 @@ export function MyHRProfile() {
   const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
   const [staffRequests, setStaffRequests] = useState<StaffRequest[]>([]);
+  const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
   useEffect(() => {
     if (user) {
@@ -229,6 +240,12 @@ export function MyHRProfile() {
         ascending: false
       });
       setStaffRequests(requestsData || []);
+
+      // Fetch recurring bonuses for this user
+      const {
+        data: recurringBonusesData
+      } = await supabase.from('recurring_bonuses').select('*').eq('user_id', user?.id);
+      setRecurringBonuses(recurringBonusesData || []);
 
       // Fetch public holidays for next 12 months (current year + next year if needed)
       await fetchPublicHolidays();
@@ -383,7 +400,17 @@ export function MyHRProfile() {
         const payDate = parseISO(r.pay_date);
         return payDate >= monthStart && payDate <= monthEnd;
       });
-      const bonuses = monthRecords.filter(r => r.record_type === 'bonus').reduce((sum, r) => sum + r.amount, 0);
+      const payRecordBonuses = monthRecords.filter(r => r.record_type === 'bonus').reduce((sum, r) => sum + r.amount, 0);
+      
+      // Calculate recurring bonuses for this month
+      const activeRecurringBonuses = recurringBonuses.filter(rb => {
+        const bonusStart = parseISO(rb.start_date);
+        const bonusEnd = rb.end_date ? parseISO(rb.end_date) : null;
+        // Bonus is active if month falls within its range
+        return bonusStart <= monthEnd && (!bonusEnd || bonusEnd >= monthStart);
+      }).reduce((sum, rb) => sum + rb.amount, 0);
+      
+      const bonuses = payRecordBonuses + activeRecurringBonuses;
       const deductions = monthRecords.filter(r => r.record_type === 'deduction').reduce((sum, r) => sum + r.amount, 0);
       const totalPay = monthlyBaseSalary + bonuses + holidayOvertimeBonus - deductions;
 
@@ -416,7 +443,7 @@ export function MyHRProfile() {
       });
     }
     return previews;
-  }, [hrProfile, staffSchedules, recurringPatterns, patternExceptions, publicHolidays, payRecords]);
+  }, [hrProfile, staffSchedules, recurringPatterns, patternExceptions, publicHolidays, payRecords, recurringBonuses]);
   const toggleMonth = (monthKey: string) => {
     setExpandedMonths(prev => {
       const next = new Set(prev);
