@@ -456,11 +456,9 @@ export function HRProfileManager() {
                                   <TooltipTrigger asChild>
                                     <div className="flex items-center gap-1 cursor-help">
                                       <span>{allowanceInfo.annualAllowance} days</span>
-                                      {allowanceInfo.isProRata && (
-                                        <Badge variant="outline" className="text-xs">
-                                          {allowanceInfo.accruedAllowance} accrued
-                                        </Badge>
-                                      )}
+                                      <Badge variant="outline" className="text-xs">
+                                        {allowanceInfo.accruedAllowance} accrued
+                                      </Badge>
                                       <Info className="h-3 w-3 text-muted-foreground" />
                                     </div>
                                   </TooltipTrigger>
