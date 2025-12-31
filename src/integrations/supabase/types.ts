@@ -794,6 +794,7 @@ export type Database = {
           is_overtime: boolean
           notes: string | null
           recurrence_interval: string
+          shift_type: string | null
           start_date: string
           start_time: string
           updated_at: string
@@ -812,6 +813,7 @@ export type Database = {
           is_overtime?: boolean
           notes?: string | null
           recurrence_interval?: string
+          shift_type?: string | null
           start_date: string
           start_time: string
           updated_at?: string
@@ -830,6 +832,7 @@ export type Database = {
           is_overtime?: boolean
           notes?: string | null
           recurrence_interval?: string
+          shift_type?: string | null
           start_date?: string
           start_time?: string
           updated_at?: string
@@ -1171,6 +1174,7 @@ export type Database = {
           hourly_rate: number | null
           id: string
           notes: string | null
+          shift_type: string | null
           start_datetime: string
           updated_at: string
           user_id: string
@@ -1184,6 +1188,7 @@ export type Database = {
           hourly_rate?: number | null
           id?: string
           notes?: string | null
+          shift_type?: string | null
           start_datetime: string
           updated_at?: string
           user_id: string
@@ -1197,6 +1202,7 @@ export type Database = {
           hourly_rate?: number | null
           id?: string
           notes?: string | null
+          shift_type?: string | null
           start_datetime?: string
           updated_at?: string
           user_id?: string
