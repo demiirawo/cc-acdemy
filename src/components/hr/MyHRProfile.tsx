@@ -635,6 +635,11 @@ export function MyHRProfile() {
                                 {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                                 <span className="font-medium">{preview.monthLabel}</span>
                                 {isCurrentMonth && <Badge variant="outline" className="text-xs">Current</Badge>}
+                                {preview.unusedHolidayPayout > 0 && (
+                                  <Badge variant="outline" className="text-xs bg-success/20 text-success border-success">
+                                    +{preview.unusedHolidayDays} unused holiday days
+                                  </Badge>
+                                )}
                               </div>
                               <div className="flex items-center gap-3">
                                 {getStatusBadge(preview.payrollStatus)}
