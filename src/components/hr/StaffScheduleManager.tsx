@@ -966,14 +966,27 @@ export function StaffScheduleManager() {
     
     if (relevantRequests.length === 0) return null;
     
-    // Find who they're covering
+    // Find who they're covering and get the shift details
     return relevantRequests.map(req => {
       const linkedHoliday = holidays.find(h => h.id === req.linked_holiday_id);
       if (!linkedHoliday) return null;
+      
+      // Get the schedules for the person on holiday for this day
+      const coveredSchedules = allSchedules.filter(s => {
+        if (s.user_id !== linkedHoliday.user_id) return false;
+        const scheduleDate = parseISO(s.start_datetime);
+        return format(scheduleDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd");
+      });
+      
       return {
         holidayUserId: linkedHoliday.user_id,
         holidayUserName: getStaffName(linkedHoliday.user_id),
-        overtimeType: req.request_type
+        overtimeType: req.request_type,
+        shifts: coveredSchedules.map(s => ({
+          clientName: s.client_name,
+          startTime: format(parseISO(s.start_datetime), "HH:mm"),
+          endTime: format(parseISO(s.end_datetime), "HH:mm")
+        }))
       };
     }).filter(Boolean);
   };
@@ -1719,12 +1732,19 @@ export function StaffScheduleManager() {
                         )}
 
                         {/* Covering for someone indicator */}
-                        {coveringFor && coveringFor.length > 0 && (
-                          <div className="text-[10px] text-blue-700 bg-blue-50 rounded px-1 py-0.5 mb-1 flex items-center gap-1">
-                            <Users className="h-2.5 w-2.5" />
-                            <span>Covering: {coveringFor.map(c => c?.holidayUserName).join(', ')}</span>
+                        {coveringFor && coveringFor.length > 0 && coveringFor.map((cover, idx) => (
+                          <div key={idx} className="text-[10px] text-blue-700 bg-blue-50 rounded px-1 py-0.5 mb-1">
+                            <div className="flex items-center gap-1 font-medium">
+                              <Users className="h-2.5 w-2.5 flex-shrink-0" />
+                              <span>Covering: {cover?.holidayUserName}</span>
+                            </div>
+                            {cover?.shifts && cover.shifts.length > 0 && cover.shifts.map((shift, shiftIdx) => (
+                              <div key={shiftIdx} className="ml-3 text-blue-600">
+                                {shift.clientName} ({shift.startTime} - {shift.endTime})
+                              </div>
+                            ))}
                           </div>
-                        )}
+                        ))}
                         
                         {/* Only show schedules if NOT on holiday - they're not working that day */}
                         {!onHoliday && daySchedules.map(schedule => {
@@ -1809,9 +1829,15 @@ export function StaffScheduleManager() {
                           </div>
                         ))}
 
-                        {/* Staff Requests - filter out holidays as they're shown above via staff_holidays */}
+                        {/* Staff Requests - filter out holidays and overtime with linked holiday (already shown in covering section) */}
                         {getRequestsForStaffDay(staff.user_id, day)
-                          .filter(r => !['holiday', 'holiday_paid', 'holiday_unpaid'].includes(r.request_type))
+                          .filter(r => {
+                            // Filter out holiday types
+                            if (['holiday', 'holiday_paid', 'holiday_unpaid'].includes(r.request_type)) return false;
+                            // Filter out overtime that's linked to a holiday (shown in "Covering" section)
+                            if (['overtime', 'overtime_standard', 'overtime_double_up'].includes(r.request_type) && r.linked_holiday_id) return false;
+                            return true;
+                          })
                           .map(request => {
                             const typeInfo = getRequestTypeInfo(request.request_type, request.status);
                             const IconComponent = typeInfo.icon;
@@ -1836,7 +1862,7 @@ export function StaffScheduleManager() {
                             );
                           })}
 
-                        {!onHoliday && daySchedules.length === 0 && dayOvertime.length === 0 && getRequestsForStaffDay(staff.user_id, day).length === 0 && (
+                        {!onHoliday && daySchedules.length === 0 && dayOvertime.length === 0 && getRequestsForStaffDay(staff.user_id, day).filter(r => !['holiday', 'holiday_paid', 'holiday_unpaid'].includes(r.request_type) && !(['overtime', 'overtime_standard', 'overtime_double_up'].includes(r.request_type) && r.linked_holiday_id)).length === 0 && !coveringFor?.length && (
                           <div className="text-xs text-muted-foreground italic flex items-center justify-center h-full">
                             No schedule
                           </div>
