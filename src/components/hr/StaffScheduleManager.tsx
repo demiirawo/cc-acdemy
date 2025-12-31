@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send } from "lucide-react";
 
 interface Schedule {
   id: string;
@@ -78,6 +78,18 @@ interface RecurringPattern {
 interface Client {
   id: string;
   name: string;
+}
+
+interface StaffRequest {
+  id: string;
+  user_id: string;
+  request_type: 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'shift_swap';
+  swap_with_user_id: string | null;
+  start_date: string;
+  end_date: string;
+  days_requested: number;
+  details: string | null;
+  status: string;
 }
 
 type ViewMode = "staff" | "client";
@@ -212,6 +224,22 @@ export function StaffScheduleManager() {
       
       if (error) throw error;
       return data as Holiday[];
+    }
+  });
+
+  // Fetch staff requests (pending and approved)
+  const { data: staffRequests = [] } = useQuery({
+    queryKey: ["staff-requests-for-schedule", currentWeekStart.toISOString()],
+    queryFn: async () => {
+      const weekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 1 });
+      const { data, error } = await supabase
+        .from("staff_requests")
+        .select("*")
+        .or(`start_date.lte.${format(weekEnd, "yyyy-MM-dd")},end_date.gte.${format(currentWeekStart, "yyyy-MM-dd")}`)
+        .in("status", ["approved", "pending"]);
+      
+      if (error) throw error;
+      return data as StaffRequest[];
     }
   });
 
@@ -600,6 +628,30 @@ export function StaffScheduleManager() {
       const end = parseISO(h.end_date);
       return isWithinInterval(day, { start, end });
     });
+  };
+
+  const getRequestsForStaffDay = (userId: string, day: Date) => {
+    return staffRequests.filter(r => {
+      if (r.user_id !== userId) return false;
+      const start = parseISO(r.start_date);
+      const end = parseISO(r.end_date);
+      return isWithinInterval(day, { start, end }) || isSameDay(day, start) || isSameDay(day, end);
+    });
+  };
+
+  const getRequestTypeInfo = (type: string) => {
+    switch (type) {
+      case 'overtime_standard':
+        return { label: 'OT - Standard', color: 'bg-orange-100 border-orange-300 text-orange-700', icon: Clock };
+      case 'overtime_double_up':
+        return { label: 'OT - Double Up', color: 'bg-amber-100 border-amber-300 text-amber-700', icon: Clock };
+      case 'holiday':
+        return { label: 'Holiday', color: 'bg-green-100 border-green-300 text-green-700', icon: Palmtree };
+      case 'shift_swap':
+        return { label: 'Shift Swap', color: 'bg-blue-100 border-blue-300 text-blue-700', icon: RefreshCw };
+      default:
+        return { label: 'Request', color: 'bg-gray-100 border-gray-300 text-gray-700', icon: Send };
+    }
   };
 
   const calculateScheduleCost = (schedule: Schedule) => {
@@ -1009,7 +1061,38 @@ export function StaffScheduleManager() {
                           </div>
                         ))}
 
-                        {!onHoliday && daySchedules.length === 0 && dayOvertime.length === 0 && (
+                        {/* Staff Requests (Overtime, Holiday, Shift Swap) */}
+                        {getRequestsForStaffDay(staff.user_id, day).map(request => {
+                          const typeInfo = getRequestTypeInfo(request.request_type);
+                          const IconComponent = typeInfo.icon;
+                          return (
+                            <div 
+                              key={request.id} 
+                              className={`${typeInfo.color} border rounded p-1 mb-1 text-xs`}
+                            >
+                              <div className="flex items-center gap-1 font-medium">
+                                <IconComponent className="h-3 w-3" />
+                                <span className="truncate">{typeInfo.label}</span>
+                                {request.status === 'pending' && (
+                                  <Badge variant="outline" className="text-[10px] py-0 px-1 ml-auto">Pending</Badge>
+                                )}
+                                {request.status === 'approved' && (
+                                  <Badge className="text-[10px] py-0 px-1 ml-auto bg-green-600">Approved</Badge>
+                                )}
+                              </div>
+                              {request.request_type === 'shift_swap' && request.swap_with_user_id && (
+                                <div className="text-[10px] truncate">
+                                  with {getStaffName(request.swap_with_user_id)}
+                                </div>
+                              )}
+                              {request.details && (
+                                <div className="text-[10px] italic truncate">{request.details}</div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {!onHoliday && daySchedules.length === 0 && dayOvertime.length === 0 && getRequestsForStaffDay(staff.user_id, day).length === 0 && (
                           <div className="text-xs text-muted-foreground italic flex items-center justify-center h-full">
                             No schedule
                           </div>
