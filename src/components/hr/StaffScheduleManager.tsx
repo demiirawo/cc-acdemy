@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -108,10 +108,27 @@ export function StaffScheduleManager() {
   const queryClient = useQueryClient();
   const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [isRecurringDialogOpen, setIsRecurringDialogOpen] = useState(false);
+  const [isEditPatternDialogOpen, setIsEditPatternDialogOpen] = useState(false);
+  const [editingPattern, setEditingPattern] = useState<RecurringPattern | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; isPattern: boolean; patternId?: string; exceptionDate?: string } | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<string>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("staff");
+
+  // Edit pattern form state
+  const [editPatternForm, setEditPatternForm] = useState({
+    user_id: "",
+    client_name: "",
+    start_time: "09:00",
+    end_time: "17:00",
+    selected_days: [] as number[],
+    is_overtime: false,
+    notes: "",
+    hourly_rate: "",
+    currency: "GBP",
+    start_date: "",
+    end_date: ""
+  });
 
   // Recurring schedule form state
   const [recurringForm, setRecurringForm] = useState({
@@ -478,6 +495,39 @@ export function StaffScheduleManager() {
     }
   });
 
+  // Update recurring pattern mutation
+  const updatePatternMutation = useMutation({
+    mutationFn: async (data: typeof editPatternForm & { id: string }) => {
+      const { error } = await supabase
+        .from("recurring_shift_patterns")
+        .update({
+          user_id: data.user_id,
+          client_name: data.client_name,
+          days_of_week: data.selected_days,
+          start_time: data.start_time,
+          end_time: data.end_time,
+          hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
+          currency: data.currency,
+          is_overtime: data.is_overtime,
+          notes: data.notes || null,
+          start_date: data.start_date,
+          end_date: data.end_date || null
+        })
+        .eq("id", data.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["recurring-shift-patterns"] });
+      setIsEditPatternDialogOpen(false);
+      setEditingPattern(null);
+      toast.success("Recurring pattern updated");
+    },
+    onError: (error) => {
+      toast.error("Failed to update pattern: " + error.message);
+    }
+  });
+
   // Create shift exception mutation (for deleting single shift from pattern)
   const createExceptionMutation = useMutation({
     mutationFn: async ({ patternId, exceptionDate }: { patternId: string; exceptionDate: string }) => {
@@ -581,6 +631,46 @@ export function StaffScheduleManager() {
         ? prev.selected_days.filter(d => d !== day)
         : [...prev.selected_days, day]
     }));
+  };
+
+  const toggleEditPatternDay = (day: number) => {
+    setEditPatternForm(prev => ({
+      ...prev,
+      selected_days: prev.selected_days.includes(day)
+        ? prev.selected_days.filter(d => d !== day)
+        : [...prev.selected_days, day]
+    }));
+  };
+
+  const openEditPatternDialog = (patternId: string) => {
+    const pattern = recurringPatterns.find(p => p.id === patternId);
+    if (!pattern) return;
+    
+    setEditingPattern(pattern);
+    setEditPatternForm({
+      user_id: pattern.user_id,
+      client_name: pattern.client_name,
+      start_time: pattern.start_time,
+      end_time: pattern.end_time,
+      selected_days: pattern.days_of_week || [],
+      is_overtime: pattern.is_overtime,
+      notes: pattern.notes || "",
+      hourly_rate: pattern.hourly_rate?.toString() || "",
+      currency: pattern.currency,
+      start_date: pattern.start_date,
+      end_date: pattern.end_date || ""
+    });
+    setIsEditPatternDialogOpen(true);
+  };
+
+  const handleScheduleClick = (scheduleId: string) => {
+    if (scheduleId.startsWith('pattern-')) {
+      // Extract pattern ID from the schedule ID (format: pattern-{patternId}-{date})
+      const parts = scheduleId.split('-');
+      const patternId = parts[1];
+      openEditPatternDialog(patternId);
+    }
+    // For non-pattern schedules, we could add individual schedule editing later
   };
 
   const navigateWeek = (direction: "prev" | "next") => {
@@ -1028,7 +1118,7 @@ export function StaffScheduleManager() {
                           return (
                             <div 
                               key={schedule.id} 
-                              className={`rounded p-1 mb-1 text-xs group relative ${
+                              className={`rounded p-1 mb-1 text-xs group relative cursor-pointer hover:ring-2 hover:ring-primary/50 ${
                                 hasCoverageIssue
                                   ? 'bg-red-100 border-2 border-red-400 text-red-800'
                                   : isFromPattern 
@@ -1037,6 +1127,7 @@ export function StaffScheduleManager() {
                                       : 'bg-violet-50 border border-violet-300' 
                                     : 'bg-primary/10 border border-primary/30'
                               }`}
+                              onClick={() => handleScheduleClick(schedule.id)}
                             >
                               {hasCoverageIssue && (
                                 <div className="flex items-center gap-1 text-red-700 font-medium mb-0.5">
@@ -1068,7 +1159,10 @@ export function StaffScheduleManager() {
                                 variant="ghost"
                                 size="icon"
                                 className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
-                                onClick={() => handleDeleteClick(schedule.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteClick(schedule.id);
+                                }}
                               >
                                 <Trash2 className="h-3 w-3 text-destructive" />
                               </Button>
@@ -1281,6 +1375,160 @@ export function StaffScheduleManager() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Edit Recurring Pattern Dialog */}
+      <Dialog open={isEditPatternDialogOpen} onOpenChange={setIsEditPatternDialogOpen}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Recurring Schedule</DialogTitle>
+            <DialogDescription>
+              Modify this recurring shift pattern. Changes will affect all future occurrences.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Staff Member</Label>
+              <Select value={editPatternForm.user_id} onValueChange={v => setEditPatternForm(p => ({ ...p, user_id: v }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select staff" />
+                </SelectTrigger>
+                <SelectContent className="bg-background z-50">
+                  {staffMembers.map(staff => (
+                    <SelectItem key={staff.user_id} value={staff.user_id}>
+                      {staff.display_name || staff.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Client</Label>
+              <Select value={editPatternForm.client_name} onValueChange={v => setEditPatternForm(p => ({ ...p, client_name: v }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select client" />
+                </SelectTrigger>
+                <SelectContent className="bg-background z-50">
+                  {clients.map(client => (
+                    <SelectItem key={client.id} value={client.name}>
+                      {client.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Select Days</Label>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {DAYS_OF_WEEK.map(day => (
+                  <Button
+                    key={day.value}
+                    type="button"
+                    variant={editPatternForm.selected_days.includes(day.value) ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => toggleEditPatternDay(day.value)}
+                  >
+                    {day.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Start Time</Label>
+                <Input
+                  type="time"
+                  value={editPatternForm.start_time}
+                  onChange={e => setEditPatternForm(p => ({ ...p, start_time: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>End Time</Label>
+                <Input
+                  type="time"
+                  value={editPatternForm.end_time}
+                  onChange={e => setEditPatternForm(p => ({ ...p, end_time: e.target.value }))}
+                />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Start Date</Label>
+                <Input
+                  type="date"
+                  value={editPatternForm.start_date}
+                  onChange={e => setEditPatternForm(p => ({ ...p, start_date: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>End Date (optional)</Label>
+                <Input
+                  type="date"
+                  value={editPatternForm.end_date}
+                  onChange={e => setEditPatternForm(p => ({ ...p, end_date: e.target.value }))}
+                />
+                <p className="text-xs text-muted-foreground mt-1">Leave empty for indefinite</p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="edit_is_overtime"
+                checked={editPatternForm.is_overtime}
+                onCheckedChange={(checked) => setEditPatternForm(p => ({ ...p, is_overtime: checked === true }))}
+              />
+              <Label htmlFor="edit_is_overtime" className="text-sm font-normal cursor-pointer">
+                Mark as overtime
+              </Label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Hourly Rate (optional)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={editPatternForm.hourly_rate}
+                  onChange={e => setEditPatternForm(p => ({ ...p, hourly_rate: e.target.value }))}
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <Label>Currency</Label>
+                <Select value={editPatternForm.currency} onValueChange={v => setEditPatternForm(p => ({ ...p, currency: v }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background z-50">
+                    <SelectItem value="GBP">GBP</SelectItem>
+                    <SelectItem value="USD">USD</SelectItem>
+                    <SelectItem value="EUR">EUR</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label>Notes (optional)</Label>
+              <Textarea
+                value={editPatternForm.notes}
+                onChange={e => setEditPatternForm(p => ({ ...p, notes: e.target.value }))}
+                placeholder="Add any notes..."
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsEditPatternDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => editingPattern && updatePatternMutation.mutate({ ...editPatternForm, id: editingPattern.id })}
+              disabled={!editPatternForm.user_id || !editPatternForm.client_name || editPatternForm.selected_days.length === 0 || updatePatternMutation.isPending}
+            >
+              {updatePatternMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
