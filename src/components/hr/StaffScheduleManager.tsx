@@ -2265,31 +2265,6 @@ export function StaffScheduleManager() {
               </Label>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Hourly Rate (optional)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editPatternForm.hourly_rate}
-                  onChange={e => setEditPatternForm(p => ({ ...p, hourly_rate: e.target.value }))}
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <Label>Currency</Label>
-                <Select value={editPatternForm.currency} onValueChange={v => setEditPatternForm(p => ({ ...p, currency: v }))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background z-50">
-                    <SelectItem value="GBP">GBP</SelectItem>
-                    <SelectItem value="USD">USD</SelectItem>
-                    <SelectItem value="EUR">EUR</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
             <div>
               <Label>Shift Type (optional)</Label>
               <Select 
