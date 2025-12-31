@@ -127,7 +127,7 @@ export function StaffRequestForm() {
   const [daysRequested, setDaysRequested] = useState("1");
   const [details, setDetails] = useState("");
   const [linkedHolidayId, setLinkedHolidayId] = useState("");
-
+  const [coveringStaffId, setCoveringStaffId] = useState("");
   // Fetch staff members for swap selection
   const { data: staffMembers = [] } = useQuery({
     queryKey: ["staff-members-for-requests"],
@@ -174,26 +174,26 @@ export function StaffRequestForm() {
     enabled: !!user
   });
 
-  // Fetch approved holidays for overtime linking
+  // Fetch approved holidays for the selected staff member being covered
   const { data: approvedHolidays = [] } = useQuery({
-    queryKey: ["approved-holidays-for-overtime"],
+    queryKey: ["approved-holidays-for-staff", coveringStaffId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("staff_holidays")
         .select("id, user_id, start_date, end_date, days_taken, notes, absence_type")
         .eq("status", "approved")
+        .eq("user_id", coveringStaffId)
         .order("start_date", { ascending: false });
       
       if (error) throw error;
       return data as ApprovedHoliday[];
-    }
+    },
+    enabled: !!coveringStaffId
   });
 
-  // Get staff members for dropdown display
-  const getHolidayStaffName = (userId: string) => {
-    const staff = staffMembers.find(s => s.user_id === userId);
-    return staff?.display_name || staff?.email || "Unknown";
-  };
+  // Get staff members who have approved holidays (for the covering dropdown)
+  const staffWithHolidays = staffMembers.filter(s => s.user_id !== user?.id);
+
 
   // Calculate overtime type based on selected holiday and user's shift patterns
   const calculateOvertimeType = (holidayId: string): 'standard_hours' | 'outside_hours' => {
@@ -382,6 +382,7 @@ export function StaffRequestForm() {
     setRequestType("");
     setSwapWithUserId("");
     setLinkedHolidayId("");
+    setCoveringStaffId("");
     setStartDate(undefined);
     setEndDate(undefined);
     setDaysRequested("1");
@@ -467,33 +468,67 @@ export function StaffRequestForm() {
             </Select>
           </div>
 
-          {/* Overtime - Link to approved holiday */}
+          {/* Overtime - Select staff member being covered */}
           {requestType === 'overtime' && (
-            <div className="space-y-2">
-              <Label>Which approved holiday are you covering? <span className="text-destructive">*</span></Label>
-              <Select value={linkedHolidayId} onValueChange={setLinkedHolidayId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select an approved holiday..." />
-                </SelectTrigger>
-                <SelectContent className="bg-background">
-                  {approvedHolidays.length === 0 ? (
-                    <div className="p-2 text-sm text-muted-foreground text-center">
-                      No approved holidays available
-                    </div>
-                  ) : (
-                    approvedHolidays.map(holiday => (
-                      <SelectItem key={holiday.id} value={holiday.id}>
-                        <div className="flex flex-col">
-                          <span>{getHolidayStaffName(holiday.user_id)} - {format(new Date(holiday.start_date), 'dd MMM yyyy')}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {format(new Date(holiday.start_date), 'dd MMM')} – {format(new Date(holiday.end_date), 'dd MMM yyyy')} ({holiday.days_taken} days)
-                          </span>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Which staff member are you covering? <span className="text-destructive">*</span></Label>
+                <Select 
+                  value={coveringStaffId} 
+                  onValueChange={(val) => {
+                    setCoveringStaffId(val);
+                    setLinkedHolidayId(""); // Reset holiday when staff changes
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select staff member..." />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background">
+                    {staffWithHolidays.length === 0 ? (
+                      <div className="p-2 text-sm text-muted-foreground text-center">
+                        No other staff members available
+                      </div>
+                    ) : (
+                      staffWithHolidays.map(staff => (
+                        <SelectItem key={staff.user_id} value={staff.user_id}>
+                          {staff.display_name || staff.email}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Once staff is selected, show their approved holidays */}
+              {coveringStaffId && (
+                <div className="space-y-2">
+                  <Label>Which of their approved holidays are you covering? <span className="text-destructive">*</span></Label>
+                  <Select value={linkedHolidayId} onValueChange={setLinkedHolidayId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select an approved holiday..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background">
+                      {approvedHolidays.length === 0 ? (
+                        <div className="p-2 text-sm text-muted-foreground text-center">
+                          No approved holidays for this staff member
                         </div>
-                      </SelectItem>
-                    ))
-                  )}
-                </SelectContent>
-              </Select>
+                      ) : (
+                        approvedHolidays.map(holiday => (
+                          <SelectItem key={holiday.id} value={holiday.id}>
+                            <div className="flex flex-col">
+                              <span>{format(new Date(holiday.start_date), 'dd MMM yyyy')} – {format(new Date(holiday.end_date), 'dd MMM yyyy')}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {holiday.days_taken} days • {holiday.absence_type}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               {linkedHolidayId && (
                 <div className="p-3 bg-muted rounded-md text-sm">
                   <p className="font-medium">Overtime Type: {calculateOvertimeType(linkedHolidayId) === 'standard_hours' ? 'Standard Hours' : 'Outside Standard Hours'}</p>
