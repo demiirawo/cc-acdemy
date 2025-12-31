@@ -13,7 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths } from "date-fns";
+import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
 import { Plus, ChevronLeft, ChevronRight, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar } from "lucide-react";
 
 interface Schedule {
@@ -850,8 +850,8 @@ export function StaffScheduleManager() {
   const isStaffOnHoliday = (userId: string, day: Date) => {
     return holidays.some(h => {
       if (h.user_id !== userId) return false;
-      const start = parseISO(h.start_date);
-      const end = parseISO(h.end_date);
+      const start = startOfDay(parseISO(h.start_date));
+      const end = endOfDay(parseISO(h.end_date));
       return isWithinInterval(day, { start, end });
     });
   };
@@ -1393,32 +1393,33 @@ export function StaffScheduleManager() {
                         ))}
                       </div>
 
-                      {/* Staff View - Live (only staff currently working or with upcoming shifts) */}
+                      {/* Staff View - Live (only staff currently working) */}
                       {viewMode === "staff" && (() => {
-                        // Filter to staff who are currently working OR have upcoming shifts
                         const staffWithActiveOrUpcoming = filteredStaff.filter(staff => {
+                          if (isStaffOnHoliday(staff.user_id, now)) return false;
+
                           return allSchedules.some(s => {
                             if (s.user_id !== staff.user_id) return false;
+                            const start = parseISO(s.start_datetime);
                             const end = parseISO(s.end_datetime);
-                            // Only include if shift hasn't ended yet
-                            return end > now;
+                            return now >= start && now < end;
                           });
                         });
                         
                         if (staffWithActiveOrUpcoming.length === 0) {
                           return (
                             <div className="text-center py-8 text-muted-foreground">
-                              No staff currently working or scheduled
+                              No staff working right now
                             </div>
                           );
                         }
                         
                         return staffWithActiveOrUpcoming.map(staff => {
-                          // Get schedules that haven't ended yet
                           const activeOrUpcomingSchedules = allSchedules.filter(s => {
                             if (s.user_id !== staff.user_id) return false;
+                            const start = parseISO(s.start_datetime);
                             const end = parseISO(s.end_datetime);
-                            return end > now;
+                            return now >= start && now < end;
                           });
                           
                           const onHoliday = isStaffOnHoliday(staff.user_id, now);
@@ -1517,32 +1518,33 @@ export function StaffScheduleManager() {
                         });
                       })()}
 
-                      {/* Client View - Live (only clients with active or upcoming shifts) */}
+                      {/* Client View - Live (only clients with staff currently working) */}
                       {viewMode === "client" && (() => {
-                        // Filter to clients who have staff currently working OR with upcoming shifts
                         const clientsWithActiveOrUpcoming = uniqueClients.filter(clientName => {
                           return allSchedules.some(s => {
                             if (s.client_name !== clientName) return false;
+                            if (isStaffOnHoliday(s.user_id, now)) return false;
+                            const start = parseISO(s.start_datetime);
                             const end = parseISO(s.end_datetime);
-                            // Only include if shift hasn't ended yet
-                            return end > now;
+                            return now >= start && now < end;
                           });
                         });
                         
                         if (clientsWithActiveOrUpcoming.length === 0) {
                           return (
                             <div className="text-center py-8 text-muted-foreground">
-                              No clients with active or upcoming staff
+                              No clients with staff working right now
                             </div>
                           );
                         }
                         
                         return clientsWithActiveOrUpcoming.map(clientName => {
-                          // Get schedules that haven't ended yet
                           const activeOrUpcomingSchedules = allSchedules.filter(s => {
                             if (s.client_name !== clientName) return false;
+                            if (isStaffOnHoliday(s.user_id, now)) return false;
+                            const start = parseISO(s.start_datetime);
                             const end = parseISO(s.end_datetime);
-                            return end > now;
+                            return now >= start && now < end;
                           });
                           
                           return (
