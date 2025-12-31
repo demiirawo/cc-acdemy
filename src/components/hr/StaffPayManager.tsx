@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, Calculator, FileText, RefreshCw, Edit2 } from "lucide-react";
+import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw } from "lucide-react";
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO } from "date-fns";
 
 interface PayRecord {
@@ -104,6 +104,7 @@ export function StaffPayManager() {
   const [adjustmentEdit, setAdjustmentEdit] = useState<AdjustmentEditState | null>(null);
   const [adjustmentDialogOpen, setAdjustmentDialogOpen] = useState(false);
   const [savingAdjustment, setSavingAdjustment] = useState(false);
+  const [readyStaff, setReadyStaff] = useState<Set<string>>(new Set());
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -386,10 +387,52 @@ export function StaffPayManager() {
     }
   };
 
+  // Toggle staff to ready status
+  const handleToggleReady = (userId: string) => {
+    setReadyStaff(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(userId)) {
+        newSet.delete(userId);
+      } else {
+        newSet.add(userId);
+      }
+      return newSet;
+    });
+  };
+
+  // Revert paid status back to pending (delete salary record)
+  const handleRevertToPending = async (userId: string) => {
+    const staff = payrollSummary.find(s => s.userId === userId);
+    if (!staff) return;
+
+    const salaryRecord = staff.records.find(r => r.record_type === 'salary');
+    if (!salaryRecord) return;
+
+    try {
+      const { error } = await supabase
+        .from('staff_pay_records')
+        .delete()
+        .eq('id', salaryRecord.id);
+
+      if (error) throw error;
+
+      toast({ title: "Success", description: `${staff.displayName} reverted to pending` });
+      fetchData();
+    } catch (error: any) {
+      console.error('Error reverting payroll:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to revert payroll",
+        variant: "destructive"
+      });
+    }
+  };
+
   const handleRunAllPayroll = async () => {
-    const staffToProcess = payrollSummary.filter(s => !s.hasSalaryRecord);
+    // Only process staff marked as ready
+    const staffToProcess = payrollSummary.filter(s => !s.hasSalaryRecord && readyStaff.has(s.userId));
     if (staffToProcess.length === 0) {
-      toast({ title: "Info", description: "All staff have already been paid this month" });
+      toast({ title: "Info", description: "No staff marked as ready to pay" });
       return;
     }
 
@@ -415,6 +458,13 @@ export function StaffPayManager() {
         .insert(records);
 
       if (error) throw error;
+
+      // Clear ready status for processed staff
+      setReadyStaff(prev => {
+        const newSet = new Set(prev);
+        staffToProcess.forEach(s => newSet.delete(s.userId));
+        return newSet;
+      });
 
       toast({ title: "Success", description: `Payroll processed for ${staffToProcess.length} staff members` });
       fetchData();
@@ -558,6 +608,8 @@ export function StaffPayManager() {
   };
 
   const unpaidStaffCount = payrollSummary.filter(s => !s.hasSalaryRecord).length;
+  const readyStaffCount = payrollSummary.filter(s => !s.hasSalaryRecord && readyStaff.has(s.userId)).length;
+  const pendingStaffCount = unpaidStaffCount - readyStaffCount;
 
   if (loading) {
     return (
@@ -596,10 +648,10 @@ export function StaffPayManager() {
             <Plus className="h-4 w-4 mr-2" />
             Add Adjustment
           </Button>
-          {unpaidStaffCount > 0 && (
+          {readyStaffCount > 0 && (
             <Button onClick={handleRunAllPayroll}>
               <Calculator className="h-4 w-4 mr-2" />
-              Run Payroll ({unpaidStaffCount})
+              Run Payroll ({readyStaffCount})
             </Button>
           )}
         </div>
@@ -642,8 +694,14 @@ export function StaffPayManager() {
         </Card>
         <Card>
           <CardContent className="p-4">
+            <div className="text-sm text-muted-foreground">Ready</div>
+            <div className="text-2xl font-bold text-blue-500">{readyStaffCount}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
             <div className="text-sm text-muted-foreground">Pending</div>
-            <div className="text-2xl font-bold text-warning">{unpaidStaffCount}</div>
+            <div className="text-2xl font-bold text-warning">{pendingStaffCount}</div>
           </CardContent>
         </Card>
       </div>
@@ -728,55 +786,100 @@ export function StaffPayManager() {
                   </TableCell>
                 </TableRow>
               ) : (
-                payrollSummary.map(staff => (
-                  <TableRow key={staff.userId} className="hover:bg-muted/30">
-                    <TableCell className="font-medium">
-                      <div>
-                        <div>{staff.displayName}</div>
-                        <div className="text-xs text-muted-foreground">{staff.email}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {staff.hasSalaryRecord ? (
-                        <Badge variant="default" className="bg-success">Paid</Badge>
-                      ) : (
-                        <Badge variant="outline" className="border-warning text-warning-foreground">Pending</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">{formatCurrency(staff.baseSalary, staff.currency)}</TableCell>
-                    <TableCell className="text-right text-success">
-                      {staff.bonuses > 0 ? `+${formatCurrency(staff.bonuses, staff.currency)}` : '-'}
-                    </TableCell>
-                    <TableCell className="text-right text-success">
-                      {staff.overtime > 0 ? `+${formatCurrency(staff.overtime, staff.currency)}` : '-'}
-                    </TableCell>
-                    <TableCell className="text-right text-destructive">
-                      {staff.deductions > 0 ? `-${formatCurrency(staff.deductions, staff.currency)}` : '-'}
-                    </TableCell>
-                    <TableCell className="text-right font-bold">{formatCurrency(staff.totalPay, staff.currency)}</TableCell>
-                    <TableCell className="text-right font-medium text-muted-foreground">
-                      {staff.currency !== 'GBP' ? `£${staff.totalPayInGBP.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Button 
-                          variant="ghost" 
-                          size="sm" 
-                          onClick={() => handleOpenAdjustmentDialog(staff)}
-                          className="h-8 w-8 p-0"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </Button>
-                        {!staff.hasSalaryRecord && (
-                          <Button variant="ghost" size="sm" onClick={() => handleRunPayroll(staff.userId)}>
-                            <FileText className="h-4 w-4 mr-1" />
-                            Pay
-                          </Button>
+                payrollSummary.map(staff => {
+                  const isReady = readyStaff.has(staff.userId);
+                  
+                  return (
+                    <TableRow key={staff.userId} className="hover:bg-muted/30">
+                      <TableCell className="font-medium">
+                        <div>
+                          <div>{staff.displayName}</div>
+                          <div className="text-xs text-muted-foreground">{staff.email}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {staff.hasSalaryRecord ? (
+                          <Badge 
+                            variant="default" 
+                            className="bg-success cursor-pointer hover:bg-success/80"
+                            onClick={() => handleRevertToPending(staff.userId)}
+                            title="Click to revert to pending"
+                          >
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            Paid
+                          </Badge>
+                        ) : isReady ? (
+                          <Badge 
+                            variant="default" 
+                            className="bg-blue-500 cursor-pointer hover:bg-blue-600"
+                            onClick={() => handleToggleReady(staff.userId)}
+                            title="Click to set back to pending"
+                          >
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            Ready
+                          </Badge>
+                        ) : (
+                          <Badge 
+                            variant="outline" 
+                            className="border-warning text-warning-foreground cursor-pointer hover:bg-warning/10"
+                            onClick={() => handleToggleReady(staff.userId)}
+                            title="Click to mark as ready"
+                          >
+                            <Clock className="h-3 w-3 mr-1" />
+                            Pending
+                          </Badge>
                         )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
+                      </TableCell>
+                      <TableCell className="text-right">{formatCurrency(staff.baseSalary, staff.currency)}</TableCell>
+                      <TableCell className="text-right text-success">
+                        {staff.bonuses > 0 ? `+${formatCurrency(staff.bonuses, staff.currency)}` : '-'}
+                      </TableCell>
+                      <TableCell className="text-right text-success">
+                        {staff.overtime > 0 ? `+${formatCurrency(staff.overtime, staff.currency)}` : '-'}
+                      </TableCell>
+                      <TableCell className="text-right text-destructive">
+                        {staff.deductions > 0 ? `-${formatCurrency(staff.deductions, staff.currency)}` : '-'}
+                      </TableCell>
+                      <TableCell className="text-right font-bold">{formatCurrency(staff.totalPay, staff.currency)}</TableCell>
+                      <TableCell className="text-right font-medium text-muted-foreground">
+                        {staff.currency !== 'GBP' ? `£${staff.totalPayInGBP.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => handleOpenAdjustmentDialog(staff)}
+                            className="h-8 w-8 p-0"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          {staff.hasSalaryRecord ? (
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => handleRevertToPending(staff.userId)}
+                              className="h-8 w-8 p-0"
+                              title="Revert to pending"
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </Button>
+                          ) : isReady ? (
+                            <Button variant="ghost" size="sm" onClick={() => handleRunPayroll(staff.userId)}>
+                              <FileText className="h-4 w-4 mr-1" />
+                              Pay
+                            </Button>
+                          ) : (
+                            <Button variant="ghost" size="sm" onClick={() => handleToggleReady(staff.userId)}>
+                              <CheckCircle className="h-4 w-4 mr-1" />
+                              Ready
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
