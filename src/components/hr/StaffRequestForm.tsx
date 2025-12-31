@@ -935,18 +935,16 @@ export function StaffRequestForm() {
             </div>
           )}
 
-          {/* Manual days input for shift swap only - overtime and holidays are auto-calculated */}
-          {requestType === 'shift_swap' && (
+          {/* Shift swap shows selected shifts count - auto-calculated */}
+          {requestType === 'shift_swap' && selectedSwapShifts.length > 0 && (
             <div className="space-y-2">
-              <Label>How many days are you requesting? <span className="text-destructive">*</span></Label>
-              <Input 
-                type="number"
-                min="0.5"
-                step="0.5"
-                value={daysRequested}
-                onChange={(e) => setDaysRequested(e.target.value)}
-                className="max-w-[200px]"
-              />
+              <Label>Shifts to swap</Label>
+              <div className="px-4 py-2 bg-muted rounded-md font-medium min-w-[80px] w-fit">
+                {selectedSwapShifts.length} shift{selectedSwapShifts.length !== 1 ? 's' : ''} selected
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Automatically calculated from selected shifts above
+              </p>
             </div>
           )}
 
