@@ -167,6 +167,8 @@ export function StaffPayManager() {
   const [recurringPatterns, setRecurringPatterns] = useState<RecurringShiftPattern[]>([]);
   const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
+  const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; status: string; absence_type: string }[]>([]);
+  const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null }[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -357,6 +359,24 @@ export function StaffPayManager() {
       } else {
         setRecurringBonuses(recBonuses || []);
       }
+
+      // Fetch staff holidays for unused holiday calculation
+      const { data: holidaysData, error: holidaysError } = await supabase
+        .from('staff_holidays')
+        .select('user_id, days_taken, start_date, status, absence_type');
+      
+      if (holidaysError) {
+        console.error('Error fetching staff holidays:', holidaysError);
+      } else {
+        setStaffHolidays(holidaysData || []);
+      }
+
+      // Fetch full HR profiles for holiday allowance
+      const { data: hrFullData } = await supabase
+        .from('hr_profiles')
+        .select('user_id, annual_holiday_allowance');
+      
+      setHRProfilesFull(hrFullData || []);
     } catch (error) {
       console.error('Error fetching pay records:', error);
       toast({
@@ -563,8 +583,36 @@ export function StaffPayManager() {
       const expenses = expenseRecords.reduce((sum, r) => sum + r.amount, 0);
       const deductions = deductionRecords.reduce((sum, r) => sum + r.amount, 0);
       
-      // Total pay now includes holiday overtime bonus
-      const totalPay = monthlyBaseSalary + bonuses + overtime + expenses + holidayOvertimeBonus - deductions;
+      // Calculate unused holiday payout for June (end of holiday year: June 1 - May 31)
+      let unusedHolidayPayout = 0;
+      let unusedHolidayDays = 0;
+      const selectedMonthNum = selectedMonth.getMonth(); // 0-indexed, June = 5
+      
+      if (selectedMonthNum === 5) { // June
+        // Holiday year runs June 1 to May 31
+        // For June payroll, calculate holidays taken from June 1 of previous year to May 31 of current year
+        const holidayYearStart = new Date(selectedMonth.getFullYear() - 1, 5, 1); // June 1 of previous year
+        const holidayYearEnd = new Date(selectedMonth.getFullYear(), 4, 31); // May 31 of current year
+        
+        const userHolidaysTaken = staffHolidays.filter(h => {
+          if (h.user_id !== hr.user_id) return false;
+          if (h.status !== 'approved') return false;
+          if (h.absence_type !== 'holiday') return false;
+          const startDate = parseISO(h.start_date);
+          return startDate >= holidayYearStart && startDate <= holidayYearEnd;
+        }).reduce((sum, h) => sum + Number(h.days_taken), 0);
+        
+        // Get user's annual allowance
+        const userHRFull = hrProfilesFull.find(p => p.user_id === hr.user_id);
+        const annualAllowance = userHRFull?.annual_holiday_allowance || 28;
+        unusedHolidayDays = Math.max(0, annualAllowance - userHolidaysTaken);
+        
+        // Unused holiday pay = Base Pay / 20 * unused days
+        unusedHolidayPayout = (monthlyBaseSalary / 20) * unusedHolidayDays;
+      }
+      
+      // Total pay now includes holiday overtime bonus and unused holiday payout
+      const totalPay = monthlyBaseSalary + bonuses + overtime + expenses + holidayOvertimeBonus + unusedHolidayPayout - deductions;
       const hasSalaryRecord = salaryRecords.length > 0;
       
       // Convert total pay to GBP for aggregation
@@ -584,13 +632,15 @@ export function StaffPayManager() {
         holidayOvertimeBonus,
         holidayOvertimeDays,
         holidayShifts,
+        unusedHolidayPayout,
+        unusedHolidayDays,
         totalPay,
         totalPayInGBP,
         hasSalaryRecord,
         records: userRecords
       };
     });
-  }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses]);
+  }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses, staffHolidays, hrProfilesFull, selectedMonth]);
 
   // Total payroll for the month (converted to GBP)
   const totalPayroll = useMemo(() => {
@@ -1299,6 +1349,7 @@ export function StaffPayManager() {
                 <TableHead className="text-right">Bonuses</TableHead>
                 <TableHead className="text-right">Overtime</TableHead>
                 <TableHead className="text-right">Holiday OT</TableHead>
+                <TableHead className="text-right">Unused Holiday</TableHead>
                 <TableHead className="text-right">Deductions</TableHead>
                 <TableHead className="text-right">Total Pay</TableHead>
                 <TableHead className="text-right">GBP Equiv.</TableHead>
@@ -1308,7 +1359,7 @@ export function StaffPayManager() {
             <TableBody>
               {payrollSummary.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                     No staff with salary configured. Set up HR profiles first.
                   </TableCell>
                 </TableRow>
@@ -1372,6 +1423,18 @@ export function StaffPayManager() {
                             </span>
                             <span className="text-[10px] text-muted-foreground">
                               {staff.holidayOvertimeDays} day{staff.holidayOvertimeDays !== 1 ? 's' : ''} @ +0.5x
+                            </span>
+                          </div>
+                        ) : '-'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {staff.unusedHolidayPayout > 0 ? (
+                          <div className="flex flex-col items-end">
+                            <span className="text-success">
+                              +{formatCurrency(staff.unusedHolidayPayout, staff.currency)}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {staff.unusedHolidayDays} day{staff.unusedHolidayDays !== 1 ? 's' : ''} unused
                             </span>
                           </div>
                         ) : '-'}
