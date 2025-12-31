@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -107,6 +108,8 @@ const DAYS_OF_WEEK = [
 
 export function StaffScheduleManager() {
   const queryClient = useQueryClient();
+  const isMobile = useIsMobile();
+  const scheduleEditHint = isMobile ? "Tap to edit" : "Double-click to edit";
   const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [isRecurringDialogOpen, setIsRecurringDialogOpen] = useState(false);
   const [isEditPatternDialogOpen, setIsEditPatternDialogOpen] = useState(false);
@@ -793,19 +796,15 @@ export function StaffScheduleManager() {
   };
 
   const handleScheduleDoubleClick = (schedule: Schedule) => {
-    console.log('Double-click on schedule:', schedule.id, schedule);
-    
     if (schedule.id.startsWith('pattern-')) {
       // For patterns, open the pattern editor
       const parts = schedule.id.split('-');
       const patternId = parts[1];
-      console.log('Opening pattern editor for:', patternId);
       openEditPatternDialog(patternId);
       return;
     }
-    
+
     // Open edit dialog for regular schedules
-    console.log('Opening schedule editor');
     setEditingSchedule(schedule);
     const startDate = parseISO(schedule.start_datetime);
     const endDate = parseISO(schedule.end_datetime);
@@ -1408,8 +1407,9 @@ export function StaffScheduleManager() {
                                     : 'bg-violet-50 border border-violet-300' 
                                   : 'bg-primary/10 border border-primary/30'
                               }`}
-                              onDoubleClick={() => handleScheduleDoubleClick(schedule)}
-                              title="Double-click to edit"
+                              onClick={isMobile ? () => handleScheduleDoubleClick(schedule) : undefined}
+                              onDoubleClick={!isMobile ? () => handleScheduleDoubleClick(schedule) : undefined}
+                              title={scheduleEditHint}
                             >
                               <div className="font-medium truncate flex items-center gap-1">
                                 {schedule.client_name}
@@ -1546,8 +1546,9 @@ export function StaffScheduleManager() {
                                       : 'bg-violet-50 border border-violet-300'
                                     : 'bg-primary/10 border border-primary/30'
                               }`}
-                              onDoubleClick={() => handleScheduleDoubleClick(schedule)}
-                              title="Double-click to edit"
+                              onClick={isMobile ? () => handleScheduleDoubleClick(schedule) : undefined}
+                              onDoubleClick={!isMobile ? () => handleScheduleDoubleClick(schedule) : undefined}
+                              title={scheduleEditHint}
                             >
                               <div className="font-medium truncate flex items-center gap-1">
                                 {getStaffName(schedule.user_id)}
@@ -1596,7 +1597,10 @@ export function StaffScheduleManager() {
                                 variant="ghost"
                                 size="icon"
                                 className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
-                                onClick={() => handleDeleteClick(schedule.id)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteClick(schedule.id);
+                                }}
                               >
                                 <Trash2 className="h-3 w-3 text-destructive" />
                               </Button>
