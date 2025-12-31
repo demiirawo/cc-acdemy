@@ -20,6 +20,8 @@ interface HRProfile {
   department: string | null;
   start_date: string | null;
   base_currency: string;
+  base_salary: number | null;
+  pay_frequency: string | null;
   annual_holiday_allowance: number | null;
   notes: string | null;
   created_at: string;
@@ -53,6 +55,13 @@ const CURRENCIES = [
   { code: 'NGN', name: 'Nigerian Naira', symbol: '₦' },
 ];
 
+const PAY_FREQUENCIES = [
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'bi-weekly', label: 'Bi-Weekly' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'annually', label: 'Annually' },
+];
+
 export function HRProfileManager() {
   const [hrProfiles, setHRProfiles] = useState<HRProfile[]>([]);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
@@ -71,6 +80,8 @@ export function HRProfileManager() {
     job_title: '',
     start_date: '',
     base_currency: 'GBP',
+    base_salary: 0,
+    pay_frequency: 'monthly',
     annual_holiday_allowance: 28,
     notes: ''
   });
@@ -144,6 +155,8 @@ export function HRProfileManager() {
         job_title: existingHR.job_title || '',
         start_date: existingHR.start_date || '',
         base_currency: existingHR.base_currency,
+        base_salary: existingHR.base_salary || 0,
+        pay_frequency: existingHR.pay_frequency || 'monthly',
         annual_holiday_allowance: existingHR.annual_holiday_allowance || 28,
         notes: existingHR.notes || ''
       });
@@ -155,6 +168,8 @@ export function HRProfileManager() {
         job_title: '',
         start_date: '',
         base_currency: 'GBP',
+        base_salary: 0,
+        pay_frequency: 'monthly',
         annual_holiday_allowance: 28,
         notes: ''
       });
@@ -199,6 +214,8 @@ export function HRProfileManager() {
         department: null, // Keep for backwards compatibility
         start_date: formData.start_date || null,
         base_currency: formData.base_currency,
+        base_salary: formData.base_salary || null,
+        pay_frequency: formData.pay_frequency || 'monthly',
         annual_holiday_allowance: formData.annual_holiday_allowance,
         notes: formData.notes || null
       };
@@ -293,10 +310,9 @@ export function HRProfileManager() {
               <TableRow>
                 <TableHead>Staff Member</TableHead>
                 <TableHead>HR Status</TableHead>
-                <TableHead>Employee ID</TableHead>
                 <TableHead>Job Title</TableHead>
+                <TableHead>Base Salary</TableHead>
                 <TableHead>Clients</TableHead>
-                <TableHead>Currency</TableHead>
                 <TableHead>Holiday Allowance</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
@@ -304,7 +320,7 @@ export function HRProfileManager() {
             <TableBody>
               {userProfiles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                     No staff members found. Add users through User Management first.
                   </TableCell>
                 </TableRow>
@@ -338,8 +354,18 @@ export function HRProfileManager() {
                           </Badge>
                         )}
                       </TableCell>
-                      <TableCell>{hrProfile?.employee_id || '-'}</TableCell>
                       <TableCell>{hrProfile?.job_title || '-'}</TableCell>
+                      <TableCell>
+                        {hrProfile?.base_salary ? (
+                          <span className="font-medium">
+                            {CURRENCIES.find(c => c.code === hrProfile.base_currency)?.symbol || '£'}
+                            {hrProfile.base_salary.toLocaleString()}
+                            <span className="text-xs text-muted-foreground ml-1">
+                              /{hrProfile.pay_frequency || 'monthly'}
+                            </span>
+                          </span>
+                        ) : '-'}
+                      </TableCell>
                       <TableCell>
                         {userClients.length > 0 ? (
                           <div className="flex flex-wrap gap-1 max-w-[200px]">
@@ -358,7 +384,6 @@ export function HRProfileManager() {
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell>{hrProfile?.base_currency || '-'}</TableCell>
                       <TableCell>{hrProfile?.annual_holiday_allowance ? `${hrProfile.annual_holiday_allowance} days` : '-'}</TableCell>
                       <TableCell>
                         <Button variant="ghost" size="sm" onClick={() => handleOpenDialog(user)}>
@@ -450,17 +475,20 @@ export function HRProfileManager() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Start Date</Label>
+                <Label>Base Salary *</Label>
                 <Input
-                  type="date"
-                  value={formData.start_date}
-                  onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                  type="number"
+                  value={formData.base_salary}
+                  onChange={(e) => setFormData({ ...formData, base_salary: parseFloat(e.target.value) || 0 })}
+                  placeholder="0.00"
+                  step="0.01"
+                  min="0"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Base Currency *</Label>
+                <Label>Currency *</Label>
                 <Select
                   value={formData.base_currency}
                   onValueChange={(value) => setFormData({ ...formData, base_currency: value })}
@@ -471,7 +499,25 @@ export function HRProfileManager() {
                   <SelectContent>
                     {CURRENCIES.map(currency => (
                       <SelectItem key={currency.code} value={currency.code}>
-                        {currency.symbol} {currency.code} - {currency.name}
+                        {currency.symbol} {currency.code}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Pay Frequency *</Label>
+                <Select
+                  value={formData.pay_frequency}
+                  onValueChange={(value) => setFormData({ ...formData, pay_frequency: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAY_FREQUENCIES.map(freq => (
+                      <SelectItem key={freq.value} value={freq.value}>
+                        {freq.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -479,13 +525,23 @@ export function HRProfileManager() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>Annual Holiday Allowance (days)</Label>
-              <Input
-                type="number"
-                value={formData.annual_holiday_allowance}
-                onChange={(e) => setFormData({ ...formData, annual_holiday_allowance: parseInt(e.target.value) || 0 })}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Start Date</Label>
+                <Input
+                  type="date"
+                  value={formData.start_date}
+                  onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Annual Holiday Allowance (days)</Label>
+                <Input
+                  type="number"
+                  value={formData.annual_holiday_allowance}
+                  onChange={(e) => setFormData({ ...formData, annual_holiday_allowance: parseInt(e.target.value) || 0 })}
+                />
+              </div>
             </div>
 
             <div className="space-y-2">

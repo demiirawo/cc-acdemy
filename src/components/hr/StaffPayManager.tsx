@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -7,12 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
-import { format } from "date-fns";
+import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, Calculator, FileText } from "lucide-react";
+import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO } from "date-fns";
 
 interface PayRecord {
   id: string;
@@ -37,10 +37,12 @@ interface UserProfile {
 interface HRProfile {
   user_id: string;
   base_currency: string;
+  base_salary: number | null;
+  pay_frequency: string | null;
 }
 
 const RECORD_TYPES = [
-  { value: 'salary', label: 'Salary', icon: DollarSign, positive: true },
+  { value: 'salary', label: 'Base Salary', icon: DollarSign, positive: true },
   { value: 'bonus', label: 'Bonus', icon: TrendingUp, positive: true },
   { value: 'overtime', label: 'Overtime', icon: TrendingUp, positive: true },
   { value: 'expense', label: 'Expense Reimbursement', icon: TrendingUp, positive: true },
@@ -66,18 +68,17 @@ export function StaffPayManager() {
   const [hrProfiles, setHRProfiles] = useState<HRProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(new Date());
   const { toast } = useToast();
   const { user } = useAuth();
 
   const [formData, setFormData] = useState({
     user_id: '',
-    record_type: 'salary',
+    record_type: 'bonus',
     amount: 0,
     currency: 'GBP',
     description: '',
-    pay_date: new Date().toISOString().split('T')[0],
-    pay_period_start: '',
-    pay_period_end: ''
+    pay_date: new Date().toISOString().split('T')[0]
   });
 
   useEffect(() => {
@@ -95,7 +96,7 @@ export function StaffPayManager() {
 
       const { data: hrData } = await supabase
         .from('hr_profiles')
-        .select('user_id, base_currency');
+        .select('user_id, base_currency, base_salary, pay_frequency');
       
       setHRProfiles(hrData || []);
 
@@ -124,16 +125,83 @@ export function StaffPayManager() {
     }
   };
 
+  // Get records for selected month
+  const monthStart = startOfMonth(selectedMonth);
+  const monthEnd = endOfMonth(selectedMonth);
+
+  const monthRecords = useMemo(() => {
+    return payRecords.filter(r => {
+      const payDate = parseISO(r.pay_date);
+      return payDate >= monthStart && payDate <= monthEnd;
+    });
+  }, [payRecords, monthStart, monthEnd]);
+
+  // Calculate payroll summary per staff member for the month
+  const payrollSummary = useMemo(() => {
+    // Get staff with HR profiles (who have salary configured)
+    const staffWithHR = hrProfiles.filter(hr => hr.base_salary && hr.base_salary > 0);
+    
+    return staffWithHR.map(hr => {
+      const userProfile = userProfiles.find(u => u.user_id === hr.user_id);
+      const userRecords = monthRecords.filter(r => r.user_id === hr.user_id);
+      
+      // Calculate monthly base salary based on pay frequency
+      let monthlyBaseSalary = hr.base_salary || 0;
+      if (hr.pay_frequency === 'annually') {
+        monthlyBaseSalary = (hr.base_salary || 0) / 12;
+      } else if (hr.pay_frequency === 'weekly') {
+        monthlyBaseSalary = (hr.base_salary || 0) * 4.33; // Average weeks per month
+      } else if (hr.pay_frequency === 'bi-weekly') {
+        monthlyBaseSalary = (hr.base_salary || 0) * 2.17;
+      }
+      
+      // Sum additions and deductions from records
+      const salaryRecords = userRecords.filter(r => r.record_type === 'salary');
+      const bonusRecords = userRecords.filter(r => r.record_type === 'bonus');
+      const overtimeRecords = userRecords.filter(r => r.record_type === 'overtime');
+      const expenseRecords = userRecords.filter(r => r.record_type === 'expense');
+      const deductionRecords = userRecords.filter(r => r.record_type === 'deduction');
+      
+      const salaryPaid = salaryRecords.reduce((sum, r) => sum + r.amount, 0);
+      const bonuses = bonusRecords.reduce((sum, r) => sum + r.amount, 0);
+      const overtime = overtimeRecords.reduce((sum, r) => sum + r.amount, 0);
+      const expenses = expenseRecords.reduce((sum, r) => sum + r.amount, 0);
+      const deductions = deductionRecords.reduce((sum, r) => sum + r.amount, 0);
+      
+      const totalPay = monthlyBaseSalary + bonuses + overtime + expenses - deductions;
+      const hasSalaryRecord = salaryRecords.length > 0;
+      
+      return {
+        userId: hr.user_id,
+        displayName: userProfile?.display_name || userProfile?.email || 'Unknown',
+        email: userProfile?.email,
+        currency: hr.base_currency,
+        baseSalary: monthlyBaseSalary,
+        salaryPaid,
+        bonuses,
+        overtime,
+        expenses,
+        deductions,
+        totalPay,
+        hasSalaryRecord,
+        records: userRecords
+      };
+    });
+  }, [hrProfiles, userProfiles, monthRecords]);
+
+  // Total payroll for the month
+  const totalPayroll = useMemo(() => {
+    return payrollSummary.reduce((sum, s) => sum + s.totalPay, 0);
+  }, [payrollSummary]);
+
   const handleOpenDialog = () => {
     setFormData({
       user_id: '',
-      record_type: 'salary',
+      record_type: 'bonus',
       amount: 0,
       currency: 'GBP',
       description: '',
-      pay_date: new Date().toISOString().split('T')[0],
-      pay_period_start: '',
-      pay_period_end: ''
+      pay_date: format(selectedMonth, 'yyyy-MM-dd')
     });
     setDialogOpen(true);
   };
@@ -158,6 +226,9 @@ export function StaffPayManager() {
     }
 
     try {
+      const payPeriodStart = format(startOfMonth(parseISO(formData.pay_date)), 'yyyy-MM-dd');
+      const payPeriodEnd = format(endOfMonth(parseISO(formData.pay_date)), 'yyyy-MM-dd');
+
       const { error } = await supabase
         .from('staff_pay_records')
         .insert([{
@@ -167,8 +238,8 @@ export function StaffPayManager() {
           currency: formData.currency,
           description: formData.description || null,
           pay_date: formData.pay_date,
-          pay_period_start: formData.pay_period_start || null,
-          pay_period_end: formData.pay_period_end || null,
+          pay_period_start: payPeriodStart,
+          pay_period_end: payPeriodEnd,
           created_by: user?.id!
         }]);
 
@@ -187,14 +258,95 @@ export function StaffPayManager() {
     }
   };
 
+  const handleRunPayroll = async (userId: string) => {
+    const staff = payrollSummary.find(s => s.userId === userId);
+    if (!staff || staff.hasSalaryRecord) return;
+
+    try {
+      const payDate = format(endOfMonth(selectedMonth), 'yyyy-MM-dd');
+      const payPeriodStart = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
+      const payPeriodEnd = payDate;
+
+      const { error } = await supabase
+        .from('staff_pay_records')
+        .insert([{
+          user_id: userId,
+          record_type: 'salary' as any,
+          amount: staff.baseSalary,
+          currency: staff.currency,
+          description: `Monthly salary for ${format(selectedMonth, 'MMMM yyyy')}`,
+          pay_date: payDate,
+          pay_period_start: payPeriodStart,
+          pay_period_end: payPeriodEnd,
+          created_by: user?.id!
+        }]);
+
+      if (error) throw error;
+
+      toast({ title: "Success", description: `Salary recorded for ${staff.displayName}` });
+      fetchData();
+    } catch (error: any) {
+      console.error('Error running payroll:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to run payroll",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleRunAllPayroll = async () => {
+    const staffToProcess = payrollSummary.filter(s => !s.hasSalaryRecord);
+    if (staffToProcess.length === 0) {
+      toast({ title: "Info", description: "All staff have already been paid this month" });
+      return;
+    }
+
+    try {
+      const payDate = format(endOfMonth(selectedMonth), 'yyyy-MM-dd');
+      const payPeriodStart = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
+      const payPeriodEnd = payDate;
+
+      const records = staffToProcess.map(staff => ({
+        user_id: staff.userId,
+        record_type: 'salary' as any,
+        amount: staff.baseSalary,
+        currency: staff.currency,
+        description: `Monthly salary for ${format(selectedMonth, 'MMMM yyyy')}`,
+        pay_date: payDate,
+        pay_period_start: payPeriodStart,
+        pay_period_end: payPeriodEnd,
+        created_by: user?.id!
+      }));
+
+      const { error } = await supabase
+        .from('staff_pay_records')
+        .insert(records);
+
+      if (error) throw error;
+
+      toast({ title: "Success", description: `Payroll processed for ${staffToProcess.length} staff members` });
+      fetchData();
+    } catch (error: any) {
+      console.error('Error running payroll:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to run payroll",
+        variant: "destructive"
+      });
+    }
+  };
+
   const formatCurrency = (amount: number, currency: string) => {
     const curr = CURRENCIES.find(c => c.code === currency);
-    return `${curr?.symbol || ''}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `${curr?.symbol || '£'}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const getRecordTypeInfo = (type: string) => {
     return RECORD_TYPES.find(t => t.value === type) || RECORD_TYPES[0];
   };
+
+  const unpaidStaffCount = payrollSummary.filter(s => !s.hasSalaryRecord).length;
 
   if (loading) {
     return (
@@ -211,72 +363,148 @@ export function StaffPayManager() {
 
   return (
     <div className="space-y-4">
+      {/* Month Navigation and Actions */}
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">Staff Pay Records</h2>
-        <Button onClick={handleOpenDialog}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add Pay Record
-        </Button>
+        <div className="flex items-center gap-4">
+          <h2 className="text-xl font-semibold">Payroll Run</h2>
+          <div className="flex items-center gap-2 bg-muted rounded-lg p-1">
+            <Button variant="ghost" size="icon" onClick={() => setSelectedMonth(subMonths(selectedMonth, 1))}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex items-center gap-2 px-3 min-w-[160px] justify-center">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium">{format(selectedMonth, 'MMMM yyyy')}</span>
+            </div>
+            <Button variant="ghost" size="icon" onClick={() => setSelectedMonth(addMonths(selectedMonth, 1))}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={handleOpenDialog}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Adjustment
+          </Button>
+          {unpaidStaffCount > 0 && (
+            <Button onClick={handleRunAllPayroll}>
+              <Calculator className="h-4 w-4 mr-2" />
+              Run Payroll ({unpaidStaffCount})
+            </Button>
+          )}
+        </div>
       </div>
 
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-sm text-muted-foreground">Total Payroll</div>
+            <div className="text-2xl font-bold">{formatCurrency(totalPayroll, 'GBP')}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-sm text-muted-foreground">Staff Members</div>
+            <div className="text-2xl font-bold">{payrollSummary.length}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-sm text-muted-foreground">Paid</div>
+            <div className="text-2xl font-bold text-success">{payrollSummary.filter(s => s.hasSalaryRecord).length}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-sm text-muted-foreground">Pending</div>
+            <div className="text-2xl font-bold text-warning">{unpaidStaffCount}</div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Payroll Table */}
       <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Staff Payroll Summary</CardTitle>
+          <CardDescription>
+            Monthly breakdown for {format(selectedMonth, 'MMMM yyyy')}
+          </CardDescription>
+        </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Staff Member</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Pay Date</TableHead>
-                <TableHead>Pay Period</TableHead>
-                <TableHead>Description</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="text-right">Base Salary</TableHead>
+                <TableHead className="text-right">Bonuses</TableHead>
+                <TableHead className="text-right">Overtime</TableHead>
+                <TableHead className="text-right">Expenses</TableHead>
+                <TableHead className="text-right">Deductions</TableHead>
+                <TableHead className="text-right">Total Pay</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {payRecords.length === 0 ? (
+              {payrollSummary.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                    No pay records found.
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                    No staff with salary configured. Set up HR profiles first.
                   </TableCell>
                 </TableRow>
               ) : (
-                payRecords.map(record => {
-                  const typeInfo = getRecordTypeInfo(record.record_type);
-                  return (
-                    <TableRow key={record.id}>
-                      <TableCell className="font-medium">
-                        {record.user?.display_name || record.user?.email || 'Unknown'}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={typeInfo.positive ? "default" : "destructive"}>
-                          {typeInfo.label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className={typeInfo.positive ? "text-success font-medium" : "text-destructive font-medium"}>
-                        {typeInfo.positive ? '+' : '-'}{formatCurrency(record.amount, record.currency)}
-                      </TableCell>
-                      <TableCell>{format(new Date(record.pay_date), 'dd MMM yyyy')}</TableCell>
-                      <TableCell>
-                        {record.pay_period_start && record.pay_period_end
-                          ? `${format(new Date(record.pay_period_start), 'dd MMM')} - ${format(new Date(record.pay_period_end), 'dd MMM yyyy')}`
-                          : '-'}
-                      </TableCell>
-                      <TableCell className="max-w-[200px] truncate">{record.description || '-'}</TableCell>
-                    </TableRow>
-                  );
-                })
+                payrollSummary.map(staff => (
+                  <TableRow key={staff.userId}>
+                    <TableCell className="font-medium">
+                      <div>
+                        <div>{staff.displayName}</div>
+                        <div className="text-xs text-muted-foreground">{staff.email}</div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {staff.hasSalaryRecord ? (
+                        <Badge variant="default" className="bg-success">Paid</Badge>
+                      ) : (
+                        <Badge variant="outline" className="border-warning text-warning-foreground">Pending</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">{formatCurrency(staff.baseSalary, staff.currency)}</TableCell>
+                    <TableCell className="text-right text-success">
+                      {staff.bonuses > 0 ? `+${formatCurrency(staff.bonuses, staff.currency)}` : '-'}
+                    </TableCell>
+                    <TableCell className="text-right text-success">
+                      {staff.overtime > 0 ? `+${formatCurrency(staff.overtime, staff.currency)}` : '-'}
+                    </TableCell>
+                    <TableCell className="text-right text-success">
+                      {staff.expenses > 0 ? `+${formatCurrency(staff.expenses, staff.currency)}` : '-'}
+                    </TableCell>
+                    <TableCell className="text-right text-destructive">
+                      {staff.deductions > 0 ? `-${formatCurrency(staff.deductions, staff.currency)}` : '-'}
+                    </TableCell>
+                    <TableCell className="text-right font-bold">{formatCurrency(staff.totalPay, staff.currency)}</TableCell>
+                    <TableCell>
+                      {!staff.hasSalaryRecord && (
+                        <Button variant="ghost" size="sm" onClick={() => handleRunPayroll(staff.userId)}>
+                          <FileText className="h-4 w-4 mr-1" />
+                          Pay
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
               )}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
+      {/* Add Adjustment Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Add Pay Record</DialogTitle>
+            <DialogTitle>Add Pay Adjustment</DialogTitle>
             <DialogDescription>
-              Record salary, bonus, deduction or expense for a staff member
+              Add a bonus, overtime, expense, or deduction for a staff member
             </DialogDescription>
           </DialogHeader>
 
@@ -291,17 +519,20 @@ export function StaffPayManager() {
                   <SelectValue placeholder="Select staff member" />
                 </SelectTrigger>
                 <SelectContent>
-                  {userProfiles.map(user => (
-                    <SelectItem key={user.user_id} value={user.user_id}>
-                      {user.display_name || user.email}
-                    </SelectItem>
-                  ))}
+                  {hrProfiles.filter(hr => hr.base_salary && hr.base_salary > 0).map(hr => {
+                    const profile = userProfiles.find(u => u.user_id === hr.user_id);
+                    return (
+                      <SelectItem key={hr.user_id} value={hr.user_id}>
+                        {profile?.display_name || profile?.email}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label>Record Type *</Label>
+              <Label>Adjustment Type *</Label>
               <Select
                 value={formData.record_type}
                 onValueChange={(value) => setFormData({ ...formData, record_type: value })}
@@ -310,7 +541,7 @@ export function StaffPayManager() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {RECORD_TYPES.map(type => (
+                  {RECORD_TYPES.filter(t => t.value !== 'salary').map(type => (
                     <SelectItem key={type.value} value={type.value}>
                       {type.label}
                     </SelectItem>
@@ -359,31 +590,12 @@ export function StaffPayManager() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Pay Period Start</Label>
-                <Input
-                  type="date"
-                  value={formData.pay_period_start}
-                  onChange={(e) => setFormData({ ...formData, pay_period_start: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Pay Period End</Label>
-                <Input
-                  type="date"
-                  value={formData.pay_period_end}
-                  onChange={(e) => setFormData({ ...formData, pay_period_end: e.target.value })}
-                />
-              </div>
-            </div>
-
             <div className="space-y-2">
               <Label>Description</Label>
               <Textarea
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="e.g., Monthly salary for January 2024"
+                placeholder="e.g., Performance bonus Q1"
                 rows={2}
               />
             </div>
@@ -391,7 +603,7 @@ export function StaffPayManager() {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave}>Add Record</Button>
+            <Button onClick={handleSave}>Add Adjustment</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

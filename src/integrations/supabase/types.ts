@@ -295,12 +295,14 @@ export type Database = {
         Row: {
           annual_holiday_allowance: number | null
           base_currency: string
+          base_salary: number | null
           created_at: string
           department: string | null
           employee_id: string | null
           id: string
           job_title: string | null
           notes: string | null
+          pay_frequency: string | null
           start_date: string | null
           updated_at: string
           user_id: string
@@ -308,12 +310,14 @@ export type Database = {
         Insert: {
           annual_holiday_allowance?: number | null
           base_currency?: string
+          base_salary?: number | null
           created_at?: string
           department?: string | null
           employee_id?: string | null
           id?: string
           job_title?: string | null
           notes?: string | null
+          pay_frequency?: string | null
           start_date?: string | null
           updated_at?: string
           user_id: string
@@ -321,12 +325,14 @@ export type Database = {
         Update: {
           annual_holiday_allowance?: number | null
           base_currency?: string
+          base_salary?: number | null
           created_at?: string
           department?: string | null
           employee_id?: string | null
           id?: string
           job_title?: string | null
           notes?: string | null
+          pay_frequency?: string | null
           start_date?: string | null
           updated_at?: string
           user_id?: string
