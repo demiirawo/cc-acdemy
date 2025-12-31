@@ -111,6 +111,7 @@ export function StaffScheduleManager() {
   const isMobile = useIsMobile();
   const scheduleEditHint = isMobile ? "Tap to edit" : "Double-click to edit";
   const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [showLiveView, setShowLiveView] = useState(false);
   const [isRecurringDialogOpen, setIsRecurringDialogOpen] = useState(false);
   const [isEditPatternDialogOpen, setIsEditPatternDialogOpen] = useState(false);
   const [editingPattern, setEditingPattern] = useState<RecurringPattern | null>(null);
@@ -1002,7 +1003,15 @@ export function StaffScheduleManager() {
               <Button variant="outline" size="icon" onClick={() => navigateWeek("next")}>
                 <ChevronRight className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setCurrentWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }))}>
+              <Button 
+                variant={showLiveView ? "default" : "ghost"} 
+                size="sm" 
+                onClick={() => {
+                  setCurrentWeekStart(startOfWeek(new Date(), { weekStartsOn: 1 }));
+                  setShowLiveView(!showLiveView);
+                }}
+              >
+                <Clock className="h-4 w-4 mr-1" />
                 Today
               </Button>
             </div>
@@ -1315,6 +1324,138 @@ export function StaffScheduleManager() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Live View Panel - Shows when Today is clicked */}
+      {showLiveView && (
+        <Card className="border-primary/50 bg-primary/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Clock className="h-5 w-5 text-primary animate-pulse" />
+              Live View - {format(new Date(), "EEEE, MMMM d, yyyy 'at' HH:mm")}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Currently Working */}
+              <div>
+                <h3 className="font-semibold text-sm text-muted-foreground mb-3 flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  Currently Working
+                </h3>
+                <div className="space-y-2">
+                  {(() => {
+                    const now = new Date();
+                    const currentlyWorking = allSchedules.filter(s => {
+                      const start = parseISO(s.start_datetime);
+                      const end = parseISO(s.end_datetime);
+                      return now >= start && now <= end;
+                    });
+                    
+                    if (currentlyWorking.length === 0) {
+                      return (
+                        <p className="text-sm text-muted-foreground italic py-4">
+                          No staff currently on shift
+                        </p>
+                      );
+                    }
+                    
+                    return currentlyWorking.map(schedule => {
+                      const start = parseISO(schedule.start_datetime);
+                      const end = parseISO(schedule.end_datetime);
+                      const hoursRemaining = Math.max(0, differenceInHours(end, now));
+                      const isFromPattern = schedule.id.startsWith('pattern-');
+                      
+                      return (
+                        <div 
+                          key={schedule.id} 
+                          className={`p-3 rounded-lg border ${isFromPattern ? 'bg-violet-50 border-violet-200' : 'bg-green-50 border-green-200'}`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-medium">{getStaffName(schedule.user_id)}</p>
+                              <p className="text-sm text-muted-foreground">
+                                @ {schedule.client_name}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="bg-background">
+                              {format(start, "HH:mm")} - {format(end, "HH:mm")}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            ~{hoursRemaining}h remaining
+                          </p>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+              
+              {/* Upcoming in Next 8 Hours */}
+              <div>
+                <h3 className="font-semibold text-sm text-muted-foreground mb-3 flex items-center gap-2">
+                  <Calendar className="h-4 w-4" />
+                  Starting in Next 8 Hours
+                </h3>
+                <div className="space-y-2">
+                  {(() => {
+                    const now = new Date();
+                    const eightHoursFromNow = addDays(now, 8/24); // Add 8 hours
+                    const upcomingShifts = allSchedules.filter(s => {
+                      const start = parseISO(s.start_datetime);
+                      return start > now && start <= eightHoursFromNow;
+                    }).sort((a, b) => parseISO(a.start_datetime).getTime() - parseISO(b.start_datetime).getTime());
+                    
+                    if (upcomingShifts.length === 0) {
+                      return (
+                        <p className="text-sm text-muted-foreground italic py-4">
+                          No shifts starting in the next 8 hours
+                        </p>
+                      );
+                    }
+                    
+                    return upcomingShifts.map(schedule => {
+                      const start = parseISO(schedule.start_datetime);
+                      const end = parseISO(schedule.end_datetime);
+                      const hoursUntilStart = Math.max(0, differenceInHours(start, now));
+                      const minutesUntilStart = Math.floor((start.getTime() - now.getTime()) / (1000 * 60));
+                      const isFromPattern = schedule.id.startsWith('pattern-');
+                      
+                      return (
+                        <div 
+                          key={schedule.id} 
+                          className={`p-3 rounded-lg border ${isFromPattern ? 'bg-violet-50 border-violet-200' : 'bg-amber-50 border-amber-200'}`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-medium">{getStaffName(schedule.user_id)}</p>
+                              <p className="text-sm text-muted-foreground">
+                                @ {schedule.client_name}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="bg-background">
+                              {format(start, "HH:mm")} - {format(end, "HH:mm")}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Starts in {hoursUntilStart > 0 ? `${hoursUntilStart}h ${minutesUntilStart % 60}m` : `${minutesUntilStart}m`}
+                          </p>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-4 pt-4 border-t">
+              <Button variant="outline" size="sm" onClick={() => setShowLiveView(false)}>
+                Close Live View
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Gantt-style Timeline */}
       <Card>
