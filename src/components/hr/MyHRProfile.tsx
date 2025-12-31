@@ -67,7 +67,6 @@ const ABSENCE_TYPES: Record<string, string> = {
 
 const RECORD_TYPES: Record<string, { label: string; positive: boolean }> = {
   'salary': { label: 'Salary', positive: true },
-  'bonus': { label: 'Bonus', positive: true },
   'overtime': { label: 'Overtime', positive: true },
   'expense': { label: 'Expense', positive: true },
   'deduction': { label: 'Deduction', positive: false },
