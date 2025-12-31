@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit, UserCircle } from "lucide-react";
+import { Plus, Edit, UserCircle, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface HRProfile {
   id: string;
@@ -46,11 +47,12 @@ const CURRENCIES = [
 ];
 
 export function HRProfileManager() {
-  const [profiles, setProfiles] = useState<(HRProfile & { user?: UserProfile })[]>([]);
+  const [hrProfiles, setHRProfiles] = useState<HRProfile[]>([]);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<HRProfile | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const { toast } = useToast();
 
   const [formData, setFormData] = useState({
@@ -70,7 +72,7 @@ export function HRProfileManager() {
 
   const fetchData = async () => {
     try {
-      // Fetch all user profiles
+      // Fetch all user profiles from User Management
       const { data: users, error: usersError } = await supabase
         .from('profiles')
         .select('id, user_id, display_name, email')
@@ -80,25 +82,17 @@ export function HRProfileManager() {
       setUserProfiles(users || []);
 
       // Fetch all HR profiles
-      const { data: hrProfiles, error: hrError } = await supabase
+      const { data: hrData, error: hrError } = await supabase
         .from('hr_profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('*');
 
       if (hrError) throw hrError;
-
-      // Merge HR profiles with user info
-      const mergedProfiles = (hrProfiles || []).map(hr => ({
-        ...hr,
-        user: users?.find(u => u.user_id === hr.user_id)
-      }));
-
-      setProfiles(mergedProfiles);
+      setHRProfiles(hrData || []);
     } catch (error) {
-      console.error('Error fetching HR profiles:', error);
+      console.error('Error fetching data:', error);
       toast({
         title: "Error",
-        description: "Failed to load HR profiles",
+        description: "Failed to load staff profiles",
         variant: "destructive"
       });
     } finally {
@@ -106,23 +100,31 @@ export function HRProfileManager() {
     }
   };
 
-  const handleOpenDialog = (profile?: HRProfile) => {
-    if (profile) {
-      setEditingProfile(profile);
+  // Get HR profile for a user
+  const getHRProfile = (userId: string): HRProfile | undefined => {
+    return hrProfiles.find(hr => hr.user_id === userId);
+  };
+
+  const handleOpenDialog = (userProfile: UserProfile) => {
+    setSelectedUserId(userProfile.user_id);
+    const existingHR = getHRProfile(userProfile.user_id);
+    
+    if (existingHR) {
+      setEditingProfile(existingHR);
       setFormData({
-        user_id: profile.user_id,
-        employee_id: profile.employee_id || '',
-        job_title: profile.job_title || '',
-        department: profile.department || '',
-        start_date: profile.start_date || '',
-        base_currency: profile.base_currency,
-        annual_holiday_allowance: profile.annual_holiday_allowance || 28,
-        notes: profile.notes || ''
+        user_id: existingHR.user_id,
+        employee_id: existingHR.employee_id || '',
+        job_title: existingHR.job_title || '',
+        department: existingHR.department || '',
+        start_date: existingHR.start_date || '',
+        base_currency: existingHR.base_currency,
+        annual_holiday_allowance: existingHR.annual_holiday_allowance || 28,
+        notes: existingHR.notes || ''
       });
     } else {
       setEditingProfile(null);
       setFormData({
-        user_id: '',
+        user_id: userProfile.user_id,
         employee_id: '',
         job_title: '',
         department: '',
@@ -186,10 +188,10 @@ export function HRProfileManager() {
     }
   };
 
-  // Get users without HR profiles for new profile creation
-  const usersWithoutHRProfile = userProfiles.filter(
-    u => !profiles.some(p => p.user_id === u.user_id)
-  );
+  // Count stats
+  const totalUsers = userProfiles.length;
+  const usersWithHR = hrProfiles.length;
+  const usersWithoutHR = totalUsers - usersWithHR;
 
   if (loading) {
     return (
@@ -207,11 +209,15 @@ export function HRProfileManager() {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold">Staff HR Profiles</h2>
-        <Button onClick={() => handleOpenDialog()}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add HR Profile
-        </Button>
+        <div>
+          <h2 className="text-xl font-semibold">Staff HR Profiles</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            {usersWithHR} of {totalUsers} staff members have HR profiles configured
+            {usersWithoutHR > 0 && (
+              <span className="text-warning"> • {usersWithoutHR} need setup</span>
+            )}
+          </p>
+        </div>
       </div>
 
       <Card>
@@ -220,6 +226,7 @@ export function HRProfileManager() {
             <TableHeader>
               <TableRow>
                 <TableHead>Staff Member</TableHead>
+                <TableHead>HR Status</TableHead>
                 <TableHead>Employee ID</TableHead>
                 <TableHead>Job Title</TableHead>
                 <TableHead>Department</TableHead>
@@ -229,33 +236,55 @@ export function HRProfileManager() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {profiles.length === 0 ? (
+              {userProfiles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                    No HR profiles found. Click "Add HR Profile" to create one.
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    No staff members found. Add users through User Management first.
                   </TableCell>
                 </TableRow>
               ) : (
-                profiles.map(profile => (
-                  <TableRow key={profile.id}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        <UserCircle className="h-5 w-5 text-muted-foreground" />
-                        {profile.user?.display_name || profile.user?.email || 'Unknown'}
-                      </div>
-                    </TableCell>
-                    <TableCell>{profile.employee_id || '-'}</TableCell>
-                    <TableCell>{profile.job_title || '-'}</TableCell>
-                    <TableCell>{profile.department || '-'}</TableCell>
-                    <TableCell>{profile.base_currency}</TableCell>
-                    <TableCell>{profile.annual_holiday_allowance} days</TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="sm" onClick={() => handleOpenDialog(profile)}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
+                userProfiles.map(user => {
+                  const hrProfile = getHRProfile(user.user_id);
+                  const hasHR = !!hrProfile;
+                  
+                  return (
+                    <TableRow key={user.user_id}>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          <UserCircle className="h-5 w-5 text-muted-foreground" />
+                          <div>
+                            <div>{user.display_name || 'No name'}</div>
+                            <div className="text-xs text-muted-foreground">{user.email}</div>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {hasHR ? (
+                          <Badge variant="outline" className="bg-success/20 text-success border-success">
+                            <CheckCircle2 className="h-3 w-3 mr-1" />
+                            Configured
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-warning/20 text-warning-foreground border-warning">
+                            <AlertCircle className="h-3 w-3 mr-1" />
+                            Not Set Up
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>{hrProfile?.employee_id || '-'}</TableCell>
+                      <TableCell>{hrProfile?.job_title || '-'}</TableCell>
+                      <TableCell>{hrProfile?.department || '-'}</TableCell>
+                      <TableCell>{hrProfile?.base_currency || '-'}</TableCell>
+                      <TableCell>{hrProfile?.annual_holiday_allowance ? `${hrProfile.annual_holiday_allowance} days` : '-'}</TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm" onClick={() => handleOpenDialog(user)}>
+                          <Edit className="h-4 w-4 mr-1" />
+                          {hasHR ? 'Edit' : 'Setup'}
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
@@ -265,32 +294,19 @@ export function HRProfileManager() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingProfile ? 'Edit HR Profile' : 'Create HR Profile'}</DialogTitle>
+            <DialogTitle>
+              {editingProfile ? 'Edit HR Profile' : 'Set Up HR Profile'}
+            </DialogTitle>
             <DialogDescription>
-              {editingProfile ? 'Update the HR profile details' : 'Create a new HR profile for a staff member'}
+              {selectedUserId && userProfiles.find(u => u.user_id === selectedUserId) && (
+                <span>
+                  Configure HR details for <strong>{userProfiles.find(u => u.user_id === selectedUserId)?.display_name || userProfiles.find(u => u.user_id === selectedUserId)?.email}</strong>
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Staff Member *</Label>
-              <Select
-                value={formData.user_id}
-                onValueChange={(value) => setFormData({ ...formData, user_id: value })}
-                disabled={!!editingProfile}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select staff member" />
-                </SelectTrigger>
-                <SelectContent>
-                  {(editingProfile ? userProfiles : usersWithoutHRProfile).map(user => (
-                    <SelectItem key={user.user_id} value={user.user_id}>
-                      {user.display_name || user.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
