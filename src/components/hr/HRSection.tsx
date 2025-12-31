@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUserRole } from "@/hooks/useUserRole";
-import { StaffHolidaysManager } from "./StaffHolidaysManager";
 import { StaffPayManager } from "./StaffPayManager";
 import { HRProfileManager } from "./HRProfileManager";
 import { MyHRProfile } from "./MyHRProfile";
 import { StaffScheduleManager } from "./StaffScheduleManager";
 import { StaffRequestForm } from "./StaffRequestForm";
-import { Calendar, DollarSign, Users, User, CalendarClock, Send } from "lucide-react";
+import { StaffRequestsManager } from "./StaffRequestsManager";
+import { CalendarClock, DollarSign, Users, User, Send, ClipboardList } from "lucide-react";
 
 export function HRSection() {
   const { isAdmin } = useUserRole();
-  const [activeTab, setActiveTab] = useState(isAdmin ? "profiles" : "requests");
+  const [activeTab, setActiveTab] = useState(isAdmin ? "profiles" : "my-requests");
 
   return (
     <div className="flex-1 overflow-auto p-6">
@@ -19,7 +19,7 @@ export function HRSection() {
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-foreground">HR Management</h1>
           <p className="text-muted-foreground mt-1">
-            {isAdmin ? "Manage staff holidays, pay, schedules and profiles" : "View your HR profile, submit requests and view records"}
+            {isAdmin ? "Manage staff schedules, requests, pay and profiles" : "View your HR profile, submit requests and view records"}
           </p>
         </div>
 
@@ -35,9 +35,9 @@ export function HRSection() {
                   <CalendarClock className="h-4 w-4" />
                   Schedule
                 </TabsTrigger>
-                <TabsTrigger value="holidays" className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4" />
-                  Holidays/Absence
+                <TabsTrigger value="requests" className="flex items-center gap-2">
+                  <ClipboardList className="h-4 w-4" />
+                  Requests
                 </TabsTrigger>
                 <TabsTrigger value="pay" className="flex items-center gap-2">
                   <DollarSign className="h-4 w-4" />
@@ -45,9 +45,9 @@ export function HRSection() {
                 </TabsTrigger>
               </>
             )}
-            <TabsTrigger value="requests" className="flex items-center gap-2">
+            <TabsTrigger value="my-requests" className="flex items-center gap-2">
               <Send className="h-4 w-4" />
-              Requests
+              My Requests
             </TabsTrigger>
             <TabsTrigger value="my-profile" className="flex items-center gap-2">
               <User className="h-4 w-4" />
@@ -63,8 +63,8 @@ export function HRSection() {
               <TabsContent value="schedule" className="mt-0">
                 <StaffScheduleManager />
               </TabsContent>
-              <TabsContent value="holidays" className="mt-0">
-                <StaffHolidaysManager />
+              <TabsContent value="requests" className="mt-0">
+                <StaffRequestsManager />
               </TabsContent>
               <TabsContent value="pay" className="mt-0">
                 <StaffPayManager />
@@ -72,7 +72,7 @@ export function HRSection() {
             </>
           )}
           
-          <TabsContent value="requests" className="mt-0">
+          <TabsContent value="my-requests" className="mt-0">
             <StaffRequestForm />
           </TabsContent>
           
