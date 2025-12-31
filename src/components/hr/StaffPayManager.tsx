@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, Calculator, FileText, RefreshCw } from "lucide-react";
+import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, Calculator, FileText, RefreshCw, Check, X, Edit2, MessageSquare } from "lucide-react";
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO } from "date-fns";
 
 interface PayRecord {
@@ -80,6 +80,14 @@ const FALLBACK_RATES: ExchangeRates = {
   NGN: 0.00052,
 };
 
+interface InlineEditState {
+  staffId: string;
+  bonusAmount: number;
+  bonusComment: string;
+  deductionAmount: number;
+  deductionComment: string;
+}
+
 export function StaffPayManager() {
   const [payRecords, setPayRecords] = useState<(PayRecord & { user?: UserProfile })[]>([]);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
@@ -91,6 +99,8 @@ export function StaffPayManager() {
   const [manualRates, setManualRates] = useState<ExchangeRates>({});
   const [ratesDate, setRatesDate] = useState<string | null>(null);
   const [loadingRates, setLoadingRates] = useState(false);
+  const [inlineEdit, setInlineEdit] = useState<InlineEditState | null>(null);
+  const [savingInline, setSavingInline] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -424,6 +434,133 @@ export function StaffPayManager() {
     return RECORD_TYPES.find(t => t.value === type) || RECORD_TYPES[0];
   };
 
+  // Start inline editing for a staff row
+  const handleStartInlineEdit = (staff: typeof payrollSummary[0]) => {
+    // Get existing bonus/deduction records for this month
+    const bonusRecord = staff.records.find(r => r.record_type === 'bonus');
+    const deductionRecord = staff.records.find(r => r.record_type === 'deduction');
+    
+    setInlineEdit({
+      staffId: staff.userId,
+      bonusAmount: staff.bonuses,
+      bonusComment: bonusRecord?.description || '',
+      deductionAmount: staff.deductions,
+      deductionComment: deductionRecord?.description || ''
+    });
+  };
+
+  const handleCancelInlineEdit = () => {
+    setInlineEdit(null);
+  };
+
+  const handleSaveInlineEdit = async () => {
+    if (!inlineEdit) return;
+    
+    const staff = payrollSummary.find(s => s.userId === inlineEdit.staffId);
+    if (!staff) return;
+
+    setSavingInline(true);
+    
+    try {
+      const payDate = format(endOfMonth(selectedMonth), 'yyyy-MM-dd');
+      const payPeriodStart = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
+      const payPeriodEnd = payDate;
+
+      // Handle bonus changes
+      const existingBonusRecord = staff.records.find(r => r.record_type === 'bonus');
+      
+      if (inlineEdit.bonusAmount > 0) {
+        if (existingBonusRecord) {
+          // Update existing bonus
+          const { error } = await supabase
+            .from('staff_pay_records')
+            .update({
+              amount: inlineEdit.bonusAmount,
+              description: inlineEdit.bonusComment || null
+            })
+            .eq('id', existingBonusRecord.id);
+          if (error) throw error;
+        } else {
+          // Create new bonus
+          const { error } = await supabase
+            .from('staff_pay_records')
+            .insert({
+              user_id: inlineEdit.staffId,
+              record_type: 'bonus' as any,
+              amount: inlineEdit.bonusAmount,
+              currency: staff.currency,
+              description: inlineEdit.bonusComment || null,
+              pay_date: payDate,
+              pay_period_start: payPeriodStart,
+              pay_period_end: payPeriodEnd,
+              created_by: user?.id!
+            });
+          if (error) throw error;
+        }
+      } else if (existingBonusRecord && inlineEdit.bonusAmount === 0) {
+        // Delete bonus if amount is 0
+        const { error } = await supabase
+          .from('staff_pay_records')
+          .delete()
+          .eq('id', existingBonusRecord.id);
+        if (error) throw error;
+      }
+
+      // Handle deduction changes
+      const existingDeductionRecord = staff.records.find(r => r.record_type === 'deduction');
+      
+      if (inlineEdit.deductionAmount > 0) {
+        if (existingDeductionRecord) {
+          // Update existing deduction
+          const { error } = await supabase
+            .from('staff_pay_records')
+            .update({
+              amount: inlineEdit.deductionAmount,
+              description: inlineEdit.deductionComment || null
+            })
+            .eq('id', existingDeductionRecord.id);
+          if (error) throw error;
+        } else {
+          // Create new deduction
+          const { error } = await supabase
+            .from('staff_pay_records')
+            .insert({
+              user_id: inlineEdit.staffId,
+              record_type: 'deduction' as any,
+              amount: inlineEdit.deductionAmount,
+              currency: staff.currency,
+              description: inlineEdit.deductionComment || null,
+              pay_date: payDate,
+              pay_period_start: payPeriodStart,
+              pay_period_end: payPeriodEnd,
+              created_by: user?.id!
+            });
+          if (error) throw error;
+        }
+      } else if (existingDeductionRecord && inlineEdit.deductionAmount === 0) {
+        // Delete deduction if amount is 0
+        const { error } = await supabase
+          .from('staff_pay_records')
+          .delete()
+          .eq('id', existingDeductionRecord.id);
+        if (error) throw error;
+      }
+
+      toast({ title: "Success", description: "Adjustments saved" });
+      setInlineEdit(null);
+      fetchData();
+    } catch (error: any) {
+      console.error('Error saving inline edit:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to save adjustments",
+        variant: "destructive"
+      });
+    } finally {
+      setSavingInline(false);
+    }
+  };
+
   const unpaidStaffCount = payrollSummary.filter(s => !s.hasSalaryRecord).length;
 
   if (loading) {
@@ -595,45 +732,178 @@ export function StaffPayManager() {
                   </TableCell>
                 </TableRow>
               ) : (
-                payrollSummary.map(staff => (
-                  <TableRow key={staff.userId}>
-                    <TableCell className="font-medium">
-                      <div>
-                        <div>{staff.displayName}</div>
-                        <div className="text-xs text-muted-foreground">{staff.email}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {staff.hasSalaryRecord ? (
-                        <Badge variant="default" className="bg-success">Paid</Badge>
-                      ) : (
-                        <Badge variant="outline" className="border-warning text-warning-foreground">Pending</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">{formatCurrency(staff.baseSalary, staff.currency)}</TableCell>
-                    <TableCell className="text-right text-success">
-                      {staff.bonuses > 0 ? `+${formatCurrency(staff.bonuses, staff.currency)}` : '-'}
-                    </TableCell>
-                    <TableCell className="text-right text-success">
-                      {staff.overtime > 0 ? `+${formatCurrency(staff.overtime, staff.currency)}` : '-'}
-                    </TableCell>
-                    <TableCell className="text-right text-destructive">
-                      {staff.deductions > 0 ? `-${formatCurrency(staff.deductions, staff.currency)}` : '-'}
-                    </TableCell>
-                    <TableCell className="text-right font-bold">{formatCurrency(staff.totalPay, staff.currency)}</TableCell>
-                    <TableCell className="text-right font-medium text-muted-foreground">
-                      {staff.currency !== 'GBP' ? `£${staff.totalPayInGBP.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {!staff.hasSalaryRecord && (
-                        <Button variant="ghost" size="sm" onClick={() => handleRunPayroll(staff.userId)}>
-                          <FileText className="h-4 w-4 mr-1" />
-                          Pay
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
+                payrollSummary.map(staff => {
+                  const isEditing = inlineEdit?.staffId === staff.userId;
+                  const bonusRecord = staff.records.find(r => r.record_type === 'bonus');
+                  const deductionRecord = staff.records.find(r => r.record_type === 'deduction');
+                  
+                  return (
+                    <TableRow 
+                      key={staff.userId} 
+                      className={isEditing ? 'bg-muted/50' : 'cursor-pointer hover:bg-muted/30'}
+                      onClick={() => !isEditing && handleStartInlineEdit(staff)}
+                    >
+                      <TableCell className="font-medium">
+                        <div>
+                          <div>{staff.displayName}</div>
+                          <div className="text-xs text-muted-foreground">{staff.email}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {staff.hasSalaryRecord ? (
+                          <Badge variant="default" className="bg-success">Paid</Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-warning text-warning-foreground">Pending</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">{formatCurrency(staff.baseSalary, staff.currency)}</TableCell>
+                      
+                      {/* Bonuses - Editable */}
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        {isEditing ? (
+                          <div className="space-y-1">
+                            <Input
+                              type="number"
+                              value={inlineEdit.bonusAmount || ''}
+                              onChange={(e) => setInlineEdit({
+                                ...inlineEdit,
+                                bonusAmount: parseFloat(e.target.value) || 0
+                              })}
+                              className="w-24 h-8 text-sm text-right"
+                              step="0.01"
+                              min="0"
+                              placeholder="0.00"
+                            />
+                            <div className="flex items-center gap-1">
+                              <MessageSquare className="h-3 w-3 text-muted-foreground" />
+                              <Input
+                                type="text"
+                                value={inlineEdit.bonusComment}
+                                onChange={(e) => setInlineEdit({
+                                  ...inlineEdit,
+                                  bonusComment: e.target.value
+                                })}
+                                className="w-full h-7 text-xs"
+                                placeholder="Reason for bonus..."
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div className="text-success">
+                              {staff.bonuses > 0 ? `+${formatCurrency(staff.bonuses, staff.currency)}` : '-'}
+                            </div>
+                            {bonusRecord?.description && (
+                              <div className="text-xs text-muted-foreground truncate max-w-[120px]" title={bonusRecord.description}>
+                                {bonusRecord.description}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </TableCell>
+                      
+                      {/* Overtime - Read only (auto calculated) */}
+                      <TableCell className="text-right text-success">
+                        {staff.overtime > 0 ? `+${formatCurrency(staff.overtime, staff.currency)}` : '-'}
+                      </TableCell>
+                      
+                      {/* Deductions - Editable */}
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        {isEditing ? (
+                          <div className="space-y-1">
+                            <Input
+                              type="number"
+                              value={inlineEdit.deductionAmount || ''}
+                              onChange={(e) => setInlineEdit({
+                                ...inlineEdit,
+                                deductionAmount: parseFloat(e.target.value) || 0
+                              })}
+                              className="w-24 h-8 text-sm text-right"
+                              step="0.01"
+                              min="0"
+                              placeholder="0.00"
+                            />
+                            <div className="flex items-center gap-1">
+                              <MessageSquare className="h-3 w-3 text-muted-foreground" />
+                              <Input
+                                type="text"
+                                value={inlineEdit.deductionComment}
+                                onChange={(e) => setInlineEdit({
+                                  ...inlineEdit,
+                                  deductionComment: e.target.value
+                                })}
+                                className="w-full h-7 text-xs"
+                                placeholder="Reason for deduction..."
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div className="text-destructive">
+                              {staff.deductions > 0 ? `-${formatCurrency(staff.deductions, staff.currency)}` : '-'}
+                            </div>
+                            {deductionRecord?.description && (
+                              <div className="text-xs text-muted-foreground truncate max-w-[120px]" title={deductionRecord.description}>
+                                {deductionRecord.description}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </TableCell>
+                      
+                      <TableCell className="text-right font-bold">{formatCurrency(staff.totalPay, staff.currency)}</TableCell>
+                      <TableCell className="text-right font-medium text-muted-foreground">
+                        {staff.currency !== 'GBP' ? `£${staff.totalPayInGBP.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '-'}
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1">
+                          {isEditing ? (
+                            <>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={handleSaveInlineEdit}
+                                disabled={savingInline}
+                                className="h-8 w-8 p-0"
+                              >
+                                <Check className="h-4 w-4 text-success" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={handleCancelInlineEdit}
+                                disabled={savingInline}
+                                className="h-8 w-8 p-0"
+                              >
+                                <X className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleStartInlineEdit(staff);
+                                }}
+                                className="h-8 w-8 p-0"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                              </Button>
+                              {!staff.hasSalaryRecord && (
+                                <Button variant="ghost" size="sm" onClick={() => handleRunPayroll(staff.userId)}>
+                                  <FileText className="h-4 w-4 mr-1" />
+                                  Pay
+                                </Button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
