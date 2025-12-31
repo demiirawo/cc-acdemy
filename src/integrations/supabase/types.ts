@@ -741,6 +741,60 @@ export type Database = {
         }
         Relationships: []
       }
+      recurring_shift_patterns: {
+        Row: {
+          client_name: string
+          created_at: string
+          created_by: string
+          currency: string
+          days_of_week: number[]
+          end_date: string | null
+          end_time: string
+          hourly_rate: number | null
+          id: string
+          is_overtime: boolean
+          notes: string | null
+          start_date: string
+          start_time: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          client_name: string
+          created_at?: string
+          created_by: string
+          currency?: string
+          days_of_week: number[]
+          end_date?: string | null
+          end_time: string
+          hourly_rate?: number | null
+          id?: string
+          is_overtime?: boolean
+          notes?: string | null
+          start_date: string
+          start_time: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          client_name?: string
+          created_at?: string
+          created_by?: string
+          currency?: string
+          days_of_week?: number[]
+          end_date?: string | null
+          end_time?: string
+          hourly_rate?: number | null
+          id?: string
+          is_overtime?: boolean
+          notes?: string | null
+          start_date?: string
+          start_time?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       security_audit_log: {
         Row: {
           created_at: string | null
