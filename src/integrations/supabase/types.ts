@@ -1054,6 +1054,57 @@ export type Database = {
         }
         Relationships: []
       }
+      staff_requests: {
+        Row: {
+          created_at: string
+          days_requested: number
+          details: string | null
+          end_date: string
+          id: string
+          request_type: Database["public"]["Enums"]["staff_request_type"]
+          review_notes: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          start_date: string
+          status: string
+          swap_with_user_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          days_requested?: number
+          details?: string | null
+          end_date: string
+          id?: string
+          request_type: Database["public"]["Enums"]["staff_request_type"]
+          review_notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          start_date: string
+          status?: string
+          swap_with_user_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          days_requested?: number
+          details?: string | null
+          end_date?: string
+          id?: string
+          request_type?: Database["public"]["Enums"]["staff_request_type"]
+          review_notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          start_date?: string
+          status?: string
+          swap_with_user_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       staff_schedules: {
         Row: {
           client_name: string
@@ -1225,6 +1276,11 @@ export type Database = {
         | "other"
       app_role: "business_manager" | "consultant" | "admin" | "client"
       pay_record_type: "salary" | "bonus" | "deduction" | "expense" | "overtime"
+      staff_request_type:
+        | "overtime_standard"
+        | "overtime_double_up"
+        | "holiday"
+        | "shift_swap"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1363,6 +1419,12 @@ export const Constants = {
       ],
       app_role: ["business_manager", "consultant", "admin", "client"],
       pay_record_type: ["salary", "bonus", "deduction", "expense", "overtime"],
+      staff_request_type: [
+        "overtime_standard",
+        "overtime_double_up",
+        "holiday",
+        "shift_swap",
+      ],
     },
   },
 } as const
