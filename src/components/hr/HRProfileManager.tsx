@@ -42,6 +42,11 @@ interface ClientAssignment {
   notes: string | null;
 }
 
+interface Client {
+  id: string;
+  name: string;
+}
+
 const CURRENCIES = [
   { code: 'GBP', name: 'British Pound', symbol: '£' },
   { code: 'USD', name: 'US Dollar', symbol: '$' },
@@ -66,12 +71,14 @@ export function HRProfileManager() {
   const [hrProfiles, setHRProfiles] = useState<HRProfile[]>([]);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
   const [clientAssignments, setClientAssignments] = useState<ClientAssignment[]>([]);
+  const [allClients, setAllClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<HRProfile | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [newClientName, setNewClientName] = useState('');
   const [staffClients, setStaffClients] = useState<string[]>([]);
+  const [selectedClient, setSelectedClient] = useState<string>('');
   const { toast } = useToast();
 
   const [formData, setFormData] = useState({
@@ -116,6 +123,15 @@ export function HRProfileManager() {
 
       if (clientError) throw clientError;
       setClientAssignments(clientData || []);
+
+      // Fetch all clients from the clients table
+      const { data: clientsData, error: clientsError } = await supabase
+        .from('clients')
+        .select('id, name')
+        .order('name');
+
+      if (clientsError) throw clientsError;
+      setAllClients(clientsData || []);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast({
@@ -146,6 +162,7 @@ export function HRProfileManager() {
     const userClients = getClientsForUser(userProfile.user_id);
     setStaffClients(userClients);
     setNewClientName('');
+    setSelectedClient('');
     
     if (existingHR) {
       setEditingProfile(existingHR);
@@ -177,8 +194,8 @@ export function HRProfileManager() {
     setDialogOpen(true);
   };
 
-  const handleAddClient = () => {
-    const trimmed = newClientName.trim();
+  const handleAddClient = async (clientName?: string) => {
+    const trimmed = (clientName || newClientName).trim();
     if (!trimmed) return;
     if (staffClients.includes(trimmed)) {
       toast({
@@ -188,8 +205,38 @@ export function HRProfileManager() {
       });
       return;
     }
+    
+    // Check if client exists in database, if not add it
+    const existingClient = allClients.find(c => c.name.toLowerCase() === trimmed.toLowerCase());
+    if (!existingClient) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: newClient, error } = await supabase
+            .from('clients')
+            .insert({ name: trimmed, created_by: user.id })
+            .select()
+            .single();
+          
+          if (!error && newClient) {
+            setAllClients([...allClients, newClient]);
+          }
+        }
+      } catch (error) {
+        console.error('Error adding client to database:', error);
+      }
+    }
+    
     setStaffClients([...staffClients, trimmed]);
     setNewClientName('');
+    setSelectedClient('');
+  };
+
+  const handleSelectClient = (clientName: string) => {
+    if (clientName && !staffClients.includes(clientName)) {
+      setStaffClients([...staffClients, clientName]);
+    }
+    setSelectedClient('');
   };
 
   const handleRemoveClient = (clientName: string) => {
@@ -438,11 +485,34 @@ export function HRProfileManager() {
 
             <div className="space-y-2">
               <Label>Assigned Clients</Label>
+              
+              {/* Dropdown for existing clients */}
+              {allClients.filter(c => !staffClients.includes(c.name)).length > 0 && (
+                <Select
+                  value={selectedClient}
+                  onValueChange={handleSelectClient}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select existing client..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {allClients
+                      .filter(c => !staffClients.includes(c.name))
+                      .map(client => (
+                        <SelectItem key={client.id} value={client.name}>
+                          {client.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              )}
+              
+              {/* Input for new clients */}
               <div className="flex gap-2">
                 <Input
                   value={newClientName}
                   onChange={(e) => setNewClientName(e.target.value)}
-                  placeholder="Enter client name"
+                  placeholder="Or add new client..."
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
@@ -450,10 +520,11 @@ export function HRProfileManager() {
                     }
                   }}
                 />
-                <Button type="button" variant="secondary" onClick={handleAddClient}>
+                <Button type="button" variant="secondary" onClick={() => handleAddClient()}>
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
+              
               {staffClients.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-2">
                   {staffClients.map((client, idx) => (
@@ -471,7 +542,7 @@ export function HRProfileManager() {
                 </div>
               )}
               <p className="text-xs text-muted-foreground mt-1">
-                Type a client name and press Enter or click + to add
+                Select from existing clients or type a new name and press Enter
               </p>
             </div>
 
