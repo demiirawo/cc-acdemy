@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw } from "lucide-react";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay } from "date-fns";
 interface MonthlyPayPreview {
   month: Date;
@@ -82,6 +82,16 @@ interface PublicHoliday {
   date: string;
   name: string;
 }
+interface StaffRequest {
+  id: string;
+  request_type: string;
+  start_date: string;
+  end_date: string;
+  days_requested: number;
+  status: string;
+  details: string | null;
+  created_at: string;
+}
 const CURRENCIES: Record<string, string> = {
   'GBP': '£',
   'USD': '$',
@@ -128,6 +138,14 @@ const RECORD_TYPES: Record<string, {
     positive: false
   }
 };
+const REQUEST_TYPES: Record<string, { label: string; icon: string }> = {
+  'overtime_standard': { label: 'Standard Overtime', icon: 'clock' },
+  'overtime_double_up': { label: 'Double-Up Overtime', icon: 'clock' },
+  'holiday': { label: 'Holiday Request', icon: 'calendar' },
+  'holiday_paid': { label: 'Paid Holiday', icon: 'calendar' },
+  'holiday_unpaid': { label: 'Unpaid Holiday', icon: 'calendar' },
+  'shift_swap': { label: 'Shift Swap', icon: 'refresh' },
+};
 export function MyHRProfile() {
   const {
     user
@@ -144,6 +162,7 @@ export function MyHRProfile() {
   const [recurringPatterns, setRecurringPatterns] = useState<RecurringShiftPattern[]>([]);
   const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
+  const [staffRequests, setStaffRequests] = useState<StaffRequest[]>([]);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
   useEffect(() => {
     if (user) {
@@ -199,6 +218,14 @@ export function MyHRProfile() {
         } = await supabase.from('shift_pattern_exceptions').select('id, pattern_id, exception_date').in('pattern_id', patternIds);
         setPatternExceptions(exceptions || []);
       }
+
+      // Fetch staff requests
+      const {
+        data: requestsData
+      } = await supabase.from('staff_requests').select('*').eq('user_id', user?.id).order('created_at', {
+        ascending: false
+      });
+      setStaffRequests(requestsData || []);
 
       // Fetch public holidays for next 12 months (current year + next year if needed)
       await fetchPublicHolidays();
@@ -587,6 +614,92 @@ export function MyHRProfile() {
           </AccordionItem>
         </Accordion>
       )}
+
+      {/* My Requests Section */}
+      <Accordion type="single" collapsible className="w-full">
+        <AccordionItem value="my-requests" className="border-2 border-primary/20 rounded-lg">
+          <AccordionTrigger className="px-6 py-4 hover:no-underline">
+            <div className="flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" />
+              <span className="text-lg font-semibold">My Requests</span>
+              {staffRequests.length > 0 && (
+                <Badge variant="secondary" className="ml-2">{staffRequests.length}</Badge>
+              )}
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="px-6 pb-4">
+            <p className="text-sm text-muted-foreground mb-4">Your holiday, overtime, and shift swap requests</p>
+            {staffRequests.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">No requests found</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {staffRequests.map((request) => {
+                  const typeInfo = REQUEST_TYPES[request.request_type] || { label: request.request_type, icon: 'file' };
+                  const getStatusBadge = () => {
+                    if (request.status === 'approved') {
+                      return (
+                        <Badge variant="outline" className="bg-success/20 text-success border-success">
+                          <CheckCircle className="h-3 w-3 mr-1" />
+                          Approved
+                        </Badge>
+                      );
+                    } else if (request.status === 'rejected') {
+                      return (
+                        <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive">
+                          <AlertCircle className="h-3 w-3 mr-1" />
+                          Rejected
+                        </Badge>
+                      );
+                    } else {
+                      return (
+                        <Badge variant="outline" className="bg-warning/20 text-warning-foreground border-warning">
+                          <Clock className="h-3 w-3 mr-1" />
+                          Pending
+                        </Badge>
+                      );
+                    }
+                  };
+                  
+                  const getIcon = () => {
+                    if (request.request_type.includes('overtime')) {
+                      return <Clock className="h-4 w-4 text-primary" />;
+                    } else if (request.request_type.includes('shift_swap')) {
+                      return <RefreshCw className="h-4 w-4 text-primary" />;
+                    } else {
+                      return <Calendar className="h-4 w-4 text-primary" />;
+                    }
+                  };
+
+                  return (
+                    <div key={request.id} className="flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors">
+                      <div className="flex items-center gap-3">
+                        {getIcon()}
+                        <div>
+                          <p className="font-medium">{typeInfo.label}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {format(parseISO(request.start_date), 'dd MMM yyyy')}
+                            {request.start_date !== request.end_date && ` - ${format(parseISO(request.end_date), 'dd MMM yyyy')}`}
+                            {request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`}
+                          </p>
+                          {request.details && (
+                            <p className="text-xs text-muted-foreground mt-1">{request.details}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        {getStatusBadge()}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
 
     </div>;
 }
