@@ -12,46 +12,46 @@ serve(async (req) => {
   }
 
   try {
-    // Frankfurter API only supports major currencies, not AED or NGN
-    // We'll fetch what's available and add manual rates for others
-    const response = await fetch('https://api.frankfurter.app/latest?to=GBP,USD,INR,AUD,CAD,PHP,ZAR');
+    // Use ExchangeRate-API's free open access endpoint
+    // This API supports NGN, AED, and all major currencies
+    // Documentation: https://www.exchangerate-api.com/docs/free
+    const response = await fetch('https://open.er-api.com/v6/latest/GBP');
     
     if (!response.ok) {
       throw new Error(`Failed to fetch exchange rates: ${response.statusText}`);
     }
     
     const data = await response.json();
-    console.log('Frankfurter API response:', data);
+    console.log('ExchangeRate-API response:', JSON.stringify(data).substring(0, 500));
     
-    // The API returns rates relative to EUR, we need to convert to GBP base
-    const eurToGbp = data.rates.GBP;
+    if (data.result !== 'success') {
+      throw new Error('API returned error: ' + (data['error-type'] || 'Unknown error'));
+    }
     
-    // Calculate rates relative to GBP (how much 1 unit of each currency is worth in GBP)
-    // For currencies not in Frankfurter, use approximate fixed rates based on current market
-    const gbpRates: Record<string, number> = {
-      GBP: 1,
-      EUR: eurToGbp, // 1 EUR = X GBP
-      USD: eurToGbp / data.rates.USD,
-      INR: eurToGbp / data.rates.INR,
-      AUD: eurToGbp / data.rates.AUD,
-      CAD: eurToGbp / data.rates.CAD,
-      PHP: eurToGbp / data.rates.PHP,
-      ZAR: eurToGbp / data.rates.ZAR,
-      // AED and NGN are not supported by Frankfurter, use approximate rates
-      // AED is pegged to USD at ~3.67, so 1 AED = 1 USD / 3.67
-      AED: (eurToGbp / data.rates.USD) / 3.6725,
-      // NGN fluctuates significantly - using approximate rate of ~1600 NGN per GBP
-      NGN: 1 / 1600,
-    };
+    // The API returns rates relative to GBP (our base)
+    // We need to invert them to get "how much 1 unit of currency = X GBP"
+    const supportedCurrencies = ['GBP', 'EUR', 'USD', 'INR', 'AED', 'AUD', 'CAD', 'PHP', 'ZAR', 'NGN'];
+    
+    const gbpRates: Record<string, number> = {};
+    
+    for (const currency of supportedCurrencies) {
+      if (currency === 'GBP') {
+        gbpRates[currency] = 1;
+      } else if (data.rates[currency]) {
+        // The API gives us: 1 GBP = X currency
+        // We need: 1 currency = X GBP (inverted)
+        gbpRates[currency] = 1 / data.rates[currency];
+      }
+    }
     
     console.log('Calculated GBP rates:', gbpRates);
 
     return new Response(JSON.stringify({ 
       rates: gbpRates,
       base: 'GBP',
-      date: data.date,
+      date: data.time_last_update_utc,
       success: true,
-      note: 'AED and NGN rates are approximate (not available from primary API)'
+      provider: 'ExchangeRate-API'
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
