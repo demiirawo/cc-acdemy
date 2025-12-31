@@ -1393,27 +1393,32 @@ export function StaffScheduleManager() {
                         ))}
                       </div>
 
-                      {/* Staff View - Live (only staff with shifts today) */}
+                      {/* Staff View - Live (only staff currently working or with upcoming shifts) */}
                       {viewMode === "staff" && (() => {
-                        const staffWithShiftsToday = filteredStaff.filter(staff => {
+                        // Filter to staff who are currently working OR have upcoming shifts
+                        const staffWithActiveOrUpcoming = filteredStaff.filter(staff => {
                           return allSchedules.some(s => {
-                            const scheduleDate = parseISO(s.start_datetime);
-                            return s.user_id === staff.user_id && format(scheduleDate, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
+                            if (s.user_id !== staff.user_id) return false;
+                            const end = parseISO(s.end_datetime);
+                            // Only include if shift hasn't ended yet
+                            return end > now;
                           });
                         });
                         
-                        if (staffWithShiftsToday.length === 0) {
+                        if (staffWithActiveOrUpcoming.length === 0) {
                           return (
                             <div className="text-center py-8 text-muted-foreground">
-                              No staff scheduled for today
+                              No staff currently working or scheduled
                             </div>
                           );
                         }
                         
-                        return staffWithShiftsToday.map(staff => {
-                          const todaySchedules = allSchedules.filter(s => {
-                            const scheduleDate = parseISO(s.start_datetime);
-                            return s.user_id === staff.user_id && format(scheduleDate, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
+                        return staffWithActiveOrUpcoming.map(staff => {
+                          // Get schedules that haven't ended yet
+                          const activeOrUpcomingSchedules = allSchedules.filter(s => {
+                            if (s.user_id !== staff.user_id) return false;
+                            const end = parseISO(s.end_datetime);
+                            return end > now;
                           });
                           
                           const onHoliday = isStaffOnHoliday(staff.user_id, now);
@@ -1433,7 +1438,7 @@ export function StaffScheduleManager() {
                                 const slotEnd = new Date(slotStart);
                                 slotEnd.setHours(slotEnd.getHours() + 1);
                                 
-                                const overlappingSchedules = todaySchedules.filter(s => {
+                                const overlappingSchedules = activeOrUpcomingSchedules.filter(s => {
                                   const start = parseISO(s.start_datetime);
                                   const end = parseISO(s.end_datetime);
                                   return start < slotEnd && end > slotStart;
@@ -1512,27 +1517,32 @@ export function StaffScheduleManager() {
                         });
                       })()}
 
-                      {/* Client View - Live (only clients with shifts today) */}
+                      {/* Client View - Live (only clients with active or upcoming shifts) */}
                       {viewMode === "client" && (() => {
-                        const clientsWithShiftsToday = uniqueClients.filter(clientName => {
+                        // Filter to clients who have staff currently working OR with upcoming shifts
+                        const clientsWithActiveOrUpcoming = uniqueClients.filter(clientName => {
                           return allSchedules.some(s => {
-                            const scheduleDate = parseISO(s.start_datetime);
-                            return s.client_name === clientName && format(scheduleDate, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
+                            if (s.client_name !== clientName) return false;
+                            const end = parseISO(s.end_datetime);
+                            // Only include if shift hasn't ended yet
+                            return end > now;
                           });
                         });
                         
-                        if (clientsWithShiftsToday.length === 0) {
+                        if (clientsWithActiveOrUpcoming.length === 0) {
                           return (
                             <div className="text-center py-8 text-muted-foreground">
-                              No clients with scheduled staff today
+                              No clients with active or upcoming staff
                             </div>
                           );
                         }
                         
-                        return clientsWithShiftsToday.map(clientName => {
-                          const todaySchedules = allSchedules.filter(s => {
-                            const scheduleDate = parseISO(s.start_datetime);
-                            return s.client_name === clientName && format(scheduleDate, "yyyy-MM-dd") === format(now, "yyyy-MM-dd");
+                        return clientsWithActiveOrUpcoming.map(clientName => {
+                          // Get schedules that haven't ended yet
+                          const activeOrUpcomingSchedules = allSchedules.filter(s => {
+                            if (s.client_name !== clientName) return false;
+                            const end = parseISO(s.end_datetime);
+                            return end > now;
                           });
                           
                           return (
@@ -1549,7 +1559,7 @@ export function StaffScheduleManager() {
                                 const slotEnd = new Date(slotStart);
                                 slotEnd.setHours(slotEnd.getHours() + 1);
                                 
-                                const overlappingSchedules = todaySchedules.filter(s => {
+                                const overlappingSchedules = activeOrUpcomingSchedules.filter(s => {
                                   const start = parseISO(s.start_datetime);
                                   const end = parseISO(s.end_datetime);
                                   return start < slotEnd && end > slotStart;
