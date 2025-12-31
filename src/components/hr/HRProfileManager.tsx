@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit, UserCircle, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Plus, Edit, UserCircle, AlertCircle, CheckCircle2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 interface HRProfile {
@@ -33,6 +33,13 @@ interface UserProfile {
   email: string | null;
 }
 
+interface ClientAssignment {
+  id: string;
+  staff_user_id: string;
+  client_name: string;
+  notes: string | null;
+}
+
 const CURRENCIES = [
   { code: 'GBP', name: 'British Pound', symbol: '£' },
   { code: 'USD', name: 'US Dollar', symbol: '$' },
@@ -49,17 +56,19 @@ const CURRENCIES = [
 export function HRProfileManager() {
   const [hrProfiles, setHRProfiles] = useState<HRProfile[]>([]);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
+  const [clientAssignments, setClientAssignments] = useState<ClientAssignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<HRProfile | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [newClientName, setNewClientName] = useState('');
+  const [staffClients, setStaffClients] = useState<string[]>([]);
   const { toast } = useToast();
 
   const [formData, setFormData] = useState({
     user_id: '',
     employee_id: '',
     job_title: '',
-    department: '',
     start_date: '',
     base_currency: 'GBP',
     annual_holiday_allowance: 28,
@@ -88,6 +97,14 @@ export function HRProfileManager() {
 
       if (hrError) throw hrError;
       setHRProfiles(hrData || []);
+
+      // Fetch all client assignments
+      const { data: clientData, error: clientError } = await supabase
+        .from('staff_client_assignments')
+        .select('*');
+
+      if (clientError) throw clientError;
+      setClientAssignments(clientData || []);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast({
@@ -105,9 +122,19 @@ export function HRProfileManager() {
     return hrProfiles.find(hr => hr.user_id === userId);
   };
 
+  // Get clients for a user
+  const getClientsForUser = (userId: string): string[] => {
+    return clientAssignments
+      .filter(ca => ca.staff_user_id === userId)
+      .map(ca => ca.client_name);
+  };
+
   const handleOpenDialog = (userProfile: UserProfile) => {
     setSelectedUserId(userProfile.user_id);
     const existingHR = getHRProfile(userProfile.user_id);
+    const userClients = getClientsForUser(userProfile.user_id);
+    setStaffClients(userClients);
+    setNewClientName('');
     
     if (existingHR) {
       setEditingProfile(existingHR);
@@ -115,7 +142,6 @@ export function HRProfileManager() {
         user_id: existingHR.user_id,
         employee_id: existingHR.employee_id || '',
         job_title: existingHR.job_title || '',
-        department: existingHR.department || '',
         start_date: existingHR.start_date || '',
         base_currency: existingHR.base_currency,
         annual_holiday_allowance: existingHR.annual_holiday_allowance || 28,
@@ -127,7 +153,6 @@ export function HRProfileManager() {
         user_id: userProfile.user_id,
         employee_id: '',
         job_title: '',
-        department: '',
         start_date: '',
         base_currency: 'GBP',
         annual_holiday_allowance: 28,
@@ -135,6 +160,25 @@ export function HRProfileManager() {
       });
     }
     setDialogOpen(true);
+  };
+
+  const handleAddClient = () => {
+    const trimmed = newClientName.trim();
+    if (!trimmed) return;
+    if (staffClients.includes(trimmed)) {
+      toast({
+        title: "Already assigned",
+        description: "This client is already assigned to this staff member",
+        variant: "destructive"
+      });
+      return;
+    }
+    setStaffClients([...staffClients, trimmed]);
+    setNewClientName('');
+  };
+
+  const handleRemoveClient = (clientName: string) => {
+    setStaffClients(staffClients.filter(c => c !== clientName));
   };
 
   const handleSave = async () => {
@@ -152,7 +196,7 @@ export function HRProfileManager() {
         user_id: formData.user_id,
         employee_id: formData.employee_id || null,
         job_title: formData.job_title || null,
-        department: formData.department || null,
+        department: null, // Keep for backwards compatibility
         start_date: formData.start_date || null,
         base_currency: formData.base_currency,
         annual_holiday_allowance: formData.annual_holiday_allowance,
@@ -166,16 +210,38 @@ export function HRProfileManager() {
           .eq('id', editingProfile.id);
 
         if (error) throw error;
-        toast({ title: "Success", description: "HR profile updated" });
       } else {
         const { error } = await supabase
           .from('hr_profiles')
           .insert(profileData);
 
         if (error) throw error;
-        toast({ title: "Success", description: "HR profile created" });
       }
 
+      // Update client assignments
+      // First, delete existing assignments for this user
+      const { error: deleteError } = await supabase
+        .from('staff_client_assignments')
+        .delete()
+        .eq('staff_user_id', formData.user_id);
+
+      if (deleteError) throw deleteError;
+
+      // Then insert new assignments
+      if (staffClients.length > 0) {
+        const assignmentsToInsert = staffClients.map(clientName => ({
+          staff_user_id: formData.user_id,
+          client_name: clientName
+        }));
+
+        const { error: insertError } = await supabase
+          .from('staff_client_assignments')
+          .insert(assignmentsToInsert);
+
+        if (insertError) throw insertError;
+      }
+
+      toast({ title: "Success", description: editingProfile ? "HR profile updated" : "HR profile created" });
       setDialogOpen(false);
       fetchData();
     } catch (error: any) {
@@ -229,7 +295,7 @@ export function HRProfileManager() {
                 <TableHead>HR Status</TableHead>
                 <TableHead>Employee ID</TableHead>
                 <TableHead>Job Title</TableHead>
-                <TableHead>Department</TableHead>
+                <TableHead>Clients</TableHead>
                 <TableHead>Currency</TableHead>
                 <TableHead>Holiday Allowance</TableHead>
                 <TableHead>Actions</TableHead>
@@ -246,6 +312,7 @@ export function HRProfileManager() {
                 userProfiles.map(user => {
                   const hrProfile = getHRProfile(user.user_id);
                   const hasHR = !!hrProfile;
+                  const userClients = getClientsForUser(user.user_id);
                   
                   return (
                     <TableRow key={user.user_id}>
@@ -273,7 +340,24 @@ export function HRProfileManager() {
                       </TableCell>
                       <TableCell>{hrProfile?.employee_id || '-'}</TableCell>
                       <TableCell>{hrProfile?.job_title || '-'}</TableCell>
-                      <TableCell>{hrProfile?.department || '-'}</TableCell>
+                      <TableCell>
+                        {userClients.length > 0 ? (
+                          <div className="flex flex-wrap gap-1 max-w-[200px]">
+                            {userClients.slice(0, 3).map((client, idx) => (
+                              <Badge key={idx} variant="secondary" className="text-xs">
+                                {client}
+                              </Badge>
+                            ))}
+                            {userClients.length > 3 && (
+                              <Badge variant="outline" className="text-xs">
+                                +{userClients.length - 3} more
+                              </Badge>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
                       <TableCell>{hrProfile?.base_currency || '-'}</TableCell>
                       <TableCell>{hrProfile?.annual_holiday_allowance ? `${hrProfile.annual_holiday_allowance} days` : '-'}</TableCell>
                       <TableCell>
@@ -327,15 +411,46 @@ export function HRProfileManager() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Department</Label>
+            <div className="space-y-2">
+              <Label>Assigned Clients</Label>
+              <div className="flex gap-2">
                 <Input
-                  value={formData.department}
-                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                  placeholder="Operations"
+                  value={newClientName}
+                  onChange={(e) => setNewClientName(e.target.value)}
+                  placeholder="Enter client name"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddClient();
+                    }
+                  }}
                 />
+                <Button type="button" variant="secondary" onClick={handleAddClient}>
+                  <Plus className="h-4 w-4" />
+                </Button>
               </div>
+              {staffClients.length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {staffClients.map((client, idx) => (
+                    <Badge key={idx} variant="secondary" className="flex items-center gap-1 pr-1">
+                      {client}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveClient(client)}
+                        className="ml-1 rounded-full hover:bg-destructive/20 p-0.5"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">
+                Type a client name and press Enter or click + to add
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Start Date</Label>
                 <Input
@@ -344,9 +459,6 @@ export function HRProfileManager() {
                   onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
                 />
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Base Currency *</Label>
                 <Select
@@ -365,14 +477,15 @@ export function HRProfileManager() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Annual Holiday Allowance (days)</Label>
-                <Input
-                  type="number"
-                  value={formData.annual_holiday_allowance}
-                  onChange={(e) => setFormData({ ...formData, annual_holiday_allowance: parseInt(e.target.value) || 0 })}
-                />
-              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Annual Holiday Allowance (days)</Label>
+              <Input
+                type="number"
+                value={formData.annual_holiday_allowance}
+                onChange={(e) => setFormData({ ...formData, annual_holiday_allowance: parseInt(e.target.value) || 0 })}
+              />
             </div>
 
             <div className="space-y-2">
