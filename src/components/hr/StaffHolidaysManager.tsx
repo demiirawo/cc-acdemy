@@ -70,12 +70,15 @@ export const calculateHolidayAllowance = (startDate: string | null): {
   const totalDaysInYear = Math.ceil((holidayYearEnd.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
   const daysElapsedInYear = Math.ceil((now.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
   
+  // Fraction of holiday year that has elapsed since June 1st
+  const accrualFraction = Math.min(daysElapsedInYear / totalDaysInYear, 1);
+  
   if (!startDate) {
     return { 
       annualAllowance: DEFAULT_ALLOWANCE, 
-      accruedAllowance: 0, 
+      accruedAllowance: Math.round(DEFAULT_ALLOWANCE * accrualFraction * 10) / 10, 
       yearsEmployed: 0,
-      isProRata: true,
+      isProRata: false,
       holidayYearStart,
       daysElapsedInYear,
       totalDaysInYear
@@ -88,16 +91,7 @@ export const calculateHolidayAllowance = (startDate: string | null): {
   // Determine annual allowance based on years employed
   const annualAllowance = yearsEmployed >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
   
-  // Calculate accrual start date (later of: holiday year start or employee start date)
-  const accrualStartDate = start > holidayYearStart ? start : holidayYearStart;
-  
-  // Days accrued = days from accrual start to now
-  const daysAccruing = Math.max(0, Math.ceil((now.getTime() - accrualStartDate.getTime()) / (1000 * 60 * 60 * 24)));
-  
-  // Fraction of holiday year that has passed since accrual start
-  const accrualFraction = Math.min(daysAccruing / totalDaysInYear, 1);
-  
-  // Accrued allowance = fraction of year elapsed * annual allowance
+  // Accrued allowance = fraction of year elapsed since June 1st * annual allowance (same for ALL staff)
   const accruedAllowance = Math.round(annualAllowance * accrualFraction * 10) / 10; // Round to 1 decimal
   
   return { 
