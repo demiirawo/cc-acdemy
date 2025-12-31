@@ -465,44 +465,44 @@ export function StaffPayManager() {
       
       console.log(`User ${userProfile?.display_name}: ${userSchedules.length} actual schedules, ${virtualSchedules.length} virtual schedules`);
       
-      // Calculate holiday overtime (0.5x extra for each hour worked on a public holiday)
-      let holidayOvertimeHours = 0;
-      const holidayShifts: Array<{ date: string; hours: number; holidayName: string }> = [];
+      // Calculate holiday overtime: 1.5 × (Base Salary / 20) per holiday day worked
+      // Daily rate = monthlyBaseSalary / 20 (assuming 20 working days per month)
+      const dailyRate = monthlyBaseSalary / 20;
+      let holidayOvertimeDays = 0;
+      const holidayShifts: Array<{ date: string; holidayName: string }> = [];
+      const countedHolidayDates = new Set<string>(); // Track which dates we've already counted
       
       // Check actual schedules
       userSchedules.forEach(schedule => {
         const scheduleDate = getScheduleDate(schedule.start_datetime);
-        if (holidayDatesSet.has(scheduleDate)) {
-          const hours = calculateHours(schedule.start_datetime, schedule.end_datetime);
-          holidayOvertimeHours += hours;
+        if (holidayDatesSet.has(scheduleDate) && !countedHolidayDates.has(scheduleDate)) {
+          holidayOvertimeDays += 1;
+          countedHolidayDates.add(scheduleDate);
           const holiday = publicHolidays.find(h => h.date === scheduleDate);
           holidayShifts.push({
             date: scheduleDate,
-            hours,
             holidayName: holiday?.name || 'Public Holiday'
           });
-          console.log(`  HOLIDAY MATCH (actual): ${scheduleDate} - ${hours} hours`);
+          console.log(`  HOLIDAY MATCH (actual): ${scheduleDate} - 1 day`);
         }
       });
       
       // Check virtual schedules from recurring patterns (only if no actual schedule exists for that date)
       virtualSchedules.forEach(virtual => {
-        if (holidayDatesSet.has(virtual.date) && !actualScheduleDates.has(virtual.date)) {
-          holidayOvertimeHours += virtual.hours;
+        if (holidayDatesSet.has(virtual.date) && !actualScheduleDates.has(virtual.date) && !countedHolidayDates.has(virtual.date)) {
+          holidayOvertimeDays += 1;
+          countedHolidayDates.add(virtual.date);
           const holiday = publicHolidays.find(h => h.date === virtual.date);
           holidayShifts.push({
             date: virtual.date,
-            hours: virtual.hours,
             holidayName: holiday?.name || 'Public Holiday'
           });
-          console.log(`  HOLIDAY MATCH (pattern): ${virtual.date} - ${virtual.hours} hours`);
+          console.log(`  HOLIDAY MATCH (pattern): ${virtual.date} - 1 day`);
         }
       });
       
-      // Use schedule's hourly rate if available, otherwise estimate from salary
-      const hourlyRate = userSchedules[0]?.hourly_rate || virtualSchedules[0]?.hourlyRate || estimatedHourlyRate;
-      // Holiday overtime bonus = 0.5x hourly rate for each hour worked on holiday
-      const holidayOvertimeBonus = holidayOvertimeHours * hourlyRate * 0.5;
+      // Holiday overtime bonus = 1.5 × daily rate × number of holiday days worked
+      const holidayOvertimeBonus = holidayOvertimeDays * dailyRate * 1.5;
       
       // Sum additions and deductions from records
       const salaryRecords = userRecords.filter(r => r.record_type === 'salary');
@@ -536,7 +536,7 @@ export function StaffPayManager() {
         expenses,
         deductions,
         holidayOvertimeBonus,
-        holidayOvertimeHours,
+        holidayOvertimeDays,
         holidayShifts,
         totalPay,
         totalPayInGBP,
@@ -1205,7 +1205,7 @@ export function StaffPayManager() {
                               +{formatCurrency(staff.holidayOvertimeBonus, staff.currency)}
                             </span>
                             <span className="text-[10px] text-muted-foreground">
-                              {staff.holidayOvertimeHours.toFixed(1)}h @ 1.5x
+                              {staff.holidayOvertimeDays} day{staff.holidayOvertimeDays !== 1 ? 's' : ''} @ 1.5x
                             </span>
                           </div>
                         ) : '-'}
