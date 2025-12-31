@@ -5,10 +5,15 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay } from "date-fns";
+
+interface PayRecordDetail {
+  amount: number;
+  description: string | null;
+}
 
 interface MonthlyPayPreview {
   month: Date;
@@ -16,7 +21,9 @@ interface MonthlyPayPreview {
   monthlyBaseSalary: number;
   dailyRate: number;
   bonuses: number;
+  bonusDetails: PayRecordDetail[];
   deductions: number;
+  deductionDetails: PayRecordDetail[];
   holidayOvertimeDays: number;
   holidayOvertimeBonus: number;
   holidayShifts: Array<{ date: string; holidayName: string }>;
@@ -415,13 +422,19 @@ export function MyHRProfile() {
         return payDate >= monthStart && payDate <= monthEnd;
       });
 
-      const bonuses = monthRecords
-        .filter(r => r.record_type === 'bonus')
-        .reduce((sum, r) => sum + r.amount, 0);
+      const bonusRecords = monthRecords.filter(r => r.record_type === 'bonus');
+      const bonuses = bonusRecords.reduce((sum, r) => sum + r.amount, 0);
+      const bonusDetails: PayRecordDetail[] = bonusRecords.map(r => ({
+        amount: r.amount,
+        description: r.description
+      }));
       
-      const deductions = monthRecords
-        .filter(r => r.record_type === 'deduction')
-        .reduce((sum, r) => sum + r.amount, 0);
+      const deductionRecords = monthRecords.filter(r => r.record_type === 'deduction');
+      const deductions = deductionRecords.reduce((sum, r) => sum + r.amount, 0);
+      const deductionDetails: PayRecordDetail[] = deductionRecords.map(r => ({
+        amount: r.amount,
+        description: r.description
+      }));
 
       const totalPay = monthlyBaseSalary + bonuses + holidayOvertimeBonus + unusedHolidayPayout - deductions;
 
@@ -446,7 +459,9 @@ export function MyHRProfile() {
         monthlyBaseSalary,
         dailyRate,
         bonuses,
+        bonusDetails,
         deductions,
+        deductionDetails,
         holidayOvertimeDays,
         holidayOvertimeBonus,
         holidayShifts,
@@ -663,7 +678,23 @@ export function MyHRProfile() {
                           
                           {preview.bonuses > 0 && (
                             <div className="flex justify-between items-center py-2 border-b">
-                              <span className="text-muted-foreground">Bonuses</span>
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">Bonuses</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs">
+                                    <div className="space-y-1">
+                                      {preview.bonusDetails.map((detail, idx) => (
+                                        <div key={idx} className="text-sm">
+                                          <span className="font-medium">{formatCurrency(detail.amount, preview.currency)}</span>
+                                          {detail.description && <span className="ml-1">- {detail.description}</span>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
                               <span className="font-medium text-success">+{formatCurrency(preview.bonuses, preview.currency)}</span>
                             </div>
                           )}
@@ -701,7 +732,23 @@ export function MyHRProfile() {
                           
                           {preview.deductions > 0 && (
                             <div className="flex justify-between items-center py-2 border-b">
-                              <span className="text-muted-foreground">Deductions</span>
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-muted-foreground cursor-help underline decoration-dotted underline-offset-2">Deductions</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs">
+                                    <div className="space-y-1">
+                                      {preview.deductionDetails.map((detail, idx) => (
+                                        <div key={idx} className="text-sm">
+                                          <span className="font-medium">{formatCurrency(detail.amount, preview.currency)}</span>
+                                          {detail.description && <span className="ml-1">- {detail.description}</span>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
                               <span className="font-medium text-destructive">-{formatCurrency(preview.deductions, preview.currency)}</span>
                             </div>
                           )}
@@ -743,138 +790,63 @@ export function MyHRProfile() {
         </Card>
       )}
 
-      {/* Detailed Information */}
-      <Tabs defaultValue="pay" className="w-full">
-        <TabsList>
-          <TabsTrigger value="pay" className="flex items-center gap-2">
-            <DollarSign className="h-4 w-4" />
-            My Pay Records
-          </TabsTrigger>
-          <TabsTrigger value="holidays" className="flex items-center gap-2">
-            <Calendar className="h-4 w-4" />
-            My Holidays/Absences
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="pay" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Pay Records</CardTitle>
-              <CardDescription>Your salary, bonuses, and deductions</CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Pay Date</TableHead>
-                    <TableHead>Pay Period</TableHead>
-                    <TableHead>Reason/Description</TableHead>
+      {/* Holidays & Absences Section */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-primary" />
+            <CardTitle>My Holidays & Absences</CardTitle>
+          </div>
+          <CardDescription>Your leave history</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Type</TableHead>
+                <TableHead>Start Date</TableHead>
+                <TableHead>End Date</TableHead>
+                <TableHead>Days</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Notes</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {holidays.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    No holiday/absence records found.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                holidays.map(holiday => (
+                  <TableRow key={holiday.id}>
+                    <TableCell>{ABSENCE_TYPES[holiday.absence_type] || holiday.absence_type}</TableCell>
+                    <TableCell>{format(new Date(holiday.start_date), 'dd MMM yyyy')}</TableCell>
+                    <TableCell>{format(new Date(holiday.end_date), 'dd MMM yyyy')}</TableCell>
+                    <TableCell>{holiday.days_taken}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          holiday.status === 'approved'
+                            ? 'bg-success/20 text-success border-success'
+                            : holiday.status === 'rejected'
+                            ? 'bg-destructive/20 text-destructive border-destructive'
+                            : 'bg-warning/20 text-warning-foreground border-warning'
+                        }
+                      >
+                        {holiday.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="max-w-[200px] truncate">{holiday.notes || '-'}</TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {payRecords.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                        No pay records found.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    payRecords.map(record => {
-                      const typeInfo = RECORD_TYPES[record.record_type] || { label: record.record_type, positive: true };
-                      return (
-                        <TableRow key={record.id}>
-                          <TableCell>
-                            <Badge variant={typeInfo.positive ? "default" : "destructive"}>
-                              {typeInfo.label}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className={typeInfo.positive ? "text-success font-medium" : "text-destructive font-medium"}>
-                            {typeInfo.positive ? '+' : '-'}{formatCurrency(record.amount, record.currency)}
-                          </TableCell>
-                          <TableCell>{format(new Date(record.pay_date), 'dd MMM yyyy')}</TableCell>
-                          <TableCell>
-                            {record.pay_period_start && record.pay_period_end
-                              ? `${format(new Date(record.pay_period_start), 'dd MMM')} - ${format(new Date(record.pay_period_end), 'dd MMM yyyy')}`
-                              : '-'}
-                          </TableCell>
-                          <TableCell className="max-w-[250px]">
-                            {record.description ? (
-                              <span className={
-                                record.record_type === 'bonus' ? 'text-success' :
-                                record.record_type === 'deduction' ? 'text-destructive' : ''
-                              }>
-                                {record.description}
-                              </span>
-                            ) : '-'}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="holidays" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Holidays & Absences</CardTitle>
-              <CardDescription>Your leave history</CardDescription>
-            </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Start Date</TableHead>
-                    <TableHead>End Date</TableHead>
-                    <TableHead>Days</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Notes</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {holidays.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                        No holiday/absence records found.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    holidays.map(holiday => (
-                      <TableRow key={holiday.id}>
-                        <TableCell>{ABSENCE_TYPES[holiday.absence_type] || holiday.absence_type}</TableCell>
-                        <TableCell>{format(new Date(holiday.start_date), 'dd MMM yyyy')}</TableCell>
-                        <TableCell>{format(new Date(holiday.end_date), 'dd MMM yyyy')}</TableCell>
-                        <TableCell>{holiday.days_taken}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={
-                              holiday.status === 'approved'
-                                ? 'bg-success/20 text-success border-success'
-                                : holiday.status === 'rejected'
-                                ? 'bg-destructive/20 text-destructive border-destructive'
-                                : 'bg-warning/20 text-warning-foreground border-warning'
-                            }
-                          >
-                            {holiday.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="max-w-[200px] truncate">{holiday.notes || '-'}</TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   );
 }
