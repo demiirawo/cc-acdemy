@@ -25,6 +25,7 @@ interface Schedule {
   notes: string | null;
   hourly_rate: number | null;
   currency: string;
+  shift_type: string | null;
   is_pattern_overtime?: boolean; // For virtual schedules from overtime patterns
 }
 
@@ -75,6 +76,7 @@ interface RecurringPattern {
   start_date: string;
   end_date: string | null; // null = indefinite
   recurrence_interval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off';
+  shift_type: string | null;
 }
 
 interface Client {
@@ -96,6 +98,13 @@ interface StaffRequest {
 }
 
 type ViewMode = "staff" | "client";
+
+const SHIFT_TYPES = [
+  "Call Monitoring",
+  "Supervisions",
+  "Floating Support",
+  "General Admin"
+];
 
 const DAYS_OF_WEEK = [
   { value: 1, label: "Mon" },
@@ -128,7 +137,8 @@ export function StaffScheduleManager() {
     end_time: "17:00",
     notes: "",
     hourly_rate: "",
-    currency: "GBP"
+    currency: "GBP",
+    shift_type: ""
   });
 
   // Edit pattern form state
@@ -144,7 +154,8 @@ export function StaffScheduleManager() {
     currency: "GBP",
     start_date: "",
     end_date: "",
-    recurrence_interval: "weekly" as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off'
+    recurrence_interval: "weekly" as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off',
+    shift_type: ""
   });
 
   // Recurring schedule form state
@@ -162,7 +173,8 @@ export function StaffScheduleManager() {
     currency: "GBP",
     start_date: format(new Date(), "yyyy-MM-dd"),
     end_date: format(new Date(), "yyyy-MM-dd"),
-    recurrence_interval: "weekly" as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off'
+    recurrence_interval: "weekly" as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off',
+    shift_type: ""
   });
 
   const weekDays = useMemo(() => {
@@ -373,6 +385,7 @@ export function StaffScheduleManager() {
           notes: pattern.notes,
           hourly_rate: pattern.hourly_rate,
           currency: pattern.currency,
+          shift_type: pattern.shift_type,
           is_pattern_overtime: pattern.is_overtime
         });
       }
@@ -444,6 +457,7 @@ export function StaffScheduleManager() {
             notes: data.notes || null,
             hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
             currency: data.currency,
+            shift_type: data.shift_type || null,
             created_by: userData.user.id
           }));
           
@@ -468,7 +482,8 @@ export function StaffScheduleManager() {
           start_date: data.start_date,
           end_date: null, // null = indefinite
           created_by: userData.user.id,
-          recurrence_interval: data.recurrence_interval
+          recurrence_interval: data.recurrence_interval,
+          shift_type: data.shift_type || null
         });
 
         if (error) throw error;
@@ -543,6 +558,7 @@ export function StaffScheduleManager() {
               notes: data.notes || null,
               hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
               currency: data.currency,
+              shift_type: data.shift_type || null,
               created_by: userData.user.id
             });
           }
@@ -604,7 +620,8 @@ export function StaffScheduleManager() {
           notes: data.notes || null,
           start_date: data.start_date,
           end_date: data.end_date || null,
-          recurrence_interval: data.recurrence_interval
+          recurrence_interval: data.recurrence_interval,
+          shift_type: data.shift_type || null
         })
         .eq("id", data.id);
 
@@ -656,7 +673,7 @@ export function StaffScheduleManager() {
 
   // Update schedule mutation
   const updateScheduleMutation = useMutation({
-    mutationFn: async (data: { id: string; client_name: string; start_datetime: string; end_datetime: string; notes: string | null; hourly_rate: number | null; currency: string }) => {
+    mutationFn: async (data: { id: string; client_name: string; start_datetime: string; end_datetime: string; notes: string | null; hourly_rate: number | null; currency: string; shift_type: string | null }) => {
       const { error } = await supabase
         .from("staff_schedules")
         .update({
@@ -665,7 +682,8 @@ export function StaffScheduleManager() {
           end_datetime: data.end_datetime,
           notes: data.notes,
           hourly_rate: data.hourly_rate,
-          currency: data.currency
+          currency: data.currency,
+          shift_type: data.shift_type
         })
         .eq("id", data.id);
 
@@ -754,7 +772,8 @@ export function StaffScheduleManager() {
       currency: "GBP",
       start_date: format(new Date(), "yyyy-MM-dd"),
       end_date: format(new Date(), "yyyy-MM-dd"),
-      recurrence_interval: "weekly"
+      recurrence_interval: "weekly",
+      shift_type: ""
     });
   };
 
@@ -793,7 +812,8 @@ export function StaffScheduleManager() {
       currency: pattern.currency,
       start_date: pattern.start_date,
       end_date: pattern.end_date || "",
-      recurrence_interval: (pattern.recurrence_interval || "weekly") as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off'
+      recurrence_interval: (pattern.recurrence_interval || "weekly") as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off',
+      shift_type: pattern.shift_type || ""
     });
     setIsEditPatternDialogOpen(true);
   };
@@ -813,7 +833,8 @@ export function StaffScheduleManager() {
         end_time: format(endDate, "HH:mm"),
         notes: schedule.notes || "",
         hourly_rate: schedule.hourly_rate?.toString() || "",
-        currency: schedule.currency
+        currency: schedule.currency,
+        shift_type: schedule.shift_type || ""
       });
       setIsEditScheduleDialogOpen(true);
     }
@@ -1012,7 +1033,8 @@ export function StaffScheduleManager() {
           end_datetime: `${dateStr}T${pattern.end_time}`,
           notes: pattern.notes,
           hourly_rate: pattern.hourly_rate,
-          currency: pattern.currency
+          currency: pattern.currency,
+          shift_type: pattern.shift_type
         }));
       }
       
@@ -1350,6 +1372,22 @@ export function StaffScheduleManager() {
                           </SelectContent>
                         </Select>
                       </div>
+                    </div>
+                    <div>
+                      <Label>Shift Type (optional)</Label>
+                      <Select 
+                        value={recurringForm.shift_type} 
+                        onValueChange={v => setRecurringForm(p => ({ ...p, shift_type: v }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select shift type" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-background z-50">
+                          {SHIFT_TYPES.map(type => (
+                            <SelectItem key={type} value={type}>{type}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                     <div>
                       <Label>Notes (optional)</Label>
@@ -2253,6 +2291,22 @@ export function StaffScheduleManager() {
               </div>
             </div>
             <div>
+              <Label>Shift Type (optional)</Label>
+              <Select 
+                value={editPatternForm.shift_type} 
+                onValueChange={v => setEditPatternForm(p => ({ ...p, shift_type: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select shift type" />
+                </SelectTrigger>
+                <SelectContent className="bg-background z-50">
+                  {SHIFT_TYPES.map(type => (
+                    <SelectItem key={type} value={type}>{type}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label>Notes (optional)</Label>
               <Textarea
                 value={editPatternForm.notes}
@@ -2357,6 +2411,22 @@ export function StaffScheduleManager() {
               </div>
             </div>
             <div>
+              <Label>Shift Type (optional)</Label>
+              <Select 
+                value={editScheduleForm.shift_type} 
+                onValueChange={v => setEditScheduleForm(p => ({ ...p, shift_type: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select shift type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SHIFT_TYPES.map(type => (
+                    <SelectItem key={type} value={type}>{type}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label>Notes (optional)</Label>
               <Textarea
                 value={editScheduleForm.notes}
@@ -2380,7 +2450,8 @@ export function StaffScheduleManager() {
                   end_datetime: `${scheduleDate}T${editScheduleForm.end_time}:00`,
                   notes: editScheduleForm.notes || null,
                   hourly_rate: editScheduleForm.hourly_rate ? parseFloat(editScheduleForm.hourly_rate) : null,
-                  currency: editScheduleForm.currency
+                  currency: editScheduleForm.currency,
+                  shift_type: editScheduleForm.shift_type || null
                 });
               }}
               disabled={!editScheduleForm.client_name || updateScheduleMutation.isPending}
