@@ -398,7 +398,7 @@ export const PublicClientSchedule = () => {
   );
 };
 
-// Whiteboard Component - simple editable shared notepad
+// Whiteboard Component - rich text editable shared notepad with CMD+B bold support
 const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
   const queryClient = useQueryClient();
   const [content, setContent] = useState("");
@@ -406,7 +406,7 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hasInitialized = useRef(false);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const editorRef = useRef<HTMLDivElement | null>(null);
 
   const { data: whiteboard, isLoading } = useQuery({
     queryKey: ["client-whiteboard", clientName],
@@ -423,18 +423,25 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
     staleTime: 5000,
   });
 
-  // Set initial content when data loads and auto-resize
+  // Set initial content when data loads
   useEffect(() => {
     if (whiteboard?.content !== undefined && !hasInitialized.current) {
       setContent(whiteboard.content);
       hasInitialized.current = true;
-      // Auto-resize after content loads
-      setTimeout(() => {
-        if (textareaRef.current) {
-          textareaRef.current.style.height = 'auto';
-          textareaRef.current.style.height = `${Math.max(200, textareaRef.current.scrollHeight)}px`;
-        }
-      }, 0);
+      // Set the editor content after initialization
+      if (editorRef.current) {
+        editorRef.current.innerHTML = whiteboard.content;
+      }
+    }
+  }, [whiteboard?.content]);
+
+  // Sync content to editor when it updates externally
+  useEffect(() => {
+    if (editorRef.current && hasInitialized.current && whiteboard?.content !== undefined) {
+      // Only update if the content differs and we're not currently editing
+      if (document.activeElement !== editorRef.current && editorRef.current.innerHTML !== whiteboard.content) {
+        editorRef.current.innerHTML = whiteboard.content;
+      }
     }
   }, [whiteboard?.content]);
 
@@ -467,7 +474,9 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
     }
   };
 
-  const handleContentChange = (newContent: string) => {
+  const handleContentChange = () => {
+    if (!editorRef.current) return;
+    const newContent = editorRef.current.innerHTML;
     setContent(newContent);
     
     // Clear existing timeout
@@ -479,6 +488,15 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
     saveTimeoutRef.current = setTimeout(() => {
       saveContent(newContent);
     }, 1000);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // CMD+B (Mac) or Ctrl+B (Windows) for bold
+    if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+      e.preventDefault();
+      document.execCommand('bold', false);
+      handleContentChange();
+    }
   };
 
   return (
@@ -511,19 +529,20 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <Textarea
-            ref={textareaRef}
-            placeholder="Type your notes here... Changes are saved automatically."
-            value={content}
-            onChange={(e) => {
-              handleContentChange(e.target.value);
-              // Auto-resize textarea
-              e.target.style.height = 'auto';
-              e.target.style.height = `${Math.max(200, e.target.scrollHeight)}px`;
-            }}
-            className="min-h-[200px] resize-none font-mono text-sm bg-amber-50/50 border-amber-200 focus:border-amber-300 overflow-hidden"
-            style={{ height: 'auto', minHeight: '200px' }}
-          />
+          <div className="space-y-2">
+            <div
+              ref={editorRef}
+              contentEditable
+              onInput={handleContentChange}
+              onKeyDown={handleKeyDown}
+              data-placeholder="Type your notes here... Changes are saved automatically."
+              className="min-h-[200px] p-3 rounded-md font-mono text-sm bg-amber-50/50 border border-amber-200 focus:border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-200 overflow-auto whitespace-pre-wrap empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground"
+              style={{ minHeight: '200px' }}
+            />
+            <p className="text-xs text-muted-foreground">
+              Tip: Select text and press <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">⌘B</kbd> or <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Ctrl+B</kbd> to bold
+            </p>
+          </div>
         )}
       </CardContent>
     </Card>
