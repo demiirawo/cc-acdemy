@@ -26,9 +26,15 @@ interface HRProfile {
   pay_frequency: string | null;
   annual_holiday_allowance: number | null;
   notes: string | null;
+  scheduling_role: string;
   created_at: string;
   updated_at: string;
 }
+
+const SCHEDULING_ROLES = [
+  { value: 'viewer', label: 'Viewer', description: 'Can only view schedules' },
+  { value: 'editor', label: 'Editor', description: 'Can make changes to schedules' },
+];
 
 interface UserProfile {
   id: string;
@@ -93,7 +99,8 @@ export function HRProfileManager() {
     base_salary: 0,
     pay_frequency: 'monthly',
     annual_holiday_allowance: 28,
-    notes: ''
+    notes: '',
+    scheduling_role: 'viewer'
   });
 
   useEffect(() => {
@@ -179,7 +186,8 @@ export function HRProfileManager() {
         base_salary: existingHR.base_salary || 0,
         pay_frequency: existingHR.pay_frequency || 'monthly',
         annual_holiday_allowance: existingHR.annual_holiday_allowance || 28,
-        notes: existingHR.notes || ''
+        notes: existingHR.notes || '',
+        scheduling_role: existingHR.scheduling_role || 'viewer'
       });
     } else {
       setEditingProfile(null);
@@ -193,7 +201,8 @@ export function HRProfileManager() {
         base_salary: 0,
         pay_frequency: 'monthly',
         annual_holiday_allowance: 28,
-        notes: ''
+        notes: '',
+        scheduling_role: 'viewer'
       });
     }
     setDialogOpen(true);
@@ -279,7 +288,8 @@ export function HRProfileManager() {
         base_salary: formData.base_salary || null,
         pay_frequency: formData.pay_frequency || 'monthly',
         annual_holiday_allowance: formData.annual_holiday_allowance,
-        notes: formData.notes || null
+        notes: formData.notes || null,
+        scheduling_role: formData.scheduling_role
       };
 
       if (editingProfile) {
@@ -373,6 +383,7 @@ export function HRProfileManager() {
                 <TableHead>Staff Member</TableHead>
                 <TableHead>HR Status</TableHead>
                 <TableHead>Job Title</TableHead>
+                <TableHead>Scheduling Role</TableHead>
                 <TableHead>Base Salary</TableHead>
                 <TableHead>Clients</TableHead>
                 <TableHead>Holiday Allowance</TableHead>
@@ -382,7 +393,7 @@ export function HRProfileManager() {
             <TableBody>
               {userProfiles.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     No staff members found. Add users through User Management first.
                   </TableCell>
                 </TableRow>
@@ -417,6 +428,17 @@ export function HRProfileManager() {
                         )}
                       </TableCell>
                       <TableCell>{hrProfile?.job_title || '-'}</TableCell>
+                      <TableCell>
+                        {hrProfile?.scheduling_role === 'editor' ? (
+                          <Badge variant="default" className="bg-primary text-primary-foreground">
+                            Editor
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">
+                            Viewer
+                          </Badge>
+                        )}
+                      </TableCell>
                       <TableCell>
                         {hrProfile?.base_salary ? (
                           <span className="font-medium">
@@ -543,6 +565,30 @@ export function HRProfileManager() {
                   placeholder="Care Assistant"
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Scheduling Role</Label>
+              <Select
+                value={formData.scheduling_role}
+                onValueChange={(value) => setFormData({ ...formData, scheduling_role: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SCHEDULING_ROLES.map(role => (
+                    <SelectItem key={role.value} value={role.value}>
+                      <div className="flex flex-col">
+                        <span>{role.label}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                <strong>Viewers</strong> can only see schedules for their assigned clients. <strong>Editors</strong> can make changes to all schedules.
+              </p>
             </div>
 
             <div className="space-y-2">

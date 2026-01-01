@@ -417,6 +417,7 @@ export type Database = {
           job_title: string | null
           notes: string | null
           pay_frequency: string | null
+          scheduling_role: string
           start_date: string | null
           updated_at: string
           user_id: string
@@ -432,6 +433,7 @@ export type Database = {
           job_title?: string | null
           notes?: string | null
           pay_frequency?: string | null
+          scheduling_role?: string
           start_date?: string | null
           updated_at?: string
           user_id: string
@@ -447,6 +449,7 @@ export type Database = {
           job_title?: string | null
           notes?: string | null
           pay_frequency?: string | null
+          scheduling_role?: string
           start_date?: string | null
           updated_at?: string
           user_id?: string
@@ -1328,6 +1331,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_view_schedule_for_client: {
+        Args: { _client_name: string; _user_id: string }
+        Returns: boolean
+      }
       create_page_snapshot: {
         Args: { p_page_id: string; p_snapshot_type?: string }
         Returns: string
@@ -1348,6 +1355,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_scheduling_editor: { Args: { _user_id: string }; Returns: boolean }
       log_page_operation: {
         Args: {
           p_error_message?: string
