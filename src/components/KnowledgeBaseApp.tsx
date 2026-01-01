@@ -544,6 +544,11 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
       setBreadcrumbs([]);
       navigate('/view/hr');
+    } else if (item.id === 'clients') {
+      setCurrentView('clients');
+      setCurrentPage(null);
+      setBreadcrumbs([]);
+      navigate('/view/clients');
     } else if (item.type === 'page') {
       try {
         // Fetch real page data from Supabase
