@@ -931,16 +931,28 @@ export function StaffPayManager() {
     const hasOvertimeOverride = overtimeRecord !== undefined;
     
     // Check if this staff has an active recurring bonus
-    const existingRecurringBonus = recurringBonuses.find(
-      rb => rb.user_id === staff.userId && !rb.end_date
-    );
+    const monthStartStr = format(monthStart, 'yyyy-MM-dd');
+    const monthEndStr = format(monthEnd, 'yyyy-MM-dd');
+    const existingRecurringBonus = recurringBonuses.find(rb => {
+      if (rb.user_id !== staff.userId) return false;
+      if (rb.start_date > monthEndStr) return false;
+      if (rb.end_date && rb.end_date < monthStartStr) return false;
+      return true;
+    });
+    
+    // Determine the bonus amount to show in the dialog
+    // If there's a recurring bonus, show that amount (not the combined total)
+    // If there's only a one-off bonus record, show that
+    const bonusAmountToShow = existingRecurringBonus 
+      ? existingRecurringBonus.amount 
+      : (bonusRecord?.amount || 0);
     
     setAdjustmentEdit({
       staffId: staff.userId,
       staffName: staff.displayName,
       currency: staff.currency,
-      bonusAmount: staff.bonuses,
-      bonusComment: bonusRecord?.description || existingRecurringBonus?.description || '',
+      bonusAmount: bonusAmountToShow,
+      bonusComment: existingRecurringBonus?.description || bonusRecord?.description || '',
       bonusRecurring: !!existingRecurringBonus,
       existingRecurringBonusId: existingRecurringBonus?.id || null,
       deductionAmount: staff.deductions,
@@ -968,62 +980,62 @@ export function StaffPayManager() {
       // Handle bonus changes for current month
       const existingBonusRecord = staff.records.find(r => r.record_type === 'bonus');
       
-      if (adjustmentEdit.bonusAmount > 0) {
-        if (existingBonusRecord) {
+      // Calculate the recurring bonus amount for this staff
+      const monthStartStr = format(monthStart, 'yyyy-MM-dd');
+      const monthEndStr = format(monthEnd, 'yyyy-MM-dd');
+      const activeRecurringBonus = recurringBonuses.find(rb => {
+        if (rb.user_id !== staff.userId) return false;
+        if (rb.start_date > monthEndStr) return false;
+        if (rb.end_date && rb.end_date < monthStartStr) return false;
+        return true;
+      });
+      const recurringBonusAmount = activeRecurringBonus?.amount || 0;
+      
+      // The one-off bonus is the total bonus minus the recurring bonus
+      const oneOffBonusAmount = adjustmentEdit.bonusRecurring 
+        ? 0  // If recurring, no one-off record needed
+        : adjustmentEdit.bonusAmount;
+      
+      // Handle recurring bonus - create or update recurring bonus pattern
+      if (adjustmentEdit.bonusRecurring && adjustmentEdit.bonusAmount > 0) {
+        if (adjustmentEdit.existingRecurringBonusId) {
+          // Update existing recurring bonus
           const { error } = await supabase
-            .from('staff_pay_records')
+            .from('recurring_bonuses')
             .update({
               amount: adjustmentEdit.bonusAmount,
-              description: adjustmentEdit.bonusComment || null
+              description: adjustmentEdit.bonusComment || 'Recurring bonus',
+              updated_at: new Date().toISOString()
             })
-            .eq('id', existingBonusRecord.id);
+            .eq('id', adjustmentEdit.existingRecurringBonusId);
           if (error) throw error;
         } else {
+          // Create new recurring bonus (indefinite - no end_date)
           const { error } = await supabase
-            .from('staff_pay_records')
+            .from('recurring_bonuses')
             .insert({
               user_id: adjustmentEdit.staffId,
-              record_type: 'bonus' as any,
               amount: adjustmentEdit.bonusAmount,
               currency: staff.currency,
-              description: adjustmentEdit.bonusComment || null,
-              pay_date: payDate,
-              pay_period_start: payPeriodStart,
-              pay_period_end: payPeriodEnd,
+              description: adjustmentEdit.bonusComment || 'Recurring bonus',
+              start_date: format(startOfMonth(selectedMonth), 'yyyy-MM-dd'),
+              end_date: null, // Indefinite
               created_by: user?.id!
             });
           if (error) throw error;
         }
-
-        // Handle recurring bonus - create or update recurring bonus pattern
-        if (adjustmentEdit.bonusRecurring) {
-          if (adjustmentEdit.existingRecurringBonusId) {
-            // Update existing recurring bonus
-            const { error } = await supabase
-              .from('recurring_bonuses')
-              .update({
-                amount: adjustmentEdit.bonusAmount,
-                description: adjustmentEdit.bonusComment || 'Recurring bonus',
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', adjustmentEdit.existingRecurringBonusId);
-            if (error) throw error;
-          } else {
-            // Create new recurring bonus (indefinite - no end_date)
-            const { error } = await supabase
-              .from('recurring_bonuses')
-              .insert({
-                user_id: adjustmentEdit.staffId,
-                amount: adjustmentEdit.bonusAmount,
-                currency: staff.currency,
-                description: adjustmentEdit.bonusComment || 'Recurring bonus',
-                start_date: format(startOfMonth(selectedMonth), 'yyyy-MM-dd'),
-                end_date: null, // Indefinite
-                created_by: user?.id!
-              });
-            if (error) throw error;
-          }
-        } else if (adjustmentEdit.existingRecurringBonusId) {
+        
+        // If switching to recurring, remove any existing one-off bonus record
+        if (existingBonusRecord) {
+          const { error } = await supabase
+            .from('staff_pay_records')
+            .delete()
+            .eq('id', existingBonusRecord.id);
+          if (error) throw error;
+        }
+      } else if (!adjustmentEdit.bonusRecurring) {
+        // Not recurring - handle as one-off bonus pay record
+        if (adjustmentEdit.existingRecurringBonusId) {
           // Cancel recurring bonus by setting end_date to previous month
           const { error } = await supabase
             .from('recurring_bonuses')
@@ -1034,14 +1046,43 @@ export function StaffPayManager() {
             .eq('id', adjustmentEdit.existingRecurringBonusId);
           if (error) throw error;
         }
-      } else if (existingBonusRecord && adjustmentEdit.bonusAmount === 0) {
-        const { error } = await supabase
-          .from('staff_pay_records')
-          .delete()
-          .eq('id', existingBonusRecord.id);
-        if (error) throw error;
         
-        // Also cancel any recurring bonus
+        if (oneOffBonusAmount > 0) {
+          if (existingBonusRecord) {
+            const { error } = await supabase
+              .from('staff_pay_records')
+              .update({
+                amount: oneOffBonusAmount,
+                description: adjustmentEdit.bonusComment || null
+              })
+              .eq('id', existingBonusRecord.id);
+            if (error) throw error;
+          } else {
+            const { error } = await supabase
+              .from('staff_pay_records')
+              .insert({
+                user_id: adjustmentEdit.staffId,
+                record_type: 'bonus' as any,
+                amount: oneOffBonusAmount,
+                currency: staff.currency,
+                description: adjustmentEdit.bonusComment || null,
+                pay_date: payDate,
+                pay_period_start: payPeriodStart,
+                pay_period_end: payPeriodEnd,
+                created_by: user?.id!
+              });
+            if (error) throw error;
+          }
+        } else if (existingBonusRecord) {
+          // Zero amount - delete the record
+          const { error } = await supabase
+            .from('staff_pay_records')
+            .delete()
+            .eq('id', existingBonusRecord.id);
+          if (error) throw error;
+        }
+      } else if (adjustmentEdit.bonusAmount === 0) {
+        // Zero recurring - cancel it
         if (adjustmentEdit.existingRecurringBonusId) {
           const { error } = await supabase
             .from('recurring_bonuses')
@@ -1050,6 +1091,13 @@ export function StaffPayManager() {
               updated_at: new Date().toISOString()
             })
             .eq('id', adjustmentEdit.existingRecurringBonusId);
+          if (error) throw error;
+        }
+        if (existingBonusRecord) {
+          const { error } = await supabase
+            .from('staff_pay_records')
+            .delete()
+            .eq('id', existingBonusRecord.id);
           if (error) throw error;
         }
       }
