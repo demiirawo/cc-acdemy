@@ -1058,6 +1058,7 @@ export type Database = {
           days_taken: number
           end_date: string
           id: string
+          no_cover_required: boolean
           notes: string | null
           start_date: string
           status: string
@@ -1072,6 +1073,7 @@ export type Database = {
           days_taken: number
           end_date: string
           id?: string
+          no_cover_required?: boolean
           notes?: string | null
           start_date: string
           status?: string
@@ -1086,6 +1088,7 @@ export type Database = {
           days_taken?: number
           end_date?: string
           id?: string
+          no_cover_required?: boolean
           notes?: string | null
           start_date?: string
           status?: string

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
 import { ChevronLeft, ChevronRight, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2, Palmtree, AlertTriangle, Clock } from "lucide-react";
@@ -74,6 +75,7 @@ interface StaffHoliday {
   absence_type: string;
   days_taken: number;
   notes: string | null;
+  no_cover_required: boolean;
 }
 
 interface StaffRequest {
@@ -158,7 +160,8 @@ export const PublicClientSchedule = () => {
     start_date: '',
     end_date: '',
     days_taken: 1,
-    notes: ''
+    notes: '',
+    no_cover_required: false
   });
   
   const currentWeekStart = useMemo(() => {
@@ -229,7 +232,7 @@ export const PublicClientSchedule = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("staff_holidays")
-        .select("id, user_id, start_date, end_date, status, absence_type, days_taken, notes")
+        .select("id, user_id, start_date, end_date, status, absence_type, days_taken, notes, no_cover_required")
         .eq("status", "approved")
         .lte("start_date", format(currentWeekEnd, "yyyy-MM-dd"))
         .gte("end_date", format(currentWeekStart, "yyyy-MM-dd"));
@@ -247,7 +250,8 @@ export const PublicClientSchedule = () => {
       start_date: holiday.start_date,
       end_date: holiday.end_date,
       days_taken: holiday.days_taken,
-      notes: holiday.notes || ''
+      notes: holiday.notes || '',
+      no_cover_required: holiday.no_cover_required
     });
     setIsEditingHoliday(false);
     setHolidayDialogOpen(true);
@@ -280,7 +284,8 @@ export const PublicClientSchedule = () => {
           start_date: holidayFormData.start_date,
           end_date: holidayFormData.end_date,
           days_taken: holidayFormData.days_taken,
-          notes: holidayFormData.notes || null
+          notes: holidayFormData.notes || null,
+          no_cover_required: holidayFormData.no_cover_required
         })
         .eq("id", selectedHoliday.id);
       
@@ -606,6 +611,10 @@ export const PublicClientSchedule = () => {
                                           <div className="text-[10px] text-green-700 bg-green-50 rounded px-1 py-0.5 mt-0.5">
                                             <span className="font-medium">Cover:</span> {coverage.map(c => c.name).join(', ')}
                                           </div>
+                                        ) : holidayInfo?.no_cover_required ? (
+                                          <div className="text-[10px] text-blue-600 bg-blue-50 rounded px-1 py-0.5 mt-0.5">
+                                            No cover needed
+                                          </div>
                                         ) : (
                                           <div className="text-[10px] text-red-600 bg-red-50 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1">
                                             <AlertTriangle className="h-2.5 w-2.5" />
@@ -710,6 +719,17 @@ export const PublicClientSchedule = () => {
                   <p className="text-xs text-muted-foreground">Auto-calculated from dates, adjust for half days</p>
                 </div>
 
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="no_cover_required"
+                    checked={holidayFormData.no_cover_required}
+                    onCheckedChange={(checked) => setHolidayFormData({ ...holidayFormData, no_cover_required: !!checked })}
+                  />
+                  <Label htmlFor="no_cover_required" className="text-sm font-normal cursor-pointer">
+                    No cover required for this absence
+                  </Label>
+                </div>
+
                 <div className="space-y-2">
                   <Label>Notes</Label>
                   <Textarea
@@ -750,11 +770,21 @@ export const PublicClientSchedule = () => {
                   </div>
                 </div>
 
-                <div>
-                  <p className="text-sm text-muted-foreground">Status</p>
-                  <Badge variant="outline" className="bg-success/20 text-success border-success">
-                    {selectedHoliday?.status}
-                  </Badge>
+                <div className="flex items-center gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Status</p>
+                    <Badge variant="outline" className="bg-success/20 text-success border-success">
+                      {selectedHoliday?.status}
+                    </Badge>
+                  </div>
+                  {selectedHoliday?.no_cover_required && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Cover</p>
+                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                        No cover needed
+                      </Badge>
+                    </div>
+                  )}
                 </div>
 
                 {selectedHoliday?.notes && (
