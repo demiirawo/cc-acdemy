@@ -214,6 +214,15 @@ export function StaffScheduleManager() {
     shift_type: ""
   });
 
+  const [isEditOvertimeDialogOpen, setIsEditOvertimeDialogOpen] = useState(false);
+  const [editingOvertime, setEditingOvertime] = useState<Overtime | null>(null);
+  const [editOvertimeForm, setEditOvertimeForm] = useState({
+    hours: "",
+    hourly_rate: "",
+    currency: "GBP",
+    notes: "",
+  });
+
   // Edit pattern form state
   const [editPatternForm, setEditPatternForm] = useState({
     user_id: "",
@@ -773,6 +782,32 @@ export function StaffScheduleManager() {
     }
   });
 
+  // Update overtime mutation
+  const updateOvertimeMutation = useMutation({
+    mutationFn: async (data: { id: string; hours: number; hourly_rate: number | null; currency: string; notes: string | null }) => {
+      const { error } = await supabase
+        .from("staff_overtime")
+        .update({
+          hours: data.hours,
+          hourly_rate: data.hourly_rate,
+          currency: data.currency,
+          notes: data.notes,
+        })
+        .eq("id", data.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["staff-overtime"] });
+      setIsEditOvertimeDialogOpen(false);
+      setEditingOvertime(null);
+      toast.success("Overtime updated");
+    },
+    onError: (error) => {
+      toast.error("Failed to update overtime: " + error.message);
+    },
+  });
+
   // Delete overtime mutation
   const deleteOvertimeMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -911,6 +946,17 @@ export function StaffScheduleManager() {
       });
       setIsEditScheduleDialogOpen(true);
     }
+  };
+
+  const handleOvertimeClick = (ot: Overtime) => {
+    setEditingOvertime(ot);
+    setEditOvertimeForm({
+      hours: ot.hours.toString(),
+      hourly_rate: ot.hourly_rate?.toString() || "",
+      currency: ot.currency,
+      notes: ot.notes || "",
+    });
+    setIsEditOvertimeDialogOpen(true);
   };
 
   const navigateWeek = (direction: "prev" | "next") => {
@@ -1959,7 +2005,10 @@ export function StaffScheduleManager() {
                         {dayOvertime.map(ot => (
                           <div 
                             key={ot.id} 
-                            className="bg-orange-100 border border-orange-300 rounded p-1 mb-1 text-xs group relative"
+                            className="bg-orange-100 border border-orange-300 rounded p-1 mb-1 text-xs group relative cursor-pointer hover:ring-2 hover:ring-primary/50"
+                            onClick={() => handleOvertimeClick(ot)}
+                            onDoubleClick={() => handleOvertimeClick(ot)}
+                            title={scheduleEditHint}
                           >
                             <div className="flex items-center gap-1 font-medium text-orange-700">
                               <Clock className="h-3 w-3" />
@@ -1977,7 +2026,10 @@ export function StaffScheduleManager() {
                               variant="ghost"
                               size="icon"
                               className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
-                              onClick={() => deleteOvertimeMutation.mutate(ot.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteOvertimeMutation.mutate(ot.id);
+                              }}
                             >
                               <Trash2 className="h-3 w-3 text-destructive" />
                             </Button>
@@ -2560,6 +2612,109 @@ export function StaffScheduleManager() {
               disabled={!editScheduleForm.client_name || updateScheduleMutation.isPending}
             >
               {updateScheduleMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Overtime Dialog */}
+      <Dialog
+        open={isEditOvertimeDialogOpen}
+        onOpenChange={(open) => {
+          setIsEditOvertimeDialogOpen(open);
+          if (!open) setEditingOvertime(null);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Overtime</DialogTitle>
+            <DialogDescription>
+              Modify the details of this overtime entry.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Staff Member</Label>
+              <div className="mt-1 p-2 bg-muted rounded text-sm">
+                {editingOvertime ? getStaffName(editingOvertime.user_id) : ""}
+              </div>
+            </div>
+            <div>
+              <Label>Date</Label>
+              <div className="mt-1 p-2 bg-muted rounded text-sm">
+                {editingOvertime ? format(parseISO(editingOvertime.overtime_date), "EEEE, d MMMM yyyy") : ""}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Hours</Label>
+                <Input
+                  type="number"
+                  step="0.25"
+                  value={editOvertimeForm.hours}
+                  onChange={(e) => setEditOvertimeForm((p) => ({ ...p, hours: e.target.value }))}
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <Label>Hourly Rate (optional)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={editOvertimeForm.hourly_rate}
+                  onChange={(e) => setEditOvertimeForm((p) => ({ ...p, hourly_rate: e.target.value }))}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Currency</Label>
+              <Select
+                value={editOvertimeForm.currency}
+                onValueChange={(v) => setEditOvertimeForm((p) => ({ ...p, currency: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-background z-50">
+                  <SelectItem value="GBP">GBP</SelectItem>
+                  <SelectItem value="USD">USD</SelectItem>
+                  <SelectItem value="EUR">EUR</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Notes (optional)</Label>
+              <Textarea
+                value={editOvertimeForm.notes}
+                onChange={(e) => setEditOvertimeForm((p) => ({ ...p, notes: e.target.value }))}
+                placeholder="Add any notes..."
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsEditOvertimeDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!editingOvertime) return;
+                updateOvertimeMutation.mutate({
+                  id: editingOvertime.id,
+                  hours: parseFloat(editOvertimeForm.hours),
+                  hourly_rate: editOvertimeForm.hourly_rate ? parseFloat(editOvertimeForm.hourly_rate) : null,
+                  currency: editOvertimeForm.currency,
+                  notes: editOvertimeForm.notes || null,
+                });
+              }}
+              disabled={
+                !editOvertimeForm.hours ||
+                Number.isNaN(parseFloat(editOvertimeForm.hours)) ||
+                parseFloat(editOvertimeForm.hours) <= 0 ||
+                updateOvertimeMutation.isPending
+              }
+            >
+              {updateOvertimeMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
