@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar, Link2, Check } from "lucide-react";
 
 interface Schedule {
   id: string;
@@ -152,6 +152,41 @@ const DAYS_OF_WEEK = [
   { value: 6, label: "Sat" },
   { value: 0, label: "Sun" },
 ];
+
+// Client share button component
+const ClientShareButton = ({ clientName }: { clientName: string }) => {
+  const [copied, setCopied] = useState(false);
+  
+  const handleCopyLink = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const url = `${window.location.origin}/public/schedule/${encodeURIComponent(clientName)}`;
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    toast.success("Schedule link copied to clipboard");
+    setTimeout(() => setCopied(false), 2000);
+  };
+  
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={handleCopyLink}
+      className="h-6 px-2 text-xs"
+    >
+      {copied ? (
+        <>
+          <Check className="h-3 w-3 mr-1" />
+          Copied
+        </>
+      ) : (
+        <>
+          <Link2 className="h-3 w-3 mr-1" />
+          Share
+        </>
+      )}
+    </Button>
+  );
+};
 
 export function StaffScheduleManager() {
   const queryClient = useQueryClient();
@@ -2008,9 +2043,10 @@ export function StaffScheduleManager() {
 
                 return (
                   <div key={clientName} className="mb-4">
-                    {/* Client header */}
-                    <div className="p-2 text-sm font-bold truncate bg-muted/50 rounded-t border border-b-0 border-border">
-                      {clientName}
+                    {/* Client header with share button */}
+                    <div className="p-2 text-sm font-bold truncate bg-muted/50 rounded-t border border-b-0 border-border flex items-center justify-between">
+                      <span>{clientName}</span>
+                      <ClientShareButton clientName={clientName} />
                     </div>
                     
                     {/* Shift type sections */}
