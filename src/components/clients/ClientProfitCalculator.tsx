@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { format, startOfMonth, endOfMonth, parseISO, differenceInHours, eachDayOfInterval, getDay, differenceInWeeks, isBefore, isAfter, parse, getDate, isWithinInterval } from "date-fns";
+import { format, startOfMonth, endOfMonth, parseISO, eachDayOfInterval, getDay, differenceInWeeks, isBefore, isAfter, getDate } from "date-fns";
 import { TrendingUp, TrendingDown, DollarSign, Users, Building2, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -15,23 +15,10 @@ interface Client {
   mrr: number | null;
 }
 
-interface StaffAssignment {
-  staff_user_id: string;
-  client_name: string;
-}
-
 interface Profile {
   user_id: string;
   display_name: string | null;
   email: string | null;
-}
-
-interface Schedule {
-  id: string;
-  user_id: string;
-  client_name: string;
-  start_datetime: string;
-  end_datetime: string;
 }
 
 interface RecurringPattern {
@@ -39,8 +26,6 @@ interface RecurringPattern {
   user_id: string;
   client_name: string;
   days_of_week: number[];
-  start_time: string;
-  end_time: string;
   start_date: string;
   end_date: string | null;
   recurrence_interval: string;
@@ -53,8 +38,6 @@ interface PayRecord {
   currency: string;
   record_type: string;
   pay_date: string;
-  pay_period_start: string | null;
-  pay_period_end: string | null;
 }
 
 interface RecurringBonus {
@@ -64,6 +47,13 @@ interface RecurringBonus {
   currency: string;
   start_date: string;
   end_date: string | null;
+}
+
+interface HRProfile {
+  user_id: string;
+  base_salary: number | null;
+  base_currency: string;
+  pay_frequency: string | null;
 }
 
 interface ExchangeRates {
@@ -92,7 +82,6 @@ export function ClientProfitCalculator() {
       } catch (err) {
         console.error('Failed to fetch exchange rates:', err);
         setRatesError('Using fallback exchange rates');
-        // Use fallback rates
         setExchangeRates({
           GBP: 1,
           NGN: 0.00052,
@@ -124,18 +113,6 @@ export function ClientProfitCalculator() {
     },
   });
 
-  // Fetch staff assignments
-  const { data: assignments = [] } = useQuery({
-    queryKey: ["staff-assignments"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("staff_client_assignments")
-        .select("staff_user_id, client_name");
-      if (error) throw error;
-      return data as StaffAssignment[];
-    },
-  });
-
   // Fetch user profiles
   const { data: profiles = [] } = useQuery({
     queryKey: ["profiles-display"],
@@ -148,17 +125,15 @@ export function ClientProfitCalculator() {
     },
   });
 
-  // Fetch schedules for the month
-  const { data: schedules = [] } = useQuery({
-    queryKey: ["schedules-month", selectedMonth],
+  // Fetch HR profiles for salary info (fallback if no pay records)
+  const { data: hrProfiles = [] } = useQuery({
+    queryKey: ["hr-profiles-salary"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("staff_schedules")
-        .select("id, user_id, client_name, start_datetime, end_datetime")
-        .gte("start_datetime", monthStart.toISOString())
-        .lte("end_datetime", monthEnd.toISOString());
+        .from("hr_profiles")
+        .select("user_id, base_salary, base_currency, pay_frequency");
       if (error) throw error;
-      return data as Schedule[];
+      return data as HRProfile[];
     },
   });
 
@@ -168,7 +143,7 @@ export function ClientProfitCalculator() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("recurring_shift_patterns")
-        .select("id, user_id, client_name, days_of_week, start_time, end_time, start_date, end_date, recurrence_interval");
+        .select("id, user_id, client_name, days_of_week, start_date, end_date, recurrence_interval");
       if (error) throw error;
       return data as RecurringPattern[];
     },
@@ -180,7 +155,7 @@ export function ClientProfitCalculator() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("staff_pay_records")
-        .select("id, user_id, amount, currency, record_type, pay_date, pay_period_start, pay_period_end")
+        .select("id, user_id, amount, currency, record_type, pay_date")
         .gte("pay_date", format(monthStart, 'yyyy-MM-dd'))
         .lte("pay_date", format(monthEnd, 'yyyy-MM-dd'));
       if (error) throw error;
@@ -210,7 +185,7 @@ export function ClientProfitCalculator() {
         .gte("overtime_date", format(monthStart, 'yyyy-MM-dd'))
         .lte("overtime_date", format(monthEnd, 'yyyy-MM-dd'));
       if (error) throw error;
-      return data as { id: string; user_id: string; hours: number; hourly_rate: number | null; currency: string; overtime_date: string }[];
+      return data as { id: string; user_id: string; hours: number; hourly_rate: number | null; currency: string }[];
     },
   });
 
@@ -219,8 +194,8 @@ export function ClientProfitCalculator() {
     return profile?.display_name || profile?.email?.split('@')[0] || 'Unknown';
   };
 
-  // Calculate hours from patterns for the month
-  const calculatePatternHours = (pattern: RecurringPattern): number => {
+  // Calculate the number of working days for a pattern within the month
+  const calculatePatternDays = (pattern: RecurringPattern): number => {
     const patternStart = parseISO(pattern.start_date);
     const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : monthEnd;
     
@@ -230,7 +205,7 @@ export function ClientProfitCalculator() {
     if (isBefore(effectiveEnd, effectiveStart)) return 0;
     
     const days = eachDayOfInterval({ start: effectiveStart, end: effectiveEnd });
-    let totalHours = 0;
+    let totalDays = 0;
     
     days.forEach(day => {
       const dayOfWeek = getDay(day);
@@ -244,125 +219,141 @@ export function ClientProfitCalculator() {
         if (getDate(day) !== getDate(patternStart)) return;
       }
       
-      // Calculate hours for this shift
-      const startTime = parse(pattern.start_time, 'HH:mm:ss', day);
-      const endTime = parse(pattern.end_time, 'HH:mm:ss', day);
-      const hours = differenceInHours(endTime, startTime);
-      totalHours += hours;
+      totalDays += 1;
     });
     
-    return totalHours;
+    return totalDays;
   };
 
-  // Calculate total cost per staff member from pay records
-  const staffTotalCosts = useMemo(() => {
-    const costs: Record<string, number> = {};
+  // Get monthly salary for a staff member (from pay records or HR profile)
+  const getStaffMonthlyCost = (userId: string): number => {
+    // First try to get from pay records for this month
+    const userPayRecords = payRecords.filter(r => r.user_id === userId);
     
-    // Add pay records (salary, bonus, deduction, expense, overtime)
-    payRecords.forEach(record => {
-      const amountGBP = toGBP(record.amount, record.currency);
-      // Deductions reduce cost, everything else adds
-      const adjustedAmount = record.record_type === 'deduction' ? -amountGBP : amountGBP;
-      costs[record.user_id] = (costs[record.user_id] || 0) + adjustedAmount;
-    });
-    
-    // Add recurring bonuses that apply to this month
-    recurringBonuses.forEach(bonus => {
-      const bonusStart = parseISO(bonus.start_date);
-      const bonusEnd = bonus.end_date ? parseISO(bonus.end_date) : null;
+    if (userPayRecords.length > 0) {
+      let total = 0;
+      userPayRecords.forEach(record => {
+        const amountGBP = toGBP(record.amount, record.currency);
+        // Deductions reduce cost, everything else adds
+        total += record.record_type === 'deduction' ? -amountGBP : amountGBP;
+      });
       
-      // Check if bonus applies to this month
-      const appliesToMonth = 
-        isBefore(bonusStart, monthEnd) && 
-        (!bonusEnd || isAfter(bonusEnd, monthStart));
+      // Add recurring bonuses that apply to this month
+      recurringBonuses.filter(b => b.user_id === userId).forEach(bonus => {
+        const bonusStart = parseISO(bonus.start_date);
+        const bonusEnd = bonus.end_date ? parseISO(bonus.end_date) : null;
+        
+        const appliesToMonth = 
+          isBefore(bonusStart, monthEnd) && 
+          (!bonusEnd || isAfter(bonusEnd, monthStart));
+        
+        if (appliesToMonth) {
+          total += toGBP(bonus.amount, bonus.currency);
+        }
+      });
       
-      if (appliesToMonth) {
-        const amountGBP = toGBP(bonus.amount, bonus.currency);
-        costs[bonus.user_id] = (costs[bonus.user_id] || 0) + amountGBP;
-      }
-    });
+      // Add overtime
+      overtimeRecords.filter(o => o.user_id === userId).forEach(overtime => {
+        if (overtime.hourly_rate) {
+          total += toGBP(overtime.hours * overtime.hourly_rate, overtime.currency);
+        }
+      });
+      
+      return total;
+    }
     
-    // Add overtime records
-    overtimeRecords.forEach(overtime => {
-      if (overtime.hourly_rate) {
-        const cost = overtime.hours * overtime.hourly_rate;
-        const amountGBP = toGBP(cost, overtime.currency);
-        costs[overtime.user_id] = (costs[overtime.user_id] || 0) + amountGBP;
-      }
-    });
+    // Fallback to HR profile base salary
+    const hrProfile = hrProfiles.find(p => p.user_id === userId);
+    if (hrProfile?.base_salary) {
+      const monthlySalary = hrProfile.pay_frequency === 'monthly' 
+        ? hrProfile.base_salary 
+        : hrProfile.base_salary / 12;
+      
+      let total = toGBP(monthlySalary, hrProfile.base_currency);
+      
+      // Add recurring bonuses
+      recurringBonuses.filter(b => b.user_id === userId).forEach(bonus => {
+        const bonusStart = parseISO(bonus.start_date);
+        const bonusEnd = bonus.end_date ? parseISO(bonus.end_date) : null;
+        
+        const appliesToMonth = 
+          isBefore(bonusStart, monthEnd) && 
+          (!bonusEnd || isAfter(bonusEnd, monthStart));
+        
+        if (appliesToMonth) {
+          total += toGBP(bonus.amount, bonus.currency);
+        }
+      });
+      
+      return total;
+    }
     
-    return costs;
-  }, [payRecords, recurringBonuses, overtimeRecords, exchangeRates]);
+    return 0;
+  };
 
-  // Calculate hours per staff per client
-  const staffClientHours = useMemo(() => {
-    const hours: Record<string, Record<string, number>> = {};
+  // Calculate days per staff per client
+  const staffClientDays = useMemo(() => {
+    const days: Record<string, Record<string, number>> = {};
     
-    // From schedules
-    schedules.forEach(schedule => {
-      const scheduleHours = differenceInHours(
-        parseISO(schedule.end_datetime),
-        parseISO(schedule.start_datetime)
-      );
-      
-      if (!hours[schedule.user_id]) hours[schedule.user_id] = {};
-      hours[schedule.user_id][schedule.client_name] = 
-        (hours[schedule.user_id][schedule.client_name] || 0) + scheduleHours;
-    });
-    
-    // From patterns
     patterns.forEach(pattern => {
-      const patternHours = calculatePatternHours(pattern);
-      if (patternHours > 0) {
-        if (!hours[pattern.user_id]) hours[pattern.user_id] = {};
-        hours[pattern.user_id][pattern.client_name] = 
-          (hours[pattern.user_id][pattern.client_name] || 0) + patternHours;
+      const patternDays = calculatePatternDays(pattern);
+      if (patternDays > 0) {
+        if (!days[pattern.user_id]) days[pattern.user_id] = {};
+        days[pattern.user_id][pattern.client_name] = 
+          (days[pattern.user_id][pattern.client_name] || 0) + patternDays;
       }
     });
     
-    return hours;
-  }, [schedules, patterns, selectedMonth]);
+    return days;
+  }, [patterns, selectedMonth]);
 
-  // Calculate total hours per staff member
-  const staffTotalHours = useMemo(() => {
+  // Calculate total days per staff member
+  const staffTotalDays = useMemo(() => {
     const totals: Record<string, number> = {};
-    Object.entries(staffClientHours).forEach(([userId, clientHours]) => {
-      totals[userId] = Object.values(clientHours).reduce((sum, h) => sum + h, 0);
+    Object.entries(staffClientDays).forEach(([userId, clientDays]) => {
+      totals[userId] = Object.values(clientDays).reduce((sum, d) => sum + d, 0);
     });
     return totals;
-  }, [staffClientHours]);
+  }, [staffClientDays]);
+
+  // Get all unique staff who have patterns
+  const allStaffWithPatterns = useMemo(() => {
+    return [...new Set(patterns.map(p => p.user_id))];
+  }, [patterns]);
 
   // Calculate profit data per client
   const profitData = useMemo(() => {
     return clients.map(client => {
       let totalCost = 0;
-      let totalHours = 0;
-      const staffCosts: { userId: string; name: string; hours: number; cost: number }[] = [];
+      let totalDays = 0;
+      const staffCosts: { userId: string; name: string; days: number; cost: number; percentage: number }[] = [];
       
-      // For each staff member who worked on this client
-      Object.entries(staffClientHours).forEach(([userId, clientHours]) => {
-        const hoursOnThisClient = clientHours[client.name] || 0;
-        if (hoursOnThisClient === 0) return;
+      // For each staff member who works for this client
+      Object.entries(staffClientDays).forEach(([userId, clientDays]) => {
+        const daysOnThisClient = clientDays[client.name] || 0;
+        if (daysOnThisClient === 0) return;
         
-        totalHours += hoursOnThisClient;
+        totalDays += daysOnThisClient;
         
         // Calculate this staff's cost allocated to this client
-        const staffTotal = staffTotalCosts[userId] || 0;
-        const staffHoursTotal = staffTotalHours[userId] || 0;
+        const staffMonthlyCost = getStaffMonthlyCost(userId);
+        const staffDaysTotal = staffTotalDays[userId] || 0;
         
-        // Allocate cost proportionally based on hours
+        // Allocate cost proportionally based on days worked
         let allocatedCost = 0;
-        if (staffHoursTotal > 0) {
-          const proportion = hoursOnThisClient / staffHoursTotal;
-          allocatedCost = staffTotal * proportion;
+        let percentage = 0;
+        if (staffDaysTotal > 0) {
+          percentage = (daysOnThisClient / staffDaysTotal) * 100;
+          allocatedCost = staffMonthlyCost * (daysOnThisClient / staffDaysTotal);
         }
         
         totalCost += allocatedCost;
         staffCosts.push({
           userId,
           name: getStaffName(userId),
-          hours: hoursOnThisClient,
-          cost: allocatedCost
+          days: daysOnThisClient,
+          cost: allocatedCost,
+          percentage
         });
       });
       
@@ -373,7 +364,7 @@ export function ClientProfitCalculator() {
       return {
         client,
         revenue,
-        totalHours,
+        totalDays,
         totalCost,
         profit,
         margin,
@@ -381,7 +372,7 @@ export function ClientProfitCalculator() {
         assignedStaffCount: staffCosts.length
       };
     }).sort((a, b) => b.profit - a.profit);
-  }, [clients, staffClientHours, staffTotalCosts, staffTotalHours, profiles]);
+  }, [clients, staffClientDays, staffTotalDays, profiles, payRecords, hrProfiles, recurringBonuses, overtimeRecords, exchangeRates]);
 
   // Summary stats
   const totalRevenue = profitData.reduce((sum, d) => sum + d.revenue, 0);
@@ -389,8 +380,9 @@ export function ClientProfitCalculator() {
   const totalProfit = totalRevenue - totalCost;
   const overallMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
-  // Check if we have any pay data
-  const hasPayData = payRecords.length > 0 || recurringBonuses.length > 0;
+  // Check if we have any pay data or HR profiles
+  const hasPayData = payRecords.length > 0 || hrProfiles.some(p => p.base_salary);
+  const hasPatterns = patterns.length > 0;
 
   // Generate month options (last 12 months)
   const monthOptions = useMemo(() => {
@@ -437,11 +429,20 @@ export function ClientProfitCalculator() {
         </Alert>
       )}
       
+      {!hasPatterns && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            No recurring shift patterns found. Staff costs cannot be allocated to clients without shift patterns.
+          </AlertDescription>
+        </Alert>
+      )}
+      
       {!hasPayData && (
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            No pay records found for {format(monthStart, 'MMMM yyyy')}. Staff costs will show as £0 until pay records are added.
+            No pay records or HR salary data found. Please add pay records or set base salaries in HR profiles.
           </AlertDescription>
         </Alert>
       )}
@@ -504,8 +505,7 @@ export function ClientProfitCalculator() {
         <CardHeader>
           <CardTitle>Client Profitability</CardTitle>
           <CardDescription>
-            Staff costs calculated from pay records, bonuses, and overtime for {format(monthStart, 'MMMM yyyy')}, 
-            allocated to clients based on scheduled hours
+            Staff costs allocated by proportion of working days per client for {format(monthStart, 'MMMM yyyy')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -515,7 +515,7 @@ export function ClientProfitCalculator() {
                 <TableRow>
                   <TableHead>Client</TableHead>
                   <TableHead className="text-right">Revenue</TableHead>
-                  <TableHead className="text-right">Staff Hours</TableHead>
+                  <TableHead className="text-right">Staff Days</TableHead>
                   <TableHead className="text-right">Staff Cost</TableHead>
                   <TableHead className="text-right">Profit</TableHead>
                   <TableHead className="text-right">Margin</TableHead>
@@ -529,7 +529,7 @@ export function ClientProfitCalculator() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  profitData.map(({ client, revenue, totalHours, totalCost, profit, margin }) => (
+                  profitData.map(({ client, revenue, totalDays, totalCost, profit, margin }) => (
                     <TableRow key={client.id}>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
@@ -541,7 +541,7 @@ export function ClientProfitCalculator() {
                         £{revenue.toLocaleString()}
                       </TableCell>
                       <TableCell className="text-right">
-                        {totalHours.toFixed(1)}h
+                        {totalDays} days
                       </TableCell>
                       <TableCell className="text-right">
                         £{totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}
@@ -569,9 +569,10 @@ export function ClientProfitCalculator() {
       <Card>
         <CardContent className="pt-6">
           <p className="text-sm text-muted-foreground">
-            <strong>How costs are calculated:</strong> Total staff costs (salary + bonuses + overtime - deductions) 
-            from pay records are allocated to each client proportionally based on hours worked. 
-            All amounts are converted to GBP using current exchange rates.
+            <strong>How costs are calculated:</strong> Each staff member's total monthly cost (salary + bonuses + overtime - deductions) 
+            is allocated to clients based on the proportion of working days they spend on each client. 
+            For example, if a staff member works 10 days for Client A and 10 days for Client B, each client is allocated 50% of that staff member's cost.
+            All amounts are converted to GBP.
           </p>
         </CardContent>
       </Card>
