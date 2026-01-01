@@ -644,7 +644,7 @@ export const PublicClientSchedule = () => {
 
         {/* Upcoming Holidays Section */}
         <UpcomingHolidaysCard 
-          staffMembers={staffMembers} 
+          clientName={decodedClientName}
           getStaffName={getStaffName} 
         />
 
@@ -874,22 +874,34 @@ export const PublicClientSchedule = () => {
 
 // Upcoming Holidays Card Component
 const UpcomingHolidaysCard = ({ 
-  staffMembers, 
+  clientName,
   getStaffName 
 }: { 
-  staffMembers: StaffMember[];
+  clientName: string;
   getStaffName: (userId: string) => string;
 }) => {
   const today = new Date();
   
-  // Fetch upcoming approved holidays (from today onwards)
+  // Fetch upcoming approved holidays for staff assigned to this client
   const { data: upcomingHolidays = [], isLoading } = useQuery({
-    queryKey: ["upcoming-holidays"],
+    queryKey: ["upcoming-holidays", clientName],
     queryFn: async () => {
+      // First get staff assigned to this client
+      const { data: assignments, error: assignError } = await supabase
+        .from('staff_client_assignments')
+        .select('staff_user_id')
+        .eq('client_name', clientName);
+      
+      if (assignError) throw assignError;
+      if (!assignments || assignments.length === 0) return [];
+      
+      const staffUserIds = assignments.map(a => a.staff_user_id);
+      
       const { data, error } = await supabase
         .from("staff_holidays")
         .select("id, user_id, start_date, end_date, status, absence_type, days_taken, notes, no_cover_required")
         .eq("status", "approved")
+        .in("user_id", staffUserIds)
         .gte("end_date", format(today, "yyyy-MM-dd"))
         .order("start_date", { ascending: true })
         .limit(10);
@@ -897,6 +909,7 @@ const UpcomingHolidaysCard = ({
       if (error) throw error;
       return (data || []) as StaffHoliday[];
     },
+    enabled: !!clientName,
   });
 
   const getAbsenceLabel = (type: string) => {
