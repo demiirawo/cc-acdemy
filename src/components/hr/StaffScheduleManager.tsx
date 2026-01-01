@@ -128,6 +128,7 @@ export function StaffScheduleManager() {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; isPattern: boolean; patternId?: string; exceptionDate?: string } | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<string>("all");
+  const [selectedClient, setSelectedClient] = useState<string>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("staff");
   const [isEditScheduleDialogOpen, setIsEditScheduleDialogOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
@@ -1061,6 +1062,10 @@ export function StaffScheduleManager() {
     ? staffMembers.filter(s => s.user_id === selectedStaff)
     : staffMembers;
 
+  const filteredClients = selectedClient && selectedClient !== "all"
+    ? uniqueClients.filter(c => c === selectedClient)
+    : uniqueClients;
+
   return (
     <div className="space-y-6">
       {/* Header Controls */}
@@ -1143,11 +1148,27 @@ export function StaffScheduleManager() {
                   <SelectTrigger className="w-[200px]">
                     <SelectValue placeholder="All Staff" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-background z-50">
                     <SelectItem value="all">All Staff</SelectItem>
                     {staffMembers.map(staff => (
                       <SelectItem key={staff.user_id} value={staff.user_id}>
                         {staff.display_name || staff.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {viewMode === "client" && (
+                <Select value={selectedClient} onValueChange={setSelectedClient}>
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="All Clients" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background z-50">
+                    <SelectItem value="all">All Clients</SelectItem>
+                    {uniqueClients.map(clientName => (
+                      <SelectItem key={clientName} value={clientName}>
+                        {clientName}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1610,7 +1631,7 @@ export function StaffScheduleManager() {
 
                       {/* Client View - Live (only clients with staff currently working) */}
                       {viewMode === "client" && (() => {
-                        const clientsWithActiveOrUpcoming = uniqueClients.filter(clientName => {
+                        const clientsWithActiveOrUpcoming = filteredClients.filter(clientName => {
                           return allSchedules.some(s => {
                             if (s.client_name !== clientName) return false;
                             if (isStaffOnHoliday(s.user_id, now)) return false;
@@ -1956,7 +1977,7 @@ export function StaffScheduleManager() {
               ))}
 
               {/* Client View */}
-              {viewMode === "client" && uniqueClients.map(clientName => (
+              {viewMode === "client" && filteredClients.map(clientName => (
                 <div key={clientName} className="grid grid-cols-8 gap-1 mb-1">
                   <div className="p-2 text-sm font-medium truncate border-r">
                     {clientName}
