@@ -642,6 +642,12 @@ export const PublicClientSchedule = () => {
           </CardContent>
         </Card>
 
+        {/* Upcoming Holidays Section */}
+        <UpcomingHolidaysCard 
+          staffMembers={staffMembers} 
+          getStaffName={getStaffName} 
+        />
+
         {/* Noticeboard Section */}
         <ClientNoticeboard clientName={decodedClientName} />
 
@@ -863,6 +869,167 @@ export const PublicClientSchedule = () => {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+};
+
+// Upcoming Holidays Card Component
+const UpcomingHolidaysCard = ({ 
+  staffMembers, 
+  getStaffName 
+}: { 
+  staffMembers: StaffMember[];
+  getStaffName: (userId: string) => string;
+}) => {
+  const today = new Date();
+  
+  // Fetch upcoming approved holidays (from today onwards)
+  const { data: upcomingHolidays = [], isLoading } = useQuery({
+    queryKey: ["upcoming-holidays"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff_holidays")
+        .select("id, user_id, start_date, end_date, status, absence_type, days_taken, notes, no_cover_required")
+        .eq("status", "approved")
+        .gte("end_date", format(today, "yyyy-MM-dd"))
+        .order("start_date", { ascending: true })
+        .limit(10);
+      
+      if (error) throw error;
+      return (data || []) as StaffHoliday[];
+    },
+  });
+
+  const getAbsenceLabel = (type: string) => {
+    const found = ABSENCE_TYPES.find(t => t.value === type);
+    return found?.label || type;
+  };
+
+  const getAbsenceBadgeColor = (type: string) => {
+    switch (type) {
+      case 'holiday':
+        return 'bg-amber-100 text-amber-800 border-amber-200';
+      case 'sick':
+        return 'bg-red-100 text-red-800 border-red-200';
+      case 'personal':
+        return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'maternity':
+      case 'paternity':
+        return 'bg-pink-100 text-pink-800 border-pink-200';
+      case 'unpaid':
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+      default:
+        return 'bg-slate-100 text-slate-800 border-slate-200';
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <Card className="mt-6">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-xl flex items-center gap-2">
+            <Palmtree className="h-5 w-5 text-amber-600" />
+            Upcoming Holidays
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (upcomingHolidays.length === 0) {
+    return (
+      <Card className="mt-6">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-xl flex items-center gap-2">
+            <Palmtree className="h-5 w-5 text-amber-600" />
+            Upcoming Holidays
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No upcoming approved holidays
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="mt-6">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-xl flex items-center gap-2">
+          <Palmtree className="h-5 w-5 text-amber-600" />
+          Upcoming Holidays
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">Approved absences coming up</p>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          {upcomingHolidays.map((holiday) => {
+            const startDate = parseISO(holiday.start_date);
+            const endDate = parseISO(holiday.end_date);
+            const isStartingToday = format(startDate, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd');
+            const isOngoing = startDate <= today && endDate >= today;
+            
+            return (
+              <div 
+                key={holiday.id} 
+                className={`flex items-start gap-3 p-3 rounded-lg border ${
+                  isOngoing ? 'bg-amber-50 border-amber-200' : 'bg-muted/30 border-border'
+                }`}
+              >
+                <div className="flex-shrink-0 mt-0.5">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm">
+                      {getStaffName(holiday.user_id)}
+                    </span>
+                    <Badge variant="outline" className={`text-xs ${getAbsenceBadgeColor(holiday.absence_type)}`}>
+                      {getAbsenceLabel(holiday.absence_type)}
+                    </Badge>
+                    {isOngoing && (
+                      <Badge variant="secondary" className="text-xs bg-amber-200 text-amber-800">
+                        Currently Away
+                      </Badge>
+                    )}
+                    {isStartingToday && !isOngoing && (
+                      <Badge variant="secondary" className="text-xs bg-green-200 text-green-800">
+                        Starts Today
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    {format(startDate, 'EEE, d MMM')}
+                    {holiday.start_date !== holiday.end_date && (
+                      <> — {format(endDate, 'EEE, d MMM')}</>
+                    )}
+                    <span className="ml-2 text-xs">
+                      ({holiday.days_taken} {holiday.days_taken === 1 ? 'day' : 'days'})
+                    </span>
+                  </div>
+                  {holiday.notes && (
+                    <p className="text-xs text-muted-foreground mt-1 truncate">
+                      {holiday.notes}
+                    </p>
+                  )}
+                </div>
+                {holiday.no_cover_required && (
+                  <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 flex-shrink-0">
+                    No cover needed
+                  </Badge>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
   );
 };
 
