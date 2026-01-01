@@ -248,6 +248,8 @@ export function StaffRequestsManager() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
       queryClient.invalidateQueries({ queryKey: ["my-staff-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-requests-for-schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-schedule"] });
       toast.success("Request deleted");
       setReviewDialogOpen(false);
       setSelectedRequest(null);
