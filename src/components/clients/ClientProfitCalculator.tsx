@@ -1,12 +1,13 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { format, startOfMonth, endOfMonth, parseISO, differenceInHours, eachDayOfInterval, getDay, addWeeks, differenceInWeeks, isBefore, isAfter, parse, getDate } from "date-fns";
-import { TrendingUp, TrendingDown, DollarSign, Users, Building2 } from "lucide-react";
+import { format, startOfMonth, endOfMonth, parseISO, differenceInHours, eachDayOfInterval, getDay, differenceInWeeks, isBefore, isAfter, parse, getDate, isWithinInterval } from "date-fns";
+import { TrendingUp, TrendingDown, DollarSign, Users, Building2, AlertCircle } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface Client {
   id: string;
@@ -17,13 +18,6 @@ interface Client {
 interface StaffAssignment {
   staff_user_id: string;
   client_name: string;
-}
-
-interface HRProfile {
-  user_id: string;
-  base_salary: number | null;
-  base_currency: string;
-  pay_frequency: string | null;
 }
 
 interface Profile {
@@ -38,7 +32,6 @@ interface Schedule {
   client_name: string;
   start_datetime: string;
   end_datetime: string;
-  hourly_rate: number | null;
 }
 
 interface RecurringPattern {
@@ -51,15 +44,71 @@ interface RecurringPattern {
   start_date: string;
   end_date: string | null;
   recurrence_interval: string;
-  hourly_rate: number | null;
+}
+
+interface PayRecord {
+  id: string;
+  user_id: string;
+  amount: number;
+  currency: string;
+  record_type: string;
+  pay_date: string;
+  pay_period_start: string | null;
+  pay_period_end: string | null;
+}
+
+interface RecurringBonus {
+  id: string;
+  user_id: string;
+  amount: number;
+  currency: string;
+  start_date: string;
+  end_date: string | null;
+}
+
+interface ExchangeRates {
+  [currency: string]: number;
 }
 
 export function ClientProfitCalculator() {
   const currentMonth = format(new Date(), 'yyyy-MM');
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  const [exchangeRates, setExchangeRates] = useState<ExchangeRates>({ GBP: 1 });
+  const [ratesError, setRatesError] = useState<string | null>(null);
   
   const monthStart = startOfMonth(parseISO(`${selectedMonth}-01`));
   const monthEnd = endOfMonth(monthStart);
+
+  // Fetch exchange rates
+  useEffect(() => {
+    const fetchRates = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('get-exchange-rates');
+        if (error) throw error;
+        if (data?.rates) {
+          setExchangeRates(data.rates);
+          setRatesError(null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch exchange rates:', err);
+        setRatesError('Using fallback exchange rates');
+        // Use fallback rates
+        setExchangeRates({
+          GBP: 1,
+          NGN: 0.00052,
+          USD: 0.79,
+          EUR: 0.85,
+        });
+      }
+    };
+    fetchRates();
+  }, []);
+
+  // Convert amount to GBP
+  const toGBP = (amount: number, currency: string): number => {
+    const rate = exchangeRates[currency] || exchangeRates['GBP'] || 1;
+    return amount * rate;
+  };
 
   // Fetch all clients
   const { data: clients = [] } = useQuery({
@@ -87,18 +136,6 @@ export function ClientProfitCalculator() {
     },
   });
 
-  // Fetch HR profiles for salary info
-  const { data: hrProfiles = [] } = useQuery({
-    queryKey: ["hr-profiles-salary"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("hr_profiles")
-        .select("user_id, base_salary, base_currency, pay_frequency");
-      if (error) throw error;
-      return data as HRProfile[];
-    },
-  });
-
   // Fetch user profiles
   const { data: profiles = [] } = useQuery({
     queryKey: ["profiles-display"],
@@ -117,7 +154,7 @@ export function ClientProfitCalculator() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("staff_schedules")
-        .select("id, user_id, client_name, start_datetime, end_datetime, hourly_rate")
+        .select("id, user_id, client_name, start_datetime, end_datetime")
         .gte("start_datetime", monthStart.toISOString())
         .lte("end_datetime", monthEnd.toISOString());
       if (error) throw error;
@@ -131,26 +168,55 @@ export function ClientProfitCalculator() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("recurring_shift_patterns")
-        .select("id, user_id, client_name, days_of_week, start_time, end_time, start_date, end_date, recurrence_interval, hourly_rate");
+        .select("id, user_id, client_name, days_of_week, start_time, end_time, start_date, end_date, recurrence_interval");
       if (error) throw error;
       return data as RecurringPattern[];
+    },
+  });
+
+  // Fetch pay records for the month
+  const { data: payRecords = [] } = useQuery({
+    queryKey: ["pay-records-month", selectedMonth],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff_pay_records")
+        .select("id, user_id, amount, currency, record_type, pay_date, pay_period_start, pay_period_end")
+        .gte("pay_date", format(monthStart, 'yyyy-MM-dd'))
+        .lte("pay_date", format(monthEnd, 'yyyy-MM-dd'));
+      if (error) throw error;
+      return data as PayRecord[];
+    },
+  });
+
+  // Fetch recurring bonuses
+  const { data: recurringBonuses = [] } = useQuery({
+    queryKey: ["recurring-bonuses"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("recurring_bonuses")
+        .select("id, user_id, amount, currency, start_date, end_date");
+      if (error) throw error;
+      return data as RecurringBonus[];
+    },
+  });
+
+  // Fetch overtime records for the month
+  const { data: overtimeRecords = [] } = useQuery({
+    queryKey: ["overtime-month", selectedMonth],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff_overtime")
+        .select("id, user_id, hours, hourly_rate, currency, overtime_date")
+        .gte("overtime_date", format(monthStart, 'yyyy-MM-dd'))
+        .lte("overtime_date", format(monthEnd, 'yyyy-MM-dd'));
+      if (error) throw error;
+      return data as { id: string; user_id: string; hours: number; hourly_rate: number | null; currency: string; overtime_date: string }[];
     },
   });
 
   const getStaffName = (userId: string) => {
     const profile = profiles.find(p => p.user_id === userId);
     return profile?.display_name || profile?.email?.split('@')[0] || 'Unknown';
-  };
-
-  const getHourlyCost = (userId: string): number => {
-    const hrProfile = hrProfiles.find(p => p.user_id === userId);
-    if (!hrProfile?.base_salary) return 0;
-    
-    // Convert salary to hourly rate (assuming 37.5 hours/week, 52 weeks/year)
-    const annualSalary = hrProfile.pay_frequency === 'monthly' 
-      ? hrProfile.base_salary * 12 
-      : hrProfile.base_salary;
-    return annualSalary / (37.5 * 52);
   };
 
   // Calculate hours from patterns for the month
@@ -188,57 +254,115 @@ export function ClientProfitCalculator() {
     return totalHours;
   };
 
+  // Calculate total cost per staff member from pay records
+  const staffTotalCosts = useMemo(() => {
+    const costs: Record<string, number> = {};
+    
+    // Add pay records (salary, bonus, deduction, expense, overtime)
+    payRecords.forEach(record => {
+      const amountGBP = toGBP(record.amount, record.currency);
+      // Deductions reduce cost, everything else adds
+      const adjustedAmount = record.record_type === 'deduction' ? -amountGBP : amountGBP;
+      costs[record.user_id] = (costs[record.user_id] || 0) + adjustedAmount;
+    });
+    
+    // Add recurring bonuses that apply to this month
+    recurringBonuses.forEach(bonus => {
+      const bonusStart = parseISO(bonus.start_date);
+      const bonusEnd = bonus.end_date ? parseISO(bonus.end_date) : null;
+      
+      // Check if bonus applies to this month
+      const appliesToMonth = 
+        isBefore(bonusStart, monthEnd) && 
+        (!bonusEnd || isAfter(bonusEnd, monthStart));
+      
+      if (appliesToMonth) {
+        const amountGBP = toGBP(bonus.amount, bonus.currency);
+        costs[bonus.user_id] = (costs[bonus.user_id] || 0) + amountGBP;
+      }
+    });
+    
+    // Add overtime records
+    overtimeRecords.forEach(overtime => {
+      if (overtime.hourly_rate) {
+        const cost = overtime.hours * overtime.hourly_rate;
+        const amountGBP = toGBP(cost, overtime.currency);
+        costs[overtime.user_id] = (costs[overtime.user_id] || 0) + amountGBP;
+      }
+    });
+    
+    return costs;
+  }, [payRecords, recurringBonuses, overtimeRecords, exchangeRates]);
+
+  // Calculate hours per staff per client
+  const staffClientHours = useMemo(() => {
+    const hours: Record<string, Record<string, number>> = {};
+    
+    // From schedules
+    schedules.forEach(schedule => {
+      const scheduleHours = differenceInHours(
+        parseISO(schedule.end_datetime),
+        parseISO(schedule.start_datetime)
+      );
+      
+      if (!hours[schedule.user_id]) hours[schedule.user_id] = {};
+      hours[schedule.user_id][schedule.client_name] = 
+        (hours[schedule.user_id][schedule.client_name] || 0) + scheduleHours;
+    });
+    
+    // From patterns
+    patterns.forEach(pattern => {
+      const patternHours = calculatePatternHours(pattern);
+      if (patternHours > 0) {
+        if (!hours[pattern.user_id]) hours[pattern.user_id] = {};
+        hours[pattern.user_id][pattern.client_name] = 
+          (hours[pattern.user_id][pattern.client_name] || 0) + patternHours;
+      }
+    });
+    
+    return hours;
+  }, [schedules, patterns, selectedMonth]);
+
+  // Calculate total hours per staff member
+  const staffTotalHours = useMemo(() => {
+    const totals: Record<string, number> = {};
+    Object.entries(staffClientHours).forEach(([userId, clientHours]) => {
+      totals[userId] = Object.values(clientHours).reduce((sum, h) => sum + h, 0);
+    });
+    return totals;
+  }, [staffClientHours]);
+
   // Calculate profit data per client
   const profitData = useMemo(() => {
     return clients.map(client => {
-      // Get staff assigned to this client
-      const assignedStaff = assignments
-        .filter(a => a.client_name === client.name)
-        .map(a => a.staff_user_id);
-      
-      // Calculate total hours from schedules
-      const clientSchedules = schedules.filter(s => s.client_name === client.name);
-      const scheduleHours = clientSchedules.reduce((total, schedule) => {
-        return total + differenceInHours(
-          parseISO(schedule.end_datetime),
-          parseISO(schedule.start_datetime)
-        );
-      }, 0);
-      
-      // Calculate total hours from patterns
-      const clientPatterns = patterns.filter(p => p.client_name === client.name);
-      const patternHours = clientPatterns.reduce((total, pattern) => {
-        return total + calculatePatternHours(pattern);
-      }, 0);
-      
-      const totalHours = scheduleHours + patternHours;
-      
-      // Calculate staff costs
       let totalCost = 0;
+      let totalHours = 0;
       const staffCosts: { userId: string; name: string; hours: number; cost: number }[] = [];
       
-      // Group hours by staff member
-      const staffHours: Record<string, number> = {};
-      
-      clientSchedules.forEach(schedule => {
-        staffHours[schedule.user_id] = (staffHours[schedule.user_id] || 0) + 
-          differenceInHours(parseISO(schedule.end_datetime), parseISO(schedule.start_datetime));
-      });
-      
-      clientPatterns.forEach(pattern => {
-        const hours = calculatePatternHours(pattern);
-        staffHours[pattern.user_id] = (staffHours[pattern.user_id] || 0) + hours;
-      });
-      
-      Object.entries(staffHours).forEach(([userId, hours]) => {
-        const hourlyRate = getHourlyCost(userId);
-        const cost = hours * hourlyRate;
-        totalCost += cost;
+      // For each staff member who worked on this client
+      Object.entries(staffClientHours).forEach(([userId, clientHours]) => {
+        const hoursOnThisClient = clientHours[client.name] || 0;
+        if (hoursOnThisClient === 0) return;
+        
+        totalHours += hoursOnThisClient;
+        
+        // Calculate this staff's cost allocated to this client
+        const staffTotal = staffTotalCosts[userId] || 0;
+        const staffHoursTotal = staffTotalHours[userId] || 0;
+        
+        // Allocate cost proportionally based on hours
+        let allocatedCost = 0;
+        if (staffHoursTotal > 0) {
+          const proportion = hoursOnThisClient / staffHoursTotal;
+          allocatedCost = staffTotal * proportion;
+        }
+        
+        totalCost += allocatedCost;
         staffCosts.push({
           userId,
           name: getStaffName(userId),
-          hours,
-          cost
+          hours: hoursOnThisClient,
+          cost: allocatedCost
         });
       });
       
@@ -254,16 +378,19 @@ export function ClientProfitCalculator() {
         profit,
         margin,
         staffCosts,
-        assignedStaffCount: new Set(Object.keys(staffHours)).size
+        assignedStaffCount: staffCosts.length
       };
     }).sort((a, b) => b.profit - a.profit);
-  }, [clients, schedules, patterns, assignments, hrProfiles, profiles]);
+  }, [clients, staffClientHours, staffTotalCosts, staffTotalHours, profiles]);
 
   // Summary stats
   const totalRevenue = profitData.reduce((sum, d) => sum + d.revenue, 0);
   const totalCost = profitData.reduce((sum, d) => sum + d.totalCost, 0);
   const totalProfit = totalRevenue - totalCost;
   const overallMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
+  // Check if we have any pay data
+  const hasPayData = payRecords.length > 0 || recurringBonuses.length > 0;
 
   // Generate month options (last 12 months)
   const monthOptions = useMemo(() => {
@@ -301,6 +428,23 @@ export function ClientProfitCalculator() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Warnings */}
+      {ratesError && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{ratesError}</AlertDescription>
+        </Alert>
+      )}
+      
+      {!hasPayData && (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            No pay records found for {format(monthStart, 'MMMM yyyy')}. Staff costs will show as £0 until pay records are added.
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -360,7 +504,8 @@ export function ClientProfitCalculator() {
         <CardHeader>
           <CardTitle>Client Profitability</CardTitle>
           <CardDescription>
-            Profit analysis based on client MRR and estimated staff costs from schedules
+            Staff costs calculated from pay records, bonuses, and overtime for {format(monthStart, 'MMMM yyyy')}, 
+            allocated to clients based on scheduled hours
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -424,9 +569,9 @@ export function ClientProfitCalculator() {
       <Card>
         <CardContent className="pt-6">
           <p className="text-sm text-muted-foreground">
-            <strong>Note:</strong> Staff costs are estimated based on base salary from HR profiles 
-            (converted to hourly rate assuming 37.5 hours/week). Actual costs may vary based on 
-            overtime, bonuses, and other factors.
+            <strong>How costs are calculated:</strong> Total staff costs (salary + bonuses + overtime - deductions) 
+            from pay records are allocated to each client proportionally based on hours worked. 
+            All amounts are converted to GBP using current exchange rates.
           </p>
         </CardContent>
       </Card>
