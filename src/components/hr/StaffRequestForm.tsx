@@ -388,18 +388,23 @@ export function StaffRequestForm() {
     }
   }, [requestType, linkedHolidayId, approvedHolidays]);
 
-  // Fetch user's requests
+  // Fetch user's requests (non-admins only see their own via RLS + explicit filter)
   const { data: myRequests = [] } = useQuery({
-    queryKey: ["my-staff-requests"],
+    queryKey: ["my-staff-requests", user?.id],
     queryFn: async () => {
+      if (!user) return [];
+      
+      // Explicitly filter to only the current user's requests
       const { data, error } = await supabase
         .from("staff_requests")
         .select("*")
+        .eq("user_id", user.id)
         .order("created_at", { ascending: false });
       
       if (error) throw error;
       return data as StaffRequest[];
-    }
+    },
+    enabled: !!user
   });
 
   // Submit request mutation
@@ -546,6 +551,7 @@ export function StaffRequestForm() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["my-staff-requests"] });
       queryClient.invalidateQueries({ queryKey: ["staff-holidays"] });
+      queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
       toast.success(`Request ${variables.status}`);
     },
     onError: (error) => {
