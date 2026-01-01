@@ -243,25 +243,79 @@ export type Database = {
       }
       clients: {
         Row: {
+          billing_contact_email: string | null
+          billing_contact_name: string | null
+          billing_contact_phone: string | null
+          company_address: string | null
+          contract_end_date: string | null
+          contract_start_date: string | null
           created_at: string
           created_by: string
           id: string
+          key_contact_email: string | null
+          key_contact_name: string | null
+          key_contact_phone: string | null
+          mrr: number | null
           name: string
+          notes: string | null
+          recurring_day: number | null
+          software: string | null
+          software_login_details: string | null
+          software_used: string | null
+          source: string | null
+          status: string | null
           updated_at: string
+          website_address: string | null
         }
         Insert: {
+          billing_contact_email?: string | null
+          billing_contact_name?: string | null
+          billing_contact_phone?: string | null
+          company_address?: string | null
+          contract_end_date?: string | null
+          contract_start_date?: string | null
           created_at?: string
           created_by: string
           id?: string
+          key_contact_email?: string | null
+          key_contact_name?: string | null
+          key_contact_phone?: string | null
+          mrr?: number | null
           name: string
+          notes?: string | null
+          recurring_day?: number | null
+          software?: string | null
+          software_login_details?: string | null
+          software_used?: string | null
+          source?: string | null
+          status?: string | null
           updated_at?: string
+          website_address?: string | null
         }
         Update: {
+          billing_contact_email?: string | null
+          billing_contact_name?: string | null
+          billing_contact_phone?: string | null
+          company_address?: string | null
+          contract_end_date?: string | null
+          contract_start_date?: string | null
           created_at?: string
           created_by?: string
           id?: string
+          key_contact_email?: string | null
+          key_contact_name?: string | null
+          key_contact_phone?: string | null
+          mrr?: number | null
           name?: string
+          notes?: string | null
+          recurring_day?: number | null
+          software?: string | null
+          software_login_details?: string | null
+          software_used?: string | null
+          source?: string | null
+          status?: string | null
           updated_at?: string
+          website_address?: string | null
         }
         Relationships: []
       }
