@@ -7,9 +7,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit, UserCircle, AlertCircle, CheckCircle2, X, Info } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Plus, Edit, UserCircle, AlertCircle, CheckCircle2, X, Info, Users, Trash2, Mail, Eye, BookOpen, TrendingUp, Clock, CheckCircle, Shield } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
@@ -41,6 +42,13 @@ interface UserProfile {
   user_id: string;
   display_name: string | null;
   email: string | null;
+  role: string | null;
+  created_at: string;
+  email_confirmed_at?: string | null;
+  total_pages_viewed?: number;
+  unique_pages_viewed?: number;
+  last_page_viewed?: string;
+  last_view_date?: string;
 }
 
 interface ClientAssignment {
@@ -53,6 +61,21 @@ interface ClientAssignment {
 interface Client {
   id: string;
   name: string;
+}
+
+interface EmailException {
+  id: string;
+  email: string;
+  reason: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+interface PageView {
+  page_id: string;
+  page_title: string;
+  view_count: number;
+  last_viewed: string;
 }
 
 const CURRENCIES = [
@@ -75,6 +98,12 @@ const PAY_FREQUENCIES = [
   { value: 'annually', label: 'Annually' },
 ];
 
+const APP_ROLES = [
+  { value: 'viewer', label: 'Viewer', description: 'Read-only access to knowledge base' },
+  { value: 'editor', label: 'Editor', description: 'Can edit pages and content' },
+  { value: 'admin', label: 'Admin', description: 'Full administrative access' },
+];
+
 export function HRProfileManager() {
   const [hrProfiles, setHRProfiles] = useState<HRProfile[]>([]);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
@@ -87,6 +116,17 @@ export function HRProfileManager() {
   const [newClientName, setNewClientName] = useState('');
   const [staffClients, setStaffClients] = useState<string[]>([]);
   const [selectedClient, setSelectedClient] = useState<string>('');
+  
+  // User management state
+  const [emailExceptions, setEmailExceptions] = useState<EmailException[]>([]);
+  const [newEmail, setNewEmail] = useState('');
+  const [newReason, setNewReason] = useState('');
+  const [addEmailDialogOpen, setAddEmailDialogOpen] = useState(false);
+  const [selectedUserPageViews, setSelectedUserPageViews] = useState<PageView[]>([]);
+  const [pageViewsDialogOpen, setPageViewsDialogOpen] = useState(false);
+  const [pageViewsLoading, setPageViewsLoading] = useState(false);
+  const [selectedProfileForViews, setSelectedProfileForViews] = useState<UserProfile | null>(null);
+  
   const { toast } = useToast();
 
   const [formData, setFormData] = useState({
@@ -100,23 +140,108 @@ export function HRProfileManager() {
     pay_frequency: 'monthly',
     annual_holiday_allowance: 28,
     notes: '',
-    scheduling_role: 'viewer'
+    scheduling_role: 'viewer',
+    app_role: 'viewer'
   });
 
   useEffect(() => {
     fetchData();
+    fetchEmailExceptions();
+
+    // Set up real-time listening for profile changes
+    const channel = supabase
+      .channel('staff-profiles-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'profiles'
+        },
+        () => {
+          fetchData();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'email_exceptions'
+        },
+        () => {
+          fetchEmailExceptions();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const fetchData = async () => {
     try {
-      // Fetch all user profiles from User Management
-      const { data: users, error: usersError } = await supabase
-        .from('profiles')
-        .select('id, user_id, display_name, email')
-        .order('display_name');
+      // First sync missing profiles
+      const { error: syncError } = await supabase.rpc('sync_missing_profiles');
+      if (syncError) {
+        console.error('Sync error:', syncError);
+      }
 
-      if (usersError) throw usersError;
-      setUserProfiles(users || []);
+      // Fetch profiles with confirmation status via edge function
+      const { data: profilesData, error: profilesError } = await supabase.functions.invoke('get-user-profiles');
+
+      if (profilesError) throw profilesError;
+
+      if (profilesData.success) {
+        // For each profile, get page view analytics
+        const profilesWithAnalytics = await Promise.all(
+          (profilesData.data || []).map(async (profile: UserProfile) => {
+            try {
+              const { data: viewData } = await supabase
+                .from('page_audit_log')
+                .select('page_id, created_at')
+                .eq('user_id', profile.user_id)
+                .eq('operation_type', 'view');
+
+              const totalViews = viewData?.length || 0;
+              const uniquePages = new Set(viewData?.map(v => v.page_id) || []).size;
+              
+              const lastView = viewData?.sort((a, b) => 
+                new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+              )[0];
+
+              let lastPageTitle = '';
+              if (lastView) {
+                const { data: pageData } = await supabase
+                  .from('pages')
+                  .select('title')
+                  .eq('id', lastView.page_id)
+                  .single();
+                lastPageTitle = pageData?.title || 'Unknown Page';
+              }
+
+              return {
+                ...profile,
+                total_pages_viewed: totalViews,
+                unique_pages_viewed: uniquePages,
+                last_page_viewed: lastPageTitle,
+                last_view_date: lastView?.created_at
+              };
+            } catch {
+              return {
+                ...profile,
+                total_pages_viewed: 0,
+                unique_pages_viewed: 0,
+                last_page_viewed: '',
+                last_view_date: null
+              };
+            }
+          })
+        );
+
+        setUserProfiles(profilesWithAnalytics);
+      }
 
       // Fetch all HR profiles
       const { data: hrData, error: hrError } = await supabase
@@ -154,6 +279,20 @@ export function HRProfileManager() {
     }
   };
 
+  const fetchEmailExceptions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('email_exceptions')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setEmailExceptions(data || []);
+    } catch (error) {
+      console.error('Error fetching email exceptions:', error);
+    }
+  };
+
   // Get HR profile for a user
   const getHRProfile = (userId: string): HRProfile | undefined => {
     return hrProfiles.find(hr => hr.user_id === userId);
@@ -187,7 +326,8 @@ export function HRProfileManager() {
         pay_frequency: existingHR.pay_frequency || 'monthly',
         annual_holiday_allowance: existingHR.annual_holiday_allowance || 28,
         notes: existingHR.notes || '',
-        scheduling_role: existingHR.scheduling_role || 'viewer'
+        scheduling_role: existingHR.scheduling_role || 'viewer',
+        app_role: userProfile.role || 'viewer'
       });
     } else {
       setEditingProfile(null);
@@ -202,7 +342,8 @@ export function HRProfileManager() {
         pay_frequency: 'monthly',
         annual_holiday_allowance: 28,
         notes: '',
-        scheduling_role: 'viewer'
+        scheduling_role: 'viewer',
+        app_role: userProfile.role || 'viewer'
       });
     }
     setDialogOpen(true);
@@ -220,7 +361,6 @@ export function HRProfileManager() {
       return;
     }
     
-    // Check if client exists in database, if not add it
     const existingClient = allClients.find(c => c.name.toLowerCase() === trimmed.toLowerCase());
     if (!existingClient) {
       try {
@@ -268,11 +408,19 @@ export function HRProfileManager() {
     }
 
     try {
-      // Update display name in profiles table
+      // Update display name and role in profiles table
+      const profileUpdate: { display_name?: string; role?: string } = {};
       if (formData.display_name.trim()) {
+        profileUpdate.display_name = formData.display_name.trim();
+      }
+      if (formData.app_role) {
+        profileUpdate.role = formData.app_role;
+      }
+      
+      if (Object.keys(profileUpdate).length > 0) {
         const { error: profileUpdateError } = await supabase
           .from('profiles')
-          .update({ display_name: formData.display_name.trim() })
+          .update(profileUpdate)
           .eq('user_id', formData.user_id);
 
         if (profileUpdateError) throw profileUpdateError;
@@ -282,7 +430,7 @@ export function HRProfileManager() {
         user_id: formData.user_id,
         employee_id: formData.employee_id || null,
         job_title: formData.job_title || null,
-        department: null, // Keep for backwards compatibility
+        department: null,
         start_date: formData.start_date || null,
         base_currency: formData.base_currency,
         base_salary: formData.base_salary || null,
@@ -308,7 +456,6 @@ export function HRProfileManager() {
       }
 
       // Update client assignments
-      // First, delete existing assignments for this user
       const { error: deleteError } = await supabase
         .from('staff_client_assignments')
         .delete()
@@ -316,7 +463,6 @@ export function HRProfileManager() {
 
       if (deleteError) throw deleteError;
 
-      // Then insert new assignments
       if (staffClients.length > 0) {
         const assignmentsToInsert = staffClients.map(clientName => ({
           staff_user_id: formData.user_id,
@@ -330,16 +476,193 @@ export function HRProfileManager() {
         if (insertError) throw insertError;
       }
 
-      toast({ title: "Success", description: editingProfile ? "HR profile updated" : "HR profile created" });
+      toast({ title: "Success", description: editingProfile ? "Staff profile updated" : "Staff profile created" });
       setDialogOpen(false);
       fetchData();
     } catch (error: any) {
-      console.error('Error saving HR profile:', error);
+      console.error('Error saving profile:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to save HR profile",
+        description: error.message || "Failed to save profile",
         variant: "destructive"
       });
+    }
+  };
+
+  const deleteUser = async (userId: string) => {
+    if (!confirm("Are you sure you want to completely delete this user? This will remove them from the system entirely and cannot be undone.")) {
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('delete-user-completely', {
+        body: { userId }
+      });
+
+      if (error) throw new Error(error.message);
+
+      if (data?.success) {
+        toast({
+          title: "Success",
+          description: data.message || "User deleted successfully"
+        });
+      } else {
+        throw new Error(data?.error || 'Failed to delete user');
+      }
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      toast({
+        title: "Error",
+        description: `Failed to delete user: ${error.message}`,
+        variant: "destructive"
+      });
+    }
+  };
+
+  const addEmailException = async () => {
+    if (!newEmail.trim()) {
+      toast({
+        title: "Error",
+        description: "Email address is required",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('email_exceptions')
+        .insert({
+          email: newEmail.toLowerCase().trim(),
+          reason: newReason.trim() || null,
+          created_by: (await supabase.auth.getUser()).data.user?.id
+        });
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: "Email exception added successfully"
+      });
+
+      setNewEmail('');
+      setNewReason('');
+      setAddEmailDialogOpen(false);
+    } catch (error) {
+      console.error('Error adding email exception:', error);
+      toast({
+        title: "Error",
+        description: "Failed to add email exception",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const deleteEmailException = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('email_exceptions')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: "Email exception removed successfully"
+      });
+    } catch (error) {
+      console.error('Error deleting email exception:', error);
+      toast({
+        title: "Error",
+        description: "Failed to remove email exception",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const fetchUserPageViews = async (userId: string) => {
+    setPageViewsLoading(true);
+    try {
+      const { data: viewData } = await supabase
+        .from('page_audit_log')
+        .select('page_id, created_at')
+        .eq('user_id', userId)
+        .eq('operation_type', 'view')
+        .order('created_at', { ascending: false });
+
+      if (viewData) {
+        const pageViewCounts = viewData.reduce((acc: Record<string, { pageId: string; count: number; lastViewed: string }>, view) => {
+          if (acc[view.page_id]) {
+            acc[view.page_id].count++;
+            if (new Date(view.created_at) > new Date(acc[view.page_id].lastViewed)) {
+              acc[view.page_id].lastViewed = view.created_at;
+            }
+          } else {
+            acc[view.page_id] = {
+              pageId: view.page_id,
+              count: 1,
+              lastViewed: view.created_at
+            };
+          }
+          return acc;
+        }, {});
+
+        const pageIds = Object.keys(pageViewCounts);
+        const { data: pagesData } = await supabase
+          .from('pages')
+          .select('id, title')
+          .in('id', pageIds);
+
+        const pageViews: PageView[] = Object.values(pageViewCounts).map((view) => {
+          const page = pagesData?.find(p => p.id === view.pageId);
+          return {
+            page_id: view.pageId,
+            page_title: page?.title || 'Unknown Page',
+            view_count: view.count,
+            last_viewed: view.lastViewed
+          };
+        }).sort((a, b) => b.view_count - a.view_count);
+
+        setSelectedUserPageViews(pageViews);
+      }
+    } catch (error) {
+      console.error('Error fetching user page views:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load page views",
+        variant: "destructive"
+      });
+    } finally {
+      setPageViewsLoading(false);
+    }
+  };
+
+  const getRoleBadgeVariant = (role: string | null) => {
+    switch (role) {
+      case 'admin':
+        return 'destructive';
+      case 'editor':
+        return 'default';
+      case 'viewer':
+      default:
+        return 'secondary';
+    }
+  };
+
+  const getConfirmationStatus = (emailConfirmedAt: string | null | undefined) => {
+    if (emailConfirmedAt) {
+      return {
+        icon: CheckCircle,
+        color: "text-green-600",
+        tooltip: "Account confirmed"
+      };
+    } else {
+      return {
+        icon: Clock,
+        color: "text-amber-600",
+        tooltip: "Pending confirmation"
+      };
     }
   };
 
@@ -365,7 +688,7 @@ export function HRProfileManager() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-xl font-semibold">Staff HR Profiles</h2>
+          <h2 className="text-xl font-semibold">Staff Profiles</h2>
           <p className="text-sm text-muted-foreground mt-1">
             {usersWithHR} of {totalUsers} staff members have HR profiles configured
             {usersWithoutHR > 0 && (
@@ -373,171 +696,284 @@ export function HRProfileManager() {
             )}
           </p>
         </div>
+        <div className="flex items-center gap-2">
+          <Users className="h-5 w-5 text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">{totalUsers} users</span>
+        </div>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Staff Member</TableHead>
-                <TableHead>HR Status</TableHead>
-                <TableHead>Job Title</TableHead>
-                <TableHead>Scheduling Role</TableHead>
-                <TableHead>Base Salary</TableHead>
-                <TableHead>Clients</TableHead>
-                <TableHead>Holiday Allowance</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {userProfiles.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                    No staff members found. Add users through User Management first.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                userProfiles.map(user => {
-                  const hrProfile = getHRProfile(user.user_id);
-                  const hasHR = !!hrProfile;
-                  const userClients = getClientsForUser(user.user_id);
-                  
-                  return (
-                    <TableRow key={user.user_id}>
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          <UserCircle className="h-5 w-5 text-muted-foreground" />
-                          <div>
-                            <div>{user.display_name || 'No name'}</div>
-                            <div className="text-xs text-muted-foreground">{user.email}</div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {hasHR ? (
-                          <Badge variant="outline" className="bg-success/20 text-success border-success">
-                            <CheckCircle2 className="h-3 w-3 mr-1" />
-                            Configured
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="bg-warning/20 text-warning-foreground border-warning">
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                            Not Set Up
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>{hrProfile?.job_title || '-'}</TableCell>
-                      <TableCell>
-                        {hrProfile?.scheduling_role === 'editor' ? (
-                          <Badge variant="default" className="bg-primary text-primary-foreground">
-                            Editor
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary">
-                            Viewer
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {hrProfile?.base_salary ? (
-                          <span className="font-medium">
-                            {CURRENCIES.find(c => c.code === hrProfile.base_currency)?.symbol || '£'}
-                            {hrProfile.base_salary.toLocaleString()}
-                            <span className="text-xs text-muted-foreground ml-1">
-                              /{hrProfile.pay_frequency || 'monthly'}
-                            </span>
-                          </span>
-                        ) : '-'}
-                      </TableCell>
-                      <TableCell>
-                        {userClients.length > 0 ? (
-                          <div className="flex flex-wrap gap-1 max-w-[200px]">
-                            {userClients.slice(0, 3).map((client, idx) => (
-                              <Badge key={idx} variant="secondary" className="text-xs">
-                                {client}
-                              </Badge>
-                            ))}
-                            {userClients.length > 3 && (
-                              <Badge variant="outline" className="text-xs">
-                                +{userClients.length - 3} more
-                              </Badge>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {hrProfile?.start_date ? (
-                          (() => {
-                            const allowanceInfo = calculateHolidayAllowance(hrProfile.start_date);
-                            return (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <div className="flex items-center gap-1 cursor-help">
-                                      <span>{allowanceInfo.annualAllowance} days</span>
-                                      <Badge variant="outline" className="text-xs">
-                                        {allowanceInfo.accruedAllowance.toFixed(1)} accrued
-                                      </Badge>
-                                      <Info className="h-3 w-3 text-muted-foreground" />
-                                    </div>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <div className="text-xs space-y-1">
-                                      <p><strong>Annual:</strong> {allowanceInfo.annualAllowance} days</p>
-                                      <p><strong>Accrued:</strong> {allowanceInfo.accruedAllowance.toFixed(1)} days</p>
-                                      {allowanceInfo.yearsEmployed >= 1 ? (
-                                        <p className="text-success">18 days (1+ year employed)</p>
-                                      ) : (
-                                        <p>15 days (first year)</p>
-                                      )}
-                                      {allowanceInfo.isProRata && (
-                                        <p className="text-warning">Pro-rata: started during this holiday year</p>
-                                      )}
-                                    </div>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            );
-                          })()
-                        ) : (
-                          <span className="text-muted-foreground">15 days (default)</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="sm" onClick={() => handleOpenDialog(user)}>
-                          <Edit className="h-4 w-4 mr-1" />
-                          {hasHR ? 'Edit' : 'Setup'}
-                        </Button>
+      <Tabs defaultValue="staff" className="w-full">
+        <TabsList>
+          <TabsTrigger value="staff" className="flex items-center gap-2">
+            <Users className="h-4 w-4" />
+            Staff Members
+          </TabsTrigger>
+          <TabsTrigger value="exceptions" className="flex items-center gap-2">
+            <Mail className="h-4 w-4" />
+            Email Exceptions
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="staff" className="space-y-4">
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Staff Member</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>App Role</TableHead>
+                    <TableHead>Job Title</TableHead>
+                    <TableHead>Scheduling</TableHead>
+                    <TableHead>Clients</TableHead>
+                    <TableHead>Activity</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {userProfiles.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                        No staff members found.
                       </TableCell>
                     </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                  ) : (
+                    userProfiles.map(user => {
+                      const hrProfile = getHRProfile(user.user_id);
+                      const hasHR = !!hrProfile;
+                      const userClients = getClientsForUser(user.user_id);
+                      const confirmStatus = getConfirmationStatus(user.email_confirmed_at);
+                      const StatusIcon = confirmStatus.icon;
+                      
+                      return (
+                        <TableRow key={user.user_id}>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-2">
+                              <UserCircle className="h-5 w-5 text-muted-foreground" />
+                              <div>
+                                <div className="flex items-center gap-1">
+                                  {user.display_name || 'No name'}
+                                  <div title={confirmStatus.tooltip}>
+                                    <StatusIcon className={`h-3 w-3 ${confirmStatus.color}`} />
+                                  </div>
+                                </div>
+                                <div className="text-xs text-muted-foreground">{user.email}</div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {hasHR ? (
+                              <Badge variant="outline" className="bg-success/20 text-success border-success">
+                                <CheckCircle2 className="h-3 w-3 mr-1" />
+                                Configured
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="bg-warning/20 text-warning-foreground border-warning">
+                                <AlertCircle className="h-3 w-3 mr-1" />
+                                Not Set Up
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={getRoleBadgeVariant(user.role)}>
+                              <Shield className="h-3 w-3 mr-1" />
+                              {user.role || 'viewer'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{hrProfile?.job_title || '-'}</TableCell>
+                          <TableCell>
+                            {hrProfile?.scheduling_role === 'editor' ? (
+                              <Badge variant="default" className="bg-primary text-primary-foreground">
+                                Editor
+                              </Badge>
+                            ) : (
+                              <Badge variant="secondary">
+                                Viewer
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {userClients.length > 0 ? (
+                              <div className="flex flex-wrap gap-1 max-w-[150px]">
+                                {userClients.slice(0, 2).map((client, idx) => (
+                                  <Badge key={idx} variant="secondary" className="text-xs">
+                                    {client}
+                                  </Badge>
+                                ))}
+                                {userClients.length > 2 && (
+                                  <Badge variant="outline" className="text-xs">
+                                    +{userClients.length - 2}
+                                  </Badge>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      setSelectedProfileForViews(user);
+                                      fetchUserPageViews(user.user_id);
+                                      setPageViewsDialogOpen(true);
+                                    }}
+                                    className="h-8 px-2"
+                                  >
+                                    <Eye className="h-3 w-3 mr-1" />
+                                    {user.total_pages_viewed || 0}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>{user.unique_pages_viewed || 0} unique pages viewed</p>
+                                  {user.last_page_viewed && (
+                                    <p className="text-xs">Last: {user.last_page_viewed}</p>
+                                  )}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => handleOpenDialog(user)}>
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => deleteUser(user.user_id)}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
+        <TabsContent value="exceptions" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold">Email Exceptions</h3>
+              <p className="text-sm text-muted-foreground">Allow specific email addresses to access the platform</p>
+            </div>
+            <Dialog open={addEmailDialogOpen} onOpenChange={setAddEmailDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Exception
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add Email Exception</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="email">Email Address</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="user@example.com"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="reason">Reason (Optional)</Label>
+                    <Textarea
+                      id="reason"
+                      placeholder="Explain why this email should have access..."
+                      value={newReason}
+                      onChange={(e) => setNewReason(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => setAddEmailDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button onClick={addEmailException}>
+                      Add Exception
+                    </Button>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          <div className="grid gap-4">
+            {emailExceptions.map((exception) => (
+              <Card key={exception.id}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                        <Mail className="h-5 w-5 text-blue-600" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg">{exception.email}</CardTitle>
+                        {exception.reason && (
+                          <p className="text-sm text-muted-foreground">{exception.reason}</p>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => deleteEmailException(exception.id)}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="text-sm text-muted-foreground">
+                    Added: {new Date(exception.created_at).toLocaleDateString()}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {emailExceptions.length === 0 && (
+            <div className="text-center py-12">
+              <Mail className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-foreground mb-2">No email exceptions</h3>
+              <p className="text-muted-foreground">No email exceptions have been added yet.</p>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* Edit Profile Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingProfile ? 'Edit HR Profile' : 'Set Up HR Profile'}
+              {editingProfile ? 'Edit Staff Profile' : 'Set Up Staff Profile'}
             </DialogTitle>
             <DialogDescription>
               {selectedUserId && userProfiles.find(u => u.user_id === selectedUserId) && (
                 <span>
-                  Configure HR details for <strong>{userProfiles.find(u => u.user_id === selectedUserId)?.display_name || userProfiles.find(u => u.user_id === selectedUserId)?.email}</strong>
+                  Configure details for <strong>{userProfiles.find(u => u.user_id === selectedUserId)?.display_name || userProfiles.find(u => u.user_id === selectedUserId)?.email}</strong>
                 </span>
               )}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-
             <div className="space-y-2">
               <Label>Display Name</Label>
               <Input
@@ -545,7 +981,6 @@ export function HRProfileManager() {
                 onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
                 placeholder="How their name appears in the system"
               />
-              <p className="text-xs text-muted-foreground">This is how the staff member's name will appear throughout the system</p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -568,6 +1003,34 @@ export function HRProfileManager() {
             </div>
 
             <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Shield className="h-4 w-4" />
+                Application Role
+              </Label>
+              <Select
+                value={formData.app_role}
+                onValueChange={(value) => setFormData({ ...formData, app_role: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {APP_ROLES.map(role => (
+                    <SelectItem key={role.value} value={role.value}>
+                      <div className="flex flex-col">
+                        <span>{role.label}</span>
+                        <span className="text-xs text-muted-foreground">{role.description}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Controls access to knowledge base features. Admins have full access.
+              </p>
+            </div>
+
+            <div className="space-y-2">
               <Label>Scheduling Role</Label>
               <Select
                 value={formData.scheduling_role}
@@ -579,22 +1042,19 @@ export function HRProfileManager() {
                 <SelectContent>
                   {SCHEDULING_ROLES.map(role => (
                     <SelectItem key={role.value} value={role.value}>
-                      <div className="flex flex-col">
-                        <span>{role.label}</span>
-                      </div>
+                      <span>{role.label}</span>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                <strong>Viewers</strong> can only see schedules for their assigned clients. <strong>Editors</strong> can make changes to all schedules.
+                Controls access to schedule management for assigned clients.
               </p>
             </div>
 
             <div className="space-y-2">
               <Label>Assigned Clients</Label>
               
-              {/* Dropdown for existing clients */}
               {allClients.filter(c => !staffClients.includes(c.name)).length > 0 && (
                 <Select
                   value={selectedClient}
@@ -615,7 +1075,6 @@ export function HRProfileManager() {
                 </Select>
               )}
               
-              {/* Input for new clients */}
               <div className="flex gap-2">
                 <Input
                   value={newClientName}
@@ -649,14 +1108,11 @@ export function HRProfileManager() {
                   ))}
                 </div>
               )}
-              <p className="text-xs text-muted-foreground mt-1">
-                Select from existing clients or type a new name and press Enter
-              </p>
             </div>
 
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Base Salary *</Label>
+                <Label>Base Salary</Label>
                 <Input
                   type="number"
                   value={formData.base_salary}
@@ -667,7 +1123,7 @@ export function HRProfileManager() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Currency *</Label>
+                <Label>Currency</Label>
                 <Select
                   value={formData.base_currency}
                   onValueChange={(value) => setFormData({ ...formData, base_currency: value })}
@@ -685,7 +1141,7 @@ export function HRProfileManager() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Pay Frequency *</Label>
+                <Label>Pay Frequency</Label>
                 <Select
                   value={formData.pay_frequency}
                   onValueChange={(value) => setFormData({ ...formData, pay_frequency: value })}
@@ -732,32 +1188,12 @@ export function HRProfileManager() {
                             <span className="text-muted-foreground">Accrued to date:</span>
                             <span className="font-medium">{allowanceInfo.accruedAllowance} days</span>
                           </div>
-                          {allowanceInfo.yearsEmployed >= 1 ? (
-                            <p className="text-xs text-success mt-2">
-                              ✓ 18 days/year (1+ year employed)
-                            </p>
-                          ) : (
-                            <p className="text-xs text-muted-foreground mt-2">
-                              15 days/year (increases to 18 after 1 year)
-                            </p>
-                          )}
-                          {allowanceInfo.isProRata && (
-                            <p className="text-xs text-warning mt-1">
-                              Pro-rata: employee started during current holiday year (Jun-May)
-                            </p>
-                          )}
                         </>
                       );
                     })()}
                   </div>
                 </CardContent>
               </Card>
-            )}
-
-            {!formData.start_date && (
-              <p className="text-xs text-muted-foreground">
-                No start date set — defaulting to 15 days holiday allowance
-              </p>
             )}
 
             <div className="space-y-2">
@@ -777,6 +1213,58 @@ export function HRProfileManager() {
               {editingProfile ? 'Update' : 'Create'} Profile
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Page Views Detail Dialog */}
+      <Dialog open={pageViewsDialogOpen} onOpenChange={setPageViewsDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Page Views - {selectedProfileForViews?.display_name || 'User'}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {pageViewsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {selectedUserPageViews.length > 0 ? (
+                <div className="grid gap-3">
+                  {selectedUserPageViews.map((pageView) => (
+                    <Card key={pageView.page_id} className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <h4 className="font-medium text-foreground mb-1">
+                            {pageView.page_title}
+                          </h4>
+                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Eye className="h-3 w-3" />
+                              {pageView.view_count} view{pageView.view_count !== 1 ? 's' : ''}
+                            </span>
+                            <span>
+                              Last viewed: {new Date(pageView.last_viewed).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+                        <Badge variant="secondary">
+                          {pageView.view_count}
+                        </Badge>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <p className="text-muted-foreground">No pages viewed yet</p>
+                </div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

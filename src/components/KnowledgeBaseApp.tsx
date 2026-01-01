@@ -527,11 +527,7 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
       setBreadcrumbs([]);
       navigate('/view/whiteboard');
-    } else if (item.id === 'user-management') {
-      setCurrentView('user-management');
-      setCurrentPage(null);
-      setBreadcrumbs([]);
-      navigate('/view/user-management');
+    // User management is now handled in HR → Staff Profiles
     } else if (item.id === 'chat') {
       setCurrentView('chat');
       setCurrentPage(null);
@@ -971,7 +967,7 @@ export function KnowledgeBaseApp() {
         {currentView === 'settings' && <SettingsPage onClose={() => setCurrentView('dashboard')} />}
 
         {currentView === 'whiteboard' && <WhiteboardCanvas />}
-        {currentView === 'user-management' && <UserManagement />}
+        {/* User management is now in HR → Staff Profiles */}
         {currentView === 'chat' && <ChatPage />}
         {currentView === 'glossary' && (
           <div className="flex-1 overflow-auto">
