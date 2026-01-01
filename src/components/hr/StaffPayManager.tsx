@@ -170,6 +170,7 @@ export function StaffPayManager() {
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; status: string; absence_type: string }[]>([]);
   const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null }[]>([]);
+  const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string }[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -378,6 +379,19 @@ export function StaffPayManager() {
         .select('user_id, annual_holiday_allowance, start_date');
       
       setHRProfilesFull(hrFullData || []);
+
+      // Fetch approved overtime and shift_swap requests for overtime pay calculation
+      const { data: overtimeRequestsData, error: overtimeRequestsError } = await supabase
+        .from('staff_requests')
+        .select('user_id, days_requested, start_date, end_date, request_type')
+        .eq('status', 'approved')
+        .in('request_type', ['overtime', 'overtime_standard', 'overtime_double_up', 'shift_swap']);
+      
+      if (overtimeRequestsError) {
+        console.error('Error fetching overtime requests:', overtimeRequestsError);
+      } else {
+        setApprovedOvertimeRequests(overtimeRequestsData || []);
+      }
     } catch (error) {
       console.error('Error fetching pay records:', error);
       toast({
@@ -580,9 +594,57 @@ export function StaffPayManager() {
       const recurringBonusTotal = activeRecurringBonuses.reduce((sum, rb) => sum + rb.amount, 0);
       bonuses += recurringBonusTotal;
       
-      const overtime = overtimeRecords.reduce((sum, r) => sum + r.amount, 0);
+      const overtimeManualRecords = overtimeRecords.reduce((sum, r) => sum + r.amount, 0);
       const expenses = expenseRecords.reduce((sum, r) => sum + r.amount, 0);
       const deductions = deductionRecords.reduce((sum, r) => sum + r.amount, 0);
+      
+      // Calculate overtime pay from approved overtime/shift_swap requests
+      // Formula: 1.5 × (Base Salary / 20) × Overtime Days
+      const userOvertimeRequests = approvedOvertimeRequests.filter(r => {
+        if (r.user_id !== hr.user_id) return false;
+        const startDate = parseISO(r.start_date);
+        const endDate = parseISO(r.end_date);
+        // Check if the request overlaps with the selected month
+        return startDate <= monthEnd && endDate >= monthStart;
+      });
+      
+      // Calculate total overtime days for this month
+      let overtimeDays = 0;
+      const overtimeRequestDetails: Array<{ type: string; startDate: string; endDate: string; days: number }> = [];
+      
+      userOvertimeRequests.forEach(req => {
+        const startDate = parseISO(req.start_date);
+        const endDate = parseISO(req.end_date);
+        
+        // Calculate days that fall within this month
+        const effectiveStart = startDate < monthStart ? monthStart : startDate;
+        const effectiveEnd = endDate > monthEnd ? monthEnd : endDate;
+        
+        // Count business days (rough estimate - using days_requested for full range, proportioned if partial)
+        let daysInMonth = req.days_requested;
+        
+        // If the request spans multiple months, calculate proportion for this month
+        if (startDate < monthStart || endDate > monthEnd) {
+          const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+          const daysInThisMonth = Math.ceil((effectiveEnd.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+          daysInMonth = Math.round((daysInThisMonth / totalDays) * req.days_requested);
+        }
+        
+        overtimeDays += daysInMonth;
+        overtimeRequestDetails.push({
+          type: req.request_type,
+          startDate: req.start_date,
+          endDate: req.end_date,
+          days: daysInMonth
+        });
+      });
+      
+      // Overtime pay = 1.5 × (Base Salary / 20) × Overtime Days
+      const overtimeDailyRate = monthlyBaseSalary / 20;
+      const calculatedOvertimePay = 1.5 * overtimeDailyRate * overtimeDays;
+      
+      // Total overtime = manual records + calculated from requests
+      const overtime = overtimeManualRecords + calculatedOvertimePay;
       
       // Calculate unused holiday payout for June (end of holiday year: June 1 - May 31)
       let unusedHolidayPayout = 0;
@@ -616,7 +678,7 @@ export function StaffPayManager() {
         unusedHolidayPayout = (monthlyBaseSalary / 20) * unusedHolidayDays;
       }
       
-      // Total pay now includes holiday overtime bonus and unused holiday payout
+      // Total pay now includes holiday overtime bonus, calculated overtime pay, and unused holiday payout
       const totalPay = monthlyBaseSalary + bonuses + overtime + expenses + holidayOvertimeBonus + unusedHolidayPayout - deductions;
       const hasSalaryRecord = salaryRecords.length > 0;
       
@@ -632,6 +694,9 @@ export function StaffPayManager() {
         salaryPaid,
         bonuses,
         overtime,
+        overtimeDays,
+        overtimeRequestDetails,
+        calculatedOvertimePay,
         expenses,
         deductions,
         holidayOvertimeBonus,
@@ -645,7 +710,7 @@ export function StaffPayManager() {
         records: userRecords
       };
     });
-  }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses, staffHolidays, hrProfilesFull, selectedMonth]);
+  }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses, staffHolidays, hrProfilesFull, selectedMonth, approvedOvertimeRequests]);
 
   // Total payroll for the month (converted to GBP)
   const totalPayroll = useMemo(() => {
@@ -1417,8 +1482,19 @@ export function StaffPayManager() {
                       <TableCell className="text-right text-success">
                         {staff.bonuses > 0 ? `+${formatCurrency(staff.bonuses, staff.currency)}` : '-'}
                       </TableCell>
-                      <TableCell className="text-right text-success">
-                        {staff.overtime > 0 ? `+${formatCurrency(staff.overtime, staff.currency)}` : '-'}
+                      <TableCell className="text-right">
+                        {staff.overtime > 0 ? (
+                          <div className="flex flex-col items-end">
+                            <span className="text-success">
+                              +{formatCurrency(staff.overtime, staff.currency)}
+                            </span>
+                            {staff.overtimeDays > 0 && (
+                              <span className="text-[10px] text-muted-foreground">
+                                {staff.overtimeDays} day{staff.overtimeDays !== 1 ? 's' : ''} @ 1.5x
+                              </span>
+                            )}
+                          </div>
+                        ) : '-'}
                       </TableCell>
                       <TableCell className="text-right">
                         {staff.holidayOvertimeBonus > 0 ? (
