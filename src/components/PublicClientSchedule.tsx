@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
 import { ChevronLeft, ChevronRight, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2, Palmtree, AlertTriangle, Clock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -70,6 +72,8 @@ interface StaffHoliday {
   end_date: string;
   status: string;
   absence_type: string;
+  days_taken: number;
+  notes: string | null;
 }
 
 interface StaffRequest {
@@ -82,6 +86,16 @@ interface StaffRequest {
   linked_holiday_id: string | null;
   swap_with_user_id: string | null;
 }
+
+const ABSENCE_TYPES = [
+  { value: 'holiday', label: 'Holiday' },
+  { value: 'sick', label: 'Sick Leave' },
+  { value: 'personal', label: 'Personal Leave' },
+  { value: 'maternity', label: 'Maternity Leave' },
+  { value: 'paternity', label: 'Paternity Leave' },
+  { value: 'unpaid', label: 'Unpaid Leave' },
+  { value: 'other', label: 'Other' },
+];
 
 const SHIFT_TYPES = [
   "Call Monitoring",
@@ -130,8 +144,22 @@ const getShiftTypeColors = (shiftType: string | null | undefined) => {
 export const PublicClientSchedule = () => {
   const { clientName } = useParams<{ clientName: string }>();
   const decodedClientName = decodeURIComponent(clientName || "");
+  const queryClient = useQueryClient();
   
   const [weekOffset, setWeekOffset] = useState(0);
+  
+  // Holiday management state
+  const [selectedHoliday, setSelectedHoliday] = useState<StaffHoliday | null>(null);
+  const [holidayDialogOpen, setHolidayDialogOpen] = useState(false);
+  const [holidayDeleteConfirmOpen, setHolidayDeleteConfirmOpen] = useState(false);
+  const [isEditingHoliday, setIsEditingHoliday] = useState(false);
+  const [holidayFormData, setHolidayFormData] = useState({
+    absence_type: 'holiday',
+    start_date: '',
+    end_date: '',
+    days_taken: 1,
+    notes: ''
+  });
   
   const currentWeekStart = useMemo(() => {
     return startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
@@ -196,18 +224,100 @@ export const PublicClientSchedule = () => {
   };
 
   // Fetch approved holidays for the week
-  const { data: holidays = [] } = useQuery({
+  const { data: holidays = [], refetch: refetchHolidays } = useQuery({
     queryKey: ["public-staff-holidays", currentWeekStart.toISOString()],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("staff_holidays")
-        .select("id, user_id, start_date, end_date, status, absence_type")
+        .select("id, user_id, start_date, end_date, status, absence_type, days_taken, notes")
         .eq("status", "approved")
         .lte("start_date", format(currentWeekEnd, "yyyy-MM-dd"))
         .gte("end_date", format(currentWeekStart, "yyyy-MM-dd"));
       if (error) throw error;
       return (data || []) as StaffHoliday[];
     },
+  });
+
+  // Holiday click handler
+  const handleHolidayClick = (holiday: StaffHoliday, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedHoliday(holiday);
+    setHolidayFormData({
+      absence_type: holiday.absence_type,
+      start_date: holiday.start_date,
+      end_date: holiday.end_date,
+      days_taken: holiday.days_taken,
+      notes: holiday.notes || ''
+    });
+    setIsEditingHoliday(false);
+    setHolidayDialogOpen(true);
+  };
+
+  // Calculate days when dates change
+  const calculateDays = () => {
+    if (holidayFormData.start_date && holidayFormData.end_date) {
+      const start = new Date(holidayFormData.start_date);
+      const end = new Date(holidayFormData.end_date);
+      const diffTime = Math.abs(end.getTime() - start.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      setHolidayFormData(prev => ({ ...prev, days_taken: diffDays }));
+    }
+  };
+
+  useEffect(() => {
+    calculateDays();
+  }, [holidayFormData.start_date, holidayFormData.end_date]);
+
+  // Update holiday mutation
+  const updateHolidayMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedHoliday) throw new Error("No holiday selected");
+      
+      const { error } = await supabase
+        .from("staff_holidays")
+        .update({
+          absence_type: holidayFormData.absence_type as any,
+          start_date: holidayFormData.start_date,
+          end_date: holidayFormData.end_date,
+          days_taken: holidayFormData.days_taken,
+          notes: holidayFormData.notes || null
+        })
+        .eq("id", selectedHoliday.id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Holiday updated successfully");
+      setHolidayDialogOpen(false);
+      setIsEditingHoliday(false);
+      refetchHolidays();
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to update holiday");
+    }
+  });
+
+  // Delete holiday mutation
+  const deleteHolidayMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedHoliday) throw new Error("No holiday selected");
+      
+      const { error } = await supabase
+        .from("staff_holidays")
+        .delete()
+        .eq("id", selectedHoliday.id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Holiday deleted successfully");
+      setHolidayDeleteConfirmOpen(false);
+      setHolidayDialogOpen(false);
+      refetchHolidays();
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to delete holiday");
+    }
   });
 
   // Fetch approved staff requests for coverage info
@@ -463,9 +573,10 @@ export const PublicClientSchedule = () => {
                                 return (
                                   <div 
                                     key={schedule.id} 
+                                    onClick={staffOnHoliday && holidayInfo ? (e) => handleHolidayClick(holidayInfo, e) : undefined}
                                     className={`rounded p-1.5 mb-1 text-xs border ${
                                       staffOnHoliday 
-                                        ? 'bg-amber-100 border-amber-300' 
+                                        ? 'bg-amber-100 border-amber-300 cursor-pointer hover:bg-amber-200 transition-colors' 
                                         : isOvertime
                                           ? 'bg-orange-100 border-orange-300'
                                           : `${colors.bg} ${colors.border}`
@@ -533,6 +644,194 @@ export const PublicClientSchedule = () => {
           Last updated: {format(new Date(), "PPp")}
         </div>
       </div>
+
+      {/* Holiday View/Edit Dialog */}
+      <Dialog open={holidayDialogOpen} onOpenChange={setHolidayDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Palmtree className="h-5 w-5 text-amber-600" />
+              {isEditingHoliday ? 'Edit Holiday/Absence' : 'Holiday/Absence Details'}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedHoliday && getStaffName(selectedHoliday.user_id)}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {isEditingHoliday ? (
+              <>
+                <div className="space-y-2">
+                  <Label>Absence Type</Label>
+                  <Select
+                    value={holidayFormData.absence_type}
+                    onValueChange={(value) => setHolidayFormData({ ...holidayFormData, absence_type: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ABSENCE_TYPES.map(type => (
+                        <SelectItem key={type.value} value={type.value}>
+                          {type.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Start Date</Label>
+                    <Input
+                      type="date"
+                      value={holidayFormData.start_date}
+                      onChange={(e) => setHolidayFormData({ ...holidayFormData, start_date: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>End Date</Label>
+                    <Input
+                      type="date"
+                      value={holidayFormData.end_date}
+                      onChange={(e) => setHolidayFormData({ ...holidayFormData, end_date: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Days Taken</Label>
+                  <Input
+                    type="number"
+                    value={holidayFormData.days_taken}
+                    onChange={(e) => setHolidayFormData({ ...holidayFormData, days_taken: parseFloat(e.target.value) || 0 })}
+                    step="0.5"
+                  />
+                  <p className="text-xs text-muted-foreground">Auto-calculated from dates, adjust for half days</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Notes</Label>
+                  <Textarea
+                    value={holidayFormData.notes}
+                    onChange={(e) => setHolidayFormData({ ...holidayFormData, notes: e.target.value })}
+                    placeholder="Additional notes..."
+                    rows={2}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Type</p>
+                    <p className="font-medium capitalize">
+                      {ABSENCE_TYPES.find(t => t.value === selectedHoliday?.absence_type)?.label || selectedHoliday?.absence_type}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Days</p>
+                    <p className="font-medium">{selectedHoliday?.days_taken}</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Start Date</p>
+                    <p className="font-medium">
+                      {selectedHoliday?.start_date && format(parseISO(selectedHoliday.start_date), 'dd MMM yyyy')}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">End Date</p>
+                    <p className="font-medium">
+                      {selectedHoliday?.end_date && format(parseISO(selectedHoliday.end_date), 'dd MMM yyyy')}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm text-muted-foreground">Status</p>
+                  <Badge variant="outline" className="bg-success/20 text-success border-success">
+                    {selectedHoliday?.status}
+                  </Badge>
+                </div>
+
+                {selectedHoliday?.notes && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Notes</p>
+                    <p className="text-sm">{selectedHoliday.notes}</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            {isEditingHoliday ? (
+              <>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsEditingHoliday(false)}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={() => updateHolidayMutation.mutate()}
+                  disabled={updateHolidayMutation.isPending}
+                >
+                  {updateHolidayMutation.isPending ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...</>
+                  ) : 'Save Changes'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button 
+                  variant="destructive" 
+                  onClick={() => setHolidayDeleteConfirmOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => setIsEditingHoliday(true)}
+                >
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+                <Button onClick={() => setHolidayDialogOpen(false)}>
+                  Close
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={holidayDeleteConfirmOpen} onOpenChange={setHolidayDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Holiday/Absence?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this holiday/absence record. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteHolidayMutation.mutate()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteHolidayMutation.isPending ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Deleting...</>
+              ) : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
