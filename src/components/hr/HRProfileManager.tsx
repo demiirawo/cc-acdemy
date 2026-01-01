@@ -457,7 +457,7 @@ export function HRProfileManager() {
                                     <div className="flex items-center gap-1 cursor-help">
                                       <span>{allowanceInfo.annualAllowance} days</span>
                                       <Badge variant="outline" className="text-xs">
-                                        {allowanceInfo.accruedAllowance} accrued
+                                        {allowanceInfo.accruedAllowance.toFixed(1)} accrued
                                       </Badge>
                                       <Info className="h-3 w-3 text-muted-foreground" />
                                     </div>
@@ -465,7 +465,7 @@ export function HRProfileManager() {
                                   <TooltipContent>
                                     <div className="text-xs space-y-1">
                                       <p><strong>Annual:</strong> {allowanceInfo.annualAllowance} days</p>
-                                      <p><strong>Accrued:</strong> {allowanceInfo.accruedAllowance} days</p>
+                                      <p><strong>Accrued:</strong> {allowanceInfo.accruedAllowance.toFixed(1)} days</p>
                                       {allowanceInfo.yearsEmployed >= 1 ? (
                                         <p className="text-success">18 days (1+ year employed)</p>
                                       ) : (

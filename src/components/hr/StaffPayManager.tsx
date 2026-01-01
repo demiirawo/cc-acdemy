@@ -1598,7 +1598,7 @@ export function StaffPayManager() {
                               +{formatCurrency(staff.unusedHolidayPayout, staff.currency)}
                             </span>
                             <span className="text-[10px] text-muted-foreground">
-                              {staff.unusedHolidayDays} day{staff.unusedHolidayDays !== 1 ? 's' : ''} unused
+                              {staff.unusedHolidayDays.toFixed(1)} day{staff.unusedHolidayDays !== 1 ? 's' : ''} unused
                             </span>
                           </div>
                         ) : '-'}
