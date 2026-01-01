@@ -106,6 +106,43 @@ const SHIFT_TYPES = [
   "General Admin"
 ];
 
+const SHIFT_TYPE_COLORS: Record<string, { bg: string; border: string; text: string; badge: string }> = {
+  "Call Monitoring": { 
+    bg: "bg-violet-100", 
+    border: "border-violet-300", 
+    text: "text-violet-900",
+    badge: "bg-violet-500 text-white"
+  },
+  "Supervisions": { 
+    bg: "bg-pink-100", 
+    border: "border-pink-300", 
+    text: "text-pink-900",
+    badge: "bg-pink-500 text-white"
+  },
+  "Floating Support": { 
+    bg: "bg-emerald-100", 
+    border: "border-emerald-300", 
+    text: "text-emerald-900",
+    badge: "bg-emerald-500 text-white"
+  },
+  "General Admin": { 
+    bg: "bg-sky-100", 
+    border: "border-sky-300", 
+    text: "text-sky-900",
+    badge: "bg-sky-500 text-white"
+  },
+  "default": { 
+    bg: "bg-gray-100", 
+    border: "border-gray-300", 
+    text: "text-gray-900",
+    badge: "bg-gray-500 text-white"
+  }
+};
+
+const getShiftTypeColors = (shiftType: string | null | undefined) => {
+  return SHIFT_TYPE_COLORS[shiftType || ""] || SHIFT_TYPE_COLORS["default"];
+};
+
 const DAYS_OF_WEEK = [
   { value: 1, label: "Mon" },
   { value: 2, label: "Tue" },
@@ -1956,122 +1993,138 @@ export function StaffScheduleManager() {
                 </div>
               ))}
 
-              {/* Client View - shifts sorted by time */}
+              {/* Client View - grouped by shift type with colors */}
               {viewMode === "client" && filteredClients.map(clientName => {
-                // Check if there are any schedules for this client this week
-                const hasSchedules = weekDays.some(day => getSchedulesForClientDay(clientName, day).length > 0);
+                // Get all schedules for this client this week
+                const allClientSchedules = weekDays.flatMap(day => getSchedulesForClientDay(clientName, day));
+                const hasSchedules = allClientSchedules.length > 0;
+                
+                // Get unique shift types for this client (preserve order, put nulls at end)
+                const shiftTypesForClient = [...new Set(allClientSchedules.map(s => s.shift_type || "Other"))];
+                const orderedShiftTypes = [
+                  ...SHIFT_TYPES.filter(st => shiftTypesForClient.includes(st)),
+                  ...shiftTypesForClient.filter(st => !SHIFT_TYPES.includes(st))
+                ];
 
                 return (
-                  <div key={clientName}>
-                    {/* Client header row */}
-                    <div className="grid grid-cols-8 gap-1 mb-1">
-                      <div className="p-2 text-sm font-medium truncate border-r bg-muted/30">
-                        {clientName}
-                      </div>
-                      {weekDays.map(day => {
-                        // Get all schedules for this client on this day (already sorted by time)
-                        const daySchedules = getSchedulesForClientDay(clientName, day);
-                        
-                        return (
-                          <div 
-                            key={day.toISOString()} 
-                            className="min-h-[60px] p-1 rounded border bg-background border-border"
-                          >
-                            {daySchedules.map(schedule => {
-                              const cost = calculateScheduleCost(schedule);
-                              const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
-                              const isFromPattern = schedule.id.startsWith('pattern-');
-                              const isPatternOvertime = schedule.is_pattern_overtime;
-                              const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
-                              const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
+                  <div key={clientName} className="mb-4">
+                    {/* Client header */}
+                    <div className="p-2 text-sm font-bold truncate bg-muted/50 rounded-t border border-b-0 border-border">
+                      {clientName}
+                    </div>
+                    
+                    {/* Shift type sections */}
+                    {orderedShiftTypes.map(shiftType => {
+                      const colors = getShiftTypeColors(shiftType);
+                      
+                      return (
+                        <div key={`${clientName}-${shiftType}`}>
+                          {/* Shift type header row */}
+                          <div className="grid grid-cols-8 gap-1">
+                            <div className="p-2 text-xs font-medium truncate border-r bg-muted/20 flex items-center gap-2">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${colors.badge}`}>
+                                {shiftType}
+                              </span>
+                            </div>
+                            {weekDays.map(day => {
+                              // Get schedules for this client, day, and shift type (already sorted by time)
+                              const daySchedules = getSchedulesForClientDay(clientName, day).filter(
+                                s => (s.shift_type || "Other") === shiftType
+                              );
                               
                               return (
                                 <div 
-                                  key={schedule.id} 
-                                  className={`rounded p-1 mb-1 text-xs group relative cursor-pointer hover:ring-2 hover:ring-primary/50 ${
-                                    staffOnHoliday 
-                                      ? 'bg-amber-100 border border-amber-300' 
-                                      : isFromPattern
-                                        ? isPatternOvertime
-                                          ? 'bg-orange-50 border border-orange-300'
-                                          : 'bg-violet-50 border border-violet-300'
-                                        : 'bg-primary/10 border border-primary/30'
-                                  }`}
-                                  onClick={() => handleScheduleClick(schedule)}
-                                  onDoubleClick={() => handleScheduleClick(schedule)}
-                                  title={scheduleEditHint}
+                                  key={day.toISOString()} 
+                                  className="min-h-[60px] p-1 rounded border bg-background border-border"
                                 >
-                                  <div className="font-medium truncate flex items-center gap-1">
-                                    {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600" />}
-                                    {isFromPattern && !staffOnHoliday && (
-                                      <Infinity className={`h-3 w-3 ${isPatternOvertime ? 'text-orange-500' : 'text-violet-500'}`} />
-                                    )}
-                                    {isPatternOvertime && !staffOnHoliday && <Clock className="h-3 w-3 text-orange-500" />}
-                                    <span className="text-primary font-medium">{getStaffName(schedule.user_id)}</span>
-                                  </div>
-                                  
-                                  {/* Holiday/Coverage info for client view */}
-                                  {staffOnHoliday && (
-                                    <div className="mt-0.5">
-                                      <div className="text-[10px] text-amber-700 capitalize">
-                                        {holidayInfo?.absence_type || 'On holiday'}
+                                  {daySchedules.map(schedule => {
+                                    const cost = calculateScheduleCost(schedule);
+                                    const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
+                                    const isFromPattern = schedule.id.startsWith('pattern-');
+                                    const isPatternOvertime = schedule.is_pattern_overtime;
+                                    const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
+                                    const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
+                                    
+                                    return (
+                                      <div 
+                                        key={schedule.id} 
+                                        className={`rounded p-1.5 mb-1 text-xs group relative cursor-pointer hover:ring-2 hover:ring-primary/50 border ${
+                                          staffOnHoliday 
+                                            ? 'bg-amber-100 border-amber-300' 
+                                            : `${colors.bg} ${colors.border}`
+                                        }`}
+                                        onClick={() => handleScheduleClick(schedule)}
+                                        onDoubleClick={() => handleScheduleClick(schedule)}
+                                        title={scheduleEditHint}
+                                      >
+                                        <div className={`font-semibold truncate flex items-center gap-1 ${staffOnHoliday ? 'text-amber-900' : colors.text}`}>
+                                          {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600" />}
+                                          {isFromPattern && !staffOnHoliday && (
+                                            <Infinity className="h-3 w-3 opacity-60" />
+                                          )}
+                                          {isPatternOvertime && !staffOnHoliday && <Clock className="h-3 w-3 opacity-60" />}
+                                          <span>{getStaffName(schedule.user_id)}</span>
+                                        </div>
+                                        
+                                        {/* Holiday/Coverage info */}
+                                        {staffOnHoliday && (
+                                          <div className="mt-0.5">
+                                            <div className="text-[10px] text-amber-700 capitalize">
+                                              {holidayInfo?.absence_type || 'On holiday'}
+                                            </div>
+                                            {coverage && coverage.length > 0 ? (
+                                              <div className="text-[10px] text-green-700 bg-green-50 rounded px-1 py-0.5 mt-0.5">
+                                                <span className="font-medium">Cover:</span> {coverage.map(c => c.name).join(', ')}
+                                              </div>
+                                            ) : (
+                                              <div className="text-[10px] text-red-600 bg-red-50 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1">
+                                                <AlertTriangle className="h-2.5 w-2.5" />
+                                                <span>No cover</span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                        
+                                        {!staffOnHoliday && (
+                                          <div className={`${colors.text} opacity-80`}>
+                                            <div>
+                                              {format(parseISO(schedule.start_datetime), "HH:mm")}
+                                            </div>
+                                            <div>
+                                              {format(parseISO(schedule.end_datetime), "HH:mm")}
+                                            </div>
+                                            {cost !== null && (
+                                              <div className="text-[10px] opacity-70">
+                                                {schedule.currency} {cost.toFixed(2)}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeleteClick(schedule.id);
+                                          }}
+                                        >
+                                          <Trash2 className="h-3 w-3 text-destructive" />
+                                        </Button>
                                       </div>
-                                      {coverage && coverage.length > 0 ? (
-                                        <div className="text-[10px] text-green-700 bg-green-50 rounded px-1 py-0.5 mt-0.5">
-                                          <span className="font-medium">Cover:</span> {coverage.map(c => c.name).join(', ')}
-                                        </div>
-                                      ) : (
-                                        <div className="text-[10px] text-red-600 bg-red-50 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1">
-                                          <AlertTriangle className="h-2.5 w-2.5" />
-                                          <span>No cover</span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                  
-                                  {!staffOnHoliday && (
-                                    <>
-                                      {schedule.shift_type && (
-                                        <div className="text-[10px] text-primary font-medium">{schedule.shift_type}</div>
-                                      )}
-                                      <div className="text-muted-foreground">
-                                        {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
-                                      </div>
-                                      {cost !== null && (
-                                        <div className="text-muted-foreground">
-                                          {schedule.currency} {cost.toFixed(2)}
-                                        </div>
-                                      )}
-                                      {schedule.notes && (
-                                        <div className="text-muted-foreground italic truncate">{schedule.notes}</div>
-                                      )}
-                                    </>
-                                  )}
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteClick(schedule.id);
-                                    }}
-                                  >
-                                    <Trash2 className="h-3 w-3 text-destructive" />
-                                  </Button>
+                                    );
+                                  })}
                                 </div>
                               );
                             })}
-                            {daySchedules.length === 0 && (
-                              <span className="text-xs text-muted-foreground italic">No shifts</span>
-                            )}
                           </div>
-                        );
-                      })}
-                    </div>
+                        </div>
+                      );
+                    })}
                     
                     {/* Show message if no schedules for this client */}
                     {!hasSchedules && (
-                      <div className="text-center py-2 text-xs text-muted-foreground italic">
+                      <div className="text-center py-4 text-xs text-muted-foreground italic border border-t-0 rounded-b">
                         No schedules this week
                       </div>
                     )}
