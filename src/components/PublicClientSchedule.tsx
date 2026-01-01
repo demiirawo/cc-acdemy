@@ -1,13 +1,33 @@
 import { useState, useMemo } from "react";
 import { useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
-import { ChevronLeft, ChevronRight, Calendar, Loader2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check } from "lucide-react";
+import { toast } from "sonner";
 
+interface ClientNotice {
+  id: string;
+  client_name: string;
+  author_name: string;
+  message: string;
+  created_at: string;
+}
+
+interface ClientPassword {
+  id: string;
+  client_name: string;
+  software_name: string;
+  username: string;
+  password: string;
+  notes: string | null;
+  created_at: string;
+}
 interface Schedule {
   id: string;
   user_id: string;
@@ -359,6 +379,12 @@ export const PublicClientSchedule = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Noticeboard Section */}
+        <ClientNoticeboard clientName={decodedClientName} />
+
+        {/* Password Manager Section */}
+        <ClientPasswordManager clientName={decodedClientName} />
         
         {/* Footer */}
         <div className="text-center mt-6 text-sm text-muted-foreground">
@@ -366,5 +392,348 @@ export const PublicClientSchedule = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+// Noticeboard Component
+const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
+  const queryClient = useQueryClient();
+  const [authorName, setAuthorName] = useState("");
+  const [message, setMessage] = useState("");
+
+  const { data: notices = [], isLoading } = useQuery({
+    queryKey: ["client-notices", clientName],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("client_notices")
+        .select("*")
+        .eq("client_name", clientName)
+        .order("created_at", { ascending: false });
+      
+      if (error) throw error;
+      return data as ClientNotice[];
+    },
+  });
+
+  const addNoticeMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from("client_notices")
+        .insert({
+          client_name: clientName,
+          author_name: authorName.trim(),
+          message: message.trim(),
+        });
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["client-notices", clientName] });
+      setAuthorName("");
+      setMessage("");
+      toast.success("Notice added successfully");
+    },
+    onError: () => {
+      toast.error("Failed to add notice");
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authorName.trim() || !message.trim()) {
+      toast.error("Please fill in all fields");
+      return;
+    }
+    addNoticeMutation.mutate();
+  };
+
+  return (
+    <Card className="mt-6">
+      <CardHeader className="pb-4">
+        <CardTitle className="flex items-center gap-2 text-xl">
+          <MessageSquare className="h-5 w-5" />
+          Noticeboard
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">Updates and messages for this client</p>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Add Notice Form */}
+        <form onSubmit={handleSubmit} className="space-y-3 p-4 bg-muted/30 rounded-lg border">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <Input
+              placeholder="Your name"
+              value={authorName}
+              onChange={(e) => setAuthorName(e.target.value)}
+              className="md:col-span-1"
+            />
+            <Textarea
+              placeholder="Write your message..."
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              className="md:col-span-2 min-h-[40px]"
+              rows={1}
+            />
+            <Button 
+              type="submit" 
+              disabled={addNoticeMutation.isPending}
+              className="md:col-span-1"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add Notice
+            </Button>
+          </div>
+        </form>
+
+        {/* Notices List */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : notices.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            No notices yet. Be the first to add one!
+          </div>
+        ) : (
+          <div className="space-y-3 max-h-[400px] overflow-y-auto">
+            {notices.map((notice) => (
+              <div key={notice.id} className="p-4 bg-background rounded-lg border">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1">
+                    <p className="text-sm">{notice.message}</p>
+                    <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                      <span className="font-medium">{notice.author_name}</span>
+                      <span>•</span>
+                      <span>{format(parseISO(notice.created_at), "PPp")}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+// Password Manager Component
+const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
+  const queryClient = useQueryClient();
+  const [showForm, setShowForm] = useState(false);
+  const [softwareName, setSoftwareName] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [notes, setNotes] = useState("");
+  const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const { data: passwords = [], isLoading } = useQuery({
+    queryKey: ["client-passwords", clientName],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("client_passwords")
+        .select("*")
+        .eq("client_name", clientName)
+        .order("software_name", { ascending: true });
+      
+      if (error) throw error;
+      return data as ClientPassword[];
+    },
+  });
+
+  const addPasswordMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from("client_passwords")
+        .insert({
+          client_name: clientName,
+          software_name: softwareName.trim(),
+          username: username.trim(),
+          password: password.trim(),
+          notes: notes.trim() || null,
+        });
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["client-passwords", clientName] });
+      setSoftwareName("");
+      setUsername("");
+      setPassword("");
+      setNotes("");
+      setShowForm(false);
+      toast.success("Password added successfully");
+    },
+    onError: () => {
+      toast.error("Failed to add password");
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!softwareName.trim() || !username.trim() || !password.trim()) {
+      toast.error("Please fill in software name, username, and password");
+      return;
+    }
+    addPasswordMutation.mutate();
+  };
+
+  const togglePasswordVisibility = (id: string) => {
+    const newVisible = new Set(visiblePasswords);
+    if (newVisible.has(id)) {
+      newVisible.delete(id);
+    } else {
+      newVisible.add(id);
+    }
+    setVisiblePasswords(newVisible);
+  };
+
+  const copyToClipboard = async (text: string, id: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      toast.success("Copied to clipboard");
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      toast.error("Failed to copy");
+    }
+  };
+
+  return (
+    <Card className="mt-6">
+      <CardHeader className="pb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-xl">
+              <Key className="h-5 w-5" />
+              Password Manager
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">Software credentials for this client</p>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => setShowForm(!showForm)}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Add Password
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Add Password Form */}
+        {showForm && (
+          <form onSubmit={handleSubmit} className="space-y-3 p-4 bg-muted/30 rounded-lg border">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Input
+                placeholder="Software name (e.g., Care Planner)"
+                value={softwareName}
+                onChange={(e) => setSoftwareName(e.target.value)}
+              />
+              <Input
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+              <Input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <Input
+                placeholder="Notes (optional)"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={addPasswordMutation.isPending}>
+                Save Password
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {/* Passwords List */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : passwords.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            No passwords stored yet. Click "Add Password" to get started.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {passwords.map((pw) => (
+              <div key={pw.id} className="p-4 bg-background rounded-lg border">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm">{pw.software_name}</span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Username:</span>
+                        <span className="font-mono">{pw.username}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => copyToClipboard(pw.username, `user-${pw.id}`)}
+                        >
+                          {copiedId === `user-${pw.id}` ? (
+                            <Check className="h-3 w-3 text-green-500" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Password:</span>
+                        <span className="font-mono">
+                          {visiblePasswords.has(pw.id) ? pw.password : "••••••••"}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => togglePasswordVisibility(pw.id)}
+                        >
+                          {visiblePasswords.has(pw.id) ? (
+                            <EyeOff className="h-3 w-3" />
+                          ) : (
+                            <Eye className="h-3 w-3" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => copyToClipboard(pw.password, `pass-${pw.id}`)}
+                        >
+                          {copiedId === `pass-${pw.id}` ? (
+                            <Check className="h-3 w-3 text-green-500" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                    {pw.notes && (
+                      <p className="text-xs text-muted-foreground">{pw.notes}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 };
