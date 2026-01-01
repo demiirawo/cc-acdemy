@@ -46,25 +46,28 @@ export function RealDashboard({
     recentUpdates: 0
   });
   const [loading, setLoading] = useState(true);
-  const { user } = useAuth();
-  const { toast } = useToast();
+  const {
+    user
+  } = useAuth();
+  const {
+    toast
+  } = useToast();
 
   // Utility function to strip HTML tags and get clean text, excluding bold content
   const stripHtmlTags = (html: string): string => {
     if (!html) return '';
-    
+
     // First remove bold content (text inside <b>, <strong> tags)
-    let content = html
-      .replace(/<(b|strong)[^>]*>.*?<\/(b|strong)>/gi, '') // Remove bold tags and their content
-      .replace(/<[^>]*>/g, '') // Remove remaining HTML tags
-      .replace(/&nbsp;/g, ' ') // Replace non-breaking spaces
-      .replace(/&amp;/g, '&') // Replace encoded ampersands
-      .replace(/&lt;/g, '<') // Replace encoded less-than
-      .replace(/&gt;/g, '>') // Replace encoded greater-than
-      .replace(/&quot;/g, '"') // Replace encoded quotes
-      .replace(/&#39;/g, "'") // Replace encoded apostrophes
-      .trim();
-    
+    let content = html.replace(/<(b|strong)[^>]*>.*?<\/(b|strong)>/gi, '') // Remove bold tags and their content
+    .replace(/<[^>]*>/g, '') // Remove remaining HTML tags
+    .replace(/&nbsp;/g, ' ') // Replace non-breaking spaces
+    .replace(/&amp;/g, '&') // Replace encoded ampersands
+    .replace(/&lt;/g, '<') // Replace encoded less-than
+    .replace(/&gt;/g, '>') // Replace encoded greater-than
+    .replace(/&quot;/g, '"') // Replace encoded quotes
+    .replace(/&#39;/g, "'") // Replace encoded apostrophes
+    .trim();
+
     // Clean up extra whitespace
     return content.replace(/\s+/g, ' ').trim();
   };
@@ -79,39 +82,33 @@ export function RealDashboard({
       setSearchResults([]);
       return;
     }
-
     if (searchQuery.trim().length < 2) {
       return;
     }
-
     performSearch(searchQuery.trim());
   }, [searchQuery]);
-
   const performSearch = async (query: string) => {
     try {
-      const { data: searchData, error } = await supabase
-        .from('pages')
-        .select('id, title, content, view_count, updated_at, created_by')
-        .or(`title.ilike.%${query}%,content.ilike.%${query}%`)
-        .order('view_count', { ascending: false })
-        .limit(10);
-
+      const {
+        data: searchData,
+        error
+      } = await supabase.from('pages').select('id, title, content, view_count, updated_at, created_by').or(`title.ilike.%${query}%,content.ilike.%${query}%`).order('view_count', {
+        ascending: false
+      }).limit(10);
       if (error) throw error;
 
       // Get user profiles for display names
       const userIds = [...new Set(searchData?.map(p => p.created_by) || [])];
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('user_id, display_name')
-        .in('user_id', userIds);
-
+      const {
+        data: profilesData
+      } = await supabase.from('profiles').select('user_id, display_name').in('user_id', userIds);
       const profilesMap = new Map(profilesData?.map(p => [p.user_id, p]) || []);
-
       const enrichedResults = searchData?.map(page => ({
         ...page,
-        profiles: profilesMap.get(page.created_by) || { display_name: 'Unknown' }
+        profiles: profilesMap.get(page.created_by) || {
+          display_name: 'Unknown'
+        }
       })) || [];
-
       setSearchResults(enrichedResults);
       setShowSearchResults(true);
     } catch (error) {
@@ -274,9 +271,7 @@ export function RealDashboard({
               <h1 className="text-4xl font-bold text-foreground mb-2">
                 Welcome back{user?.user_metadata?.display_name ? `, ${user.user_metadata.display_name}` : ''}!
               </h1>
-              <p className="text-lg text-muted-foreground">
-                Your team's collective knowledge, organized and accessible
-              </p>
+              
             </div>
             
           </div>
@@ -284,30 +279,19 @@ export function RealDashboard({
           {/* Search Bar */}
           <div className="relative max-w-2xl">
             <Search className="absolute left-4 top-3 h-5 w-5 text-muted-foreground" />
-            <Input 
-              placeholder="Search Care Cudde Academy..." 
-              value={searchQuery} 
-              onChange={e => setSearchQuery(e.target.value)} 
-              className="pl-12 h-12 text-lg shadow-md" 
-            />
+            <Input placeholder="Search Care Cudde Academy..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="pl-12 h-12 text-lg shadow-md" />
             
             {/* Search Results Dropdown */}
-            {showSearchResults && searchResults.length > 0 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
+            {showSearchResults && searchResults.length > 0 && <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-lg z-50 max-h-80 overflow-y-auto">
                 <div className="py-2">
                   <div className="px-4 py-2 text-sm font-medium text-muted-foreground border-b border-border">
                     Search Results ({searchResults.length})
                   </div>
-                  {searchResults.map(result => (
-                    <div
-                      key={result.id}
-                      className="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors border-b border-border last:border-b-0"
-                      onClick={() => {
-                        onPageSelect(result.id);
-                        setSearchQuery("");
-                        setShowSearchResults(false);
-                      }}
-                    >
+                  {searchResults.map(result => <div key={result.id} className="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors border-b border-border last:border-b-0" onClick={() => {
+                onPageSelect(result.id);
+                setSearchQuery("");
+                setShowSearchResults(false);
+              }}>
                       <FileText className="h-4 w-4 text-primary mt-1 flex-shrink-0" />
                       <div className="flex-1 min-w-0">
                         <h4 className="font-medium text-foreground truncate">{result.title}</h4>
@@ -320,20 +304,16 @@ export function RealDashboard({
                           <span>by {result.profiles?.display_name || 'Unknown'}</span>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    </div>)}
                 </div>
-              </div>
-            )}
+              </div>}
             
-            {showSearchResults && searchResults.length === 0 && searchQuery.trim().length >= 2 && (
-              <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-lg z-50">
+            {showSearchResults && searchResults.length === 0 && searchQuery.trim().length >= 2 && <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-lg z-50">
                 <div className="py-8 px-4 text-center">
                   <Search className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground">No results found for "{searchQuery}"</p>
                 </div>
-              </div>
-            )}
+              </div>}
           </div>
         </div>
 
@@ -344,125 +324,11 @@ export function RealDashboard({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {statsData.map(stat => {
           const Icon = stat.icon;
-          return <Card key={stat.title} className="shadow-md hover:shadow-lg transition-shadow">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        {stat.title}
-                      </p>
-                      <p className="text-2xl font-bold text-foreground">
-                        {stat.value}
-                      </p>
-                    </div>
-                    <div className="h-12 w-12 bg-primary/10 rounded-lg flex items-center justify-center">
-                      <Icon className="h-6 w-6 text-primary" />
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <span className="text-sm text-success font-medium">
-                      {stat.change}
-                    </span>
-                    <span className="text-sm text-muted-foreground ml-1">
-                      from last month
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>;
+          return;
         })}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Popular Content */}
-          <div className="lg:col-span-2">
-            <Card className="shadow-md">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <Star className="h-5 w-5 text-warning" />
-                      Popular Content
-                    </CardTitle>
-                    <CardDescription>
-                      Most viewed pages this week
-                    </CardDescription>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {popularPages.length > 0 ? popularPages.map(page => <div key={page.id} className="flex items-center justify-between p-4 bg-card hover:bg-muted/50 rounded-lg border cursor-pointer transition-colors group" onClick={() => onPageSelect(page.id)}>
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <h3 className="font-semibold text-foreground group-hover:text-primary transition-colors">
-                            {page.title}
-                          </h3>
-                          <Badge variant="secondary">page</Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground mb-2 line-clamp-2">
-                          {stripHtmlTags(page.content).substring(0, 150)}...
-                        </p>
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                          <span>{page.view_count || 0} views</span>
-                          <span>Updated {formatTimeAgo(page.updated_at)}</span>
-                          <span>by {page.profiles?.display_name || 'Unknown'}</span>
-                        </div>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                    </div>) : <div className="text-center py-8 text-muted-foreground">
-                      <BookOpen className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                      <p>No pages yet. Create your first page to get started!</p>
-                      <Button onClick={onCreatePage} variant="outline" className="mt-4">
-                        <Plus className="h-4 w-4 mr-2" />
-                        Create Page
-                      </Button>
-                    </div>}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Recent Activity */}
-          <div>
-            <Card className="shadow-md">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-accent" />
-                  Recent Activity
-                </CardTitle>
-                <CardDescription>
-                  Latest updates from your team
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {recentPages.length > 0 ? recentPages.slice(0, 6).map(page => <div key={page.id} className="flex items-start gap-3">
-                      <Avatar className="h-8 w-8">
-                        <AvatarFallback className="text-xs">
-                          {page.profiles?.display_name?.split(' ').map(n => n[0]).join('') || 'U'}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm">
-                          <span className="font-medium">{page.profiles?.display_name || 'Someone'}</span>
-                          <span className="text-muted-foreground"> updated </span>
-                          <span className="font-medium cursor-pointer hover:text-primary" onClick={() => onPageSelect(page.id)}>
-                            {page.title}
-                          </span>
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {formatTimeAgo(page.updated_at)}
-                        </p>
-                      </div>
-                      <div className="w-2 h-2 rounded-full mt-2 bg-primary" />
-                    </div>) : <div className="text-center py-4 text-muted-foreground">
-                      <p className="text-sm">No recent activity</p>
-                    </div>}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+        
       </div>
     </div>;
 }
