@@ -661,7 +661,8 @@ export function RealKnowledgeBaseSidebar({
       item.id === 'chat' ||
       item.id === 'glossary' ||
       item.id === 'recycling-bin' ||
-      item.id === 'hr'
+      item.id === 'hr' ||
+      item.id === 'clients'
     ) {
       onItemSelect(item);
     } else if (item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
@@ -838,7 +839,7 @@ export function RealKnowledgeBaseSidebar({
                 )}
                 onClick={() => handleItemSelect({
                   ...item,
-                  type: ['chat', 'hr', 'home', 'whiteboard', 'settings'].includes(item.id) ? 'space' : 'page'
+                  type: ['chat', 'hr', 'home', 'whiteboard', 'settings', 'clients'].includes(item.id) ? 'space' : 'page'
                 })}
               >
                 <Icon className="h-4 w-4 text-sidebar-foreground/70" />
