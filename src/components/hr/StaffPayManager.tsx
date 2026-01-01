@@ -59,6 +59,7 @@ interface RecurringShiftPattern {
   hourly_rate: number | null;
   currency: string;
   client_name: string;
+  is_overtime: boolean;
 }
 
 interface ShiftPatternException {
@@ -332,7 +333,7 @@ export function StaffPayManager() {
       // Fetch recurring shift patterns
       const { data: patterns, error: patternsError } = await supabase
         .from('recurring_shift_patterns')
-        .select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, hourly_rate, currency, client_name');
+        .select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, hourly_rate, currency, client_name, is_overtime');
       
       if (patternsError) {
         console.error('Error fetching recurring patterns:', patternsError);
@@ -641,6 +642,37 @@ export function StaffPayManager() {
           days: daysInMonth
         });
       });
+      
+      // Also calculate overtime days from recurring overtime shift patterns
+      const userOvertimePatterns = recurringPatterns.filter(p => p.user_id === hr.user_id && p.is_overtime);
+      let recurringOvertimeDays = 0;
+      
+      // Iterate through each day of the month and count overtime pattern days
+      let currentDate = new Date(monthStart);
+      while (currentDate <= monthEnd) {
+        const dateStr = format(currentDate, 'yyyy-MM-dd');
+        const dayOfWeek = currentDate.getDay();
+        
+        userOvertimePatterns.forEach(pattern => {
+          const patternStart = parseISO(pattern.start_date);
+          const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+          
+          if (currentDate >= patternStart && (!patternEnd || currentDate <= patternEnd)) {
+            if (pattern.days_of_week.includes(dayOfWeek)) {
+              // Check for exceptions
+              const patternExceptionsSet = exceptionsMap.get(pattern.id);
+              if (!patternExceptionsSet || !patternExceptionsSet.has(dateStr)) {
+                recurringOvertimeDays += 1;
+              }
+            }
+          }
+        });
+        
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      // Add recurring overtime days to total
+      overtimeDays += recurringOvertimeDays;
       
       // Overtime pay = 1.5 × (Base Salary / 20) × Overtime Days
       const overtimeDailyRate = monthlyBaseSalary / 20;
