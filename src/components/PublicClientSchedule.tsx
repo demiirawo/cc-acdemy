@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -11,12 +11,12 @@ import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInt
 import { ChevronLeft, ChevronRight, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 
-interface ClientNotice {
+interface ClientWhiteboard {
   id: string;
   client_name: string;
-  author_name: string;
-  message: string;
-  created_at: string;
+  content: string;
+  last_updated_by: string | null;
+  updated_at: string;
 }
 
 interface ClientPassword {
@@ -395,121 +395,118 @@ export const PublicClientSchedule = () => {
   );
 };
 
-// Noticeboard Component
+// Whiteboard Component - simple editable shared notepad
 const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
   const queryClient = useQueryClient();
-  const [authorName, setAuthorName] = useState("");
-  const [message, setMessage] = useState("");
+  const [content, setContent] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasInitialized = useRef(false);
 
-  const { data: notices = [], isLoading } = useQuery({
-    queryKey: ["client-notices", clientName],
+  const { data: whiteboard, isLoading } = useQuery({
+    queryKey: ["client-whiteboard", clientName],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("client_notices")
+        .from("client_whiteboards")
         .select("*")
         .eq("client_name", clientName)
-        .order("created_at", { ascending: false });
+        .maybeSingle();
       
       if (error) throw error;
-      return data as ClientNotice[];
+      return data as ClientWhiteboard | null;
     },
+    staleTime: 5000,
   });
 
-  const addNoticeMutation = useMutation({
-    mutationFn: async () => {
-      const { error } = await supabase
-        .from("client_notices")
-        .insert({
-          client_name: clientName,
-          author_name: authorName.trim(),
-          message: message.trim(),
-        });
-      
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["client-notices", clientName] });
-      setAuthorName("");
-      setMessage("");
-      toast.success("Notice added successfully");
-    },
-    onError: () => {
-      toast.error("Failed to add notice");
-    },
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!authorName.trim() || !message.trim()) {
-      toast.error("Please fill in all fields");
-      return;
+  // Set initial content when data loads
+  useEffect(() => {
+    if (whiteboard?.content !== undefined && !hasInitialized.current) {
+      setContent(whiteboard.content);
+      hasInitialized.current = true;
     }
-    addNoticeMutation.mutate();
+  }, [whiteboard?.content]);
+
+  const saveContent = async (newContent: string) => {
+    setIsSaving(true);
+    try {
+      if (whiteboard) {
+        // Update existing
+        const { error } = await supabase
+          .from("client_whiteboards")
+          .update({ content: newContent })
+          .eq("client_name", clientName);
+        
+        if (error) throw error;
+      } else {
+        // Create new
+        const { error } = await supabase
+          .from("client_whiteboards")
+          .insert({ client_name: clientName, content: newContent });
+        
+        if (error) throw error;
+      }
+      
+      setLastSaved(new Date());
+      queryClient.invalidateQueries({ queryKey: ["client-whiteboard", clientName] });
+    } catch (error) {
+      toast.error("Failed to save");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleContentChange = (newContent: string) => {
+    setContent(newContent);
+    
+    // Clear existing timeout
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    // Debounce save (save after 1 second of no typing)
+    saveTimeoutRef.current = setTimeout(() => {
+      saveContent(newContent);
+    }, 1000);
   };
 
   return (
     <Card className="mt-6">
-      <CardHeader className="pb-4">
-        <CardTitle className="flex items-center gap-2 text-xl">
-          <MessageSquare className="h-5 w-5" />
-          Noticeboard
-        </CardTitle>
-        <p className="text-sm text-muted-foreground">Updates and messages for this client</p>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Add Notice Form */}
-        <form onSubmit={handleSubmit} className="space-y-3 p-4 bg-muted/30 rounded-lg border">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <Input
-              placeholder="Your name"
-              value={authorName}
-              onChange={(e) => setAuthorName(e.target.value)}
-              className="md:col-span-1"
-            />
-            <Textarea
-              placeholder="Write your message..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              className="md:col-span-2 min-h-[40px]"
-              rows={1}
-            />
-            <Button 
-              type="submit" 
-              disabled={addNoticeMutation.isPending}
-              className="md:col-span-1"
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              Add Notice
-            </Button>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-xl">
+              <MessageSquare className="h-5 w-5" />
+              Whiteboard
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">Quick notes and updates for this client</p>
           </div>
-        </form>
-
-        {/* Notices List */}
+          <div className="text-xs text-muted-foreground">
+            {isSaving ? (
+              <span className="flex items-center gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Saving...
+              </span>
+            ) : lastSaved ? (
+              <span>Saved {format(lastSaved, "HH:mm")}</span>
+            ) : whiteboard?.updated_at ? (
+              <span>Last updated {format(parseISO(whiteboard.updated_at), "PPp")}</span>
+            ) : null}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
-        ) : notices.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            No notices yet. Be the first to add one!
-          </div>
         ) : (
-          <div className="space-y-3 max-h-[400px] overflow-y-auto">
-            {notices.map((notice) => (
-              <div key={notice.id} className="p-4 bg-background rounded-lg border">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1">
-                    <p className="text-sm">{notice.message}</p>
-                    <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
-                      <span className="font-medium">{notice.author_name}</span>
-                      <span>•</span>
-                      <span>{format(parseISO(notice.created_at), "PPp")}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          <Textarea
+            placeholder="Type your notes here... Changes are saved automatically."
+            value={content}
+            onChange={(e) => handleContentChange(e.target.value)}
+            className="min-h-[200px] resize-y font-mono text-sm bg-amber-50/50 border-amber-200 focus:border-amber-300"
+          />
         )}
       </CardContent>
     </Card>
