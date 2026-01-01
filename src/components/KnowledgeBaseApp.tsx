@@ -23,6 +23,7 @@ import { RecommendedReadingSection } from "./RecommendedReadingSection";
 import { GlossaryPage } from "./GlossaryPage";
 import { RecyclingBin } from "./RecyclingBin";
 import { HRSection } from "./hr/HRSection";
+import { ClientsSection } from "./clients/ClientsSection";
 import { useGlossary } from "@/hooks/useGlossary";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 
@@ -980,6 +981,7 @@ export function KnowledgeBaseApp() {
           </div>
         )}
         {currentView === 'hr' && <HRSection />}
+        {currentView === 'clients' && <ClientsSection />}
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePageSaved} />}
         
