@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ResizableSidebar } from "./ResizableSidebar";
 import { RealDashboard } from "./RealDashboard";
-import { RecentlyUpdatedPage } from "./RecentlyUpdatedPage";
+
 import { TagsPage } from "./TagsPage";
 import { EnhancedContentEditor } from "./EnhancedContentEditor";
 import { CreatePageDialog } from "./CreatePageDialog";
@@ -303,7 +303,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'recent' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr';
 interface SidebarItem {
   id: string;
   title: string;
@@ -410,7 +410,6 @@ export function KnowledgeBaseApp() {
         // Navigate to specific view
       const viewMap: Record<string, ViewMode> = {
         'dashboard': 'dashboard',
-        'recent': 'recent',
         'tags': 'tags',
         'settings': 'settings',
         'whiteboard': 'whiteboard',
@@ -507,11 +506,6 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
       setBreadcrumbs([]);
       navigate('/');
-    } else if (item.id === 'recent') {
-      setCurrentView('recent');
-      setCurrentPage(null);
-      setBreadcrumbs([]);
-      navigate('/view/recent');
     } else if (item.id === 'tags') {
       setCurrentView('tags');
       setCurrentPage(null);
@@ -937,7 +931,7 @@ export function KnowledgeBaseApp() {
                     </BreadcrumbItem>
                   </BreadcrumbList>
                 </Breadcrumb> : <h2 className="text-lg font-semibold text-black/0">
-                  {currentView === 'dashboard' ? 'Dashboard' : currentView === 'recent' ? 'Recently Updated' : currentView === 'tags' ? 'Tags' : currentView === 'settings' ? 'Settings' : currentView === 'whiteboard' ? 'Whiteboard' : currentView === 'user-management' ? 'User Management' : currentView === 'chat' ? 'Care Cuddle AI' : 'Care Cuddle Academy'}
+                  {currentView === 'dashboard' ? 'Dashboard' : currentView === 'tags' ? 'Tags' : currentView === 'settings' ? 'Settings' : currentView === 'whiteboard' ? 'Whiteboard' : currentView === 'user-management' ? 'User Management' : currentView === 'chat' ? 'Care Cuddle AI' : 'Care Cuddle Academy'}
                 </h2>}
             </div>
             <div className="flex items-center gap-2">
@@ -958,7 +952,7 @@ export function KnowledgeBaseApp() {
 
         {currentView === 'dashboard' && <RealDashboard onCreatePage={handleCreatePage} onPageSelect={handlePageSelect} />}
 
-        {currentView === 'recent' && <RecentlyUpdatedPage onPageSelect={handlePageSelect} />}
+        
 
         {currentView === 'tags' && <TagsPage onPageSelect={handlePageSelect} />}
 

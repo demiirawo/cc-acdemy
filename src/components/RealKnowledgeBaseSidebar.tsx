@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Search, Plus, BookOpen, Folder, ChevronRight, ChevronDown, Home, Clock, Tag, Settings, Globe, FolderOpen, FileText, MoreHorizontal, Edit, Copy, Share, Star, Archive, Trash2, ArrowUp, ArrowDown, MessageSquare } from "lucide-react";
+import { Search, Plus, BookOpen, Folder, ChevronRight, ChevronDown, Home, Tag, Settings, Globe, FolderOpen, FileText, MoreHorizontal, Edit, Copy, Share, Star, Archive, Trash2, ArrowUp, ArrowDown, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -63,11 +63,6 @@ const navigationItems = [{
         <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
       </svg>,
   href: '/hr'
-}, {
-  id: 'recent',
-  title: 'Recently Updated',
-  icon: Clock,
-  href: '/recent'
 }, {
   id: 'tags',
   title: 'Tags',
