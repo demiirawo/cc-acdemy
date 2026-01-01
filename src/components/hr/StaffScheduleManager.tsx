@@ -1369,31 +1369,6 @@ export function StaffScheduleManager() {
                       </Label>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label>Hourly Rate (optional)</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={recurringForm.hourly_rate}
-                          onChange={e => setRecurringForm(p => ({ ...p, hourly_rate: e.target.value }))}
-                          placeholder="0.00"
-                        />
-                      </div>
-                      <div>
-                        <Label>Currency</Label>
-                        <Select value={recurringForm.currency} onValueChange={v => setRecurringForm(p => ({ ...p, currency: v }))}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="bg-background z-50">
-                            <SelectItem value="GBP">GBP</SelectItem>
-                            <SelectItem value="USD">USD</SelectItem>
-                            <SelectItem value="EUR">EUR</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
                     <div>
                       <Label>Shift Type (optional)</Label>
                       <Select 
@@ -1878,6 +1853,9 @@ export function StaffScheduleManager() {
                                   <Clock className="h-3 w-3 text-orange-500" />
                                 )}
                               </div>
+                              {schedule.shift_type && (
+                                <div className="text-[10px] text-primary font-medium">{schedule.shift_type}</div>
+                              )}
                               <div className="text-muted-foreground">
                                 {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
                               </div>
@@ -2044,6 +2022,9 @@ export function StaffScheduleManager() {
                               
                               {!staffOnHoliday && (
                                 <>
+                                  {schedule.shift_type && (
+                                    <div className="text-[10px] text-primary font-medium">{schedule.shift_type}</div>
+                                  )}
                                   <div className="text-muted-foreground">
                                     {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
                                   </div>
