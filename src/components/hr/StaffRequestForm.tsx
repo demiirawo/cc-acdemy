@@ -135,6 +135,7 @@ export function StaffRequestForm() {
   const [selectedSwapShifts, setSelectedSwapShifts] = useState<string[]>([]);
   const [shiftCoverType, setShiftCoverType] = useState<'shifts' | 'holidays'>('shifts');
   const [selectedCoverHolidayId, setSelectedCoverHolidayId] = useState("");
+  const [isShiftCoverOvertime, setIsShiftCoverOvertime] = useState(true); // Default to overtime
   // Fetch staff members for swap selection
   const { data: staffMembers = [] } = useQuery({
     queryKey: ["staff-members-for-requests"],
@@ -430,6 +431,10 @@ export function StaffRequestForm() {
       if (requestType === 'overtime' && linkedHolidayId) {
         overtimeType = calculateOvertimeType(linkedHolidayId);
       }
+      // For shift cover, set overtime type based on user selection
+      if (requestType === 'shift_swap') {
+        overtimeType = isShiftCoverOvertime ? 'standard_hours' : null;
+      }
 
       // Build details for shift swap including selected shifts or holiday
       let requestDetails = details;
@@ -563,6 +568,7 @@ export function StaffRequestForm() {
     setSelectedSwapShifts([]);
     setShiftCoverType('shifts');
     setSelectedCoverHolidayId("");
+    setIsShiftCoverOvertime(true);
   };
 
   const getStaffName = (userId: string) => {
@@ -812,6 +818,40 @@ export function StaffRequestForm() {
                       </SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+              )}
+
+              {/* Overtime toggle for shift cover */}
+              {swapWithUserId && (
+                <div className="space-y-2">
+                  <Label>Is this an overtime cover? <span className="text-destructive">*</span></Label>
+                  <Select 
+                    value={isShiftCoverOvertime ? 'overtime' : 'non_overtime'} 
+                    onValueChange={(val) => setIsShiftCoverOvertime(val === 'overtime')}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select cover type..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background">
+                      <SelectItem value="overtime">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-orange-600" />
+                          Overtime (paid at 1.5x rate)
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="non_overtime">
+                        <div className="flex items-center gap-2">
+                          <RefreshCw className="h-4 w-4 text-muted-foreground" />
+                          Non-overtime (standard cover)
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {isShiftCoverOvertime 
+                      ? "This will be counted as overtime and paid at 1.5x your daily rate."
+                      : "This is a standard shift cover and will not count towards overtime pay."}
+                  </p>
                 </div>
               )}
 

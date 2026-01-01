@@ -170,7 +170,7 @@ export function StaffPayManager() {
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; status: string; absence_type: string }[]>([]);
   const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null }[]>([]);
-  const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string }[]>([]);
+  const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null }[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -383,7 +383,7 @@ export function StaffPayManager() {
       // Fetch approved overtime and shift_swap requests for overtime pay calculation
       const { data: overtimeRequestsData, error: overtimeRequestsError } = await supabase
         .from('staff_requests')
-        .select('user_id, days_requested, start_date, end_date, request_type')
+        .select('user_id, days_requested, start_date, end_date, request_type, overtime_type')
         .eq('status', 'approved')
         .in('request_type', ['overtime', 'overtime_standard', 'overtime_double_up', 'shift_swap']);
       
@@ -600,8 +600,11 @@ export function StaffPayManager() {
       
       // Calculate overtime pay from approved overtime/shift_swap requests
       // Formula: 1.5 × (Base Salary / 20) × Overtime Days
+      // For shift_swap requests, only count those marked as overtime (overtime_type is not null)
       const userOvertimeRequests = approvedOvertimeRequests.filter(r => {
         if (r.user_id !== hr.user_id) return false;
+        // For shift_swap requests, only include if it's marked as overtime
+        if (r.request_type === 'shift_swap' && !r.overtime_type) return false;
         const startDate = parseISO(r.start_date);
         const endDate = parseISO(r.end_date);
         // Check if the request overlaps with the selected month
