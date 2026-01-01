@@ -9,6 +9,7 @@ import NotFound from "./pages/NotFound";
 import ProjectView from "./components/ProjectView";
 
 import { PublicPageView } from "./components/PublicPageView";
+import { PublicClientSchedule } from "./components/PublicClientSchedule";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ const App = () => (
           <Route path="/view/:viewName" element={<Index />} />
           
           <Route path="/public/:token" element={<PublicPageView />} />
+          <Route path="/public/schedule/:clientName" element={<PublicClientSchedule />} />
           <Route path="/project/:projectId" element={<ProjectView />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
