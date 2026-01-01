@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
-import { ChevronLeft, ChevronRight, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link } from "lucide-react";
 import { toast } from "sonner";
 
 interface ClientWhiteboard {
@@ -25,6 +25,7 @@ interface ClientPassword {
   software_name: string;
   username: string;
   password: string;
+  url: string | null;
   notes: string | null;
   created_at: string;
 }
@@ -513,13 +514,14 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
   );
 };
 
-// Password Manager Component
+// Password & Links Manager Component
 const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [softwareName, setSoftwareName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [url, setUrl] = useState("");
   const [notes, setNotes] = useState("");
   const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -545,8 +547,9 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
         .insert({
           client_name: clientName,
           software_name: softwareName.trim(),
-          username: username.trim(),
-          password: password.trim(),
+          username: username.trim() || "",
+          password: password.trim() || "",
+          url: url.trim() || null,
           notes: notes.trim() || null,
         });
       
@@ -557,19 +560,20 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
       setSoftwareName("");
       setUsername("");
       setPassword("");
+      setUrl("");
       setNotes("");
       setShowForm(false);
-      toast.success("Password added successfully");
+      toast.success("Entry added successfully");
     },
     onError: () => {
-      toast.error("Failed to add password");
+      toast.error("Failed to add entry");
     },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!softwareName.trim() || !username.trim() || !password.trim()) {
-      toast.error("Please fill in software name, username, and password");
+    if (!softwareName.trim()) {
+      toast.error("Please provide a name for this entry");
       return;
     }
     addPasswordMutation.mutate();
@@ -603,9 +607,9 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
           <div>
             <CardTitle className="flex items-center gap-2 text-xl">
               <Key className="h-5 w-5" />
-              Password Manager
+              Passwords & Links
             </CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">Software credentials for this client</p>
+            <p className="text-sm text-muted-foreground mt-1">Store credentials and important links for this client</p>
           </div>
           <Button 
             variant="outline" 
@@ -613,28 +617,34 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
             onClick={() => setShowForm(!showForm)}
           >
             <Plus className="h-4 w-4 mr-1" />
-            Add Password
+            Add Entry
           </Button>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Add Password Form */}
+        {/* Add Entry Form */}
         {showForm && (
           <form onSubmit={handleSubmit} className="space-y-3 p-4 bg-muted/30 rounded-lg border">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Input
-                placeholder="Software name (e.g., Care Planner)"
+                placeholder="Name (e.g., Care Planner, Medication App)"
                 value={softwareName}
                 onChange={(e) => setSoftwareName(e.target.value)}
               />
               <Input
-                placeholder="Username"
+                placeholder="URL / Link (optional)"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                type="url"
+              />
+              <Input
+                placeholder="Username (optional)"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
               />
               <Input
                 type="password"
-                placeholder="Password"
+                placeholder="Password (optional)"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
@@ -642,6 +652,7 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
                 placeholder="Notes (optional)"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
+                className="md:col-span-2"
               />
             </div>
             <div className="flex justify-end gap-2">
@@ -649,20 +660,20 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
                 Cancel
               </Button>
               <Button type="submit" disabled={addPasswordMutation.isPending}>
-                Save Password
+                Save Entry
               </Button>
             </div>
           </form>
         )}
 
-        {/* Passwords List */}
+        {/* Entries List */}
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : passwords.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            No passwords stored yet. Click "Add Password" to get started.
+            No entries stored yet. Click "Add Entry" to get started.
           </div>
         ) : (
           <div className="space-y-3">
@@ -670,57 +681,97 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
               <div key={pw.id} className="p-4 bg-background rounded-lg border">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 space-y-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-sm">{pw.software_name}</span>
+                      {pw.url && (
+                        <a
+                          href={pw.url.startsWith('http') ? pw.url : `https://${pw.url}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                          Open Link
+                        </a>
+                      )}
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">Username:</span>
-                        <span className="font-mono">{pw.username}</span>
+                    
+                    {/* URL Row */}
+                    {pw.url && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <Link className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-muted-foreground truncate max-w-[200px]">{pw.url}</span>
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-6 w-6"
-                          onClick={() => copyToClipboard(pw.username, `user-${pw.id}`)}
+                          onClick={() => copyToClipboard(pw.url!, `url-${pw.id}`)}
                         >
-                          {copiedId === `user-${pw.id}` ? (
+                          {copiedId === `url-${pw.id}` ? (
                             <Check className="h-3 w-3 text-green-500" />
                           ) : (
                             <Copy className="h-3 w-3" />
                           )}
                         </Button>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">Password:</span>
-                        <span className="font-mono">
-                          {visiblePasswords.has(pw.id) ? pw.password : "••••••••"}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => togglePasswordVisibility(pw.id)}
-                        >
-                          {visiblePasswords.has(pw.id) ? (
-                            <EyeOff className="h-3 w-3" />
-                          ) : (
-                            <Eye className="h-3 w-3" />
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => copyToClipboard(pw.password, `pass-${pw.id}`)}
-                        >
-                          {copiedId === `pass-${pw.id}` ? (
-                            <Check className="h-3 w-3 text-green-500" />
-                          ) : (
-                            <Copy className="h-3 w-3" />
-                          )}
-                        </Button>
+                    )}
+                    
+                    {/* Credentials */}
+                    {(pw.username || pw.password) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                        {pw.username && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground">Username:</span>
+                            <span className="font-mono">{pw.username}</span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => copyToClipboard(pw.username, `user-${pw.id}`)}
+                            >
+                              {copiedId === `user-${pw.id}` ? (
+                                <Check className="h-3 w-3 text-green-500" />
+                              ) : (
+                                <Copy className="h-3 w-3" />
+                              )}
+                            </Button>
+                          </div>
+                        )}
+                        {pw.password && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground">Password:</span>
+                            <span className="font-mono">
+                              {visiblePasswords.has(pw.id) ? pw.password : "••••••••"}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => togglePasswordVisibility(pw.id)}
+                            >
+                              {visiblePasswords.has(pw.id) ? (
+                                <EyeOff className="h-3 w-3" />
+                              ) : (
+                                <Eye className="h-3 w-3" />
+                              )}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => copyToClipboard(pw.password, `pass-${pw.id}`)}
+                            >
+                              {copiedId === `pass-${pw.id}` ? (
+                                <Check className="h-3 w-3 text-green-500" />
+                              ) : (
+                                <Copy className="h-3 w-3" />
+                              )}
+                            </Button>
+                          </div>
+                        )}
                       </div>
-                    </div>
+                    )}
+                    
                     {pw.notes && (
                       <p className="text-xs text-muted-foreground">{pw.notes}</p>
                     )}

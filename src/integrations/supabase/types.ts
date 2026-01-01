@@ -187,6 +187,7 @@ export type Database = {
           password: string
           software_name: string
           updated_at: string
+          url: string | null
           username: string
         }
         Insert: {
@@ -197,6 +198,7 @@ export type Database = {
           password: string
           software_name: string
           updated_at?: string
+          url?: string | null
           username: string
         }
         Update: {
@@ -207,6 +209,7 @@ export type Database = {
           password?: string
           software_name?: string
           updated_at?: string
+          url?: string | null
           username?: string
         }
         Relationships: []
