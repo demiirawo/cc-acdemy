@@ -2088,10 +2088,7 @@ export function StaffScheduleManager() {
                                         {!staffOnHoliday && (
                                           <div className={`${colors.text} opacity-80`}>
                                             <div>
-                                              {format(parseISO(schedule.start_datetime), "HH:mm")}
-                                            </div>
-                                            <div>
-                                              {format(parseISO(schedule.end_datetime), "HH:mm")}
+                                              {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
                                             </div>
                                             {cost !== null && (
                                               <div className="text-[10px] opacity-70">
