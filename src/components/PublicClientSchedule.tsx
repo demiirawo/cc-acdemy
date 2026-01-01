@@ -15,6 +15,7 @@ import { ChevronLeft, ChevronRight, Calendar, Loader2, MessageSquare, Key, Plus,
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
+
 interface ClientWhiteboard {
   id: string;
   client_name: string;
@@ -22,6 +23,7 @@ interface ClientWhiteboard {
   last_updated_by: string | null;
   updated_at: string;
 }
+
 interface ClientPassword {
   id: string;
   client_name: string;
@@ -42,6 +44,7 @@ interface Schedule {
   shift_type: string | null;
   is_pattern_overtime?: boolean;
 }
+
 interface RecurringPattern {
   id: string;
   user_id: string;
@@ -56,11 +59,13 @@ interface RecurringPattern {
   recurrence_interval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off';
   shift_type: string | null;
 }
+
 interface StaffMember {
   user_id: string;
   display_name: string;
   email: string;
 }
+
 interface StaffHoliday {
   id: string;
   user_id: string;
@@ -72,6 +77,7 @@ interface StaffHoliday {
   notes: string | null;
   no_cover_required: boolean;
 }
+
 interface StaffRequest {
   id: string;
   user_id: string;
@@ -82,79 +88,68 @@ interface StaffRequest {
   linked_holiday_id: string | null;
   swap_with_user_id: string | null;
 }
-const ABSENCE_TYPES = [{
-  value: 'holiday',
-  label: 'Holiday'
-}, {
-  value: 'sick',
-  label: 'Sick Leave'
-}, {
-  value: 'personal',
-  label: 'Personal Leave'
-}, {
-  value: 'maternity',
-  label: 'Maternity Leave'
-}, {
-  value: 'paternity',
-  label: 'Paternity Leave'
-}, {
-  value: 'unpaid',
-  label: 'Unpaid Leave'
-}, {
-  value: 'other',
-  label: 'Other'
-}];
-const SHIFT_TYPES = ["Call Monitoring", "Supervisions", "Floating Support", "General Admin"];
-const SHIFT_TYPE_COLORS: Record<string, {
-  bg: string;
-  border: string;
-  text: string;
-  badge: string;
-}> = {
-  "Call Monitoring": {
-    bg: "bg-violet-100",
-    border: "border-violet-300",
+
+const ABSENCE_TYPES = [
+  { value: 'holiday', label: 'Holiday' },
+  { value: 'sick', label: 'Sick Leave' },
+  { value: 'personal', label: 'Personal Leave' },
+  { value: 'maternity', label: 'Maternity Leave' },
+  { value: 'paternity', label: 'Paternity Leave' },
+  { value: 'unpaid', label: 'Unpaid Leave' },
+  { value: 'other', label: 'Other' },
+];
+
+const SHIFT_TYPES = [
+  "Call Monitoring",
+  "Supervisions",
+  "Floating Support",
+  "General Admin"
+];
+
+const SHIFT_TYPE_COLORS: Record<string, { bg: string; border: string; text: string; badge: string }> = {
+  "Call Monitoring": { 
+    bg: "bg-violet-100", 
+    border: "border-violet-300", 
     text: "text-violet-900",
     badge: "bg-violet-500 text-white"
   },
-  "Supervisions": {
-    bg: "bg-pink-100",
-    border: "border-pink-300",
+  "Supervisions": { 
+    bg: "bg-pink-100", 
+    border: "border-pink-300", 
     text: "text-pink-900",
     badge: "bg-pink-500 text-white"
   },
-  "Floating Support": {
-    bg: "bg-emerald-100",
-    border: "border-emerald-300",
+  "Floating Support": { 
+    bg: "bg-emerald-100", 
+    border: "border-emerald-300", 
     text: "text-emerald-900",
     badge: "bg-emerald-500 text-white"
   },
-  "General Admin": {
-    bg: "bg-sky-100",
-    border: "border-sky-300",
+  "General Admin": { 
+    bg: "bg-sky-100", 
+    border: "border-sky-300", 
     text: "text-sky-900",
     badge: "bg-sky-500 text-white"
   },
-  "default": {
-    bg: "bg-gray-100",
-    border: "border-gray-300",
+  "default": { 
+    bg: "bg-gray-100", 
+    border: "border-gray-300", 
     text: "text-gray-900",
     badge: "bg-gray-500 text-white"
   }
 };
+
 const getShiftTypeColors = (shiftType: string | null | undefined) => {
   return SHIFT_TYPE_COLORS[shiftType || ""] || SHIFT_TYPE_COLORS["default"];
 };
+
 export const PublicClientSchedule = () => {
-  const {
-    clientName
-  } = useParams<{
-    clientName: string;
-  }>();
+  const { clientName } = useParams<{ clientName: string }>();
   const decodedClientName = decodeURIComponent(clientName || "");
   const queryClient = useQueryClient();
+  
   const [weekOffset, setWeekOffset] = useState(0);
-
+  
   // Holiday management state
   const [selectedHoliday, setSelectedHoliday] = useState<StaffHoliday | null>(null);
   const [holidayDialogOpen, setHolidayDialogOpen] = useState(false);
@@ -168,91 +163,82 @@ export const PublicClientSchedule = () => {
     notes: '',
     no_cover_required: false
   });
+  
   const currentWeekStart = useMemo(() => {
-    return startOfWeek(addWeeks(new Date(), weekOffset), {
-      weekStartsOn: 1
-    });
+    return startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
   }, [weekOffset]);
+  
   const currentWeekEnd = useMemo(() => {
-    return endOfWeek(currentWeekStart, {
-      weekStartsOn: 1
-    });
+    return endOfWeek(currentWeekStart, { weekStartsOn: 1 });
   }, [currentWeekStart]);
+  
   const weekDays = useMemo(() => {
-    return eachDayOfInterval({
-      start: currentWeekStart,
-      end: currentWeekEnd
-    });
+    return eachDayOfInterval({ start: currentWeekStart, end: currentWeekEnd });
   }, [currentWeekStart, currentWeekEnd]);
 
   // Fetch schedules for this client
-  const {
-    data: schedules = [],
-    isLoading: schedulesLoading
-  } = useQuery({
+  const { data: schedules = [], isLoading: schedulesLoading } = useQuery({
     queryKey: ["public-client-schedules", decodedClientName, currentWeekStart.toISOString()],
     queryFn: async () => {
-      const {
-        data,
-        error
-      } = await supabase.from("staff_schedules").select("id, user_id, client_name, start_datetime, end_datetime, notes, shift_type").eq("client_name", decodedClientName).gte("start_datetime", currentWeekStart.toISOString()).lte("end_datetime", currentWeekEnd.toISOString());
+      const { data, error } = await supabase
+        .from("staff_schedules")
+        .select("id, user_id, client_name, start_datetime, end_datetime, notes, shift_type")
+        .eq("client_name", decodedClientName)
+        .gte("start_datetime", currentWeekStart.toISOString())
+        .lte("end_datetime", currentWeekEnd.toISOString());
+      
       if (error) throw error;
       return (data || []) as Schedule[];
     },
-    enabled: !!decodedClientName
+    enabled: !!decodedClientName,
   });
 
   // Fetch recurring patterns for this client
-  const {
-    data: patterns = [],
-    isLoading: patternsLoading
-  } = useQuery({
+  const { data: patterns = [], isLoading: patternsLoading } = useQuery({
     queryKey: ["public-client-patterns", decodedClientName],
     queryFn: async () => {
-      const {
-        data,
-        error
-      } = await supabase.from("recurring_shift_patterns").select("*").eq("client_name", decodedClientName);
+      const { data, error } = await supabase
+        .from("recurring_shift_patterns")
+        .select("*")
+        .eq("client_name", decodedClientName);
+      
       if (error) throw error;
       return (data || []) as RecurringPattern[];
     },
-    enabled: !!decodedClientName
+    enabled: !!decodedClientName,
   });
 
   // Fetch staff profiles
-  const {
-    data: staffMembers = [],
-    isLoading: staffLoading
-  } = useQuery({
+  const { data: staffMembers = [], isLoading: staffLoading } = useQuery({
     queryKey: ["public-staff-profiles"],
     queryFn: async () => {
-      const {
-        data,
-        error
-      } = await supabase.from("profiles").select("user_id, display_name, email");
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("user_id, display_name, email");
+      
       if (error) throw error;
       return (data || []) as StaffMember[];
-    }
+    },
   });
+
   const getStaffName = (userId: string) => {
     const staff = staffMembers.find(s => s.user_id === userId);
     return staff?.display_name || staff?.email?.split('@')[0] || 'Unknown';
   };
 
   // Fetch approved holidays for the week
-  const {
-    data: holidays = [],
-    refetch: refetchHolidays
-  } = useQuery({
+  const { data: holidays = [], refetch: refetchHolidays } = useQuery({
     queryKey: ["public-staff-holidays", currentWeekStart.toISOString()],
     queryFn: async () => {
-      const {
-        data,
-        error
-      } = await supabase.from("staff_holidays").select("id, user_id, start_date, end_date, status, absence_type, days_taken, notes, no_cover_required").eq("status", "approved").lte("start_date", format(currentWeekEnd, "yyyy-MM-dd")).gte("end_date", format(currentWeekStart, "yyyy-MM-dd"));
+      const { data, error } = await supabase
+        .from("staff_holidays")
+        .select("id, user_id, start_date, end_date, status, absence_type, days_taken, notes, no_cover_required")
+        .eq("status", "approved")
+        .lte("start_date", format(currentWeekEnd, "yyyy-MM-dd"))
+        .gte("end_date", format(currentWeekStart, "yyyy-MM-dd"));
       if (error) throw error;
       return (data || []) as StaffHoliday[];
-    }
+    },
   });
 
   // Holiday click handler
@@ -278,12 +264,10 @@ export const PublicClientSchedule = () => {
       const end = new Date(holidayFormData.end_date);
       const diffTime = Math.abs(end.getTime() - start.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-      setHolidayFormData(prev => ({
-        ...prev,
-        days_taken: diffDays
-      }));
+      setHolidayFormData(prev => ({ ...prev, days_taken: diffDays }));
     }
   };
+
   useEffect(() => {
     calculateDays();
   }, [holidayFormData.start_date, holidayFormData.end_date]);
@@ -292,16 +276,19 @@ export const PublicClientSchedule = () => {
   const updateHolidayMutation = useMutation({
     mutationFn: async () => {
       if (!selectedHoliday) throw new Error("No holiday selected");
-      const {
-        error
-      } = await supabase.from("staff_holidays").update({
-        absence_type: holidayFormData.absence_type as any,
-        start_date: holidayFormData.start_date,
-        end_date: holidayFormData.end_date,
-        days_taken: holidayFormData.days_taken,
-        notes: holidayFormData.notes || null,
-        no_cover_required: holidayFormData.no_cover_required
-      }).eq("id", selectedHoliday.id);
+      
+      const { error } = await supabase
+        .from("staff_holidays")
+        .update({
+          absence_type: holidayFormData.absence_type as any,
+          start_date: holidayFormData.start_date,
+          end_date: holidayFormData.end_date,
+          days_taken: holidayFormData.days_taken,
+          notes: holidayFormData.notes || null,
+          no_cover_required: holidayFormData.no_cover_required
+        })
+        .eq("id", selectedHoliday.id);
+      
       if (error) throw error;
     },
     onSuccess: () => {
@@ -319,9 +306,12 @@ export const PublicClientSchedule = () => {
   const deleteHolidayMutation = useMutation({
     mutationFn: async () => {
       if (!selectedHoliday) throw new Error("No holiday selected");
-      const {
-        error
-      } = await supabase.from("staff_holidays").delete().eq("id", selectedHoliday.id);
+      
+      const { error } = await supabase
+        .from("staff_holidays")
+        .delete()
+        .eq("id", selectedHoliday.id);
+      
       if (error) throw error;
     },
     onSuccess: () => {
@@ -336,18 +326,18 @@ export const PublicClientSchedule = () => {
   });
 
   // Fetch approved staff requests for coverage info
-  const {
-    data: staffRequests = []
-  } = useQuery({
+  const { data: staffRequests = [] } = useQuery({
     queryKey: ["public-staff-requests", currentWeekStart.toISOString()],
     queryFn: async () => {
-      const {
-        data,
-        error
-      } = await supabase.from("staff_requests").select("id, user_id, request_type, status, start_date, end_date, linked_holiday_id, swap_with_user_id").eq("status", "approved").lte("start_date", format(currentWeekEnd, "yyyy-MM-dd")).gte("end_date", format(currentWeekStart, "yyyy-MM-dd"));
+      const { data, error } = await supabase
+        .from("staff_requests")
+        .select("id, user_id, request_type, status, start_date, end_date, linked_holiday_id, swap_with_user_id")
+        .eq("status", "approved")
+        .lte("start_date", format(currentWeekEnd, "yyyy-MM-dd"))
+        .gte("end_date", format(currentWeekStart, "yyyy-MM-dd"));
       if (error) throw error;
       return (data || []) as StaffRequest[];
-    }
+    },
   });
 
   // Check if a staff member is on holiday for a specific day
@@ -356,10 +346,7 @@ export const PublicClientSchedule = () => {
       if (h.user_id !== userId) return false;
       const start = parseISO(h.start_date);
       const end = parseISO(h.end_date);
-      return isWithinInterval(day, {
-        start: startOfDay(start),
-        end: endOfDay(end)
-      });
+      return isWithinInterval(day, { start: startOfDay(start), end: endOfDay(end) });
     });
   };
 
@@ -369,10 +356,7 @@ export const PublicClientSchedule = () => {
       if (h.user_id !== userId) return false;
       const start = parseISO(h.start_date);
       const end = parseISO(h.end_date);
-      return isWithinInterval(day, {
-        start: startOfDay(start),
-        end: endOfDay(end)
-      });
+      return isWithinInterval(day, { start: startOfDay(start), end: endOfDay(end) });
     });
   };
 
@@ -380,13 +364,20 @@ export const PublicClientSchedule = () => {
   const getCoverageForHoliday = (holidayUserId: string, day: Date) => {
     const holiday = getHolidayInfo(holidayUserId, day);
     if (!holiday) return null;
-
+    
     // Find approved overtime/shift_swap requests linked to this holiday
-    const coverageRequests = staffRequests.filter(r => (r.linked_holiday_id === holiday.id || r.swap_with_user_id === holidayUserId && r.request_type === 'shift_swap') && r.status === 'approved' && isWithinInterval(day, {
-      start: startOfDay(parseISO(r.start_date)),
-      end: endOfDay(parseISO(r.end_date))
-    }));
+    const coverageRequests = staffRequests.filter(r => 
+      (r.linked_holiday_id === holiday.id || 
+       (r.swap_with_user_id === holidayUserId && r.request_type === 'shift_swap')) &&
+      r.status === 'approved' &&
+      isWithinInterval(day, { 
+        start: startOfDay(parseISO(r.start_date)), 
+        end: endOfDay(parseISO(r.end_date)) 
+      })
+    );
+    
     if (coverageRequests.length === 0) return null;
+    
     return coverageRequests.map(r => ({
       userId: r.user_id,
       name: getStaffName(r.user_id),
@@ -397,19 +388,21 @@ export const PublicClientSchedule = () => {
   // Generate virtual schedules from patterns
   const virtualSchedulesFromPatterns = useMemo(() => {
     const virtualSchedules: Schedule[] = [];
+    
     patterns.forEach(pattern => {
       const patternStart = parseISO(pattern.start_date);
       const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+      
       weekDays.forEach(day => {
         const dayOfWeek = getDay(day);
-
+        
         // Check if this day matches the pattern
         if (!pattern.days_of_week.includes(dayOfWeek)) return;
-
+        
         // Check if day is within pattern date range
         if (isBefore(day, patternStart)) return;
         if (patternEnd && isAfter(day, patternEnd)) return;
-
+        
         // Check recurrence interval
         if (pattern.recurrence_interval === 'biweekly') {
           const weeksDiff = differenceInWeeks(day, patternStart);
@@ -418,18 +411,28 @@ export const PublicClientSchedule = () => {
           const patternDayOfMonth = getDate(patternStart);
           if (getDate(day) !== patternDayOfMonth) return;
         }
-
+        
         // Check if there's already a manual schedule that overlaps
         const dayStr = format(day, 'yyyy-MM-dd');
         const hasManualSchedule = schedules.some(s => {
           const scheduleDate = format(parseISO(s.start_datetime), 'yyyy-MM-dd');
           return scheduleDate === dayStr && s.user_id === pattern.user_id;
         });
+        
         if (hasManualSchedule) return;
-
+        
         // Create virtual schedule
-        const startDatetime = parse(`${dayStr} ${pattern.start_time}`, 'yyyy-MM-dd HH:mm:ss', new Date());
-        const endDatetime = parse(`${dayStr} ${pattern.end_time}`, 'yyyy-MM-dd HH:mm:ss', new Date());
+        const startDatetime = parse(
+          `${dayStr} ${pattern.start_time}`,
+          'yyyy-MM-dd HH:mm:ss',
+          new Date()
+        );
+        const endDatetime = parse(
+          `${dayStr} ${pattern.end_time}`,
+          'yyyy-MM-dd HH:mm:ss',
+          new Date()
+        );
+        
         virtualSchedules.push({
           id: `pattern-${pattern.id}-${dayStr}`,
           user_id: pattern.user_id,
@@ -438,10 +441,11 @@ export const PublicClientSchedule = () => {
           end_datetime: endDatetime.toISOString(),
           notes: pattern.notes,
           shift_type: pattern.shift_type,
-          is_pattern_overtime: pattern.is_overtime
+          is_pattern_overtime: pattern.is_overtime,
         });
       });
     });
+    
     return virtualSchedules;
   }, [patterns, weekDays, schedules]);
 
@@ -449,6 +453,7 @@ export const PublicClientSchedule = () => {
   const allSchedules = useMemo(() => {
     return [...schedules, ...virtualSchedulesFromPatterns];
   }, [schedules, virtualSchedulesFromPatterns]);
+
   const getSchedulesForDay = (day: Date) => {
     return allSchedules.filter(schedule => {
       const scheduleStart = parseISO(schedule.start_datetime);
@@ -461,38 +466,59 @@ export const PublicClientSchedule = () => {
   // Get unique shift types for this client
   const shiftTypesForClient = useMemo(() => {
     const types = [...new Set(allSchedules.map(s => s.shift_type || "Other"))];
-    return [...SHIFT_TYPES.filter(st => types.includes(st)), ...types.filter(st => !SHIFT_TYPES.includes(st))];
+    return [
+      ...SHIFT_TYPES.filter(st => types.includes(st)),
+      ...types.filter(st => !SHIFT_TYPES.includes(st))
+    ];
   }, [allSchedules]);
+
   const isLoading = schedulesLoading || patternsLoading || staffLoading;
+
   if (!decodedClientName) {
-    return <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <Card className="max-w-md">
           <CardContent className="pt-6">
             <p className="text-center text-muted-foreground">Invalid client link</p>
           </CardContent>
         </Card>
-      </div>;
+      </div>
+    );
   }
-  return <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
         <Card>
           <CardHeader className="pb-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <CardTitle className="text-2xl">{decodedClientName}</CardTitle>
-                
+                <p className="text-sm text-muted-foreground mt-1">Weekly Schedule</p>
               </div>
               
               {/* Week Navigation */}
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" onClick={() => setWeekOffset(prev => prev - 1)}>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setWeekOffset(prev => prev - 1)}
+                >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" onClick={() => setWeekOffset(0)} className="min-w-[140px]">
+                <Button
+                  variant="outline"
+                  onClick={() => setWeekOffset(0)}
+                  className="min-w-[140px]"
+                >
                   <Calendar className="h-4 w-4 mr-2" />
                   {weekOffset === 0 ? "This Week" : format(currentWeekStart, "MMM d")} - {format(currentWeekEnd, "MMM d")}
                 </Button>
-                <Button variant="outline" size="icon" onClick={() => setWeekOffset(prev => prev + 1)}>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setWeekOffset(prev => prev + 1)}
+                >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
@@ -500,69 +526,127 @@ export const PublicClientSchedule = () => {
           </CardHeader>
           
           <CardContent>
-            {isLoading ? <div className="flex items-center justify-center py-12">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div> : <div className="overflow-x-auto">
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
                 {/* Day headers */}
                 <div className="grid grid-cols-8 gap-1 mb-2">
                   <div className="p-2 text-xs font-medium text-muted-foreground">Shift Type</div>
-                  {weekDays.map(day => <div key={day.toISOString()} className="p-2 text-center">
+                  {weekDays.map(day => (
+                    <div key={day.toISOString()} className="p-2 text-center">
                       <div className="text-xs font-medium text-muted-foreground">{format(day, "EEE")}</div>
                       <div className="text-sm font-semibold">{format(day, "d")}</div>
-                    </div>)}
+                    </div>
+                  ))}
                 </div>
                 
                 {/* Shift type rows */}
-                {shiftTypesForClient.length === 0 ? <div className="text-center py-8 text-muted-foreground">
+                {shiftTypesForClient.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
                     No schedules for this week
-                  </div> : shiftTypesForClient.map(shiftType => {
-              const colors = getShiftTypeColors(shiftType);
-              return <div key={shiftType} className="grid grid-cols-8 gap-1 mb-1">
+                  </div>
+                ) : (
+                  shiftTypesForClient.map(shiftType => {
+                    const colors = getShiftTypeColors(shiftType);
+                    
+                    return (
+                      <div key={shiftType} className="grid grid-cols-8 gap-1 mb-1">
                         <div className="p-2 text-xs font-medium truncate border-r bg-muted/20 flex items-center">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${colors.badge}`}>
                             {shiftType}
                           </span>
                         </div>
                         {weekDays.map(day => {
-                  const daySchedules = getSchedulesForDay(day).filter(s => (s.shift_type || "Other") === shiftType);
-                  return <div key={day.toISOString()} className="min-h-[60px] p-1 rounded border bg-background border-border">
+                          const daySchedules = getSchedulesForDay(day).filter(
+                            s => (s.shift_type || "Other") === shiftType
+                          );
+                          
+                          return (
+                            <div 
+                              key={day.toISOString()} 
+                              className="min-h-[60px] p-1 rounded border bg-background border-border"
+                            >
                               {daySchedules.map(schedule => {
-                      const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
-                      const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
-                      const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
-                      const isOvertime = schedule.is_pattern_overtime;
-                      return <div key={schedule.id} onClick={staffOnHoliday && holidayInfo ? e => handleHolidayClick(holidayInfo, e) : undefined} className={`rounded p-1.5 mb-1 text-xs border ${staffOnHoliday ? 'bg-amber-100 border-amber-300 cursor-pointer hover:bg-amber-200 transition-colors' : isOvertime ? 'bg-orange-100 border-orange-300' : `${colors.bg} ${colors.border}`}`}>
-                                    <div className={`font-semibold truncate flex items-center gap-1 ${staffOnHoliday ? 'text-amber-900' : isOvertime ? 'text-orange-900' : colors.text}`}>
+                                const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
+                                const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
+                                const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
+                                const isOvertime = schedule.is_pattern_overtime;
+                                
+                                return (
+                                  <div 
+                                    key={schedule.id} 
+                                    onClick={staffOnHoliday && holidayInfo ? (e) => handleHolidayClick(holidayInfo, e) : undefined}
+                                    className={`rounded p-1.5 mb-1 text-xs border ${
+                                      staffOnHoliday 
+                                        ? 'bg-amber-100 border-amber-300 cursor-pointer hover:bg-amber-200 transition-colors' 
+                                        : isOvertime
+                                          ? 'bg-orange-100 border-orange-300'
+                                          : `${colors.bg} ${colors.border}`
+                                    }`}
+                                  >
+                                    <div className={`font-semibold truncate flex items-center gap-1 ${
+                                      staffOnHoliday 
+                                        ? 'text-amber-900' 
+                                        : isOvertime 
+                                          ? 'text-orange-900'
+                                          : colors.text
+                                    }`}>
                                       {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600 flex-shrink-0" />}
                                       {isOvertime && !staffOnHoliday && <Clock className="h-3 w-3 text-orange-600 flex-shrink-0" />}
                                       {getStaffName(schedule.user_id)}
-                                      {isOvertime && !staffOnHoliday && <span className="text-[9px] bg-orange-200 text-orange-800 px-1 rounded ml-auto">OT</span>}
+                                      {isOvertime && !staffOnHoliday && (
+                                        <span className="text-[9px] bg-orange-200 text-orange-800 px-1 rounded ml-auto">OT</span>
+                                      )}
                                     </div>
                                     
-                                    {staffOnHoliday ? <div className="mt-0.5">
+                                    {staffOnHoliday ? (
+                                      <div className="mt-0.5">
                                         <div className="text-[10px] text-amber-700 capitalize">
                                           {holidayInfo?.absence_type?.replace('_', ' ') || 'On holiday'}
                                         </div>
-                                        {coverage && coverage.length > 0 ? <div className="text-[10px] text-green-700 bg-green-50 rounded px-1 py-0.5 mt-0.5">
+                                        {coverage && coverage.length > 0 ? (
+                                          <div className="text-[10px] text-green-700 bg-green-50 rounded px-1 py-0.5 mt-0.5">
                                             <span className="font-medium">Cover:</span> {coverage.map(c => c.name).join(', ')}
-                                          </div> : holidayInfo?.no_cover_required ? <div className="text-[10px] text-blue-600 bg-blue-50 rounded px-1 py-0.5 mt-0.5">
+                                          </div>
+                                        ) : holidayInfo?.no_cover_required ? (
+                                          <div className="text-[10px] text-blue-600 bg-blue-50 rounded px-1 py-0.5 mt-0.5">
                                             No cover needed
-                                          </div> : <div className="text-[10px] text-red-600 bg-red-50 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1">
+                                          </div>
+                                        ) : (
+                                          <div className="text-[10px] text-red-600 bg-red-50 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1">
                                             <AlertTriangle className="h-2.5 w-2.5" />
                                             <span>No cover</span>
-                                          </div>}
-                                      </div> : <div className={`${isOvertime ? 'text-orange-900' : colors.text} opacity-80`}>
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className={`${isOvertime ? 'text-orange-900' : colors.text} opacity-80`}>
                                         {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
-                                      </div>}
-                                  </div>;
-                    })}
-                            </div>;
-                })}
-                      </div>;
-            })}
-              </div>}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
+
+        {/* Upcoming Holidays Section */}
+        <UpcomingHolidaysCard 
+          clientName={decodedClientName}
+          getStaffName={getStaffName} 
+        />
 
         {/* Noticeboard Section */}
         <ClientNoticeboard clientName={decodedClientName} />
@@ -577,7 +661,190 @@ export const PublicClientSchedule = () => {
       </div>
 
       {/* Holiday View/Edit Dialog */}
-      
+      <Dialog open={holidayDialogOpen} onOpenChange={setHolidayDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Palmtree className="h-5 w-5 text-amber-600" />
+              {isEditingHoliday ? 'Edit Holiday/Absence' : 'Holiday/Absence Details'}
+            </DialogTitle>
+            <DialogDescription>
+              {selectedHoliday && getStaffName(selectedHoliday.user_id)}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {isEditingHoliday ? (
+              <>
+                <div className="space-y-2">
+                  <Label>Absence Type</Label>
+                  <Select
+                    value={holidayFormData.absence_type}
+                    onValueChange={(value) => setHolidayFormData({ ...holidayFormData, absence_type: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ABSENCE_TYPES.map(type => (
+                        <SelectItem key={type.value} value={type.value}>
+                          {type.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Start Date</Label>
+                    <Input
+                      type="date"
+                      value={holidayFormData.start_date}
+                      onChange={(e) => setHolidayFormData({ ...holidayFormData, start_date: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>End Date</Label>
+                    <Input
+                      type="date"
+                      value={holidayFormData.end_date}
+                      onChange={(e) => setHolidayFormData({ ...holidayFormData, end_date: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Days Taken</Label>
+                  <Input
+                    type="number"
+                    value={holidayFormData.days_taken}
+                    onChange={(e) => setHolidayFormData({ ...holidayFormData, days_taken: parseFloat(e.target.value) || 0 })}
+                    step="0.5"
+                  />
+                  <p className="text-xs text-muted-foreground">Auto-calculated from dates, adjust for half days</p>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="no_cover_required"
+                    checked={holidayFormData.no_cover_required}
+                    onCheckedChange={(checked) => setHolidayFormData({ ...holidayFormData, no_cover_required: !!checked })}
+                  />
+                  <Label htmlFor="no_cover_required" className="text-sm font-normal cursor-pointer">
+                    No cover required for this absence
+                  </Label>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Notes</Label>
+                  <Textarea
+                    value={holidayFormData.notes}
+                    onChange={(e) => setHolidayFormData({ ...holidayFormData, notes: e.target.value })}
+                    placeholder="Additional notes..."
+                    rows={2}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Type</p>
+                    <p className="font-medium capitalize">
+                      {ABSENCE_TYPES.find(t => t.value === selectedHoliday?.absence_type)?.label || selectedHoliday?.absence_type}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Days</p>
+                    <p className="font-medium">{selectedHoliday?.days_taken}</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Start Date</p>
+                    <p className="font-medium">
+                      {selectedHoliday?.start_date && format(parseISO(selectedHoliday.start_date), 'dd MMM yyyy')}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">End Date</p>
+                    <p className="font-medium">
+                      {selectedHoliday?.end_date && format(parseISO(selectedHoliday.end_date), 'dd MMM yyyy')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Status</p>
+                    <Badge variant="outline" className="bg-success/20 text-success border-success">
+                      {selectedHoliday?.status}
+                    </Badge>
+                  </div>
+                  {selectedHoliday?.no_cover_required && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Cover</p>
+                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                        No cover needed
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+
+                {selectedHoliday?.notes && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Notes</p>
+                    <p className="text-sm">{selectedHoliday.notes}</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            {isEditingHoliday ? (
+              <>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsEditingHoliday(false)}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={() => updateHolidayMutation.mutate()}
+                  disabled={updateHolidayMutation.isPending}
+                >
+                  {updateHolidayMutation.isPending ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...</>
+                  ) : 'Save Changes'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button 
+                  variant="destructive" 
+                  onClick={() => setHolidayDeleteConfirmOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => setIsEditingHoliday(true)}
+                >
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+                <Button onClick={() => setHolidayDialogOpen(false)}>
+                  Close
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={holidayDeleteConfirmOpen} onOpenChange={setHolidayDeleteConfirmOpen}>
@@ -590,21 +857,197 @@ export const PublicClientSchedule = () => {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => deleteHolidayMutation.mutate()} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              {deleteHolidayMutation.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Deleting...</> : 'Delete'}
+            <AlertDialogAction
+              onClick={() => deleteHolidayMutation.mutate()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteHolidayMutation.isPending ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Deleting...</>
+              ) : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>;
+    </div>
+  );
+};
+
+// Upcoming Holidays Card Component
+const UpcomingHolidaysCard = ({ 
+  clientName,
+  getStaffName 
+}: { 
+  clientName: string;
+  getStaffName: (userId: string) => string;
+}) => {
+  const today = new Date();
+  
+  // Fetch upcoming approved holidays for staff assigned to this client
+  const { data: upcomingHolidays = [], isLoading } = useQuery({
+    queryKey: ["upcoming-holidays", clientName],
+    queryFn: async () => {
+      // First get staff assigned to this client
+      const { data: assignments, error: assignError } = await supabase
+        .from('staff_client_assignments')
+        .select('staff_user_id')
+        .eq('client_name', clientName);
+      
+      if (assignError) throw assignError;
+      if (!assignments || assignments.length === 0) return [];
+      
+      const staffUserIds = assignments.map(a => a.staff_user_id);
+      
+      const { data, error } = await supabase
+        .from("staff_holidays")
+        .select("id, user_id, start_date, end_date, status, absence_type, days_taken, notes, no_cover_required")
+        .eq("status", "approved")
+        .in("user_id", staffUserIds)
+        .gte("end_date", format(today, "yyyy-MM-dd"))
+        .order("start_date", { ascending: true })
+        .limit(10);
+      
+      if (error) throw error;
+      return (data || []) as StaffHoliday[];
+    },
+    enabled: !!clientName,
+  });
+
+  const getAbsenceLabel = (type: string) => {
+    const found = ABSENCE_TYPES.find(t => t.value === type);
+    return found?.label || type;
+  };
+
+  const getAbsenceBadgeColor = (type: string) => {
+    switch (type) {
+      case 'holiday':
+        return 'bg-amber-100 text-amber-800 border-amber-200';
+      case 'sick':
+        return 'bg-red-100 text-red-800 border-red-200';
+      case 'personal':
+        return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'maternity':
+      case 'paternity':
+        return 'bg-pink-100 text-pink-800 border-pink-200';
+      case 'unpaid':
+        return 'bg-gray-100 text-gray-800 border-gray-200';
+      default:
+        return 'bg-slate-100 text-slate-800 border-slate-200';
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <Card className="mt-6">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-xl flex items-center gap-2">
+            <Palmtree className="h-5 w-5 text-amber-600" />
+            Upcoming Holidays
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (upcomingHolidays.length === 0) {
+    return (
+      <Card className="mt-6">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-xl flex items-center gap-2">
+            <Palmtree className="h-5 w-5 text-amber-600" />
+            Upcoming Holidays
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No upcoming approved holidays
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="mt-6">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-xl flex items-center gap-2">
+          <Palmtree className="h-5 w-5 text-amber-600" />
+          Upcoming Holidays
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">Approved absences coming up</p>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          {upcomingHolidays.map((holiday) => {
+            const startDate = parseISO(holiday.start_date);
+            const endDate = parseISO(holiday.end_date);
+            const isStartingToday = format(startDate, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd');
+            const isOngoing = startDate <= today && endDate >= today;
+            
+            return (
+              <div 
+                key={holiday.id} 
+                className={`flex items-start gap-3 p-3 rounded-lg border ${
+                  isOngoing ? 'bg-amber-50 border-amber-200' : 'bg-muted/30 border-border'
+                }`}
+              >
+                <div className="flex-shrink-0 mt-0.5">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium text-sm">
+                      {getStaffName(holiday.user_id)}
+                    </span>
+                    <Badge variant="outline" className={`text-xs ${getAbsenceBadgeColor(holiday.absence_type)}`}>
+                      {getAbsenceLabel(holiday.absence_type)}
+                    </Badge>
+                    {isOngoing && (
+                      <Badge variant="secondary" className="text-xs bg-amber-200 text-amber-800">
+                        Currently Away
+                      </Badge>
+                    )}
+                    {isStartingToday && !isOngoing && (
+                      <Badge variant="secondary" className="text-xs bg-green-200 text-green-800">
+                        Starts Today
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="text-sm text-muted-foreground mt-1">
+                    {format(startDate, 'EEE, d MMM')}
+                    {holiday.start_date !== holiday.end_date && (
+                      <> — {format(endDate, 'EEE, d MMM')}</>
+                    )}
+                    <span className="ml-2 text-xs">
+                      ({holiday.days_taken} {holiday.days_taken === 1 ? 'day' : 'days'})
+                    </span>
+                  </div>
+                  {holiday.notes && (
+                    <p className="text-xs text-muted-foreground mt-1 truncate">
+                      {holiday.notes}
+                    </p>
+                  )}
+                </div>
+                {holiday.no_cover_required && (
+                  <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 flex-shrink-0">
+                    No cover needed
+                  </Badge>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
 };
 
 // Whiteboard Component - rich text editable shared notepad with CMD+B bold support
-const ClientNoticeboard = ({
-  clientName
-}: {
-  clientName: string;
-}) => {
+const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
   const queryClient = useQueryClient();
   const [content, setContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -612,20 +1055,20 @@ const ClientNoticeboard = ({
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hasInitialized = useRef(false);
   const editorRef = useRef<HTMLDivElement | null>(null);
-  const {
-    data: whiteboard,
-    isLoading
-  } = useQuery({
+
+  const { data: whiteboard, isLoading } = useQuery({
     queryKey: ["client-whiteboard", clientName],
     queryFn: async () => {
-      const {
-        data,
-        error
-      } = await supabase.from("client_whiteboards").select("*").eq("client_name", clientName).maybeSingle();
+      const { data, error } = await supabase
+        .from("client_whiteboards")
+        .select("*")
+        .eq("client_name", clientName)
+        .maybeSingle();
+      
       if (error) throw error;
       return data as ClientWhiteboard | null;
     },
-    staleTime: 5000
+    staleTime: 5000,
   });
 
   // Set initial content when data loads
@@ -649,52 +1092,52 @@ const ClientNoticeboard = ({
       }
     }
   }, [whiteboard?.content]);
+
   const saveContent = async (newContent: string) => {
     setIsSaving(true);
     try {
       if (whiteboard) {
         // Update existing
-        const {
-          error
-        } = await supabase.from("client_whiteboards").update({
-          content: newContent
-        }).eq("client_name", clientName);
+        const { error } = await supabase
+          .from("client_whiteboards")
+          .update({ content: newContent })
+          .eq("client_name", clientName);
+        
         if (error) throw error;
       } else {
         // Create new
-        const {
-          error
-        } = await supabase.from("client_whiteboards").insert({
-          client_name: clientName,
-          content: newContent
-        });
+        const { error } = await supabase
+          .from("client_whiteboards")
+          .insert({ client_name: clientName, content: newContent });
+        
         if (error) throw error;
       }
+      
       setLastSaved(new Date());
-      queryClient.invalidateQueries({
-        queryKey: ["client-whiteboard", clientName]
-      });
+      queryClient.invalidateQueries({ queryKey: ["client-whiteboard", clientName] });
     } catch (error) {
       toast.error("Failed to save");
     } finally {
       setIsSaving(false);
     }
   };
+
   const handleContentChange = () => {
     if (!editorRef.current) return;
     const newContent = editorRef.current.innerHTML;
     setContent(newContent);
-
+    
     // Clear existing timeout
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
-
+    
     // Debounce save (save after 1 second of no typing)
     saveTimeoutRef.current = setTimeout(() => {
       saveContent(newContent);
     }, 1000);
   };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     // CMD+B (Mac) or Ctrl+B (Windows) for bold
     if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
@@ -703,44 +1146,59 @@ const ClientNoticeboard = ({
       handleContentChange();
     }
   };
-  return <Card className="mt-6">
+
+  return (
+    <Card className="mt-6">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="text-xl">
               Whiteboard
             </CardTitle>
-            
+            <p className="text-sm text-muted-foreground mt-1">Quick notes and updates for this client</p>
           </div>
           <div className="text-xs text-muted-foreground">
-            {isSaving ? <span className="flex items-center gap-1">
+            {isSaving ? (
+              <span className="flex items-center gap-1">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 Saving...
-              </span> : lastSaved ? <span>Saved {format(lastSaved, "HH:mm")}</span> : whiteboard?.updated_at ? <span>Last updated {format(parseISO(whiteboard.updated_at), "PPp")}</span> : null}
+              </span>
+            ) : lastSaved ? (
+              <span>Saved {format(lastSaved, "HH:mm")}</span>
+            ) : whiteboard?.updated_at ? (
+              <span>Last updated {format(parseISO(whiteboard.updated_at), "PPp")}</span>
+            ) : null}
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        {isLoading ? <div className="flex items-center justify-center py-8">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div> : <div className="space-y-2">
-            <div ref={editorRef} contentEditable onInput={handleContentChange} onKeyDown={handleKeyDown} data-placeholder="Type your notes here... Changes are saved automatically." className="min-h-[200px] p-3 rounded-md font-mono text-sm bg-amber-50/50 border border-amber-200 focus:border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-200 overflow-auto whitespace-pre-wrap empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground" style={{
-          minHeight: '200px'
-        }} />
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div
+              ref={editorRef}
+              contentEditable
+              onInput={handleContentChange}
+              onKeyDown={handleKeyDown}
+              data-placeholder="Type your notes here... Changes are saved automatically."
+              className="min-h-[200px] p-3 rounded-md font-mono text-sm bg-amber-50/50 border border-amber-200 focus:border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-200 overflow-auto whitespace-pre-wrap empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground"
+              style={{ minHeight: '200px' }}
+            />
             <p className="text-xs text-muted-foreground">
               Tip: Select text and press <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">⌘B</kbd> or <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Ctrl+B</kbd> to bold
             </p>
-          </div>}
+          </div>
+        )}
       </CardContent>
-    </Card>;
+    </Card>
+  );
 };
 
 // Password & Links Manager Component
-const ClientPasswordManager = ({
-  clientName
-}: {
-  clientName: string;
-}) => {
+const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [softwareName, setSoftwareName] = useState("");
@@ -750,7 +1208,7 @@ const ClientPasswordManager = ({
   const [notes, setNotes] = useState("");
   const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
-
+  
   // Edit state
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<ClientPassword | null>(null);
@@ -759,46 +1217,44 @@ const ClientPasswordManager = ({
     username: "",
     password: "",
     url: "",
-    notes: ""
+    notes: "",
   });
-
+  
   // Delete confirmation state
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingEntry, setDeletingEntry] = useState<ClientPassword | null>(null);
-  const {
-    data: passwords = [],
-    isLoading
-  } = useQuery({
+
+  const { data: passwords = [], isLoading } = useQuery({
     queryKey: ["client-passwords", clientName],
     queryFn: async () => {
-      const {
-        data,
-        error
-      } = await supabase.from("client_passwords").select("*").eq("client_name", clientName).order("software_name", {
-        ascending: true
-      });
+      const { data, error } = await supabase
+        .from("client_passwords")
+        .select("*")
+        .eq("client_name", clientName)
+        .order("software_name", { ascending: true });
+      
       if (error) throw error;
       return data as ClientPassword[];
-    }
+    },
   });
+
   const addPasswordMutation = useMutation({
     mutationFn: async () => {
-      const {
-        error
-      } = await supabase.from("client_passwords").insert({
-        client_name: clientName,
-        software_name: softwareName.trim(),
-        username: username.trim() || "",
-        password: password.trim() || "",
-        url: url.trim() || null,
-        notes: notes.trim() || null
-      });
+      const { error } = await supabase
+        .from("client_passwords")
+        .insert({
+          client_name: clientName,
+          software_name: softwareName.trim(),
+          username: username.trim() || "",
+          password: password.trim() || "",
+          url: url.trim() || null,
+          notes: notes.trim() || null,
+        });
+      
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["client-passwords", clientName]
-      });
+      queryClient.invalidateQueries({ queryKey: ["client-passwords", clientName] });
       setSoftwareName("");
       setUsername("");
       setPassword("");
@@ -809,8 +1265,9 @@ const ClientPasswordManager = ({
     },
     onError: () => {
       toast.error("Failed to add entry");
-    }
+    },
   });
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!softwareName.trim()) {
@@ -822,58 +1279,52 @@ const ClientPasswordManager = ({
 
   // Update mutation
   const updatePasswordMutation = useMutation({
-    mutationFn: async (data: {
-      id: string;
-      software_name: string;
-      username: string;
-      password: string;
-      url: string | null;
-      notes: string | null;
-    }) => {
-      const {
-        error
-      } = await supabase.from("client_passwords").update({
-        software_name: data.software_name,
-        username: data.username,
-        password: data.password,
-        url: data.url,
-        notes: data.notes
-      }).eq("id", data.id);
+    mutationFn: async (data: { id: string; software_name: string; username: string; password: string; url: string | null; notes: string | null }) => {
+      const { error } = await supabase
+        .from("client_passwords")
+        .update({
+          software_name: data.software_name,
+          username: data.username,
+          password: data.password,
+          url: data.url,
+          notes: data.notes,
+        })
+        .eq("id", data.id);
+      
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["client-passwords", clientName]
-      });
+      queryClient.invalidateQueries({ queryKey: ["client-passwords", clientName] });
       setIsEditDialogOpen(false);
       setEditingEntry(null);
       toast.success("Entry updated successfully");
     },
     onError: () => {
       toast.error("Failed to update entry");
-    }
+    },
   });
 
   // Delete mutation
   const deletePasswordMutation = useMutation({
     mutationFn: async (id: string) => {
-      const {
-        error
-      } = await supabase.from("client_passwords").delete().eq("id", id);
+      const { error } = await supabase
+        .from("client_passwords")
+        .delete()
+        .eq("id", id);
+      
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["client-passwords", clientName]
-      });
+      queryClient.invalidateQueries({ queryKey: ["client-passwords", clientName] });
       setIsDeleteDialogOpen(false);
       setDeletingEntry(null);
       toast.success("Entry deleted successfully");
     },
     onError: () => {
       toast.error("Failed to delete entry");
-    }
+    },
   });
+
   const openEditDialog = (entry: ClientPassword) => {
     setEditingEntry(entry);
     setEditForm({
@@ -881,10 +1332,11 @@ const ClientPasswordManager = ({
       username: entry.username,
       password: entry.password,
       url: entry.url || "",
-      notes: entry.notes || ""
+      notes: entry.notes || "",
     });
     setIsEditDialogOpen(true);
   };
+
   const handleEditSubmit = () => {
     if (!editingEntry) return;
     if (!editForm.software_name.trim()) {
@@ -897,13 +1349,15 @@ const ClientPasswordManager = ({
       username: editForm.username.trim(),
       password: editForm.password.trim(),
       url: editForm.url.trim() || null,
-      notes: editForm.notes.trim() || null
+      notes: editForm.notes.trim() || null,
     });
   };
+
   const openDeleteDialog = (entry: ClientPassword) => {
     setDeletingEntry(entry);
     setIsDeleteDialogOpen(true);
   };
+
   const togglePasswordVisibility = (id: string) => {
     const newVisible = new Set(visiblePasswords);
     if (newVisible.has(id)) {
@@ -913,6 +1367,7 @@ const ClientPasswordManager = ({
     }
     setVisiblePasswords(newVisible);
   };
+
   const copyToClipboard = async (text: string, id: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -923,7 +1378,9 @@ const ClientPasswordManager = ({
       toast.error("Failed to copy");
     }
   };
-  return <Card className="mt-6">
+
+  return (
+    <Card className="mt-6">
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
           <div>
@@ -932,7 +1389,11 @@ const ClientPasswordManager = ({
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">Store credentials and important links for this client</p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setShowForm(!showForm)}>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => setShowForm(!showForm)}
+          >
             <Plus className="h-4 w-4 mr-1" />
             Add Entry
           </Button>
@@ -940,13 +1401,37 @@ const ClientPasswordManager = ({
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Add Entry Form */}
-        {showForm && <form onSubmit={handleSubmit} className="space-y-3 p-4 bg-muted/30 rounded-lg border">
+        {showForm && (
+          <form onSubmit={handleSubmit} className="space-y-3 p-4 bg-muted/30 rounded-lg border">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Input placeholder="Name (e.g., Care Planner, Medication App)" value={softwareName} onChange={e => setSoftwareName(e.target.value)} />
-              <Input placeholder="URL / Link (optional)" value={url} onChange={e => setUrl(e.target.value)} type="url" />
-              <Input placeholder="Username (optional)" value={username} onChange={e => setUsername(e.target.value)} />
-              <Input type="password" placeholder="Password (optional)" value={password} onChange={e => setPassword(e.target.value)} />
-              <Input placeholder="Notes (optional)" value={notes} onChange={e => setNotes(e.target.value)} className="md:col-span-2" />
+              <Input
+                placeholder="Name (e.g., Care Planner, Medication App)"
+                value={softwareName}
+                onChange={(e) => setSoftwareName(e.target.value)}
+              />
+              <Input
+                placeholder="URL / Link (optional)"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                type="url"
+              />
+              <Input
+                placeholder="Username (optional)"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+              <Input
+                type="password"
+                placeholder="Password (optional)"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <Input
+                placeholder="Notes (optional)"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="md:col-span-2"
+              />
             </div>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
@@ -956,72 +1441,144 @@ const ClientPasswordManager = ({
                 Save Entry
               </Button>
             </div>
-          </form>}
+          </form>
+        )}
 
         {/* Entries List */}
-        {isLoading ? <div className="flex items-center justify-center py-8">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div> : passwords.length === 0 ? <div className="text-center py-8 text-muted-foreground">
+          </div>
+        ) : passwords.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
             No entries stored yet. Click "Add Entry" to get started.
-          </div> : <div className="space-y-3">
-            {passwords.map(pw => <div key={pw.id} className="p-4 bg-background rounded-lg border">
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {passwords.map((pw) => (
+              <div key={pw.id} className="p-4 bg-background rounded-lg border">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-sm">{pw.software_name}</span>
-                      {pw.url && <a href={pw.url.startsWith('http') ? pw.url : `https://${pw.url}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                      {pw.url && (
+                        <a
+                          href={pw.url.startsWith('http') ? pw.url : `https://${pw.url}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                        >
                           <ExternalLink className="h-3 w-3" />
                           Open Link
-                        </a>}
+                        </a>
+                      )}
                     </div>
                     
                     {/* URL Row */}
-                    {pw.url && <div className="flex items-center gap-2 text-sm">
+                    {pw.url && (
+                      <div className="flex items-center gap-2 text-sm">
                         <Link className="h-3 w-3 text-muted-foreground" />
                         <span className="text-muted-foreground truncate max-w-[200px]">{pw.url}</span>
-                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(pw.url!, `url-${pw.id}`)}>
-                          {copiedId === `url-${pw.id}` ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() => copyToClipboard(pw.url!, `url-${pw.id}`)}
+                        >
+                          {copiedId === `url-${pw.id}` ? (
+                            <Check className="h-3 w-3 text-green-500" />
+                          ) : (
+                            <Copy className="h-3 w-3" />
+                          )}
                         </Button>
-                      </div>}
+                      </div>
+                    )}
                     
                     {/* Credentials */}
-                    {(pw.username || pw.password) && <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                        {pw.username && <div className="flex items-center gap-2">
+                    {(pw.username || pw.password) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                        {pw.username && (
+                          <div className="flex items-center gap-2">
                             <span className="text-muted-foreground">Username:</span>
                             <span className="font-mono">{pw.username}</span>
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(pw.username, `user-${pw.id}`)}>
-                              {copiedId === `user-${pw.id}` ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => copyToClipboard(pw.username, `user-${pw.id}`)}
+                            >
+                              {copiedId === `user-${pw.id}` ? (
+                                <Check className="h-3 w-3 text-green-500" />
+                              ) : (
+                                <Copy className="h-3 w-3" />
+                              )}
                             </Button>
-                          </div>}
-                        {pw.password && <div className="flex items-center gap-2">
+                          </div>
+                        )}
+                        {pw.password && (
+                          <div className="flex items-center gap-2">
                             <span className="text-muted-foreground">Password:</span>
                             <span className="font-mono">
                               {visiblePasswords.has(pw.id) ? pw.password : "••••••••"}
                             </span>
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => togglePasswordVisibility(pw.id)}>
-                              {visiblePasswords.has(pw.id) ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => togglePasswordVisibility(pw.id)}
+                            >
+                              {visiblePasswords.has(pw.id) ? (
+                                <EyeOff className="h-3 w-3" />
+                              ) : (
+                                <Eye className="h-3 w-3" />
+                              )}
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToClipboard(pw.password, `pass-${pw.id}`)}>
-                              {copiedId === `pass-${pw.id}` ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => copyToClipboard(pw.password, `pass-${pw.id}`)}
+                            >
+                              {copiedId === `pass-${pw.id}` ? (
+                                <Check className="h-3 w-3 text-green-500" />
+                              ) : (
+                                <Copy className="h-3 w-3" />
+                              )}
                             </Button>
-                          </div>}
-                      </div>}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     
-                    {pw.notes && <p className="text-xs text-muted-foreground">{pw.notes}</p>}
+                    {pw.notes && (
+                      <p className="text-xs text-muted-foreground">{pw.notes}</p>
+                    )}
                   </div>
                   
                   {/* Edit/Delete buttons */}
                   <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => openEditDialog(pw)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => openEditDialog(pw)}
+                    >
                       <Pencil className="h-4 w-4" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => openDeleteDialog(pw)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => openDeleteDialog(pw)}
+                    >
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
-              </div>)}
-          </div>}
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
 
       {/* Edit Dialog */}
@@ -1034,32 +1591,42 @@ const ClientPasswordManager = ({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <Input placeholder="Name (e.g., Care Planner, Medication App)" value={editForm.software_name} onChange={e => setEditForm(prev => ({
-            ...prev,
-            software_name: e.target.value
-          }))} />
-            <Input placeholder="URL / Link (optional)" value={editForm.url} onChange={e => setEditForm(prev => ({
-            ...prev,
-            url: e.target.value
-          }))} type="url" />
-            <Input placeholder="Username (optional)" value={editForm.username} onChange={e => setEditForm(prev => ({
-            ...prev,
-            username: e.target.value
-          }))} />
-            <Input type="password" placeholder="Password (optional)" value={editForm.password} onChange={e => setEditForm(prev => ({
-            ...prev,
-            password: e.target.value
-          }))} />
-            <Input placeholder="Notes (optional)" value={editForm.notes} onChange={e => setEditForm(prev => ({
-            ...prev,
-            notes: e.target.value
-          }))} />
+            <Input
+              placeholder="Name (e.g., Care Planner, Medication App)"
+              value={editForm.software_name}
+              onChange={(e) => setEditForm(prev => ({ ...prev, software_name: e.target.value }))}
+            />
+            <Input
+              placeholder="URL / Link (optional)"
+              value={editForm.url}
+              onChange={(e) => setEditForm(prev => ({ ...prev, url: e.target.value }))}
+              type="url"
+            />
+            <Input
+              placeholder="Username (optional)"
+              value={editForm.username}
+              onChange={(e) => setEditForm(prev => ({ ...prev, username: e.target.value }))}
+            />
+            <Input
+              type="password"
+              placeholder="Password (optional)"
+              value={editForm.password}
+              onChange={(e) => setEditForm(prev => ({ ...prev, password: e.target.value }))}
+            />
+            <Input
+              placeholder="Notes (optional)"
+              value={editForm.notes}
+              onChange={(e) => setEditForm(prev => ({ ...prev, notes: e.target.value }))}
+            />
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleEditSubmit} disabled={updatePasswordMutation.isPending}>
+            <Button 
+              onClick={handleEditSubmit}
+              disabled={updatePasswordMutation.isPending}
+            >
               {updatePasswordMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
@@ -1077,11 +1644,15 @@ const ClientPasswordManager = ({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => deletingEntry && deletePasswordMutation.mutate(deletingEntry.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={() => deletingEntry && deletePasswordMutation.mutate(deletingEntry.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               {deletePasswordMutation.isPending ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>;
+    </Card>
+  );
 };
