@@ -238,6 +238,33 @@ export function StaffRequestsManager() {
   // Delete request mutation
   const deleteMutation = useMutation({
     mutationFn: async (requestId: string) => {
+      // First, get the request details to check if we need to delete associated data
+      const { data: request, error: fetchError } = await supabase
+        .from("staff_requests")
+        .select("*")
+        .eq("id", requestId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // If it was an approved holiday request, delete the corresponding staff_holidays entry
+      if (request.status === 'approved' && 
+          (request.request_type === 'holiday' || request.request_type === 'holiday_paid' || request.request_type === 'holiday_unpaid')) {
+        // Find and delete the matching holiday entry
+        const { error: holidayDeleteError } = await supabase
+          .from("staff_holidays")
+          .delete()
+          .eq("user_id", request.user_id)
+          .eq("start_date", request.start_date)
+          .eq("end_date", request.end_date);
+
+        if (holidayDeleteError) {
+          console.error('Failed to delete associated holiday entry:', holidayDeleteError);
+          // Continue anyway - the request should still be deleted
+        }
+      }
+
+      // Delete the request itself
       const { error } = await supabase
         .from("staff_requests")
         .delete()
@@ -250,6 +277,7 @@ export function StaffRequestsManager() {
       queryClient.invalidateQueries({ queryKey: ["my-staff-requests"] });
       queryClient.invalidateQueries({ queryKey: ["staff-requests-for-schedule"] });
       queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["linked-holidays-for-requests"] });
       toast.success("Request deleted");
       setReviewDialogOpen(false);
       setSelectedRequest(null);
