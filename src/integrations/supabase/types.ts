@@ -151,6 +151,66 @@ export type Database = {
           },
         ]
       }
+      client_notices: {
+        Row: {
+          author_name: string
+          client_name: string
+          created_at: string
+          id: string
+          message: string
+          updated_at: string
+        }
+        Insert: {
+          author_name: string
+          client_name: string
+          created_at?: string
+          id?: string
+          message: string
+          updated_at?: string
+        }
+        Update: {
+          author_name?: string
+          client_name?: string
+          created_at?: string
+          id?: string
+          message?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      client_passwords: {
+        Row: {
+          client_name: string
+          created_at: string
+          id: string
+          notes: string | null
+          password: string
+          software_name: string
+          updated_at: string
+          username: string
+        }
+        Insert: {
+          client_name: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          password: string
+          software_name: string
+          updated_at?: string
+          username: string
+        }
+        Update: {
+          client_name?: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          password?: string
+          software_name?: string
+          updated_at?: string
+          username?: string
+        }
+        Relationships: []
+      }
       clients: {
         Row: {
           created_at: string
