@@ -64,6 +64,20 @@ const navigationItems = [{
       </svg>,
   href: '/hr'
 }, {
+  id: 'clients',
+  title: 'Clients',
+  icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M3 21h18" />
+        <path d="M9 8h1" />
+        <path d="M9 12h1" />
+        <path d="M9 16h1" />
+        <path d="M14 8h1" />
+        <path d="M14 12h1" />
+        <path d="M14 16h1" />
+        <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16" />
+      </svg>,
+  href: '/clients'
+}, {
   id: 'whiteboard',
   title: 'Whiteboard',
   icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
