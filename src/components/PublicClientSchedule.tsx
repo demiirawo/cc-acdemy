@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
-import { ChevronLeft, ChevronRight, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2, Palmtree, AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
@@ -60,6 +60,26 @@ interface StaffMember {
   user_id: string;
   display_name: string;
   email: string;
+}
+
+interface StaffHoliday {
+  id: string;
+  user_id: string;
+  start_date: string;
+  end_date: string;
+  status: string;
+  absence_type: string;
+}
+
+interface StaffRequest {
+  id: string;
+  user_id: string;
+  request_type: string;
+  status: string;
+  start_date: string;
+  end_date: string;
+  linked_holiday_id: string | null;
+  swap_with_user_id: string | null;
 }
 
 const SHIFT_TYPES = [
@@ -173,6 +193,81 @@ export const PublicClientSchedule = () => {
   const getStaffName = (userId: string) => {
     const staff = staffMembers.find(s => s.user_id === userId);
     return staff?.display_name || staff?.email?.split('@')[0] || 'Unknown';
+  };
+
+  // Fetch approved holidays for the week
+  const { data: holidays = [] } = useQuery({
+    queryKey: ["public-staff-holidays", currentWeekStart.toISOString()],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff_holidays")
+        .select("id, user_id, start_date, end_date, status, absence_type")
+        .eq("status", "approved")
+        .lte("start_date", format(currentWeekEnd, "yyyy-MM-dd"))
+        .gte("end_date", format(currentWeekStart, "yyyy-MM-dd"));
+      if (error) throw error;
+      return (data || []) as StaffHoliday[];
+    },
+  });
+
+  // Fetch approved staff requests for coverage info
+  const { data: staffRequests = [] } = useQuery({
+    queryKey: ["public-staff-requests", currentWeekStart.toISOString()],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff_requests")
+        .select("id, user_id, request_type, status, start_date, end_date, linked_holiday_id, swap_with_user_id")
+        .eq("status", "approved")
+        .lte("start_date", format(currentWeekEnd, "yyyy-MM-dd"))
+        .gte("end_date", format(currentWeekStart, "yyyy-MM-dd"));
+      if (error) throw error;
+      return (data || []) as StaffRequest[];
+    },
+  });
+
+  // Check if a staff member is on holiday for a specific day
+  const isStaffOnHoliday = (userId: string, day: Date) => {
+    return holidays.some(h => {
+      if (h.user_id !== userId) return false;
+      const start = parseISO(h.start_date);
+      const end = parseISO(h.end_date);
+      return isWithinInterval(day, { start: startOfDay(start), end: endOfDay(end) });
+    });
+  };
+
+  // Get holiday info for a staff member on a specific day
+  const getHolidayInfo = (userId: string, day: Date) => {
+    return holidays.find(h => {
+      if (h.user_id !== userId) return false;
+      const start = parseISO(h.start_date);
+      const end = parseISO(h.end_date);
+      return isWithinInterval(day, { start: startOfDay(start), end: endOfDay(end) });
+    });
+  };
+
+  // Get coverage for a holiday
+  const getCoverageForHoliday = (holidayUserId: string, day: Date) => {
+    const holiday = getHolidayInfo(holidayUserId, day);
+    if (!holiday) return null;
+    
+    // Find approved overtime/shift_swap requests linked to this holiday
+    const coverageRequests = staffRequests.filter(r => 
+      (r.linked_holiday_id === holiday.id || 
+       (r.swap_with_user_id === holidayUserId && r.request_type === 'shift_swap')) &&
+      r.status === 'approved' &&
+      isWithinInterval(day, { 
+        start: startOfDay(parseISO(r.start_date)), 
+        end: endOfDay(parseISO(r.end_date)) 
+      })
+    );
+    
+    if (coverageRequests.length === 0) return null;
+    
+    return coverageRequests.map(r => ({
+      userId: r.user_id,
+      name: getStaffName(r.user_id),
+      type: r.request_type
+    }));
   };
 
   // Generate virtual schedules from patterns
@@ -358,19 +453,51 @@ export const PublicClientSchedule = () => {
                               key={day.toISOString()} 
                               className="min-h-[60px] p-1 rounded border bg-background border-border"
                             >
-                              {daySchedules.map(schedule => (
-                                <div 
-                                  key={schedule.id} 
-                                  className={`rounded p-1.5 mb-1 text-xs border ${colors.bg} ${colors.border}`}
-                                >
-                                  <div className={`font-semibold truncate ${colors.text}`}>
-                                    {getStaffName(schedule.user_id)}
+                              {daySchedules.map(schedule => {
+                                const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
+                                const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
+                                const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
+                                
+                                return (
+                                  <div 
+                                    key={schedule.id} 
+                                    className={`rounded p-1.5 mb-1 text-xs border ${
+                                      staffOnHoliday 
+                                        ? 'bg-amber-100 border-amber-300' 
+                                        : `${colors.bg} ${colors.border}`
+                                    }`}
+                                  >
+                                    <div className={`font-semibold truncate flex items-center gap-1 ${
+                                      staffOnHoliday ? 'text-amber-900' : colors.text
+                                    }`}>
+                                      {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600 flex-shrink-0" />}
+                                      {getStaffName(schedule.user_id)}
+                                    </div>
+                                    
+                                    {staffOnHoliday ? (
+                                      <div className="mt-0.5">
+                                        <div className="text-[10px] text-amber-700 capitalize">
+                                          {holidayInfo?.absence_type?.replace('_', ' ') || 'On holiday'}
+                                        </div>
+                                        {coverage && coverage.length > 0 ? (
+                                          <div className="text-[10px] text-green-700 bg-green-50 rounded px-1 py-0.5 mt-0.5">
+                                            <span className="font-medium">Cover:</span> {coverage.map(c => c.name).join(', ')}
+                                          </div>
+                                        ) : (
+                                          <div className="text-[10px] text-red-600 bg-red-50 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1">
+                                            <AlertTriangle className="h-2.5 w-2.5" />
+                                            <span>No cover</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className={`${colors.text} opacity-80`}>
+                                        {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
+                                      </div>
+                                    )}
                                   </div>
-                                  <div className={`${colors.text} opacity-80`}>
-                                    {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
-                                  </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           );
                         })}
