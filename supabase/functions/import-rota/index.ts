@@ -6,14 +6,14 @@ const corsHeaders = {
 }
 
 interface ShiftPattern {
-  staffName: string;
-  userId: string;
-  clientName: string;
-  dayOfWeek: number;
-  startTime: string;
-  endTime: string;
-  shiftType: string;
-  weekVariation: string; // 'Week1', 'Week2', or '' for weekly
+  staff_name?: string;
+  user_id: string;
+  client_name: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  shift_type: string;
+  week_type?: string; // 'week1', 'week2', or '' for weekly
 }
 
 Deno.serve(async (req) => {
@@ -31,23 +31,25 @@ Deno.serve(async (req) => {
     console.log('Import rota action:', action);
 
     if (action === 'add-clients') {
-      // Add missing clients
-      const clientNames = data.clients as string[];
-      const adminUserId = data.adminUserId as string;
+      // Add missing clients - accept array of objects with name
+      const clients = data.clients as { name: string }[];
+      const adminUserId = data.createdBy as string;
       
-      for (const name of clientNames) {
+      let addedCount = 0;
+      for (const client of clients) {
         const { error } = await supabase.from('clients').insert({
-          name,
+          name: client.name,
           created_by: adminUserId
         });
         if (error && !error.message.includes('duplicate')) {
-          console.error('Error adding client:', name, error);
+          console.error('Error adding client:', client.name, error);
         } else {
-          console.log('Added client:', name);
+          console.log('Added client:', client.name);
+          addedCount++;
         }
       }
       
-      return new Response(JSON.stringify({ success: true, message: `Added ${clientNames.length} clients` }), {
+      return new Response(JSON.stringify({ success: true, message: `Added ${addedCount} clients` }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -76,9 +78,9 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'import-patterns') {
-      // Import recurring shift patterns
+      // Import recurring shift patterns - accept snake_case
       const patterns = data.patterns as ShiftPattern[];
-      const adminUserId = data.adminUserId as string;
+      const adminUserId = data.createdBy as string;
       
       let successCount = 0;
       let errorCount = 0;
@@ -87,13 +89,13 @@ Deno.serve(async (req) => {
       const groupedPatterns = new Map<string, ShiftPattern[]>();
       
       for (const pattern of patterns) {
-        if (!pattern.userId) {
-          console.log('Skipping pattern without userId:', pattern);
+        if (!pattern.user_id) {
+          console.log('Skipping pattern without user_id:', pattern);
           continue;
         }
         
         // Create a key for grouping
-        const key = `${pattern.userId}-${pattern.clientName}-${pattern.startTime}-${pattern.endTime}-${pattern.shiftType}-${pattern.weekVariation}`;
+        const key = `${pattern.user_id}-${pattern.client_name}-${pattern.start_time}-${pattern.end_time}-${pattern.shift_type}-${pattern.week_type || ''}`;
         
         if (!groupedPatterns.has(key)) {
           groupedPatterns.set(key, []);
@@ -105,11 +107,12 @@ Deno.serve(async (req) => {
       
       for (const [key, groupedShifts] of groupedPatterns) {
         const firstShift = groupedShifts[0];
-        const daysOfWeek = [...new Set(groupedShifts.map(s => s.dayOfWeek))].sort();
+        const daysOfWeek = [...new Set(groupedShifts.map(s => s.day_of_week))].sort((a, b) => a - b);
         
         // Determine recurrence interval
         let recurrenceInterval = 'weekly';
-        if (firstShift.weekVariation === 'Week1' || firstShift.weekVariation === 'Week2') {
+        const weekType = firstShift.week_type?.toLowerCase() || '';
+        if (weekType === 'week1' || weekType === 'week2') {
           recurrenceInterval = 'biweekly';
         }
         
@@ -117,17 +120,17 @@ Deno.serve(async (req) => {
         // Week1 starts from Dec 31, 2025 (Wednesday)
         // Week2 starts from Jan 7, 2026 (Wednesday)
         let startDate = '2025-12-31'; // Default for Week1 or no variation
-        if (firstShift.weekVariation === 'Week2') {
+        if (weekType === 'week2') {
           startDate = '2026-01-07';
         }
         
         const patternData = {
-          user_id: firstShift.userId,
-          client_name: firstShift.clientName,
+          user_id: firstShift.user_id,
+          client_name: firstShift.client_name,
           days_of_week: daysOfWeek,
-          start_time: firstShift.startTime,
-          end_time: firstShift.endTime,
-          shift_type: firstShift.shiftType,
+          start_time: firstShift.start_time,
+          end_time: firstShift.end_time,
+          shift_type: firstShift.shift_type,
           recurrence_interval: recurrenceInterval,
           start_date: startDate,
           created_by: adminUserId,
