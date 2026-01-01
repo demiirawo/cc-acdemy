@@ -48,6 +48,8 @@ interface Holiday {
   status: string;
   absence_type: string;
   notes: string | null;
+  no_cover_required: boolean;
+  days_taken: number;
 }
 
 interface StaffMember {
@@ -223,6 +225,20 @@ export function StaffScheduleManager() {
     notes: "",
   });
 
+  // Holiday edit state
+  const [isEditHolidayDialogOpen, setIsEditHolidayDialogOpen] = useState(false);
+  const [editingHoliday, setEditingHoliday] = useState<Holiday | null>(null);
+  const [isViewingHoliday, setIsViewingHoliday] = useState(true);
+  const [editHolidayForm, setEditHolidayForm] = useState({
+    absence_type: 'holiday',
+    start_date: '',
+    end_date: '',
+    days_taken: 1,
+    notes: '',
+    no_cover_required: false
+  });
+  const [isDeleteHolidayConfirmOpen, setIsDeleteHolidayConfirmOpen] = useState(false);
+
   // Edit pattern form state
   const [editPatternForm, setEditPatternForm] = useState({
     user_id: "",
@@ -342,13 +358,13 @@ export function StaffScheduleManager() {
   });
 
   // Fetch holidays
-  const { data: holidays = [] } = useQuery({
+  const { data: holidays = [], refetch: refetchHolidays } = useQuery({
     queryKey: ["staff-holidays-for-schedule", currentWeekStart.toISOString()],
     queryFn: async () => {
       const weekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 1 });
       const { data, error } = await supabase
         .from("staff_holidays")
-        .select("*")
+        .select("id, user_id, start_date, end_date, status, absence_type, notes, no_cover_required, days_taken")
         .or(`start_date.lte.${format(weekEnd, "yyyy-MM-dd")},end_date.gte.${format(currentWeekStart, "yyyy-MM-dd")}`)
         .in("status", ["approved", "pending"]);
       
@@ -958,6 +974,76 @@ export function StaffScheduleManager() {
     });
     setIsEditOvertimeDialogOpen(true);
   };
+
+  // Holiday click handler
+  const handleHolidayClick = (holiday: Holiday) => {
+    setEditingHoliday(holiday);
+    setEditHolidayForm({
+      absence_type: holiday.absence_type,
+      start_date: holiday.start_date,
+      end_date: holiday.end_date,
+      days_taken: holiday.days_taken,
+      notes: holiday.notes || '',
+      no_cover_required: holiday.no_cover_required
+    });
+    setIsViewingHoliday(true);
+    setIsEditHolidayDialogOpen(true);
+  };
+
+  // Update holiday mutation
+  const updateHolidayMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingHoliday) throw new Error("No holiday selected");
+      
+      const { error } = await supabase
+        .from("staff_holidays")
+        .update({
+          absence_type: editHolidayForm.absence_type as any,
+          start_date: editHolidayForm.start_date,
+          end_date: editHolidayForm.end_date,
+          days_taken: editHolidayForm.days_taken,
+          notes: editHolidayForm.notes || null,
+          no_cover_required: editHolidayForm.no_cover_required
+        })
+        .eq("id", editingHoliday.id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Holiday updated successfully");
+      setIsEditHolidayDialogOpen(false);
+      setIsViewingHoliday(true);
+      refetchHolidays();
+      queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-schedule"] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to update holiday");
+    }
+  });
+
+  // Delete holiday mutation
+  const deleteHolidayMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingHoliday) throw new Error("No holiday selected");
+      
+      const { error } = await supabase
+        .from("staff_holidays")
+        .delete()
+        .eq("id", editingHoliday.id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Holiday deleted successfully");
+      setIsDeleteHolidayConfirmOpen(false);
+      setIsEditHolidayDialogOpen(false);
+      refetchHolidays();
+      queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-schedule"] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to delete holiday");
+    }
+  });
 
   const navigateWeek = (direction: "prev" | "next") => {
     setCurrentWeekStart(prev => addDays(prev, direction === "next" ? 7 : -7));
@@ -1923,7 +2009,7 @@ export function StaffScheduleManager() {
                     const coveringFor = getCoveringForInfo(staff.user_id, day);
 
                     const hasCoverage = coverage && coverage.length > 0;
-                    const needsCoverage = onHoliday && holidayInfo?.status === 'approved' && !hasCoverage;
+                    const needsCoverage = onHoliday && holidayInfo?.status === 'approved' && !hasCoverage && !holidayInfo?.no_cover_required;
 
                     return (
                       <div 
@@ -1938,14 +2024,20 @@ export function StaffScheduleManager() {
                             : 'bg-background border-border'
                         }`}
                       >
-                        {/* Holiday indicator with coverage info */}
-                        {onHoliday && (
-                          <div className="mb-1">
+                        {/* Holiday indicator with coverage info - clickable */}
+                        {onHoliday && holidayInfo && (
+                          <div 
+                            className="mb-1 cursor-pointer hover:ring-2 hover:ring-primary/50 rounded p-0.5 -m-0.5"
+                            onClick={() => handleHolidayClick(holidayInfo)}
+                          >
                             <div className={`flex items-center gap-1 text-xs ${hasCoverage ? 'text-green-700' : needsCoverage ? 'text-red-700' : 'text-amber-700'}`}>
                               <Palmtree className="h-3 w-3" />
                               <span className="capitalize">{holidayInfo?.absence_type || 'Holiday'}</span>
                               {holidayInfo?.status === 'pending' && (
                                 <Badge variant="outline" className="text-[10px] py-0 px-1">Pending</Badge>
+                              )}
+                              {holidayInfo?.no_cover_required && (
+                                <Badge variant="outline" className="text-[10px] py-0 px-1 bg-blue-50 border-blue-200 text-blue-700">No cover needed</Badge>
                               )}
                             </div>
                             {hasCoverage ? (
@@ -2757,6 +2849,209 @@ export function StaffScheduleManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Holiday Edit Dialog */}
+      <Dialog open={isEditHolidayDialogOpen} onOpenChange={setIsEditHolidayDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Palmtree className="h-5 w-5 text-amber-600" />
+              {isViewingHoliday ? 'Holiday/Absence Details' : 'Edit Holiday/Absence'}
+            </DialogTitle>
+            <DialogDescription>
+              {editingHoliday && getStaffName(editingHoliday.user_id)}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {!isViewingHoliday ? (
+              <>
+                <div className="space-y-2">
+                  <Label>Absence Type</Label>
+                  <Select
+                    value={editHolidayForm.absence_type}
+                    onValueChange={(value) => setEditHolidayForm({ ...editHolidayForm, absence_type: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="holiday">Holiday</SelectItem>
+                      <SelectItem value="sick">Sick Leave</SelectItem>
+                      <SelectItem value="personal">Personal Leave</SelectItem>
+                      <SelectItem value="maternity">Maternity Leave</SelectItem>
+                      <SelectItem value="paternity">Paternity Leave</SelectItem>
+                      <SelectItem value="unpaid">Unpaid Leave</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Start Date</Label>
+                    <Input
+                      type="date"
+                      value={editHolidayForm.start_date}
+                      onChange={(e) => setEditHolidayForm({ ...editHolidayForm, start_date: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>End Date</Label>
+                    <Input
+                      type="date"
+                      value={editHolidayForm.end_date}
+                      onChange={(e) => setEditHolidayForm({ ...editHolidayForm, end_date: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Days Taken</Label>
+                  <Input
+                    type="number"
+                    value={editHolidayForm.days_taken}
+                    onChange={(e) => setEditHolidayForm({ ...editHolidayForm, days_taken: parseFloat(e.target.value) || 0 })}
+                    step="0.5"
+                  />
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="no_cover_required"
+                    checked={editHolidayForm.no_cover_required}
+                    onCheckedChange={(checked) => setEditHolidayForm({ ...editHolidayForm, no_cover_required: !!checked })}
+                  />
+                  <Label htmlFor="no_cover_required" className="text-sm font-normal cursor-pointer">
+                    No cover required for this absence
+                  </Label>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Notes</Label>
+                  <Textarea
+                    value={editHolidayForm.notes}
+                    onChange={(e) => setEditHolidayForm({ ...editHolidayForm, notes: e.target.value })}
+                    placeholder="Additional notes..."
+                    rows={2}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Type</p>
+                    <p className="font-medium capitalize">{editingHoliday?.absence_type}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Days</p>
+                    <p className="font-medium">{editingHoliday?.days_taken}</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Start Date</p>
+                    <p className="font-medium">
+                      {editingHoliday?.start_date && format(parseISO(editingHoliday.start_date), 'dd MMM yyyy')}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">End Date</p>
+                    <p className="font-medium">
+                      {editingHoliday?.end_date && format(parseISO(editingHoliday.end_date), 'dd MMM yyyy')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Status</p>
+                    <Badge variant="outline" className="bg-success/20 text-success border-success">
+                      {editingHoliday?.status}
+                    </Badge>
+                  </div>
+                  {editingHoliday?.no_cover_required && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Cover</p>
+                      <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+                        No cover needed
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+
+                {editingHoliday?.notes && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Notes</p>
+                    <p className="text-sm">{editingHoliday.notes}</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            {!isViewingHoliday ? (
+              <>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setIsViewingHoliday(true)}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={() => updateHolidayMutation.mutate()}
+                  disabled={updateHolidayMutation.isPending}
+                >
+                  {updateHolidayMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button 
+                  variant="destructive" 
+                  onClick={() => setIsDeleteHolidayConfirmOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => setIsViewingHoliday(false)}
+                >
+                  Edit
+                </Button>
+                <Button onClick={() => setIsEditHolidayDialogOpen(false)}>
+                  Close
+                </Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Holiday Confirmation Dialog */}
+      <AlertDialog open={isDeleteHolidayConfirmOpen} onOpenChange={setIsDeleteHolidayConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Holiday/Absence?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete this holiday/absence record. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteHolidayMutation.mutate()}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteHolidayMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
