@@ -8,7 +8,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
-import { ChevronLeft, ChevronRight, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 
 interface ClientWhiteboard {
@@ -539,6 +541,21 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
   const [notes, setNotes] = useState("");
   const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  
+  // Edit state
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<ClientPassword | null>(null);
+  const [editForm, setEditForm] = useState({
+    software_name: "",
+    username: "",
+    password: "",
+    url: "",
+    notes: "",
+  });
+  
+  // Delete confirmation state
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deletingEntry, setDeletingEntry] = useState<ClientPassword | null>(null);
 
   const { data: passwords = [], isLoading } = useQuery({
     queryKey: ["client-passwords", clientName],
@@ -591,6 +608,87 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
       return;
     }
     addPasswordMutation.mutate();
+  };
+
+  // Update mutation
+  const updatePasswordMutation = useMutation({
+    mutationFn: async (data: { id: string; software_name: string; username: string; password: string; url: string | null; notes: string | null }) => {
+      const { error } = await supabase
+        .from("client_passwords")
+        .update({
+          software_name: data.software_name,
+          username: data.username,
+          password: data.password,
+          url: data.url,
+          notes: data.notes,
+        })
+        .eq("id", data.id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["client-passwords", clientName] });
+      setIsEditDialogOpen(false);
+      setEditingEntry(null);
+      toast.success("Entry updated successfully");
+    },
+    onError: () => {
+      toast.error("Failed to update entry");
+    },
+  });
+
+  // Delete mutation
+  const deletePasswordMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("client_passwords")
+        .delete()
+        .eq("id", id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["client-passwords", clientName] });
+      setIsDeleteDialogOpen(false);
+      setDeletingEntry(null);
+      toast.success("Entry deleted successfully");
+    },
+    onError: () => {
+      toast.error("Failed to delete entry");
+    },
+  });
+
+  const openEditDialog = (entry: ClientPassword) => {
+    setEditingEntry(entry);
+    setEditForm({
+      software_name: entry.software_name,
+      username: entry.username,
+      password: entry.password,
+      url: entry.url || "",
+      notes: entry.notes || "",
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleEditSubmit = () => {
+    if (!editingEntry) return;
+    if (!editForm.software_name.trim()) {
+      toast.error("Please provide a name for this entry");
+      return;
+    }
+    updatePasswordMutation.mutate({
+      id: editingEntry.id,
+      software_name: editForm.software_name.trim(),
+      username: editForm.username.trim(),
+      password: editForm.password.trim(),
+      url: editForm.url.trim() || null,
+      notes: editForm.notes.trim() || null,
+    });
+  };
+
+  const openDeleteDialog = (entry: ClientPassword) => {
+    setDeletingEntry(entry);
+    setIsDeleteDialogOpen(true);
   };
 
   const togglePasswordVisibility = (id: string) => {
@@ -789,12 +887,105 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
                       <p className="text-xs text-muted-foreground">{pw.notes}</p>
                     )}
                   </div>
+                  
+                  {/* Edit/Delete buttons */}
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => openEditDialog(pw)}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      onClick={() => openDeleteDialog(pw)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               </div>
             ))}
           </div>
         )}
       </CardContent>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Entry</DialogTitle>
+            <DialogDescription>
+              Update the details of this password or link entry.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input
+              placeholder="Name (e.g., Care Planner, Medication App)"
+              value={editForm.software_name}
+              onChange={(e) => setEditForm(prev => ({ ...prev, software_name: e.target.value }))}
+            />
+            <Input
+              placeholder="URL / Link (optional)"
+              value={editForm.url}
+              onChange={(e) => setEditForm(prev => ({ ...prev, url: e.target.value }))}
+              type="url"
+            />
+            <Input
+              placeholder="Username (optional)"
+              value={editForm.username}
+              onChange={(e) => setEditForm(prev => ({ ...prev, username: e.target.value }))}
+            />
+            <Input
+              type="password"
+              placeholder="Password (optional)"
+              value={editForm.password}
+              onChange={(e) => setEditForm(prev => ({ ...prev, password: e.target.value }))}
+            />
+            <Input
+              placeholder="Notes (optional)"
+              value={editForm.notes}
+              onChange={(e) => setEditForm(prev => ({ ...prev, notes: e.target.value }))}
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleEditSubmit}
+              disabled={updatePasswordMutation.isPending}
+            >
+              {updatePasswordMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Entry</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deletingEntry?.software_name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deletingEntry && deletePasswordMutation.mutate(deletingEntry.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletePasswordMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 };
