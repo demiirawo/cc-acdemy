@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
-import { ChevronLeft, ChevronRight, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2, Palmtree, AlertTriangle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2, Palmtree, AlertTriangle, Clock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
@@ -39,6 +39,7 @@ interface Schedule {
   end_datetime: string;
   notes: string | null;
   shift_type: string | null;
+  is_pattern_overtime?: boolean;
 }
 
 interface RecurringPattern {
@@ -168,8 +169,7 @@ export const PublicClientSchedule = () => {
       const { data, error } = await supabase
         .from("recurring_shift_patterns")
         .select("*")
-        .eq("client_name", decodedClientName)
-        .eq("is_overtime", false);
+        .eq("client_name", decodedClientName);
       
       if (error) throw error;
       return (data || []) as RecurringPattern[];
@@ -326,6 +326,7 @@ export const PublicClientSchedule = () => {
           end_datetime: endDatetime.toISOString(),
           notes: pattern.notes,
           shift_type: pattern.shift_type,
+          is_pattern_overtime: pattern.is_overtime,
         });
       });
     });
@@ -457,6 +458,7 @@ export const PublicClientSchedule = () => {
                                 const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
                                 const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
                                 const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
+                                const isOvertime = schedule.is_pattern_overtime;
                                 
                                 return (
                                   <div 
@@ -464,14 +466,24 @@ export const PublicClientSchedule = () => {
                                     className={`rounded p-1.5 mb-1 text-xs border ${
                                       staffOnHoliday 
                                         ? 'bg-amber-100 border-amber-300' 
-                                        : `${colors.bg} ${colors.border}`
+                                        : isOvertime
+                                          ? 'bg-orange-100 border-orange-300'
+                                          : `${colors.bg} ${colors.border}`
                                     }`}
                                   >
                                     <div className={`font-semibold truncate flex items-center gap-1 ${
-                                      staffOnHoliday ? 'text-amber-900' : colors.text
+                                      staffOnHoliday 
+                                        ? 'text-amber-900' 
+                                        : isOvertime 
+                                          ? 'text-orange-900'
+                                          : colors.text
                                     }`}>
                                       {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600 flex-shrink-0" />}
+                                      {isOvertime && !staffOnHoliday && <Clock className="h-3 w-3 text-orange-600 flex-shrink-0" />}
                                       {getStaffName(schedule.user_id)}
+                                      {isOvertime && !staffOnHoliday && (
+                                        <span className="text-[9px] bg-orange-200 text-orange-800 px-1 rounded ml-auto">OT</span>
+                                      )}
                                     </div>
                                     
                                     {staffOnHoliday ? (
@@ -491,7 +503,7 @@ export const PublicClientSchedule = () => {
                                         )}
                                       </div>
                                     ) : (
-                                      <div className={`${colors.text} opacity-80`}>
+                                      <div className={`${isOvertime ? 'text-orange-900' : colors.text} opacity-80`}>
                                         {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
                                       </div>
                                     )}
