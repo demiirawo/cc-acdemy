@@ -19,22 +19,26 @@ export function HRSection() {
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-foreground">HR Management</h1>
           <p className="text-muted-foreground mt-1">
-            {isAdmin ? "Manage staff schedules, requests, pay and profiles" : "View your HR profile, submit requests and view records"}
+            {isAdmin ? "Manage staff schedules, requests, pay and profiles" : "View your schedule, submit requests and view your HR profile"}
           </p>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-6' : 'grid-cols-2'} mb-6`}>
+          <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: isAdmin ? 'repeat(6, 1fr)' : 'repeat(3, 1fr)' }}>
             {isAdmin && (
               <>
                 <TabsTrigger value="profiles" className="flex items-center gap-2">
                   <Users className="h-4 w-4" />
                   Staff Profiles
                 </TabsTrigger>
-                <TabsTrigger value="schedule" className="flex items-center gap-2">
-                  <CalendarClock className="h-4 w-4" />
-                  Schedule
-                </TabsTrigger>
+              </>
+            )}
+            <TabsTrigger value="schedule" className="flex items-center gap-2">
+              <CalendarClock className="h-4 w-4" />
+              Schedule
+            </TabsTrigger>
+            {isAdmin && (
+              <>
                 <TabsTrigger value="requests" className="flex items-center gap-2">
                   <ClipboardList className="h-4 w-4" />
                   Requests
@@ -60,9 +64,15 @@ export function HRSection() {
               <TabsContent value="profiles" className="mt-0">
                 <HRProfileManager />
               </TabsContent>
-              <TabsContent value="schedule" className="mt-0">
-                <StaffScheduleManager />
-              </TabsContent>
+            </>
+          )}
+          
+          <TabsContent value="schedule" className="mt-0">
+            <StaffScheduleManager />
+          </TabsContent>
+          
+          {isAdmin && (
+            <>
               <TabsContent value="requests" className="mt-0">
                 <StaffRequestsManager />
               </TabsContent>
