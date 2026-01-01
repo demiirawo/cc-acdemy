@@ -357,7 +357,9 @@ export function ClientProfitCalculator() {
         });
       });
       
-      const revenue = client.mrr || 0;
+      // MRR includes 20% VAT, so actual revenue is MRR / 1.2
+      const mrrIncVAT = client.mrr || 0;
+      const revenue = mrrIncVAT / 1.2;
       const profit = revenue - totalCost;
       const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
       
@@ -569,7 +571,8 @@ export function ClientProfitCalculator() {
       <Card>
         <CardContent className="pt-6">
           <p className="text-sm text-muted-foreground">
-            <strong>How costs are calculated:</strong> Each staff member's total monthly cost (salary + bonuses + overtime - deductions) 
+            <strong>How calculations work:</strong> Revenue is calculated as MRR excluding 20% VAT (MRR ÷ 1.2). 
+            Each staff member's total monthly cost (salary + bonuses + overtime - deductions) 
             is allocated to clients based on the proportion of working days they spend on each client. 
             For example, if a staff member works 10 days for Client A and 10 days for Client B, each client is allocated 50% of that staff member's cost.
             All amounts are converted to GBP.
