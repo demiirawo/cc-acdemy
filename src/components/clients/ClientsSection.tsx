@@ -170,7 +170,7 @@ export function ClientsSection() {
 
   const getPublicScheduleUrl = (clientName: string) => {
     const encodedName = encodeURIComponent(clientName);
-    return `${window.location.origin}/client-schedule/${encodedName}`;
+    return `${window.location.origin}/public/schedule/${encodedName}`;
   };
 
   const copyPublicLink = async (clientName: string, clientId: string) => {
