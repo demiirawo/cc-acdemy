@@ -409,11 +409,11 @@ export function StaffScheduleManager() {
     return [...schedules, ...uniqueVirtual];
   }, [schedules, virtualSchedulesFromPatterns]);
 
-  // Get unique clients from schedules
+  // Get unique clients from schedules (sorted alphabetically)
   const uniqueClients = useMemo(() => {
     const clients = new Set(allSchedules.map(s => s.client_name));
-    return Array.from(clients).sort();
-  }, [schedules]);
+    return Array.from(clients).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }, [allSchedules]);
 
   // Create recurring schedule mutation
   const createRecurringScheduleMutation = useMutation({
