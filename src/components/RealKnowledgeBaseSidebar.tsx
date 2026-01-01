@@ -64,16 +64,6 @@ const navigationItems = [{
       </svg>,
   href: '/hr'
 }, {
-  id: 'tags',
-  title: 'Tags',
-  icon: Tag,
-  href: '/tags'
-}, {
-  id: 'recycling-bin',
-  title: 'Recycling Bin',
-  icon: Trash2,
-  href: '/recycling-bin'
-}, {
   id: 'whiteboard',
   title: 'Whiteboard',
   icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -82,11 +72,25 @@ const navigationItems = [{
         <path d="m17 7-10 10" />
       </svg>,
   href: '/whiteboard'
+}];
+
+// Utility items that appear under Pages section
+const pagesUtilityItems = [{
+  id: 'tags',
+  title: 'Tags',
+  icon: Tag,
+  href: '/tags'
 }, {
   id: 'glossary',
   title: 'Glossary',
   icon: BookOpen,
   href: '/glossary'
+}, {
+  id: 'recycling-bin',
+  title: 'Recycling Bin',
+  icon: Trash2,
+  href: '/recycling-bin',
+  adminOnly: true
 }];
 
 interface SidebarTreeItemProps {
@@ -807,15 +811,7 @@ export function RealKnowledgeBaseSidebar({
       {/* Navigation */}
       <div className="p-4 border-b border-sidebar-border">
         <div className="space-y-1">
-          {navigationItems
-            .filter((item) => {
-              // Filter navigation items based on user role
-              if (item.id === 'recycling-bin') {
-                return isAdmin;
-              }
-              return true;
-            })
-            .map((item) => {
+          {navigationItems.map((item) => {
             const Icon = item.icon;
             const isSelected = selectedId === item.id;
             return (
@@ -828,7 +824,7 @@ export function RealKnowledgeBaseSidebar({
                 )}
                 onClick={() => handleItemSelect({
                   ...item,
-                  type: ['chat', 'hr', 'home', 'recent', 'tags', 'recycling-bin', 'whiteboard', 'glossary', 'settings'].includes(item.id) ? 'space' : 'page'
+                  type: ['chat', 'hr', 'home', 'whiteboard', 'settings'].includes(item.id) ? 'space' : 'page'
                 })}
               >
                 <Icon className="h-4 w-4 text-sidebar-foreground/70" />
@@ -906,6 +902,33 @@ export function RealKnowledgeBaseSidebar({
                     )}
                   </div>
                 )}
+
+                {/* Utility items under Pages */}
+                <div className="mt-4 pt-4 border-t border-sidebar-border/50">
+                  {pagesUtilityItems
+                    .filter((item) => !item.adminOnly || isAdmin)
+                    .map((item) => {
+                      const Icon = item.icon;
+                      const isSelected = selectedId === item.id;
+                      return (
+                        <div 
+                          key={item.id}
+                          className={cn(
+                            "flex items-center gap-3 px-2 py-1.5 text-sm rounded-md cursor-pointer transition-colors",
+                            "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                            isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                          )}
+                          onClick={() => handleItemSelect({
+                            ...item,
+                            type: 'space'
+                          })}
+                        >
+                          <Icon className="h-4 w-4 text-sidebar-foreground/70" />
+                          <span className="text-zinc-50">{item.title}</span>
+                        </div>
+                      );
+                    })}
+                </div>
               </div>
             )}
           </div>
