@@ -645,7 +645,7 @@ export function StaffPayManager() {
       
       // Also calculate overtime days from recurring overtime shift patterns
       const userOvertimePatterns = recurringPatterns.filter(p => p.user_id === hr.user_id && p.is_overtime);
-      let recurringOvertimeDays = 0;
+      const countedOvertimeDates = new Set<string>(); // Track dates already counted to avoid double-counting
       
       // Iterate through each day of the month and count overtime pattern days
       let currentDate = new Date(monthStart);
@@ -653,6 +653,8 @@ export function StaffPayManager() {
         const dateStr = format(currentDate, 'yyyy-MM-dd');
         const dayOfWeek = currentDate.getDay();
         
+        // Check if any overtime pattern applies to this day (count the day only once even if multiple shifts)
+        let dayHasOvertime = false;
         userOvertimePatterns.forEach(pattern => {
           const patternStart = parseISO(pattern.start_date);
           const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
@@ -662,14 +664,21 @@ export function StaffPayManager() {
               // Check for exceptions
               const patternExceptionsSet = exceptionsMap.get(pattern.id);
               if (!patternExceptionsSet || !patternExceptionsSet.has(dateStr)) {
-                recurringOvertimeDays += 1;
+                dayHasOvertime = true;
               }
             }
           }
         });
         
+        // Only count the day once, even if multiple overtime shifts exist
+        if (dayHasOvertime && !countedOvertimeDates.has(dateStr)) {
+          countedOvertimeDates.add(dateStr);
+        }
+        
         currentDate.setDate(currentDate.getDate() + 1);
       }
+      
+      const recurringOvertimeDays = countedOvertimeDates.size;
       
       // Add recurring overtime days to total
       overtimeDays += recurringOvertimeDays;
