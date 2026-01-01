@@ -133,6 +133,8 @@ export function StaffRequestForm() {
   const [swapStartDate, setSwapStartDate] = useState<Date>();
   const [swapEndDate, setSwapEndDate] = useState<Date>();
   const [selectedSwapShifts, setSelectedSwapShifts] = useState<string[]>([]);
+  const [shiftCoverType, setShiftCoverType] = useState<'shifts' | 'holidays'>('shifts');
+  const [selectedCoverHolidayId, setSelectedCoverHolidayId] = useState("");
   // Fetch staff members for swap selection
   const { data: staffMembers = [] } = useQuery({
     queryKey: ["staff-members-for-requests"],
@@ -212,7 +214,7 @@ export function StaffRequestForm() {
       if (error) throw error;
       return data;
     },
-    enabled: !!swapWithUserId && !!swapStartDate && !!swapEndDate
+    enabled: !!swapWithUserId && !!swapStartDate && !!swapEndDate && shiftCoverType === 'shifts'
   });
 
   // Fetch swap partner's recurring patterns to generate virtual shifts
@@ -228,7 +230,25 @@ export function StaffRequestForm() {
       if (error) throw error;
       return data;
     },
-    enabled: !!swapWithUserId
+    enabled: !!swapWithUserId && shiftCoverType === 'shifts'
+  });
+
+  // Fetch swap partner's approved holidays for holiday cover
+  const { data: swapPartnerHolidays = [] } = useQuery({
+    queryKey: ["swap-partner-holidays", swapWithUserId],
+    queryFn: async () => {
+      if (!swapWithUserId) return [];
+      const { data, error } = await supabase
+        .from("staff_holidays")
+        .select("id, user_id, start_date, end_date, days_taken, notes, absence_type")
+        .eq("status", "approved")
+        .eq("user_id", swapWithUserId)
+        .order("start_date", { ascending: false });
+      
+      if (error) throw error;
+      return data as ApprovedHoliday[];
+    },
+    enabled: !!swapWithUserId && shiftCoverType === 'holidays'
   });
 
   // Get staff members who have approved holidays (for the covering dropdown)
@@ -389,9 +409,13 @@ export function StaffRequestForm() {
       
       // Validation for shift cover
       if (requestType === 'shift_swap') {
-        if (!swapWithUserId) throw new Error("Please select whose shifts you are covering");
-        if (!swapStartDate || !swapEndDate) throw new Error("Please select a date range");
-        if (selectedSwapShifts.length === 0) throw new Error("Please select at least one shift to cover");
+        if (!swapWithUserId) throw new Error("Please select whose shifts/holidays you are covering");
+        if (shiftCoverType === 'shifts') {
+          if (!swapStartDate || !swapEndDate) throw new Error("Please select a date range");
+          if (selectedSwapShifts.length === 0) throw new Error("Please select at least one shift to cover");
+        } else {
+          if (!selectedCoverHolidayId) throw new Error("Please select an approved holiday to cover");
+        }
       } else if (requestType !== 'overtime') {
         if (!startDate) throw new Error("Please select a start date");
         if (!endDate) throw new Error("Please select an end date");
@@ -407,20 +431,33 @@ export function StaffRequestForm() {
         overtimeType = calculateOvertimeType(linkedHolidayId);
       }
 
-      // Build details for shift swap including selected shifts
+      // Build details for shift swap including selected shifts or holiday
       let requestDetails = details;
-      if (requestType === 'shift_swap' && selectedSwapShifts.length > 0) {
-        const shiftDetails = availableSwapShifts
-          .filter(s => selectedSwapShifts.includes(s.id))
-          .map(s => `${format(s.date, "dd MMM yyyy")} ${s.startTime}-${s.endTime} (${s.clientName})`)
-          .join("; ");
-        requestDetails = details ? `${details}\n\nShifts: ${shiftDetails}` : `Shifts: ${shiftDetails}`;
-      }
+      let requestStartDate = startDate;
+      let requestEndDate = endDate;
+      let requestDays = parseFloat(daysRequested) || 1;
 
-      // Determine dates for shift swap
-      const requestStartDate = requestType === 'shift_swap' ? swapStartDate : startDate;
-      const requestEndDate = requestType === 'shift_swap' ? swapEndDate : endDate;
-      const requestDays = requestType === 'shift_swap' ? selectedSwapShifts.length : parseFloat(daysRequested) || 1;
+      if (requestType === 'shift_swap') {
+        if (shiftCoverType === 'shifts' && selectedSwapShifts.length > 0) {
+          const shiftDetails = availableSwapShifts
+            .filter(s => selectedSwapShifts.includes(s.id))
+            .map(s => `${format(s.date, "dd MMM yyyy")} ${s.startTime}-${s.endTime} (${s.clientName})`)
+            .join("; ");
+          requestDetails = details ? `${details}\n\nShifts: ${shiftDetails}` : `Shifts: ${shiftDetails}`;
+          requestStartDate = swapStartDate;
+          requestEndDate = swapEndDate;
+          requestDays = selectedSwapShifts.length;
+        } else if (shiftCoverType === 'holidays' && selectedCoverHolidayId) {
+          const holiday = swapPartnerHolidays.find(h => h.id === selectedCoverHolidayId);
+          if (holiday) {
+            const holidayDetails = `Holiday: ${format(parseISO(holiday.start_date), "dd MMM yyyy")} – ${format(parseISO(holiday.end_date), "dd MMM yyyy")} (${holiday.days_taken} days)`;
+            requestDetails = details ? `${details}\n\n${holidayDetails}` : holidayDetails;
+            requestStartDate = parseISO(holiday.start_date);
+            requestEndDate = parseISO(holiday.end_date);
+            requestDays = holiday.days_taken;
+          }
+        }
+      }
 
       // Use selected staff ID if admin, otherwise current user
       const targetUserId = isAdmin && selectedStaffId ? selectedStaffId : user.id;
@@ -524,6 +561,8 @@ export function StaffRequestForm() {
     setSwapStartDate(undefined);
     setSwapEndDate(undefined);
     setSelectedSwapShifts([]);
+    setShiftCoverType('shifts');
+    setSelectedCoverHolidayId("");
   };
 
   const getStaffName = (userId: string) => {
@@ -577,7 +616,7 @@ export function StaffRequestForm() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-medium text-blue-600">•</span>
-                <span><strong>Shift Swap:</strong> request to swap shifts with another staff member.</span>
+                <span><strong>Shift Cover:</strong> request to cover shifts or holiday days for another staff member.</span>
               </li>
             </ul>
           </div>
@@ -717,12 +756,13 @@ export function StaffRequestForm() {
           {requestType === 'shift_swap' && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Whose shifts are you covering? <span className="text-destructive">*</span></Label>
+                <Label>Whose shifts/holidays are you covering? <span className="text-destructive">*</span></Label>
                 <Select 
                   value={swapWithUserId} 
                   onValueChange={(val) => {
                     setSwapWithUserId(val);
                     setSelectedSwapShifts([]);
+                    setSelectedCoverHolidayId("");
                   }}
                 >
                   <SelectTrigger>
@@ -740,8 +780,43 @@ export function StaffRequestForm() {
                 </Select>
               </div>
 
-              {/* Date range for shift swap */}
+              {/* Cover Type Selector */}
               {swapWithUserId && (
+                <div className="space-y-2">
+                  <Label>What are you covering? <span className="text-destructive">*</span></Label>
+                  <Select 
+                    value={shiftCoverType} 
+                    onValueChange={(val: 'shifts' | 'holidays') => {
+                      setShiftCoverType(val);
+                      setSelectedSwapShifts([]);
+                      setSelectedCoverHolidayId("");
+                      setSwapStartDate(undefined);
+                      setSwapEndDate(undefined);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select cover type..." />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background">
+                      <SelectItem value="shifts">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-blue-600" />
+                          Individual Shifts
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="holidays">
+                        <div className="flex items-center gap-2">
+                          <Palmtree className="h-4 w-4 text-green-600" />
+                          Holiday Days
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Shifts cover - Date range and shift selection */}
+              {swapWithUserId && shiftCoverType === 'shifts' && (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -859,6 +934,56 @@ export function StaffRequestForm() {
                     </div>
                   )}
                 </>
+              )}
+
+              {/* Holiday cover - Select approved holiday */}
+              {swapWithUserId && shiftCoverType === 'holidays' && (
+                <div className="space-y-2">
+                  <Label>Select approved holiday to cover <span className="text-destructive">*</span></Label>
+                  {swapPartnerHolidays.length === 0 ? (
+                    <div className="p-4 bg-muted rounded-md text-sm text-muted-foreground text-center">
+                      No approved holidays found for {getStaffName(swapWithUserId)}
+                    </div>
+                  ) : (
+                    <Select value={selectedCoverHolidayId} onValueChange={setSelectedCoverHolidayId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select an approved holiday..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-background">
+                        {swapPartnerHolidays.map(holiday => (
+                          <SelectItem key={holiday.id} value={holiday.id}>
+                            <div className="flex flex-col">
+                              <span>{format(new Date(holiday.start_date), 'dd MMM yyyy')} – {format(new Date(holiday.end_date), 'dd MMM yyyy')}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {holiday.days_taken} days • {holiday.absence_type}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  
+                  {selectedCoverHolidayId && (() => {
+                    const holiday = swapPartnerHolidays.find(h => h.id === selectedCoverHolidayId);
+                    return holiday ? (
+                      <div className="p-3 bg-muted rounded-md text-sm space-y-2">
+                        <div>
+                          <p className="font-medium">Covering Period</p>
+                          <p className="text-muted-foreground">
+                            {format(parseISO(holiday.start_date), 'dd MMM yyyy')} – {format(parseISO(holiday.end_date), 'dd MMM yyyy')} ({holiday.days_taken} day{holiday.days_taken !== 1 ? 's' : ''})
+                          </p>
+                        </div>
+                        {holiday.notes && (
+                          <div>
+                            <p className="font-medium">Notes</p>
+                            <p className="text-muted-foreground text-xs">{holiday.notes}</p>
+                          </div>
+                        )}
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
               )}
             </div>
           )}
