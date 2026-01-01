@@ -38,22 +38,7 @@ interface PayRecord {
   currency: string;
   record_type: string;
   pay_date: string;
-}
-
-interface RecurringBonus {
-  id: string;
-  user_id: string;
-  amount: number;
-  currency: string;
-  start_date: string;
-  end_date: string | null;
-}
-
-interface HRProfile {
-  user_id: string;
-  base_salary: number | null;
-  base_currency: string;
-  pay_frequency: string | null;
+  pay_period_start: string | null;
 }
 
 interface ExchangeRates {
@@ -61,8 +46,8 @@ interface ExchangeRates {
 }
 
 export function ClientProfitCalculator() {
-  const currentMonth = format(new Date(), 'yyyy-MM');
-  const [selectedMonth, setSelectedMonth] = useState(currentMonth);
+  // Default to January 2026
+  const [selectedMonth, setSelectedMonth] = useState('2026-01');
   const [exchangeRates, setExchangeRates] = useState<ExchangeRates>({ GBP: 1 });
   const [ratesError, setRatesError] = useState<string | null>(null);
   
@@ -125,18 +110,6 @@ export function ClientProfitCalculator() {
     },
   });
 
-  // Fetch HR profiles for salary info (fallback if no pay records)
-  const { data: hrProfiles = [] } = useQuery({
-    queryKey: ["hr-profiles-salary"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("hr_profiles")
-        .select("user_id, base_salary, base_currency, pay_frequency");
-      if (error) throw error;
-      return data as HRProfile[];
-    },
-  });
-
   // Fetch recurring patterns
   const { data: patterns = [] } = useQuery({
     queryKey: ["patterns-profit"],
@@ -149,43 +122,17 @@ export function ClientProfitCalculator() {
     },
   });
 
-  // Fetch pay records for the month
+  // Fetch pay records for the month by pay_period_start
   const { data: payRecords = [] } = useQuery({
-    queryKey: ["pay-records-month", selectedMonth],
+    queryKey: ["pay-records-period", selectedMonth],
     queryFn: async () => {
+      const periodStart = format(monthStart, 'yyyy-MM-dd');
       const { data, error } = await supabase
         .from("staff_pay_records")
-        .select("id, user_id, amount, currency, record_type, pay_date")
-        .gte("pay_date", format(monthStart, 'yyyy-MM-dd'))
-        .lte("pay_date", format(monthEnd, 'yyyy-MM-dd'));
+        .select("id, user_id, amount, currency, record_type, pay_date, pay_period_start")
+        .eq("pay_period_start", periodStart);
       if (error) throw error;
       return data as PayRecord[];
-    },
-  });
-
-  // Fetch recurring bonuses
-  const { data: recurringBonuses = [] } = useQuery({
-    queryKey: ["recurring-bonuses"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("recurring_bonuses")
-        .select("id, user_id, amount, currency, start_date, end_date");
-      if (error) throw error;
-      return data as RecurringBonus[];
-    },
-  });
-
-  // Fetch overtime records for the month
-  const { data: overtimeRecords = [] } = useQuery({
-    queryKey: ["overtime-month", selectedMonth],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("staff_overtime")
-        .select("id, user_id, hours, hourly_rate, currency, overtime_date")
-        .gte("overtime_date", format(monthStart, 'yyyy-MM-dd'))
-        .lte("overtime_date", format(monthEnd, 'yyyy-MM-dd'));
-      if (error) throw error;
-      return data as { id: string; user_id: string; hours: number; hourly_rate: number | null; currency: string }[];
     },
   });
 
@@ -225,70 +172,18 @@ export function ClientProfitCalculator() {
     return totalDays;
   };
 
-  // Get monthly salary for a staff member (from pay records or HR profile)
+  // Get monthly cost for a staff member from pay records only
   const getStaffMonthlyCost = (userId: string): number => {
-    // First try to get from pay records for this month
     const userPayRecords = payRecords.filter(r => r.user_id === userId);
     
-    if (userPayRecords.length > 0) {
-      let total = 0;
-      userPayRecords.forEach(record => {
-        const amountGBP = toGBP(record.amount, record.currency);
-        // Deductions reduce cost, everything else adds
-        total += record.record_type === 'deduction' ? -amountGBP : amountGBP;
-      });
-      
-      // Add recurring bonuses that apply to this month
-      recurringBonuses.filter(b => b.user_id === userId).forEach(bonus => {
-        const bonusStart = parseISO(bonus.start_date);
-        const bonusEnd = bonus.end_date ? parseISO(bonus.end_date) : null;
-        
-        const appliesToMonth = 
-          isBefore(bonusStart, monthEnd) && 
-          (!bonusEnd || isAfter(bonusEnd, monthStart));
-        
-        if (appliesToMonth) {
-          total += toGBP(bonus.amount, bonus.currency);
-        }
-      });
-      
-      // Add overtime
-      overtimeRecords.filter(o => o.user_id === userId).forEach(overtime => {
-        if (overtime.hourly_rate) {
-          total += toGBP(overtime.hours * overtime.hourly_rate, overtime.currency);
-        }
-      });
-      
-      return total;
-    }
+    let total = 0;
+    userPayRecords.forEach(record => {
+      const amountGBP = toGBP(record.amount, record.currency);
+      // Deductions reduce cost, everything else adds
+      total += record.record_type === 'deduction' ? -amountGBP : amountGBP;
+    });
     
-    // Fallback to HR profile base salary
-    const hrProfile = hrProfiles.find(p => p.user_id === userId);
-    if (hrProfile?.base_salary) {
-      const monthlySalary = hrProfile.pay_frequency === 'monthly' 
-        ? hrProfile.base_salary 
-        : hrProfile.base_salary / 12;
-      
-      let total = toGBP(monthlySalary, hrProfile.base_currency);
-      
-      // Add recurring bonuses
-      recurringBonuses.filter(b => b.user_id === userId).forEach(bonus => {
-        const bonusStart = parseISO(bonus.start_date);
-        const bonusEnd = bonus.end_date ? parseISO(bonus.end_date) : null;
-        
-        const appliesToMonth = 
-          isBefore(bonusStart, monthEnd) && 
-          (!bonusEnd || isAfter(bonusEnd, monthStart));
-        
-        if (appliesToMonth) {
-          total += toGBP(bonus.amount, bonus.currency);
-        }
-      });
-      
-      return total;
-    }
-    
-    return 0;
+    return total;
   };
 
   // Calculate days per staff per client
@@ -374,7 +269,7 @@ export function ClientProfitCalculator() {
         assignedStaffCount: staffCosts.length
       };
     }).sort((a, b) => b.profit - a.profit);
-  }, [clients, staffClientDays, staffTotalDays, profiles, payRecords, hrProfiles, recurringBonuses, overtimeRecords, exchangeRates]);
+  }, [clients, staffClientDays, staffTotalDays, profiles, payRecords, exchangeRates]);
 
   // Summary stats
   const totalRevenue = profitData.reduce((sum, d) => sum + d.revenue, 0);
@@ -382,16 +277,15 @@ export function ClientProfitCalculator() {
   const totalProfit = totalRevenue - totalCost;
   const overallMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
 
-  // Check if we have any pay data or HR profiles
-  const hasPayData = payRecords.length > 0 || hrProfiles.some(p => p.base_salary);
+  // Check if we have any pay data
+  const hasPayData = payRecords.length > 0;
   const hasPatterns = patterns.length > 0;
 
-  // Generate month options (last 12 months)
+  // Generate month options: Jan 2026 to Dec 2026 (12 months)
   const monthOptions = useMemo(() => {
     const options = [];
-    const now = new Date();
     for (let i = 0; i < 12; i++) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const date = new Date(2026, i, 1); // Jan 2026 to Dec 2026
       options.push({
         value: format(date, 'yyyy-MM'),
         label: format(date, 'MMMM yyyy')
@@ -444,7 +338,7 @@ export function ClientProfitCalculator() {
         <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            No pay records or HR salary data found. Please add pay records or set base salaries in HR profiles.
+            No pay records found for this period. Run payroll in HR → Pay Manager to add salary records.
           </AlertDescription>
         </Alert>
       )}
