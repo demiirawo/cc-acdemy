@@ -858,10 +858,12 @@ export function StaffScheduleManager() {
   };
 
   const getSchedulesForClientDay = (clientName: string, day: Date) => {
-    return allSchedules.filter(s => {
-      const scheduleDate = parseISO(s.start_datetime);
-      return s.client_name === clientName && format(scheduleDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd");
-    });
+    return allSchedules
+      .filter(s => {
+        const scheduleDate = parseISO(s.start_datetime);
+        return s.client_name === clientName && format(scheduleDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd");
+      })
+      .sort((a, b) => parseISO(a.start_datetime).getTime() - parseISO(b.start_datetime).getTime());
   };
 
   const getOvertimeForStaffDay = (userId: string, day: Date) => {
