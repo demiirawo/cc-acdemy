@@ -452,9 +452,9 @@ export const PublicClientSchedule = () => {
                           return (
                             <div 
                               key={day.toISOString()} 
-                              className="min-h-[60px] p-1 rounded border bg-background border-border"
+                              className="min-h-[60px] p-1 rounded border bg-background border-border flex flex-col"
                             >
-                              {daySchedules.map(schedule => {
+                              {daySchedules.map((schedule, idx) => {
                                 const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
                                 const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
                                 const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
@@ -463,7 +463,7 @@ export const PublicClientSchedule = () => {
                                 return (
                                   <div 
                                     key={schedule.id} 
-                                    className={`rounded p-1.5 mb-1 text-xs border ${
+                                    className={`rounded p-1.5 text-xs border flex-1 ${idx > 0 ? 'mt-1' : ''} ${
                                       staffOnHoliday 
                                         ? 'bg-amber-100 border-amber-300' 
                                         : isOvertime
