@@ -1078,25 +1078,40 @@ export function StaffScheduleManager() {
     if (!holiday) return null;
     
     // Find approved overtime requests linked to this holiday
-    const coverageRequests = staffRequests.filter(r => 
+    const overtimeCoverageRequests = staffRequests.filter(r => 
       r.linked_holiday_id === holiday.id && 
       r.status === 'approved' &&
       (r.request_type === 'overtime_standard' || r.request_type === 'overtime_double_up' || r.request_type === 'overtime')
     );
     
-    if (coverageRequests.length === 0) return null;
+    // Find approved shift_swap requests where this holiday user is being covered
+    const shiftSwapCoverageRequests = staffRequests.filter(r => 
+      r.swap_with_user_id === holidayUserId && 
+      r.status === 'approved' &&
+      r.request_type === 'shift_swap' &&
+      (() => {
+        const start = startOfDay(parseISO(r.start_date));
+        const end = endOfDay(parseISO(r.end_date));
+        return isWithinInterval(day, { start, end });
+      })()
+    );
+    
+    const allCoverageRequests = [...overtimeCoverageRequests, ...shiftSwapCoverageRequests];
+    
+    if (allCoverageRequests.length === 0) return null;
     
     // Return covering staff info
-    return coverageRequests.map(r => ({
+    return allCoverageRequests.map(r => ({
       userId: r.user_id,
       name: getStaffName(r.user_id),
       type: r.request_type
     }));
   };
 
-  // Get who a staff member is covering for (when they have approved overtime)
+  // Get who a staff member is covering for (when they have approved overtime or shift_swap)
   const getCoveringForInfo = (userId: string, day: Date) => {
-    const relevantRequests = staffRequests.filter(r => {
+    // Check overtime requests (linked_holiday_id)
+    const overtimeRequests = staffRequests.filter(r => {
       if (r.user_id !== userId) return false;
       if (r.status !== 'approved') return false;
       if (r.request_type !== 'overtime_standard' && r.request_type !== 'overtime_double_up' && r.request_type !== 'overtime') return false;
@@ -1106,16 +1121,39 @@ export function StaffScheduleManager() {
       return isWithinInterval(day, { start, end });
     });
     
+    // Check shift_swap requests (swap_with_user_id)
+    const shiftSwapRequests = staffRequests.filter(r => {
+      if (r.user_id !== userId) return false;
+      if (r.status !== 'approved') return false;
+      if (r.request_type !== 'shift_swap') return false;
+      if (!r.swap_with_user_id) return false;
+      const start = startOfDay(parseISO(r.start_date));
+      const end = endOfDay(parseISO(r.end_date));
+      return isWithinInterval(day, { start, end });
+    });
+    
+    const relevantRequests = [...overtimeRequests, ...shiftSwapRequests];
+    
     if (relevantRequests.length === 0) return null;
     
     // Find who they're covering and get the shift details
     return relevantRequests.map(req => {
-      const linkedHoliday = holidays.find(h => h.id === req.linked_holiday_id);
-      if (!linkedHoliday) return null;
+      let coveredUserId: string | null = null;
+      
+      if (req.request_type === 'shift_swap' && req.swap_with_user_id) {
+        coveredUserId = req.swap_with_user_id;
+      } else if (req.linked_holiday_id) {
+        const linkedHoliday = holidays.find(h => h.id === req.linked_holiday_id);
+        if (linkedHoliday) {
+          coveredUserId = linkedHoliday.user_id;
+        }
+      }
+      
+      if (!coveredUserId) return null;
       
       // Get the schedules for the person on holiday for this day from allSchedules
       let coveredSchedules = allSchedules.filter(s => {
-        if (s.user_id !== linkedHoliday.user_id) return false;
+        if (s.user_id !== coveredUserId) return false;
         const scheduleDate = parseISO(s.start_datetime);
         return format(scheduleDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd");
       });
@@ -1126,7 +1164,7 @@ export function StaffScheduleManager() {
         const dateStr = format(day, "yyyy-MM-dd");
         
         const matchingPatterns = recurringPatterns.filter(pattern => {
-          if (pattern.user_id !== linkedHoliday.user_id) return false;
+          if (pattern.user_id !== coveredUserId) return false;
           const patternStartDate = parseISO(pattern.start_date);
           const patternEndDate = pattern.end_date ? parseISO(pattern.end_date) : null;
           
@@ -1160,8 +1198,8 @@ export function StaffScheduleManager() {
       }
       
       return {
-        holidayUserId: linkedHoliday.user_id,
-        holidayUserName: getStaffName(linkedHoliday.user_id),
+        holidayUserId: coveredUserId,
+        holidayUserName: getStaffName(coveredUserId),
         overtimeType: req.request_type,
         shifts: coveredSchedules.map(s => ({
           clientName: s.client_name,
