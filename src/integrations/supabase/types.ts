@@ -211,6 +211,33 @@ export type Database = {
         }
         Relationships: []
       }
+      client_whiteboards: {
+        Row: {
+          client_name: string
+          content: string
+          created_at: string
+          id: string
+          last_updated_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_name: string
+          content?: string
+          created_at?: string
+          id?: string
+          last_updated_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_name?: string
+          content?: string
+          created_at?: string
+          id?: string
+          last_updated_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       clients: {
         Row: {
           created_at: string
