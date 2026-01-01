@@ -27,6 +27,8 @@ interface MonthlyPayPreview {
   dailyRate: number;
   bonuses: number;
   deductions: number;
+  overtimeDays: number;
+  overtimePay: number;
   holidayOvertimeDays: number;
   holidayOvertimeBonus: number;
   holidayShifts: Array<{
@@ -84,6 +86,7 @@ interface RecurringShiftPattern {
   end_time: string;
   start_date: string;
   end_date: string | null;
+  is_overtime: boolean;
 }
 interface ShiftPatternException {
   id: string;
@@ -279,7 +282,7 @@ export function MyHRProfile() {
       // Fetch recurring patterns for this user
       const {
         data: patterns
-      } = await supabase.from('recurring_shift_patterns').select('id, user_id, days_of_week, start_time, end_time, start_date, end_date').eq('user_id', targetUserId);
+      } = await supabase.from('recurring_shift_patterns').select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, is_overtime').eq('user_id', targetUserId);
       setRecurringPatterns(patterns || []);
 
       // Fetch pattern exceptions
@@ -473,6 +476,54 @@ export function MyHRProfile() {
       const bonuses = oneOffBonuses + activeRecurringBonuses;
       const deductions = monthRecords.filter(r => r.record_type === 'deduction').reduce((sum, r) => sum + r.amount, 0);
       
+      // Calculate overtime from approved requests
+      let overtimeDays = 0;
+      const approvedOvertimeRequests = staffRequests.filter(req => 
+        req.status === 'approved' && 
+        (req.request_type === 'overtime' || req.request_type === 'overtime_standard' || req.request_type === 'overtime_double_up')
+      );
+      
+      approvedOvertimeRequests.forEach(req => {
+        const reqStart = parseISO(req.start_date);
+        const reqEnd = parseISO(req.end_date);
+        // Count days that fall within this month
+        if (reqStart <= monthEnd && reqEnd >= monthStart) {
+          const overlapStart = reqStart > monthStart ? reqStart : monthStart;
+          const overlapEnd = reqEnd < monthEnd ? reqEnd : monthEnd;
+          const daysInMonth = Math.ceil((overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+          overtimeDays += Math.min(daysInMonth, req.days_requested);
+        }
+      });
+      
+      // Also count recurring overtime patterns (each day only once even if multiple shifts)
+      const overtimePatterns = recurringPatterns.filter(p => p.is_overtime);
+      const countedOvertimeDates = new Set<string>();
+      
+      for (const day of monthDays) {
+        const dateStr = format(day, 'yyyy-MM-dd');
+        const dayOfWeek = getDay(day);
+        
+        for (const pattern of overtimePatterns) {
+          const patternStart = parseISO(pattern.start_date);
+          const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+          
+          if (day >= patternStart && (!patternEnd || day <= patternEnd)) {
+            if (pattern.days_of_week.includes(dayOfWeek)) {
+              const patternExs = exceptionsMap.get(pattern.id);
+              if (!patternExs || !patternExs.has(dateStr)) {
+                countedOvertimeDates.add(dateStr);
+                break; // Only count once per day
+              }
+            }
+          }
+        }
+      }
+      
+      overtimeDays += countedOvertimeDates.size;
+      
+      // Overtime pay = 1.5 × daily rate × overtime days
+      const overtimePay = 1.5 * dailyRate * overtimeDays;
+      
       // Calculate unused holiday payout for June (end of holiday year)
       // Holiday year runs June 1 to May 31, so June payroll includes payout for unused days
       let unusedHolidayPayout = 0;
@@ -500,7 +551,7 @@ export function MyHRProfile() {
         unusedHolidayPayout = (monthlyBaseSalary / 20) * unusedHolidayDays;
       }
       
-      const totalPay = monthlyBaseSalary + bonuses + holidayOvertimeBonus + unusedHolidayPayout - deductions;
+      const totalPay = monthlyBaseSalary + bonuses + overtimePay + holidayOvertimeBonus + unusedHolidayPayout - deductions;
 
       // Determine payroll status
       let payrollStatus: 'pending' | 'ready' | 'paid' = 'pending';
@@ -522,6 +573,8 @@ export function MyHRProfile() {
         dailyRate,
         bonuses,
         deductions,
+        overtimeDays,
+        overtimePay,
         holidayOvertimeDays,
         holidayOvertimeBonus,
         holidayShifts,
@@ -774,6 +827,11 @@ export function MyHRProfile() {
                                   {preview.bonuses > 0 && <div className="flex justify-between items-center py-2 border-b">
                                       <span className="text-muted-foreground">Bonuses</span>
                                       <span className="font-medium text-success">+{formatCurrency(preview.bonuses, preview.currency)}</span>
+                                    </div>}
+                                  
+                                  {preview.overtimePay > 0 && <div className="flex justify-between items-center py-2 border-b">
+                                      <span className="text-muted-foreground">Overtime Pay ({preview.overtimeDays} days)</span>
+                                      <span className="font-medium text-success">+{formatCurrency(preview.overtimePay, preview.currency)}</span>
                                     </div>}
                                   
                                   {preview.holidayOvertimeBonus > 0 && <div className="flex justify-between items-center py-2 border-b">
