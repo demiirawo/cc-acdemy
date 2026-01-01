@@ -404,6 +404,7 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hasInitialized = useRef(false);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const { data: whiteboard, isLoading } = useQuery({
     queryKey: ["client-whiteboard", clientName],
@@ -420,11 +421,18 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
     staleTime: 5000,
   });
 
-  // Set initial content when data loads
+  // Set initial content when data loads and auto-resize
   useEffect(() => {
     if (whiteboard?.content !== undefined && !hasInitialized.current) {
       setContent(whiteboard.content);
       hasInitialized.current = true;
+      // Auto-resize after content loads
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.style.height = `${Math.max(200, textareaRef.current.scrollHeight)}px`;
+        }
+      }, 0);
     }
   }, [whiteboard?.content]);
 
@@ -476,8 +484,7 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <MessageSquare className="h-5 w-5" />
+            <CardTitle className="text-xl">
               Whiteboard
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">Quick notes and updates for this client</p>
@@ -503,10 +510,17 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
           </div>
         ) : (
           <Textarea
+            ref={textareaRef}
             placeholder="Type your notes here... Changes are saved automatically."
             value={content}
-            onChange={(e) => handleContentChange(e.target.value)}
-            className="min-h-[200px] resize-y font-mono text-sm bg-amber-50/50 border-amber-200 focus:border-amber-300"
+            onChange={(e) => {
+              handleContentChange(e.target.value);
+              // Auto-resize textarea
+              e.target.style.height = 'auto';
+              e.target.style.height = `${Math.max(200, e.target.scrollHeight)}px`;
+            }}
+            className="min-h-[200px] resize-none font-mono text-sm bg-amber-50/50 border-amber-200 focus:border-amber-300 overflow-hidden"
+            style={{ height: 'auto', minHeight: '200px' }}
           />
         )}
       </CardContent>
@@ -605,8 +619,7 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="flex items-center gap-2 text-xl">
-              <Key className="h-5 w-5" />
+            <CardTitle className="text-xl">
               Passwords & Links
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">Store credentials and important links for this client</p>
