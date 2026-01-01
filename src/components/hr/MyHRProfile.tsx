@@ -684,7 +684,7 @@ export function MyHRProfile() {
                 <p className="text-sm text-muted-foreground">Holiday Allowance (Jun-May)</p>
                 <p className="font-medium">
                   {totalHolidaysTaken} / {allowanceInfo.annualAllowance} days used
-                  <span className="text-muted-foreground text-sm ml-1">({allowanceInfo.accruedAllowance} accrued)</span>
+                  <span className="text-muted-foreground text-sm ml-1">({allowanceInfo.accruedAllowance.toFixed(1)} accrued)</span>
                 </p>
               </div>
             </div>
@@ -749,7 +749,7 @@ export function MyHRProfile() {
                                 {isCurrentMonth && <Badge variant="outline" className="text-xs">Current</Badge>}
                                 {preview.unusedHolidayPayout > 0 && (
                                   <Badge variant="outline" className="text-xs bg-success/20 text-success border-success">
-                                    +{preview.unusedHolidayDays} unused holiday days
+                                    +{preview.unusedHolidayDays.toFixed(1)} unused holiday days
                                   </Badge>
                                 )}
                               </div>
@@ -782,7 +782,7 @@ export function MyHRProfile() {
                                     </div>}
                                   
                                   {preview.unusedHolidayPayout > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Unused Holiday Payout ({preview.unusedHolidayDays} days)</span>
+                                      <span className="text-muted-foreground">Unused Holiday Payout ({preview.unusedHolidayDays.toFixed(1)} days)</span>
                                       <span className="font-medium text-success">+{formatCurrency(preview.unusedHolidayPayout, preview.currency)}</span>
                                     </div>}
                                   
