@@ -7,7 +7,7 @@ import { ClientProfitCalculator } from "./ClientProfitCalculator";
 import { Building2, FileText, TrendingUp } from "lucide-react";
 
 export function ClientsSection() {
-  const { isAdmin } = useUserRole();
+  const { isAdmin, loading } = useUserRole();
   const [activeTab, setActiveTab] = useState("list");
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
@@ -16,13 +16,43 @@ export function ClientsSection() {
     setActiveTab("details");
   };
 
+  if (loading) {
+    return (
+      <div className="flex-1 overflow-auto p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="animate-pulse">
+            <div className="h-8 bg-muted rounded w-1/3 mb-4" />
+            <div className="h-4 bg-muted rounded w-1/2" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="flex-1 overflow-auto p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col items-center justify-center py-16">
+            <Building2 className="h-16 w-16 text-muted-foreground mb-4" />
+            <h2 className="text-2xl font-bold text-foreground mb-2">Access Restricted</h2>
+            <p className="text-muted-foreground text-center max-w-md">
+              The Client Management section is only accessible to administrators. 
+              Please contact your administrator if you need access to this area.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 overflow-auto p-6">
       <div className="max-w-7xl mx-auto">
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-foreground">Client Management</h1>
           <p className="text-muted-foreground mt-1">
-            {isAdmin ? "Manage clients, view profitability, and access client resources" : "View client information and schedules"}
+            Manage clients, view profitability, and access client resources
           </p>
         </div>
 
