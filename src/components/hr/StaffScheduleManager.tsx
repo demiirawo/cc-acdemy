@@ -2161,9 +2161,9 @@ export function StaffScheduleManager() {
                               return (
                                 <div 
                                   key={day.toISOString()} 
-                                  className="min-h-[60px] p-1 rounded border bg-background border-border flex flex-col"
+                                  className="min-h-[60px] p-1 rounded border bg-background border-border"
                                 >
-                                  {daySchedules.map((schedule, idx) => {
+                                  {daySchedules.map(schedule => {
                                     const cost = calculateScheduleCost(schedule);
                                     const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
                                     const isFromPattern = schedule.id.startsWith('pattern-');
@@ -2174,7 +2174,7 @@ export function StaffScheduleManager() {
                                     return (
                                       <div 
                                         key={schedule.id} 
-                                        className={`rounded p-1.5 text-xs group relative cursor-pointer hover:ring-2 hover:ring-primary/50 border flex-1 ${idx > 0 ? 'mt-1' : ''} ${
+                                        className={`rounded p-1.5 mb-1 text-xs group relative cursor-pointer hover:ring-2 hover:ring-primary/50 border ${
                                           staffOnHoliday 
                                             ? 'bg-amber-100 border-amber-300' 
                                             : `${colors.bg} ${colors.border}`
