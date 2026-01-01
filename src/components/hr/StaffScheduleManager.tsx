@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useSchedulingRole } from "@/hooks/useSchedulingRole";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -193,7 +194,10 @@ const ClientShareButton = ({ clientName }: { clientName: string }) => {
 export function StaffScheduleManager() {
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
-  const scheduleEditHint = isMobile ? "Tap to edit" : "Double-click to edit";
+  const { canEditSchedule, isAdmin } = useSchedulingRole();
+  const scheduleEditHint = canEditSchedule 
+    ? (isMobile ? "Tap to edit" : "Double-click to edit")
+    : "View only";
   const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [showLiveView, setShowLiveView] = useState(false);
   const [isRecurringDialogOpen, setIsRecurringDialogOpen] = useState(false);
@@ -943,6 +947,11 @@ export function StaffScheduleManager() {
   };
 
   const handleScheduleClick = (schedule: Schedule) => {
+    // Only allow editing for users with edit permissions
+    if (!canEditSchedule) {
+      return; // View only - do nothing on click
+    }
+    
     const parsed = parsePatternScheduleId(schedule.id);
     if (parsed) {
       openEditPatternDialog(parsed.patternId);
@@ -965,6 +974,11 @@ export function StaffScheduleManager() {
   };
 
   const handleOvertimeClick = (ot: Overtime) => {
+    // Only allow editing for users with edit permissions
+    if (!canEditSchedule) {
+      return; // View only - do nothing on click
+    }
+    
     setEditingOvertime(ot);
     setEditOvertimeForm({
       hours: ot.hours.toString(),
@@ -977,6 +991,11 @@ export function StaffScheduleManager() {
 
   // Holiday click handler
   const handleHolidayClick = (holiday: Holiday) => {
+    // Only allow viewing/editing for users with edit permissions
+    if (!canEditSchedule) {
+      return; // View only - do nothing on click
+    }
+    
     setEditingHoliday(holiday);
     setEditHolidayForm({
       absence_type: holiday.absence_type,
@@ -1419,14 +1438,15 @@ export function StaffScheduleManager() {
                 </Select>
               )}
 
-              {/* Recurring Schedule Dialog */}
-              <Dialog open={isRecurringDialogOpen} onOpenChange={setIsRecurringDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button>
-                    <Repeat className="h-4 w-4 mr-2" />
-                    Add Schedule
-                  </Button>
-                </DialogTrigger>
+              {/* Recurring Schedule Dialog - Only show for editors/admins */}
+              {canEditSchedule && (
+                <Dialog open={isRecurringDialogOpen} onOpenChange={setIsRecurringDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Repeat className="h-4 w-4 mr-2" />
+                      Add Schedule
+                    </Button>
+                  </DialogTrigger>
                 <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle>Create Recurring Schedule</DialogTitle>
@@ -1673,6 +1693,7 @@ export function StaffScheduleManager() {
                   </div>
                 </DialogContent>
               </Dialog>
+              )}
             </div>
           </div>
         </CardContent>
@@ -1805,7 +1826,7 @@ export function StaffScheduleManager() {
                                       return (
                                         <div 
                                           key={schedule.id}
-                                          className={`rounded p-1 text-xs cursor-pointer hover:ring-2 hover:ring-primary/50 ${
+                                          className={`rounded p-1 text-xs ${canEditSchedule ? 'cursor-pointer hover:ring-2 hover:ring-primary/50' : ''} ${
                                             isFromPattern 
                                               ? 'bg-violet-100 border border-violet-300' 
                                               : 'bg-primary/20 border border-primary/40'
@@ -1924,7 +1945,7 @@ export function StaffScheduleManager() {
                                       return (
                                         <div 
                                           key={schedule.id}
-                                          className={`rounded p-1 text-xs cursor-pointer hover:ring-2 hover:ring-primary/50 mb-1 ${
+                                          className={`rounded p-1 text-xs ${canEditSchedule ? 'cursor-pointer hover:ring-2 hover:ring-primary/50' : ''} mb-1 ${
                                             staffOnHoliday
                                               ? 'bg-amber-100 border border-amber-300'
                                               : isFromPattern 
@@ -2083,7 +2104,7 @@ export function StaffScheduleManager() {
                           return (
                             <div 
                               key={schedule.id} 
-                              className={`rounded p-1 mb-1 text-xs group relative cursor-pointer hover:ring-2 hover:ring-primary/50 ${
+                              className={`rounded p-1 mb-1 text-xs group relative ${canEditSchedule ? 'cursor-pointer hover:ring-2 hover:ring-primary/50' : ''} ${
                                 isFromPattern 
                                   ? isPatternOvertime
                                     ? 'bg-orange-50 border border-orange-300'
@@ -2117,17 +2138,19 @@ export function StaffScheduleManager() {
                               {schedule.notes && (
                                 <div className="italic truncate text-muted-foreground">{schedule.notes}</div>
                               )}
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteClick(schedule.id);
-                                }}
-                              >
-                                <Trash2 className="h-3 w-3 text-destructive" />
-                              </Button>
+                              {canEditSchedule && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteClick(schedule.id);
+                                  }}
+                                >
+                                  <Trash2 className="h-3 w-3 text-destructive" />
+                                </Button>
+                              )}
                             </div>
                           );
                         })}
@@ -2135,7 +2158,7 @@ export function StaffScheduleManager() {
                         {dayOvertime.map(ot => (
                           <div 
                             key={ot.id} 
-                            className="bg-orange-100 border border-orange-300 rounded p-1 mb-1 text-xs group relative cursor-pointer hover:ring-2 hover:ring-primary/50"
+                            className={`bg-orange-100 border border-orange-300 rounded p-1 mb-1 text-xs group relative ${canEditSchedule ? 'cursor-pointer hover:ring-2 hover:ring-primary/50' : ''}`}
                             onClick={() => handleOvertimeClick(ot)}
                             onDoubleClick={() => handleOvertimeClick(ot)}
                             title={scheduleEditHint}
@@ -2152,17 +2175,19 @@ export function StaffScheduleManager() {
                             {ot.notes && (
                               <div className="text-orange-600 italic truncate">{ot.notes}</div>
                             )}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                deleteOvertimeMutation.mutate(ot.id);
-                              }}
-                            >
-                              <Trash2 className="h-3 w-3 text-destructive" />
-                            </Button>
+                            {canEditSchedule && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  deleteOvertimeMutation.mutate(ot.id);
+                                }}
+                              >
+                                <Trash2 className="h-3 w-3 text-destructive" />
+                              </Button>
+                            )}
                           </div>
                         ))}
 
@@ -2266,7 +2291,7 @@ export function StaffScheduleManager() {
                                     return (
                                       <div 
                                         key={schedule.id} 
-                                        className={`rounded p-1.5 mb-1 text-xs group relative cursor-pointer hover:ring-2 hover:ring-primary/50 border ${
+                                        className={`rounded p-1.5 mb-1 text-xs group relative ${canEditSchedule ? 'cursor-pointer hover:ring-2 hover:ring-primary/50' : ''} border ${
                                           staffOnHoliday 
                                             ? 'bg-amber-100 border-amber-300' 
                                             : `${colors.bg} ${colors.border}`
@@ -2315,17 +2340,19 @@ export function StaffScheduleManager() {
                                             )}
                                           </div>
                                         )}
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleDeleteClick(schedule.id);
-                                          }}
-                                        >
-                                          <Trash2 className="h-3 w-3 text-destructive" />
-                                        </Button>
+                                        {canEditSchedule && (
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleDeleteClick(schedule.id);
+                                            }}
+                                          >
+                                            <Trash2 className="h-3 w-3 text-destructive" />
+                                          </Button>
+                                        )}
                                       </div>
                                     );
                                   })}
@@ -3010,19 +3037,23 @@ export function StaffScheduleManager() {
               </>
             ) : (
               <>
-                <Button 
-                  variant="destructive" 
-                  onClick={() => setIsDeleteHolidayConfirmOpen(true)}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </Button>
-                <Button 
-                  variant="outline"
-                  onClick={() => setIsViewingHoliday(false)}
-                >
-                  Edit
-                </Button>
+                {canEditSchedule && (
+                  <>
+                    <Button 
+                      variant="destructive" 
+                      onClick={() => setIsDeleteHolidayConfirmOpen(true)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => setIsViewingHoliday(false)}
+                    >
+                      Edit
+                    </Button>
+                  </>
+                )}
                 <Button onClick={() => setIsEditHolidayDialogOpen(false)}>
                   Close
                 </Button>
