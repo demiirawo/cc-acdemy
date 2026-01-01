@@ -122,6 +122,7 @@ export function StaffRequestForm() {
   const queryClient = useQueryClient();
   
   const [requestType, setRequestType] = useState<RequestType | "">("");
+  const [selectedStaffId, setSelectedStaffId] = useState<string>(""); // Admin: submit on behalf of staff
   const [swapWithUserId, setSwapWithUserId] = useState("");
   const [startDate, setStartDate] = useState<Date>();
   const [endDate, setEndDate] = useState<Date>();
@@ -421,8 +422,11 @@ export function StaffRequestForm() {
       const requestEndDate = requestType === 'shift_swap' ? swapEndDate : endDate;
       const requestDays = requestType === 'shift_swap' ? selectedSwapShifts.length : parseFloat(daysRequested) || 1;
 
+      // Use selected staff ID if admin, otherwise current user
+      const targetUserId = isAdmin && selectedStaffId ? selectedStaffId : user.id;
+
       const { error } = await supabase.from("staff_requests").insert({
-        user_id: user.id,
+        user_id: targetUserId,
         request_type: requestType,
         swap_with_user_id: requestType === 'shift_swap' ? swapWithUserId : null,
         linked_holiday_id: requestType === 'overtime' ? linkedHolidayId : null,
@@ -437,7 +441,10 @@ export function StaffRequestForm() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-staff-requests"] });
-      toast.success("Request submitted successfully");
+      const staffName = isAdmin && selectedStaffId && selectedStaffId !== user?.id 
+        ? staffMembers.find(s => s.user_id === selectedStaffId)?.display_name || "staff member"
+        : null;
+      toast.success(staffName ? `Request submitted on behalf of ${staffName}` : "Request submitted successfully");
       resetForm();
     },
     onError: (error) => {
@@ -506,6 +513,7 @@ export function StaffRequestForm() {
 
   const resetForm = () => {
     setRequestType("");
+    setSelectedStaffId("");
     setSwapWithUserId("");
     setLinkedHolidayId("");
     setCoveringStaffId("");
@@ -573,6 +581,29 @@ export function StaffRequestForm() {
               </li>
             </ul>
           </div>
+
+          {/* Admin: Staff Member Select (submit on behalf of) */}
+          {isAdmin && (
+            <div className="space-y-2">
+              <Label>Submit Request For <span className="text-muted-foreground text-xs">(Admin Only)</span></Label>
+              <Select 
+                value={selectedStaffId || user?.id || ""} 
+                onValueChange={(val) => setSelectedStaffId(val)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select staff member..." />
+                </SelectTrigger>
+                <SelectContent className="bg-background">
+                  {staffMembers.map(staff => (
+                    <SelectItem key={staff.user_id} value={staff.user_id}>
+                      {staff.display_name || staff.email}
+                      {staff.user_id === user?.id && " (You)"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Request Type Select */}
           <div className="space-y-2">
