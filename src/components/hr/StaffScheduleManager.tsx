@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSchedulingRole } from "@/hooks/useSchedulingRole";
+import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -194,6 +195,7 @@ const ClientShareButton = ({ clientName }: { clientName: string }) => {
 export function StaffScheduleManager() {
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
+  const { user } = useAuth();
   const { canEditSchedule, isAdmin } = useSchedulingRole();
   const scheduleEditHint = canEditSchedule 
     ? (isMobile ? "Tap to edit" : "Double-click to edit")
@@ -312,6 +314,36 @@ export function StaffScheduleManager() {
       if (error) throw error;
       return data as StaffMember[];
     }
+  });
+
+  // Fetch current user's client assignments (for non-admin filtering)
+  const { data: myClientAssignments = [] } = useQuery({
+    queryKey: ["my-client-assignments", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      const { data, error } = await supabase
+        .from("staff_client_assignments")
+        .select("client_name")
+        .eq("staff_user_id", user.id);
+      
+      if (error) throw error;
+      return data.map(a => a.client_name);
+    },
+    enabled: !!user?.id && !isAdmin
+  });
+
+  // Fetch all staff-client assignments to determine which staff share clients with current user
+  const { data: allClientAssignments = [] } = useQuery({
+    queryKey: ["all-client-assignments"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff_client_assignments")
+        .select("staff_user_id, client_name");
+      
+      if (error) throw error;
+      return data as { staff_user_id: string; client_name: string }[];
+    },
+    enabled: !isAdmin
   });
 
   // Fetch HR profiles for rates
@@ -516,6 +548,36 @@ export function StaffScheduleManager() {
     const clients = new Set(allSchedules.map(s => s.client_name));
     return Array.from(clients).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }, [allSchedules]);
+
+  // Filter staff members for non-admins: only show staff who share a client or are the current user
+  const visibleStaffMembers = useMemo(() => {
+    if (isAdmin) return staffMembers;
+    if (!user?.id) return [];
+
+    // Get staff IDs who share at least one client with the current user
+    const myClients = new Set(myClientAssignments);
+    const staffWithSharedClients = new Set<string>();
+    
+    // Always include the current user
+    staffWithSharedClients.add(user.id);
+    
+    // Add staff who are assigned to any of my clients
+    for (const assignment of allClientAssignments) {
+      if (myClients.has(assignment.client_name)) {
+        staffWithSharedClients.add(assignment.staff_user_id);
+      }
+    }
+    
+    // Also include staff who have schedules at my clients (from allSchedules)
+    // This catches "covering" staff who may not be assigned but have shifts
+    for (const schedule of allSchedules) {
+      if (myClients.has(schedule.client_name)) {
+        staffWithSharedClients.add(schedule.user_id);
+      }
+    }
+
+    return staffMembers.filter(s => staffWithSharedClients.has(s.user_id));
+  }, [isAdmin, user?.id, staffMembers, myClientAssignments, allClientAssignments, allSchedules]);
 
   // Create recurring schedule mutation
   const createRecurringScheduleMutation = useMutation({
@@ -1322,8 +1384,8 @@ export function StaffScheduleManager() {
   };
 
   const filteredStaff = selectedStaff && selectedStaff !== "all"
-    ? staffMembers.filter(s => s.user_id === selectedStaff)
-    : staffMembers;
+    ? visibleStaffMembers.filter(s => s.user_id === selectedStaff)
+    : visibleStaffMembers;
 
   const filteredClients = selectedClient && selectedClient !== "all"
     ? uniqueClients.filter(c => c === selectedClient)
@@ -1413,7 +1475,7 @@ export function StaffScheduleManager() {
                   </SelectTrigger>
                   <SelectContent className="bg-background z-50">
                     <SelectItem value="all">All Staff</SelectItem>
-                    {staffMembers.map(staff => (
+                    {visibleStaffMembers.map(staff => (
                       <SelectItem key={staff.user_id} value={staff.user_id}>
                         {staff.display_name || staff.email}
                       </SelectItem>
