@@ -707,7 +707,10 @@ export const PublicClientSchedule = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-2 sm:p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
-        <Card>
+        {/* Updates Section - at the top */}
+        <ClientNoticeboard clientName={decodedClientName} />
+
+        <Card className="mt-4 sm:mt-6">
           <CardHeader className="pb-3 px-3 sm:px-6">
             <div className="flex flex-col gap-3">
               <div>
@@ -770,8 +773,6 @@ export const PublicClientSchedule = () => {
           getStaffName={getStaffName} 
         />
 
-        {/* Noticeboard Section */}
-        <ClientNoticeboard clientName={decodedClientName} />
 
         {/* Password Manager Section */}
         <ClientPasswordManager clientName={decodedClientName} />
@@ -1264,7 +1265,7 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
       <CardHeader className="pb-2 px-3 sm:px-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
           <CardTitle className="text-lg sm:text-xl">
-            Whiteboard
+            Updates
           </CardTitle>
           <div className="text-xs text-muted-foreground">
             {isSaving ? (
