@@ -14,6 +14,7 @@ import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInt
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2, Palmtree, AlertTriangle, Clock, GripVertical } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { toast } from "sonner";
 
 interface ClientWhiteboard {
@@ -1311,12 +1312,13 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
 // Links Manager Component
 const LINK_CATEGORIES = [
   { value: 'software', label: 'Software' },
+  { value: 'documents', label: 'Documents' },
   { value: 'guidance', label: 'Guidance' },
   { value: 'training', label: 'Training' },
   { value: 'other', label: 'Other' },
 ] as const;
 
-type LinkCategory = 'software' | 'guidance' | 'training' | 'other';
+type LinkCategory = 'software' | 'documents' | 'guidance' | 'training' | 'other';
 
 const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
   const queryClient = useQueryClient();
@@ -1493,6 +1495,7 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
   const groupedPasswords = useMemo(() => {
     const groups: Record<string, ClientPassword[]> = {
       software: [],
+      documents: [],
       guidance: [],
       training: [],
       other: [],
@@ -1677,146 +1680,150 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
             No entries stored yet
           </div>
         ) : (
-          <div className="space-y-4">
+          <Accordion type="multiple" defaultValue={LINK_CATEGORIES.filter(cat => (groupedPasswords[cat.value]?.length ?? 0) > 0).map(cat => cat.value)} className="space-y-2">
             {LINK_CATEGORIES.map(cat => {
               const entries = groupedPasswords[cat.value];
               if (!entries || entries.length === 0) return null;
               
               return (
-                <div key={cat.value} className="space-y-2">
-                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">{cat.label}</h3>
-                  <div className="space-y-2">
-                    {entries.map((pw, index) => (
-                      <div key={pw.id} className="p-3 sm:p-4 bg-background rounded-lg border">
-                        <div className="flex items-start justify-between gap-2">
-                          {/* Reorder buttons */}
-                          <div className="flex flex-col items-center gap-0 flex-shrink-0">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-5 w-5"
-                              onClick={() => moveUp(pw)}
-                              disabled={index === 0 || reorderMutation.isPending}
-                            >
-                              <ChevronUp className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-5 w-5"
-                              onClick={() => moveDown(pw)}
-                              disabled={index === entries.length - 1 || reorderMutation.isPending}
-                            >
-                              <ChevronDown className="h-3 w-3" />
-                            </Button>
-                          </div>
-                          
-                          <div className="flex-1 space-y-2 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-semibold text-sm">{pw.software_name}</span>
-                              {pw.url && (
-                                <a
-                                  href={pw.url.startsWith('http') ? pw.url : `https://${pw.url}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                                >
-                                  <ExternalLink className="h-3 w-3" />
-                                  <span className="hidden sm:inline">Open</span>
-                                </a>
-                              )}
+                <AccordionItem key={cat.value} value={cat.value} className="border rounded-lg">
+                  <AccordionTrigger className="px-3 sm:px-4 py-3 hover:no-underline">
+                    <span className="text-sm font-semibold">{cat.label} ({entries.length})</span>
+                  </AccordionTrigger>
+                  <AccordionContent className="px-3 sm:px-4 pb-3">
+                    <div className="space-y-2">
+                      {entries.map((pw, index) => (
+                        <div key={pw.id} className="p-3 sm:p-4 bg-muted/30 rounded-lg border">
+                          <div className="flex items-start justify-between gap-2">
+                            {/* Reorder buttons */}
+                            <div className="flex flex-col items-center gap-0 flex-shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5"
+                                onClick={() => moveUp(pw)}
+                                disabled={index === 0 || reorderMutation.isPending}
+                              >
+                                <ChevronUp className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5"
+                                onClick={() => moveDown(pw)}
+                                disabled={index === entries.length - 1 || reorderMutation.isPending}
+                              >
+                                <ChevronDown className="h-3 w-3" />
+                              </Button>
                             </div>
                             
-                            {/* Credentials - stacked on mobile */}
-                            {(pw.username || pw.password) && (
-                              <div className="space-y-1.5 text-sm">
-                                {pw.username && (
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-muted-foreground text-xs sm:text-sm">Username:</span>
-                                    <span className="font-mono text-xs sm:text-sm truncate max-w-[150px] sm:max-w-none">{pw.username}</span>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6 flex-shrink-0"
-                                      onClick={() => copyToClipboard(pw.username, `user-${pw.id}`)}
-                                    >
-                                      {copiedId === `user-${pw.id}` ? (
-                                        <Check className="h-3 w-3 text-green-500" />
-                                      ) : (
-                                        <Copy className="h-3 w-3" />
-                                      )}
-                                    </Button>
-                                  </div>
+                            <div className="flex-1 space-y-2 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-semibold text-sm">{pw.software_name}</span>
+                                {pw.url && (
+                                  <a
+                                    href={pw.url.startsWith('http') ? pw.url : `https://${pw.url}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                  >
+                                    <ExternalLink className="h-3 w-3" />
+                                    <span className="hidden sm:inline">Open</span>
+                                  </a>
                                 )}
-                                {pw.password && (
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-muted-foreground text-xs sm:text-sm">Password:</span>
-                                    <span className="font-mono text-xs sm:text-sm">
-                                      {visiblePasswords.has(pw.id) ? pw.password : "••••••••"}
-                                    </span>
-                                    <div className="flex items-center gap-0 flex-shrink-0">
+                              </div>
+                              
+                              {/* Credentials - stacked on mobile */}
+                              {(pw.username || pw.password) && (
+                                <div className="space-y-1.5 text-sm">
+                                  {pw.username && (
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-muted-foreground text-xs sm:text-sm">Username:</span>
+                                      <span className="font-mono text-xs sm:text-sm truncate max-w-[150px] sm:max-w-none">{pw.username}</span>
                                       <Button
                                         variant="ghost"
                                         size="icon"
-                                        className="h-6 w-6"
-                                        onClick={() => togglePasswordVisibility(pw.id)}
+                                        className="h-6 w-6 flex-shrink-0"
+                                        onClick={() => copyToClipboard(pw.username, `user-${pw.id}`)}
                                       >
-                                        {visiblePasswords.has(pw.id) ? (
-                                          <EyeOff className="h-3 w-3" />
-                                        ) : (
-                                          <Eye className="h-3 w-3" />
-                                        )}
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6"
-                                        onClick={() => copyToClipboard(pw.password, `pass-${pw.id}`)}
-                                      >
-                                        {copiedId === `pass-${pw.id}` ? (
+                                        {copiedId === `user-${pw.id}` ? (
                                           <Check className="h-3 w-3 text-green-500" />
                                         ) : (
                                           <Copy className="h-3 w-3" />
                                         )}
                                       </Button>
                                     </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
+                                  )}
+                                  {pw.password && (
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-muted-foreground text-xs sm:text-sm">Password:</span>
+                                      <span className="font-mono text-xs sm:text-sm">
+                                        {visiblePasswords.has(pw.id) ? pw.password : "••••••••"}
+                                      </span>
+                                      <div className="flex items-center gap-0 flex-shrink-0">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6"
+                                          onClick={() => togglePasswordVisibility(pw.id)}
+                                        >
+                                          {visiblePasswords.has(pw.id) ? (
+                                            <EyeOff className="h-3 w-3" />
+                                          ) : (
+                                            <Eye className="h-3 w-3" />
+                                          )}
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6"
+                                          onClick={() => copyToClipboard(pw.password, `pass-${pw.id}`)}
+                                        >
+                                          {copiedId === `pass-${pw.id}` ? (
+                                            <Check className="h-3 w-3 text-green-500" />
+                                          ) : (
+                                            <Copy className="h-3 w-3" />
+                                          )}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              
+                              {pw.notes && (
+                                <p className="text-xs text-muted-foreground">{pw.notes}</p>
+                              )}
+                            </div>
                             
-                            {pw.notes && (
-                              <p className="text-xs text-muted-foreground">{pw.notes}</p>
-                            )}
-                          </div>
-                          
-                          {/* Edit/Delete buttons */}
-                          <div className="flex flex-col sm:flex-row items-center gap-0 flex-shrink-0">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 sm:h-8 sm:w-8"
-                              onClick={() => openEditDialog(pw)}
-                            >
-                              <Pencil className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 sm:h-8 sm:w-8 text-destructive hover:text-destructive"
-                              onClick={() => openDeleteDialog(pw)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                            </Button>
+                            {/* Edit/Delete buttons */}
+                            <div className="flex flex-col sm:flex-row items-center gap-0 flex-shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 sm:h-8 sm:w-8"
+                                onClick={() => openEditDialog(pw)}
+                              >
+                                <Pencil className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 sm:h-8 sm:w-8 text-destructive hover:text-destructive"
+                                onClick={() => openDeleteDialog(pw)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                              </Button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                      ))}
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
               );
             })}
-          </div>
+          </Accordion>
         )}
       </CardContent>
 
