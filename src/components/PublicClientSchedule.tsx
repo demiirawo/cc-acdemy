@@ -957,8 +957,7 @@ const UpcomingHolidaysCard = ({
     return (
       <Card className="mt-6">
         <CardHeader className="pb-2">
-          <CardTitle className="text-xl flex items-center gap-2">
-            <Palmtree className="h-5 w-5 text-amber-600" />
+          <CardTitle className="text-xl">
             Upcoming Holidays
           </CardTitle>
         </CardHeader>
@@ -974,8 +973,7 @@ const UpcomingHolidaysCard = ({
   return (
     <Card className="mt-6">
       <CardHeader className="pb-2">
-        <CardTitle className="text-xl flex items-center gap-2">
-          <Palmtree className="h-5 w-5 text-amber-600" />
+        <CardTitle className="text-xl">
           Upcoming Holidays
         </CardTitle>
       </CardHeader>
@@ -1002,18 +1000,12 @@ const UpcomingHolidaysCard = ({
                     <span className="font-medium text-sm">
                       {getStaffName(holiday.user_id)}
                     </span>
-                    <Badge variant="outline" className={`text-xs ${getAbsenceBadgeColor(holiday.absence_type)}`}>
-                      {getAbsenceLabel(holiday.absence_type)}
-                    </Badge>
-                    {isOngoing && (
-                      <Badge variant="secondary" className="text-xs bg-amber-200 text-amber-800">
-                        Currently Away
-                      </Badge>
-                    )}
-                    {isStartingToday && !isOngoing && (
-                      <Badge variant="secondary" className="text-xs bg-green-200 text-green-800">
-                        Starts Today
-                      </Badge>
+                    {isOngoing ? (
+                      <span className="font-bold text-sm text-amber-700">(Currently Away)</span>
+                    ) : isStartingToday ? (
+                      <span className="font-bold text-sm text-green-700">(Starts Today)</span>
+                    ) : (
+                      <span className="font-bold text-sm text-muted-foreground">(Upcoming)</span>
                     )}
                   </div>
                   <div className="text-sm text-muted-foreground mt-1">
