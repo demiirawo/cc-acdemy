@@ -549,6 +549,16 @@ export function StaffScheduleManager() {
     return Array.from(clients).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
   }, [allSchedules]);
 
+  // Filter clients for non-admins: only show clients they are assigned to
+  const visibleClients = useMemo(() => {
+    if (isAdmin) return uniqueClients;
+    if (!user?.id) return [];
+    
+    // Only show clients the user is assigned to
+    const myClients = new Set(myClientAssignments);
+    return uniqueClients.filter(clientName => myClients.has(clientName));
+  }, [isAdmin, user?.id, uniqueClients, myClientAssignments]);
+
   // Filter staff members for non-admins: only show staff who share a client or are the current user
   const visibleStaffMembers = useMemo(() => {
     if (isAdmin) return staffMembers;
@@ -1388,8 +1398,8 @@ export function StaffScheduleManager() {
     : visibleStaffMembers;
 
   const filteredClients = selectedClient && selectedClient !== "all"
-    ? uniqueClients.filter(c => c === selectedClient)
-    : uniqueClients;
+    ? visibleClients.filter(c => c === selectedClient)
+    : visibleClients;
 
   return (
     <div className="space-y-6">
