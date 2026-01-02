@@ -486,22 +486,241 @@ export const PublicClientSchedule = () => {
     );
   }
 
+  // Mobile view: list of days with schedules
+  const MobileScheduleView = () => (
+    <div className="space-y-4 md:hidden">
+      {weekDays.map(day => {
+        const daySchedules = getSchedulesForDay(day);
+        const isToday = format(day, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+        
+        return (
+          <div 
+            key={day.toISOString()} 
+            className={`rounded-lg border ${isToday ? 'border-primary bg-primary/5' : 'border-border bg-background'}`}
+          >
+            <div className={`px-4 py-3 border-b ${isToday ? 'bg-primary/10 border-primary/20' : 'bg-muted/50'}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-semibold">{format(day, "EEEE")}</span>
+                  <span className="text-muted-foreground ml-2">{format(day, "d MMM")}</span>
+                </div>
+                {isToday && (
+                  <Badge variant="default" className="text-xs">Today</Badge>
+                )}
+              </div>
+            </div>
+            
+            <div className="p-3">
+              {daySchedules.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-2">No shifts scheduled</p>
+              ) : (
+                <div className="space-y-2">
+                  {daySchedules.map(schedule => {
+                    const colors = getShiftTypeColors(schedule.shift_type);
+                    const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
+                    const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
+                    const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
+                    const isOvertime = schedule.is_pattern_overtime;
+                    
+                    return (
+                      <div 
+                        key={schedule.id}
+                        onClick={staffOnHoliday && holidayInfo ? (e) => handleHolidayClick(holidayInfo, e) : undefined}
+                        className={`p-3 rounded-lg border ${
+                          staffOnHoliday 
+                            ? 'bg-amber-50 border-amber-200 cursor-pointer' 
+                            : isOvertime
+                              ? 'bg-orange-50 border-orange-200'
+                              : `${colors.bg} ${colors.border}`
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {staffOnHoliday && <Palmtree className="h-4 w-4 text-amber-600 flex-shrink-0" />}
+                            {isOvertime && !staffOnHoliday && <Clock className="h-4 w-4 text-orange-600 flex-shrink-0" />}
+                            <span className={`font-medium truncate ${
+                              staffOnHoliday ? 'text-amber-900' : isOvertime ? 'text-orange-900' : colors.text
+                            }`}>
+                              {getStaffName(schedule.user_id)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {schedule.shift_type && (
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${colors.badge}`}>
+                                {schedule.shift_type}
+                              </span>
+                            )}
+                            {isOvertime && !staffOnHoliday && (
+                              <span className="text-xs bg-orange-200 text-orange-800 px-2 py-0.5 rounded-full">OT</span>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {staffOnHoliday ? (
+                          <div className="mt-2 space-y-1">
+                            <div className="text-sm text-amber-700 capitalize">
+                              {holidayInfo?.absence_type?.replace('_', ' ') || 'On holiday'}
+                            </div>
+                            {coverage && coverage.length > 0 ? (
+                              <div className="text-sm text-green-700 bg-green-100 rounded px-2 py-1">
+                                <span className="font-medium">Cover:</span> {coverage.map(c => c.name).join(', ')}
+                              </div>
+                            ) : holidayInfo?.no_cover_required ? (
+                              <div className="text-sm text-blue-600 bg-blue-50 rounded px-2 py-1">
+                                No cover needed
+                              </div>
+                            ) : (
+                              <div className="text-sm text-red-600 bg-red-50 rounded px-2 py-1 flex items-center gap-1">
+                                <AlertTriangle className="h-3 w-3" />
+                                <span>No cover arranged</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className={`mt-1 text-sm ${isOvertime ? 'text-orange-800' : colors.text} opacity-80`}>
+                            {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // Desktop view: original grid
+  const DesktopScheduleView = () => (
+    <div className="hidden md:block overflow-x-auto">
+      {/* Day headers */}
+      <div className="grid grid-cols-8 gap-1 mb-2">
+        <div className="p-2 text-xs font-medium text-muted-foreground">Shift Type</div>
+        {weekDays.map(day => (
+          <div key={day.toISOString()} className="p-2 text-center">
+            <div className="text-xs font-medium text-muted-foreground">{format(day, "EEE")}</div>
+            <div className="text-sm font-semibold">{format(day, "d")}</div>
+          </div>
+        ))}
+      </div>
+      
+      {/* Shift type rows */}
+      {shiftTypesForClient.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">
+          No schedules for this week
+        </div>
+      ) : (
+        shiftTypesForClient.map(shiftType => {
+          const colors = getShiftTypeColors(shiftType);
+          
+          return (
+            <div key={shiftType} className="grid grid-cols-8 gap-1 mb-1">
+              <div className="p-2 text-xs font-medium truncate border-r bg-muted/20 flex items-center">
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${colors.badge}`}>
+                  {shiftType}
+                </span>
+              </div>
+              {weekDays.map(day => {
+                const daySchedules = getSchedulesForDay(day).filter(
+                  s => (s.shift_type || "Other") === shiftType
+                );
+                
+                return (
+                  <div 
+                    key={day.toISOString()} 
+                    className="min-h-[60px] p-1 rounded border bg-background border-border"
+                  >
+                    {daySchedules.map(schedule => {
+                      const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
+                      const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
+                      const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
+                      const isOvertime = schedule.is_pattern_overtime;
+                      
+                      return (
+                        <div 
+                          key={schedule.id} 
+                          onClick={staffOnHoliday && holidayInfo ? (e) => handleHolidayClick(holidayInfo, e) : undefined}
+                          className={`rounded p-1.5 mb-1 text-xs border ${
+                            staffOnHoliday 
+                              ? 'bg-amber-100 border-amber-300 cursor-pointer hover:bg-amber-200 transition-colors' 
+                              : isOvertime
+                                ? 'bg-orange-100 border-orange-300'
+                                : `${colors.bg} ${colors.border}`
+                          }`}
+                        >
+                          <div className={`font-semibold truncate flex items-center gap-1 ${
+                            staffOnHoliday 
+                              ? 'text-amber-900' 
+                              : isOvertime 
+                                ? 'text-orange-900'
+                                : colors.text
+                          }`}>
+                            {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600 flex-shrink-0" />}
+                            {isOvertime && !staffOnHoliday && <Clock className="h-3 w-3 text-orange-600 flex-shrink-0" />}
+                            {getStaffName(schedule.user_id)}
+                            {isOvertime && !staffOnHoliday && (
+                              <span className="text-[9px] bg-orange-200 text-orange-800 px-1 rounded ml-auto">OT</span>
+                            )}
+                          </div>
+                          
+                          {staffOnHoliday ? (
+                            <div className="mt-0.5">
+                              <div className="text-[10px] text-amber-700 capitalize">
+                                {holidayInfo?.absence_type?.replace('_', ' ') || 'On holiday'}
+                              </div>
+                              {coverage && coverage.length > 0 ? (
+                                <div className="text-[10px] text-green-700 bg-green-50 rounded px-1 py-0.5 mt-0.5">
+                                  <span className="font-medium">Cover:</span> {coverage.map(c => c.name).join(', ')}
+                                </div>
+                              ) : holidayInfo?.no_cover_required ? (
+                                <div className="text-[10px] text-blue-600 bg-blue-50 rounded px-1 py-0.5 mt-0.5">
+                                  No cover needed
+                                </div>
+                              ) : (
+                                <div className="text-[10px] text-red-600 bg-red-50 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1">
+                                  <AlertTriangle className="h-2.5 w-2.5" />
+                                  <span>No cover</span>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className={`${isOvertime ? 'text-orange-900' : colors.text} opacity-80`}>
+                              {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+    <div className="min-h-screen bg-gray-50 p-2 sm:p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
         <Card>
-          <CardHeader className="pb-4">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <CardHeader className="pb-3 px-3 sm:px-6">
+            <div className="flex flex-col gap-3">
               <div>
-                <CardTitle className="text-2xl">{decodedClientName}</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">Weekly Schedule</p>
+                <CardTitle className="text-xl sm:text-2xl">{decodedClientName}</CardTitle>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1">Weekly Schedule</p>
               </div>
               
-              {/* Week Navigation */}
-              <div className="flex items-center gap-2">
+              {/* Week Navigation - Mobile optimized */}
+              <div className="flex items-center justify-between gap-2">
                 <Button
                   variant="outline"
                   size="icon"
+                  className="h-9 w-9"
                   onClick={() => setWeekOffset(prev => prev - 1)}
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -509,14 +728,20 @@ export const PublicClientSchedule = () => {
                 <Button
                   variant="outline"
                   onClick={() => setWeekOffset(0)}
-                  className="min-w-[140px]"
+                  className="flex-1 max-w-[200px] text-xs sm:text-sm"
                 >
-                  <Calendar className="h-4 w-4 mr-2" />
-                  {weekOffset === 0 ? "This Week" : format(currentWeekStart, "MMM d")} - {format(currentWeekEnd, "MMM d")}
+                  <Calendar className="h-4 w-4 mr-1 sm:mr-2" />
+                  <span className="hidden sm:inline">
+                    {weekOffset === 0 ? "This Week" : format(currentWeekStart, "MMM d")} - {format(currentWeekEnd, "MMM d")}
+                  </span>
+                  <span className="sm:hidden">
+                    {weekOffset === 0 ? "This Week" : `${format(currentWeekStart, "d MMM")}`}
+                  </span>
                 </Button>
                 <Button
                   variant="outline"
                   size="icon"
+                  className="h-9 w-9"
                   onClick={() => setWeekOffset(prev => prev + 1)}
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -525,119 +750,16 @@ export const PublicClientSchedule = () => {
             </div>
           </CardHeader>
           
-          <CardContent>
+          <CardContent className="px-2 sm:px-6">
             {isLoading ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                {/* Day headers */}
-                <div className="grid grid-cols-8 gap-1 mb-2">
-                  <div className="p-2 text-xs font-medium text-muted-foreground">Shift Type</div>
-                  {weekDays.map(day => (
-                    <div key={day.toISOString()} className="p-2 text-center">
-                      <div className="text-xs font-medium text-muted-foreground">{format(day, "EEE")}</div>
-                      <div className="text-sm font-semibold">{format(day, "d")}</div>
-                    </div>
-                  ))}
-                </div>
-                
-                {/* Shift type rows */}
-                {shiftTypesForClient.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    No schedules for this week
-                  </div>
-                ) : (
-                  shiftTypesForClient.map(shiftType => {
-                    const colors = getShiftTypeColors(shiftType);
-                    
-                    return (
-                      <div key={shiftType} className="grid grid-cols-8 gap-1 mb-1">
-                        <div className="p-2 text-xs font-medium truncate border-r bg-muted/20 flex items-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${colors.badge}`}>
-                            {shiftType}
-                          </span>
-                        </div>
-                        {weekDays.map(day => {
-                          const daySchedules = getSchedulesForDay(day).filter(
-                            s => (s.shift_type || "Other") === shiftType
-                          );
-                          
-                          return (
-                            <div 
-                              key={day.toISOString()} 
-                              className="min-h-[60px] p-1 rounded border bg-background border-border"
-                            >
-                              {daySchedules.map(schedule => {
-                                const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
-                                const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
-                                const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
-                                const isOvertime = schedule.is_pattern_overtime;
-                                
-                                return (
-                                  <div 
-                                    key={schedule.id} 
-                                    onClick={staffOnHoliday && holidayInfo ? (e) => handleHolidayClick(holidayInfo, e) : undefined}
-                                    className={`rounded p-1.5 mb-1 text-xs border ${
-                                      staffOnHoliday 
-                                        ? 'bg-amber-100 border-amber-300 cursor-pointer hover:bg-amber-200 transition-colors' 
-                                        : isOvertime
-                                          ? 'bg-orange-100 border-orange-300'
-                                          : `${colors.bg} ${colors.border}`
-                                    }`}
-                                  >
-                                    <div className={`font-semibold truncate flex items-center gap-1 ${
-                                      staffOnHoliday 
-                                        ? 'text-amber-900' 
-                                        : isOvertime 
-                                          ? 'text-orange-900'
-                                          : colors.text
-                                    }`}>
-                                      {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600 flex-shrink-0" />}
-                                      {isOvertime && !staffOnHoliday && <Clock className="h-3 w-3 text-orange-600 flex-shrink-0" />}
-                                      {getStaffName(schedule.user_id)}
-                                      {isOvertime && !staffOnHoliday && (
-                                        <span className="text-[9px] bg-orange-200 text-orange-800 px-1 rounded ml-auto">OT</span>
-                                      )}
-                                    </div>
-                                    
-                                    {staffOnHoliday ? (
-                                      <div className="mt-0.5">
-                                        <div className="text-[10px] text-amber-700 capitalize">
-                                          {holidayInfo?.absence_type?.replace('_', ' ') || 'On holiday'}
-                                        </div>
-                                        {coverage && coverage.length > 0 ? (
-                                          <div className="text-[10px] text-green-700 bg-green-50 rounded px-1 py-0.5 mt-0.5">
-                                            <span className="font-medium">Cover:</span> {coverage.map(c => c.name).join(', ')}
-                                          </div>
-                                        ) : holidayInfo?.no_cover_required ? (
-                                          <div className="text-[10px] text-blue-600 bg-blue-50 rounded px-1 py-0.5 mt-0.5">
-                                            No cover needed
-                                          </div>
-                                        ) : (
-                                          <div className="text-[10px] text-red-600 bg-red-50 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1">
-                                            <AlertTriangle className="h-2.5 w-2.5" />
-                                            <span>No cover</span>
-                                          </div>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <div className={`${isOvertime ? 'text-orange-900' : colors.text} opacity-80`}>
-                                        {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
-                                      </div>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+              <>
+                <MobileScheduleView />
+                <DesktopScheduleView />
+              </>
             )}
           </CardContent>
         </Card>
@@ -655,7 +777,7 @@ export const PublicClientSchedule = () => {
         <ClientPasswordManager clientName={decodedClientName} />
         
         {/* Footer */}
-        <div className="text-center mt-6 text-sm text-muted-foreground">
+        <div className="text-center mt-4 sm:mt-6 pb-4 text-xs sm:text-sm text-muted-foreground">
           Last updated: {format(new Date(), "PPp")}
         </div>
       </div>
@@ -937,14 +1059,13 @@ const UpcomingHolidaysCard = ({
 
   if (isLoading) {
     return (
-      <Card className="mt-6">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-xl flex items-center gap-2">
-            <Palmtree className="h-5 w-5 text-amber-600" />
+      <Card className="mt-4 sm:mt-6">
+        <CardHeader className="pb-2 px-3 sm:px-6">
+          <CardTitle className="text-lg sm:text-xl">
             Upcoming Holidays
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-3 sm:px-6">
           <div className="flex items-center justify-center py-6">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
@@ -955,13 +1076,13 @@ const UpcomingHolidaysCard = ({
 
   if (upcomingHolidays.length === 0) {
     return (
-      <Card className="mt-6">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-xl">
+      <Card className="mt-4 sm:mt-6">
+        <CardHeader className="pb-2 px-3 sm:px-6">
+          <CardTitle className="text-lg sm:text-xl">
             Upcoming Holidays
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-3 sm:px-6">
           <p className="text-sm text-muted-foreground text-center py-4">
             No upcoming approved holidays
           </p>
@@ -971,14 +1092,14 @@ const UpcomingHolidaysCard = ({
   }
 
   return (
-    <Card className="mt-6">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-xl">
+    <Card className="mt-4 sm:mt-6">
+      <CardHeader className="pb-2 px-3 sm:px-6">
+        <CardTitle className="text-lg sm:text-xl">
           Upcoming Holidays
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="space-y-3">
+      <CardContent className="px-3 sm:px-6">
+        <div className="space-y-2 sm:space-y-3">
           {upcomingHolidays.map((holiday) => {
             const startDate = parseISO(holiday.start_date);
             const endDate = parseISO(holiday.end_date);
@@ -1139,10 +1260,10 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
   };
 
   return (
-    <Card className="mt-6">
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-xl">
+    <Card className="mt-4 sm:mt-6">
+      <CardHeader className="pb-2 px-3 sm:px-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+          <CardTitle className="text-lg sm:text-xl">
             Whiteboard
           </CardTitle>
           <div className="text-xs text-muted-foreground">
@@ -1154,12 +1275,12 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
             ) : lastSaved ? (
               <span>Saved {format(lastSaved, "HH:mm")}</span>
             ) : whiteboard?.updated_at ? (
-              <span>Last updated {format(parseISO(whiteboard.updated_at), "PPp")}</span>
+              <span className="hidden sm:inline">Last updated {format(parseISO(whiteboard.updated_at), "PPp")}</span>
             ) : null}
           </div>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-3 sm:px-6">
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -1172,10 +1293,9 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
               onInput={handleContentChange}
               onKeyDown={handleKeyDown}
               data-placeholder="Type your notes here... Changes are saved automatically."
-              className="min-h-[200px] p-3 rounded-md font-mono text-sm bg-amber-50/50 border border-amber-200 focus:border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-200 overflow-auto whitespace-pre-wrap empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground"
-              style={{ minHeight: '200px' }}
+              className="min-h-[150px] sm:min-h-[200px] p-3 rounded-md font-mono text-sm bg-amber-50/50 border border-amber-200 focus:border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-200 overflow-auto whitespace-pre-wrap empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground"
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground hidden sm:block">
               Tip: Select text and press <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">⌘B</kbd> or <kbd className="px-1 py-0.5 bg-muted rounded text-[10px]">Ctrl+B</kbd> to bold
             </p>
           </div>
@@ -1368,29 +1488,30 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
   };
 
   return (
-    <Card className="mt-6">
-      <CardHeader className="pb-4">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-xl">
+    <Card className="mt-4 sm:mt-6">
+      <CardHeader className="pb-3 px-3 sm:px-6">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-lg sm:text-xl">
             Passwords & Links
           </CardTitle>
           <Button 
             variant="outline" 
             size="sm"
             onClick={() => setShowForm(!showForm)}
+            className="text-xs sm:text-sm"
           >
-            <Plus className="h-4 w-4 mr-1" />
-            Add Entry
+            <Plus className="h-4 w-4 sm:mr-1" />
+            <span className="hidden sm:inline">Add Entry</span>
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <CardContent className="space-y-4 sm:space-y-6 px-3 sm:px-6">
         {/* Add Entry Form */}
         {showForm && (
-          <form onSubmit={handleSubmit} className="space-y-3 p-4 bg-muted/30 rounded-lg border">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <form onSubmit={handleSubmit} className="space-y-3 p-3 sm:p-4 bg-muted/30 rounded-lg border">
+            <div className="grid grid-cols-1 gap-3">
               <Input
-                placeholder="Name (e.g., Care Planner, Medication App)"
+                placeholder="Name (e.g., Care Planner)"
                 value={softwareName}
                 onChange={(e) => setSoftwareName(e.target.value)}
               />
@@ -1415,15 +1536,14 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
                 placeholder="Notes (optional)"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                className="md:col-span-2"
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+              <Button type="button" variant="outline" size="sm" onClick={() => setShowForm(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={addPasswordMutation.isPending}>
-                Save Entry
+              <Button type="submit" size="sm" disabled={addPasswordMutation.isPending}>
+                Save
               </Button>
             </div>
           </form>
@@ -1435,15 +1555,15 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : passwords.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            No entries stored yet. Click "Add Entry" to get started.
+          <div className="text-center py-6 sm:py-8 text-muted-foreground text-sm">
+            No entries stored yet
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2 sm:space-y-3">
             {passwords.map((pw) => (
-              <div key={pw.id} className="p-4 bg-background rounded-lg border">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 space-y-2">
+              <div key={pw.id} className="p-3 sm:p-4 bg-background rounded-lg border">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 space-y-2 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-sm">{pw.software_name}</span>
                       {pw.url && (
@@ -1454,42 +1574,22 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
                           className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
                         >
                           <ExternalLink className="h-3 w-3" />
-                          Open Link
+                          <span className="hidden sm:inline">Open</span>
                         </a>
                       )}
                     </div>
                     
-                    {/* URL Row */}
-                    {pw.url && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <Link className="h-3 w-3 text-muted-foreground" />
-                        <span className="text-muted-foreground truncate max-w-[200px]">{pw.url}</span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => copyToClipboard(pw.url!, `url-${pw.id}`)}
-                        >
-                          {copiedId === `url-${pw.id}` ? (
-                            <Check className="h-3 w-3 text-green-500" />
-                          ) : (
-                            <Copy className="h-3 w-3" />
-                          )}
-                        </Button>
-                      </div>
-                    )}
-                    
-                    {/* Credentials */}
+                    {/* Credentials - stacked on mobile */}
                     {(pw.username || pw.password) && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                      <div className="space-y-1.5 text-sm">
                         {pw.username && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-muted-foreground">Username:</span>
-                            <span className="font-mono">{pw.username}</span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-muted-foreground text-xs sm:text-sm">Username:</span>
+                            <span className="font-mono text-xs sm:text-sm truncate max-w-[150px] sm:max-w-none">{pw.username}</span>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6"
+                              className="h-6 w-6 flex-shrink-0"
                               onClick={() => copyToClipboard(pw.username, `user-${pw.id}`)}
                             >
                               {copiedId === `user-${pw.id}` ? (
@@ -1501,35 +1601,37 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
                           </div>
                         )}
                         {pw.password && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-muted-foreground">Password:</span>
-                            <span className="font-mono">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-muted-foreground text-xs sm:text-sm">Password:</span>
+                            <span className="font-mono text-xs sm:text-sm">
                               {visiblePasswords.has(pw.id) ? pw.password : "••••••••"}
                             </span>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => togglePasswordVisibility(pw.id)}
-                            >
-                              {visiblePasswords.has(pw.id) ? (
-                                <EyeOff className="h-3 w-3" />
-                              ) : (
-                                <Eye className="h-3 w-3" />
-                              )}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => copyToClipboard(pw.password, `pass-${pw.id}`)}
-                            >
-                              {copiedId === `pass-${pw.id}` ? (
-                                <Check className="h-3 w-3 text-green-500" />
-                              ) : (
-                                <Copy className="h-3 w-3" />
-                              )}
-                            </Button>
+                            <div className="flex items-center gap-0 flex-shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => togglePasswordVisibility(pw.id)}
+                              >
+                                {visiblePasswords.has(pw.id) ? (
+                                  <EyeOff className="h-3 w-3" />
+                                ) : (
+                                  <Eye className="h-3 w-3" />
+                                )}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => copyToClipboard(pw.password, `pass-${pw.id}`)}
+                              >
+                                {copiedId === `pass-${pw.id}` ? (
+                                  <Check className="h-3 w-3 text-green-500" />
+                                ) : (
+                                  <Copy className="h-3 w-3" />
+                                )}
+                              </Button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -1541,22 +1643,22 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
                   </div>
                   
                   {/* Edit/Delete buttons */}
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-col sm:flex-row items-center gap-0 flex-shrink-0">
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8"
+                      className="h-7 w-7 sm:h-8 sm:w-8"
                       onClick={() => openEditDialog(pw)}
                     >
-                      <Pencil className="h-4 w-4" />
+                      <Pencil className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-8 w-8 text-destructive hover:text-destructive"
+                      className="h-7 w-7 sm:h-8 sm:w-8 text-destructive hover:text-destructive"
                       onClick={() => openDeleteDialog(pw)}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                     </Button>
                   </div>
                 </div>
