@@ -709,16 +709,16 @@ export const PublicClientSchedule = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-2 sm:p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
+        {/* Page Title - Client Name */}
+        <h1 className="text-2xl sm:text-3xl font-bold text-center mb-4 sm:mb-6">{decodedClientName}</h1>
+
         {/* Updates Section - at the top */}
         <ClientNoticeboard clientName={decodedClientName} />
 
         <Card className="mt-4 sm:mt-6">
           <CardHeader className="pb-3 px-3 sm:px-6">
             <div className="flex flex-col gap-3">
-              <div>
-                <CardTitle className="text-xl sm:text-2xl">{decodedClientName}</CardTitle>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-1">Weekly Schedule</p>
-              </div>
+              <CardTitle className="text-xl sm:text-2xl">Weekly Schedule</CardTitle>
               
               {/* Week Navigation - Mobile optimized */}
               <div className="flex items-center justify-between gap-2">
