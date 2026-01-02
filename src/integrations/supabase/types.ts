@@ -180,34 +180,40 @@ export type Database = {
       }
       client_passwords: {
         Row: {
+          category: string | null
           client_name: string
           created_at: string
           id: string
           notes: string | null
           password: string
           software_name: string
+          sort_order: number | null
           updated_at: string
           url: string | null
           username: string
         }
         Insert: {
+          category?: string | null
           client_name: string
           created_at?: string
           id?: string
           notes?: string | null
           password: string
           software_name: string
+          sort_order?: number | null
           updated_at?: string
           url?: string | null
           username: string
         }
         Update: {
+          category?: string | null
           client_name?: string
           created_at?: string
           id?: string
           notes?: string | null
           password?: string
           software_name?: string
+          sort_order?: number | null
           updated_at?: string
           url?: string | null
           username?: string

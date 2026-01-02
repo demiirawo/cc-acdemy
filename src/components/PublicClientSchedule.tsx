@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
-import { ChevronLeft, ChevronRight, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2, Palmtree, AlertTriangle, Clock } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2, Palmtree, AlertTriangle, Clock, GripVertical } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
@@ -33,6 +33,8 @@ interface ClientPassword {
   url: string | null;
   notes: string | null;
   created_at: string;
+  category: string | null;
+  sort_order: number | null;
 }
 interface Schedule {
   id: string;
@@ -1306,7 +1308,16 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
   );
 };
 
-// Password & Links Manager Component
+// Links Manager Component
+const LINK_CATEGORIES = [
+  { value: 'software', label: 'Software' },
+  { value: 'guidance', label: 'Guidance' },
+  { value: 'training', label: 'Training' },
+  { value: 'other', label: 'Other' },
+] as const;
+
+type LinkCategory = 'software' | 'guidance' | 'training' | 'other';
+
 const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
@@ -1315,6 +1326,7 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
   const [password, setPassword] = useState("");
   const [url, setUrl] = useState("");
   const [notes, setNotes] = useState("");
+  const [category, setCategory] = useState<LinkCategory>("other");
   const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = useState<string | null>(null);
   
@@ -1327,6 +1339,7 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
     password: "",
     url: "",
     notes: "",
+    category: "other" as LinkCategory,
   });
   
   // Delete confirmation state
@@ -1340,7 +1353,8 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
         .from("client_passwords")
         .select("*")
         .eq("client_name", clientName)
-        .order("software_name", { ascending: true });
+        .order("category", { ascending: true })
+        .order("sort_order", { ascending: true });
       
       if (error) throw error;
       return data as ClientPassword[];
@@ -1349,6 +1363,17 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
 
   const addPasswordMutation = useMutation({
     mutationFn: async () => {
+      // Get max sort_order for this category
+      const { data: existingEntries } = await supabase
+        .from("client_passwords")
+        .select("sort_order")
+        .eq("client_name", clientName)
+        .eq("category", category)
+        .order("sort_order", { ascending: false })
+        .limit(1);
+      
+      const nextSortOrder = (existingEntries?.[0]?.sort_order ?? -1) + 1;
+      
       const { error } = await supabase
         .from("client_passwords")
         .insert({
@@ -1358,6 +1383,8 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
           password: password.trim() || "",
           url: url.trim() || null,
           notes: notes.trim() || null,
+          category: category,
+          sort_order: nextSortOrder,
         });
       
       if (error) throw error;
@@ -1369,6 +1396,7 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
       setPassword("");
       setUrl("");
       setNotes("");
+      setCategory("other");
       setShowForm(false);
       toast.success("Entry added successfully");
     },
@@ -1388,7 +1416,7 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
 
   // Update mutation
   const updatePasswordMutation = useMutation({
-    mutationFn: async (data: { id: string; software_name: string; username: string; password: string; url: string | null; notes: string | null }) => {
+    mutationFn: async (data: { id: string; software_name: string; username: string; password: string; url: string | null; notes: string | null; category: string }) => {
       const { error } = await supabase
         .from("client_passwords")
         .update({
@@ -1397,6 +1425,7 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
           password: data.password,
           url: data.url,
           notes: data.notes,
+          category: data.category,
         })
         .eq("id", data.id);
       
@@ -1412,6 +1441,79 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
       toast.error("Failed to update entry");
     },
   });
+
+  // Reorder mutation
+  const reorderMutation = useMutation({
+    mutationFn: async ({ id, newSortOrder }: { id: string; newSortOrder: number }) => {
+      const { error } = await supabase
+        .from("client_passwords")
+        .update({ sort_order: newSortOrder })
+        .eq("id", id);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["client-passwords", clientName] });
+    },
+  });
+
+  // Move item up within category
+  const moveUp = (entry: ClientPassword) => {
+    const categoryEntries = passwords.filter(p => (p.category || 'other') === (entry.category || 'other'));
+    const currentIndex = categoryEntries.findIndex(p => p.id === entry.id);
+    
+    if (currentIndex <= 0) return;
+    
+    const prevEntry = categoryEntries[currentIndex - 1];
+    const currentSortOrder = entry.sort_order ?? currentIndex;
+    const prevSortOrder = prevEntry.sort_order ?? (currentIndex - 1);
+    
+    // Swap sort orders
+    reorderMutation.mutate({ id: entry.id, newSortOrder: prevSortOrder });
+    reorderMutation.mutate({ id: prevEntry.id, newSortOrder: currentSortOrder });
+  };
+
+  // Move item down within category
+  const moveDown = (entry: ClientPassword) => {
+    const categoryEntries = passwords.filter(p => (p.category || 'other') === (entry.category || 'other'));
+    const currentIndex = categoryEntries.findIndex(p => p.id === entry.id);
+    
+    if (currentIndex >= categoryEntries.length - 1) return;
+    
+    const nextEntry = categoryEntries[currentIndex + 1];
+    const currentSortOrder = entry.sort_order ?? currentIndex;
+    const nextSortOrder = nextEntry.sort_order ?? (currentIndex + 1);
+    
+    // Swap sort orders
+    reorderMutation.mutate({ id: entry.id, newSortOrder: nextSortOrder });
+    reorderMutation.mutate({ id: nextEntry.id, newSortOrder: currentSortOrder });
+  };
+
+  // Group passwords by category
+  const groupedPasswords = useMemo(() => {
+    const groups: Record<string, ClientPassword[]> = {
+      software: [],
+      guidance: [],
+      training: [],
+      other: [],
+    };
+    
+    passwords.forEach(pw => {
+      const cat = (pw.category || 'other') as string;
+      if (groups[cat]) {
+        groups[cat].push(pw);
+      } else {
+        groups.other.push(pw);
+      }
+    });
+    
+    // Sort each category by sort_order
+    Object.keys(groups).forEach(key => {
+      groups[key].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+    });
+    
+    return groups;
+  }, [passwords]);
 
   // Delete mutation
   const deletePasswordMutation = useMutation({
@@ -1442,6 +1544,7 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
       password: entry.password,
       url: entry.url || "",
       notes: entry.notes || "",
+      category: (entry.category as LinkCategory) || "other",
     });
     setIsEditDialogOpen(true);
   };
@@ -1459,6 +1562,7 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
       password: editForm.password.trim(),
       url: editForm.url.trim() || null,
       notes: editForm.notes.trim() || null,
+      category: editForm.category,
     });
   };
 
@@ -1493,7 +1597,7 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
       <CardHeader className="pb-3 px-3 sm:px-6">
         <div className="flex items-center justify-between gap-2">
           <CardTitle className="text-lg sm:text-xl">
-            Passwords & Links
+            Links
           </CardTitle>
           <Button 
             variant="outline" 
@@ -1511,6 +1615,19 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
         {showForm && (
           <form onSubmit={handleSubmit} className="space-y-3 p-3 sm:p-4 bg-muted/30 rounded-lg border">
             <div className="grid grid-cols-1 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-sm">Category</Label>
+                <Select value={category} onValueChange={(val) => setCategory(val as LinkCategory)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LINK_CATEGORIES.map(cat => (
+                      <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <Input
                 placeholder="Name (e.g., Care Planner)"
                 value={softwareName}
@@ -1550,7 +1667,7 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
           </form>
         )}
 
-        {/* Entries List */}
+        {/* Entries List - Grouped by Category */}
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -1560,111 +1677,145 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
             No entries stored yet
           </div>
         ) : (
-          <div className="space-y-2 sm:space-y-3">
-            {passwords.map((pw) => (
-              <div key={pw.id} className="p-3 sm:p-4 bg-background rounded-lg border">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 space-y-2 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-semibold text-sm">{pw.software_name}</span>
-                      {pw.url && (
-                        <a
-                          href={pw.url.startsWith('http') ? pw.url : `https://${pw.url}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                          <span className="hidden sm:inline">Open</span>
-                        </a>
-                      )}
-                    </div>
-                    
-                    {/* Credentials - stacked on mobile */}
-                    {(pw.username || pw.password) && (
-                      <div className="space-y-1.5 text-sm">
-                        {pw.username && (
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-muted-foreground text-xs sm:text-sm">Username:</span>
-                            <span className="font-mono text-xs sm:text-sm truncate max-w-[150px] sm:max-w-none">{pw.username}</span>
+          <div className="space-y-4">
+            {LINK_CATEGORIES.map(cat => {
+              const entries = groupedPasswords[cat.value];
+              if (!entries || entries.length === 0) return null;
+              
+              return (
+                <div key={cat.value} className="space-y-2">
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">{cat.label}</h3>
+                  <div className="space-y-2">
+                    {entries.map((pw, index) => (
+                      <div key={pw.id} className="p-3 sm:p-4 bg-background rounded-lg border">
+                        <div className="flex items-start justify-between gap-2">
+                          {/* Reorder buttons */}
+                          <div className="flex flex-col items-center gap-0 flex-shrink-0">
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-6 w-6 flex-shrink-0"
-                              onClick={() => copyToClipboard(pw.username, `user-${pw.id}`)}
+                              className="h-5 w-5"
+                              onClick={() => moveUp(pw)}
+                              disabled={index === 0 || reorderMutation.isPending}
                             >
-                              {copiedId === `user-${pw.id}` ? (
-                                <Check className="h-3 w-3 text-green-500" />
-                              ) : (
-                                <Copy className="h-3 w-3" />
-                              )}
+                              <ChevronUp className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5"
+                              onClick={() => moveDown(pw)}
+                              disabled={index === entries.length - 1 || reorderMutation.isPending}
+                            >
+                              <ChevronDown className="h-3 w-3" />
                             </Button>
                           </div>
-                        )}
-                        {pw.password && (
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-muted-foreground text-xs sm:text-sm">Password:</span>
-                            <span className="font-mono text-xs sm:text-sm">
-                              {visiblePasswords.has(pw.id) ? pw.password : "••••••••"}
-                            </span>
-                            <div className="flex items-center gap-0 flex-shrink-0">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
-                                onClick={() => togglePasswordVisibility(pw.id)}
-                              >
-                                {visiblePasswords.has(pw.id) ? (
-                                  <EyeOff className="h-3 w-3" />
-                                ) : (
-                                  <Eye className="h-3 w-3" />
-                                )}
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6"
-                                onClick={() => copyToClipboard(pw.password, `pass-${pw.id}`)}
-                              >
-                                {copiedId === `pass-${pw.id}` ? (
-                                  <Check className="h-3 w-3 text-green-500" />
-                                ) : (
-                                  <Copy className="h-3 w-3" />
-                                )}
-                              </Button>
+                          
+                          <div className="flex-1 space-y-2 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-semibold text-sm">{pw.software_name}</span>
+                              {pw.url && (
+                                <a
+                                  href={pw.url.startsWith('http') ? pw.url : `https://${pw.url}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                                >
+                                  <ExternalLink className="h-3 w-3" />
+                                  <span className="hidden sm:inline">Open</span>
+                                </a>
+                              )}
                             </div>
+                            
+                            {/* Credentials - stacked on mobile */}
+                            {(pw.username || pw.password) && (
+                              <div className="space-y-1.5 text-sm">
+                                {pw.username && (
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-muted-foreground text-xs sm:text-sm">Username:</span>
+                                    <span className="font-mono text-xs sm:text-sm truncate max-w-[150px] sm:max-w-none">{pw.username}</span>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 flex-shrink-0"
+                                      onClick={() => copyToClipboard(pw.username, `user-${pw.id}`)}
+                                    >
+                                      {copiedId === `user-${pw.id}` ? (
+                                        <Check className="h-3 w-3 text-green-500" />
+                                      ) : (
+                                        <Copy className="h-3 w-3" />
+                                      )}
+                                    </Button>
+                                  </div>
+                                )}
+                                {pw.password && (
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-muted-foreground text-xs sm:text-sm">Password:</span>
+                                    <span className="font-mono text-xs sm:text-sm">
+                                      {visiblePasswords.has(pw.id) ? pw.password : "••••••••"}
+                                    </span>
+                                    <div className="flex items-center gap-0 flex-shrink-0">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6"
+                                        onClick={() => togglePasswordVisibility(pw.id)}
+                                      >
+                                        {visiblePasswords.has(pw.id) ? (
+                                          <EyeOff className="h-3 w-3" />
+                                        ) : (
+                                          <Eye className="h-3 w-3" />
+                                        )}
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6"
+                                        onClick={() => copyToClipboard(pw.password, `pass-${pw.id}`)}
+                                      >
+                                        {copiedId === `pass-${pw.id}` ? (
+                                          <Check className="h-3 w-3 text-green-500" />
+                                        ) : (
+                                          <Copy className="h-3 w-3" />
+                                        )}
+                                      </Button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            
+                            {pw.notes && (
+                              <p className="text-xs text-muted-foreground">{pw.notes}</p>
+                            )}
                           </div>
-                        )}
+                          
+                          {/* Edit/Delete buttons */}
+                          <div className="flex flex-col sm:flex-row items-center gap-0 flex-shrink-0">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 sm:h-8 sm:w-8"
+                              onClick={() => openEditDialog(pw)}
+                            >
+                              <Pencil className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 sm:h-8 sm:w-8 text-destructive hover:text-destructive"
+                              onClick={() => openDeleteDialog(pw)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                            </Button>
+                          </div>
+                        </div>
                       </div>
-                    )}
-                    
-                    {pw.notes && (
-                      <p className="text-xs text-muted-foreground">{pw.notes}</p>
-                    )}
-                  </div>
-                  
-                  {/* Edit/Delete buttons */}
-                  <div className="flex flex-col sm:flex-row items-center gap-0 flex-shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 sm:h-8 sm:w-8"
-                      onClick={() => openEditDialog(pw)}
-                    >
-                      <Pencil className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 sm:h-8 sm:w-8 text-destructive hover:text-destructive"
-                      onClick={() => openDeleteDialog(pw)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                    </Button>
+                    ))}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </CardContent>
@@ -1675,10 +1826,26 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
           <DialogHeader>
             <DialogTitle>Edit Entry</DialogTitle>
             <DialogDescription>
-              Update the details of this password or link entry.
+              Update the details of this link entry.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-sm">Category</Label>
+              <Select 
+                value={editForm.category} 
+                onValueChange={(val) => setEditForm(prev => ({ ...prev, category: val as LinkCategory }))}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LINK_CATEGORIES.map(cat => (
+                    <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Input
               placeholder="Name (e.g., Care Planner, Medication App)"
               value={editForm.software_name}
