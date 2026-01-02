@@ -978,7 +978,6 @@ const UpcomingHolidaysCard = ({
           <Palmtree className="h-5 w-5 text-amber-600" />
           Upcoming Holidays
         </CardTitle>
-        <p className="text-sm text-muted-foreground">Approved absences coming up</p>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
@@ -1151,12 +1150,9 @@ const ClientNoticeboard = ({ clientName }: { clientName: string }) => {
     <Card className="mt-6">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-xl">
-              Whiteboard
-            </CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">Quick notes and updates for this client</p>
-          </div>
+          <CardTitle className="text-xl">
+            Whiteboard
+          </CardTitle>
           <div className="text-xs text-muted-foreground">
             {isSaving ? (
               <span className="flex items-center gap-1">
@@ -1383,12 +1379,9 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
     <Card className="mt-6">
       <CardHeader className="pb-4">
         <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-xl">
-              Passwords & Links
-            </CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">Store credentials and important links for this client</p>
-          </div>
+          <CardTitle className="text-xl">
+            Passwords & Links
+          </CardTitle>
           <Button 
             variant="outline" 
             size="sm"
