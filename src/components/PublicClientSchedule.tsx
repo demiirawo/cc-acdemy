@@ -1142,11 +1142,6 @@ const UpcomingHolidaysCard = ({
                       ({holiday.days_taken} {holiday.days_taken === 1 ? 'day' : 'days'})
                     </span>
                   </div>
-                  {holiday.notes && (
-                    <p className="text-xs text-muted-foreground mt-1 truncate">
-                      {holiday.notes}
-                    </p>
-                  )}
                 </div>
                 {holiday.no_cover_required && (
                   <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 flex-shrink-0">
