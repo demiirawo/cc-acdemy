@@ -8,9 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit, Trash2, FileText, Link, CheckSquare, User, GripVertical, ArrowUp, ArrowDown } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Plus, Edit, Trash2, FileText, Link, CheckSquare, User, GripVertical } from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import {
   DndContext,
   closestCenter,
@@ -19,6 +19,9 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
+  DragOverEvent,
+  DragStartEvent,
+  DragOverlay,
 } from "@dnd-kit/core";
 import {
   arrayMove,
@@ -71,6 +74,8 @@ export function OnboardingStepsManager() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingStep, setEditingStep] = useState<OnboardingStep | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [expandedStages, setExpandedStages] = useState<string[]>(DEFAULT_STAGES);
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -154,6 +159,12 @@ export function OnboardingStepsManager() {
     setEditingStep(null);
   };
 
+  const openAddDialogForStage = (stageName: string) => {
+    resetForm();
+    setStage(stageName);
+    setDialogOpen(true);
+  };
+
   const openEditDialog = (step: OnboardingStep) => {
     setEditingStep(step);
     setTitle(step.title);
@@ -191,20 +202,17 @@ export function OnboardingStepsManager() {
         if (error) throw error;
         toast({ title: "Step updated successfully" });
       } else {
-        // Fetch current max sort order from database to avoid race conditions
-        const { data: existingSteps } = await supabase
-          .from('onboarding_steps')
-          .select('sort_order')
-          .order('sort_order', { ascending: false })
-          .limit(1);
-        
-        const maxOrder = existingSteps && existingSteps.length > 0 ? existingSteps[0].sort_order : 0;
+        // Get max sort order for this specific stage
+        const stageSteps = steps.filter(s => s.stage === stage);
+        const maxOrder = stageSteps.length > 0 
+          ? Math.max(...stageSteps.map(s => s.sort_order)) 
+          : 0;
         
         const { error } = await supabase
           .from('onboarding_steps')
           .insert({ 
             ...stepData, 
-            sort_order: (maxOrder || 0) + 1,
+            sort_order: maxOrder + 1,
             created_by: user.id,
           });
 
@@ -274,10 +282,8 @@ export function OnboardingStepsManager() {
   };
 
   // Group steps by stage
-  const stepsByStage = steps.reduce((acc, step) => {
-    const stageKey = step.stage || 'Getting Started';
-    if (!acc[stageKey]) acc[stageKey] = [];
-    acc[stageKey].push(step);
+  const stepsByStage = DEFAULT_STAGES.reduce((acc, stageName) => {
+    acc[stageName] = steps.filter(s => s.stage === stageName).sort((a, b) => a.sort_order - b.sort_order);
     return acc;
   }, {} as Record<string, OnboardingStep[]>);
 
@@ -288,76 +294,106 @@ export function OnboardingStepsManager() {
     })
   );
 
-  const handleDragEnd = async (event: DragEndEvent) => {
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event;
+    if (!over) return;
 
-    if (over && active.id !== over.id) {
-      const oldIndex = steps.findIndex((s) => s.id === active.id);
-      const newIndex = steps.findIndex((s) => s.id === over.id);
+    const activeStep = steps.find(s => s.id === active.id);
+    const overStep = steps.find(s => s.id === over.id);
 
-      const newSteps = arrayMove(steps, oldIndex, newIndex);
-      setSteps(newSteps);
+    if (!activeStep) return;
 
-      // Update sort orders in database
-      try {
-        const updates = newSteps.map((step, index) => ({
-          id: step.id,
-          sort_order: index + 1,
-        }));
-
-        for (const update of updates) {
-          await supabase
-            .from('onboarding_steps')
-            .update({ sort_order: update.sort_order })
-            .eq('id', update.id);
-        }
-
-        toast({ title: "Order updated successfully" });
-      } catch (error) {
-        console.error('Error updating order:', error);
-        toast({
-          title: "Error",
-          description: "Failed to update order",
-          variant: "destructive",
-        });
-        fetchSteps(); // Revert to original order
-      }
+    // If dropping on another step, update the stage if different
+    if (overStep && activeStep.stage !== overStep.stage) {
+      setSteps(prevSteps => 
+        prevSteps.map(s => 
+          s.id === activeStep.id ? { ...s, stage: overStep.stage } : s
+        )
+      );
     }
   };
 
-  const moveStep = async (stepId: string, direction: 'up' | 'down') => {
-    const currentIndex = steps.findIndex(s => s.id === stepId);
-    if (currentIndex === -1) return;
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
 
-    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-    if (newIndex < 0 || newIndex >= steps.length) return;
+    if (!over || active.id === over.id) return;
 
-    const newSteps = arrayMove(steps, currentIndex, newIndex);
-    setSteps(newSteps);
+    const activeStep = steps.find(s => s.id === active.id);
+    const overStep = steps.find(s => s.id === over.id);
 
+    if (!activeStep || !overStep) return;
+
+    const targetStage = overStep.stage;
+    const stageSteps = steps.filter(s => s.stage === targetStage || s.id === active.id);
+    
+    // Get indices within the stage
+    const oldIndex = stageSteps.findIndex(s => s.id === active.id);
+    const newIndex = stageSteps.findIndex(s => s.id === over.id);
+
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    // Update local state
+    const updatedStageSteps = arrayMove(stageSteps, oldIndex, newIndex);
+    
+    // Build new steps array
+    const newSteps = steps.map(step => {
+      if (step.id === active.id) {
+        return { ...step, stage: targetStage };
+      }
+      return step;
+    });
+
+    // Update sort orders for the affected stage
+    const finalSteps = newSteps.map(step => {
+      const indexInStage = updatedStageSteps.findIndex(s => s.id === step.id);
+      if (indexInStage !== -1 && step.stage === targetStage) {
+        return { ...step, sort_order: indexInStage + 1 };
+      }
+      return step;
+    });
+
+    setSteps(finalSteps);
+
+    // Update database
     try {
-      // Update the two affected steps
-      await supabase
-        .from('onboarding_steps')
-        .update({ sort_order: newIndex + 1 })
-        .eq('id', steps[currentIndex].id);
+      const stageStepsToUpdate = finalSteps.filter(s => s.stage === targetStage);
+      
+      for (const step of stageStepsToUpdate) {
+        await supabase
+          .from('onboarding_steps')
+          .update({ 
+            sort_order: step.sort_order,
+            stage: step.stage 
+          })
+          .eq('id', step.id);
+      }
 
-      await supabase
-        .from('onboarding_steps')
-        .update({ sort_order: currentIndex + 1 })
-        .eq('id', steps[newIndex].id);
+      // Also update the moved step's stage if it changed
+      if (activeStep.stage !== targetStage) {
+        await supabase
+          .from('onboarding_steps')
+          .update({ stage: targetStage })
+          .eq('id', String(active.id));
+      }
 
-      toast({ title: "Step moved successfully" });
+      toast({ title: "Order updated successfully" });
     } catch (error) {
-      console.error('Error moving step:', error);
+      console.error('Error updating order:', error);
       toast({
         title: "Error",
-        description: "Failed to move step",
+        description: "Failed to update order",
         variant: "destructive",
       });
       fetchSteps();
     }
   };
+
+  const activeStep = activeId ? steps.find(s => s.id === activeId) : null;
 
   if (loading) {
     return <div className="text-center py-8 text-muted-foreground">Loading...</div>;
@@ -365,18 +401,94 @@ export function OnboardingStepsManager() {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader>
         <CardTitle>Onboarding Steps Configuration</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+        >
+          <Accordion 
+            type="multiple" 
+            value={expandedStages}
+            onValueChange={setExpandedStages}
+            className="space-y-4"
+          >
+            {DEFAULT_STAGES.map((stageName) => {
+              const stageSteps = stepsByStage[stageName] || [];
+              return (
+                <AccordionItem 
+                  key={stageName} 
+                  value={stageName}
+                  className="border rounded-lg px-4"
+                >
+                  <AccordionTrigger className="hover:no-underline">
+                    <div className="flex items-center gap-3">
+                      <span className="font-semibold">{stageName}</span>
+                      <span className="text-sm text-muted-foreground">
+                        ({stageSteps.length} step{stageSteps.length !== 1 ? 's' : ''})
+                      </span>
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <div className="space-y-2 pb-4">
+                      <SortableContext 
+                        items={stageSteps.map(s => s.id)} 
+                        strategy={verticalListSortingStrategy}
+                      >
+                        {stageSteps.length === 0 ? (
+                          <div className="text-center py-4 text-muted-foreground text-sm">
+                            No steps in this stage yet
+                          </div>
+                        ) : (
+                          stageSteps.map((step, index) => (
+                            <SortableStepCard
+                              key={step.id}
+                              step={step}
+                              index={index}
+                              onEdit={openEditDialog}
+                              onDelete={handleDelete}
+                              getStepTypeIcon={getStepTypeIcon}
+                              getStepTypeLabel={getStepTypeLabel}
+                            />
+                          ))
+                        )}
+                      </SortableContext>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full mt-2"
+                        onClick={() => openAddDialogForStage(stageName)}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Step to {stageName}
+                      </Button>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              );
+            })}
+          </Accordion>
+
+          <DragOverlay>
+            {activeStep ? (
+              <div className="bg-card border rounded-lg p-3 shadow-lg opacity-90">
+                <div className="font-medium">{activeStep.title}</div>
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+
+        {/* Add/Edit Dialog */}
         <Dialog open={dialogOpen} onOpenChange={(open) => {
           setDialogOpen(open);
           if (!open) resetForm();
         }}>
-          <DialogTrigger asChild>
-            <Button className="flex items-center gap-2">
-              <Plus className="h-4 w-4" />
-              Add Step
-            </Button>
-          </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{editingStep ? 'Edit Step' : 'Add New Step'}</DialogTitle>
@@ -498,77 +610,29 @@ export function OnboardingStepsManager() {
             </form>
           </DialogContent>
         </Dialog>
-      </CardHeader>
-      <CardContent>
-        {steps.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            No onboarding steps configured yet. Click "Add Step" to create one.
-          </div>
-        ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12"></TableHead>
-                  <TableHead className="w-12">#</TableHead>
-                  <TableHead>Title</TableHead>
-                  <TableHead>Stage</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Owner</TableHead>
-                  <TableHead className="w-32">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <SortableContext items={steps.map(s => s.id)} strategy={verticalListSortingStrategy}>
-                  {steps.map((step, index) => (
-                    <SortableStepRow
-                      key={step.id}
-                      step={step}
-                      index={index}
-                      totalSteps={steps.length}
-                      onEdit={openEditDialog}
-                      onDelete={handleDelete}
-                      onMove={moveStep}
-                      getStepTypeIcon={getStepTypeIcon}
-                      getStepTypeLabel={getStepTypeLabel}
-                    />
-                  ))}
-                </SortableContext>
-              </TableBody>
-            </Table>
-          </DndContext>
-        )}
       </CardContent>
     </Card>
   );
 }
 
-// Sortable row component
-interface SortableStepRowProps {
+// Sortable card component for steps
+interface SortableStepCardProps {
   step: OnboardingStep;
   index: number;
-  totalSteps: number;
   onEdit: (step: OnboardingStep) => void;
   onDelete: (id: string) => void;
-  onMove: (id: string, direction: 'up' | 'down') => void;
   getStepTypeIcon: (type: string) => React.ReactNode;
   getStepTypeLabel: (type: string) => string;
 }
 
-function SortableStepRow({ 
+function SortableStepCard({ 
   step, 
-  index, 
-  totalSteps,
+  index,
   onEdit, 
   onDelete, 
-  onMove,
   getStepTypeIcon, 
   getStepTypeLabel 
-}: SortableStepRowProps) {
+}: SortableStepCardProps) {
   const {
     attributes,
     listeners,
@@ -585,86 +649,59 @@ function SortableStepRow({
   };
 
   return (
-    <TableRow ref={setNodeRef} style={style}>
-      <TableCell>
-        <button
-          {...attributes}
-          {...listeners}
-          className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded"
-        >
-          <GripVertical className="h-4 w-4 text-muted-foreground" />
-        </button>
-      </TableCell>
-      <TableCell className="font-medium">{index + 1}</TableCell>
-      <TableCell>
-        <div>
-          <div className="font-medium">{step.title}</div>
-          {step.description && (
-            <div className="text-sm text-muted-foreground line-clamp-2">{step.description}</div>
-          )}
-        </div>
-      </TableCell>
-      <TableCell>
-        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
-          {step.stage}
-        </span>
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-2">
-          {getStepTypeIcon(step.step_type)}
-          <span>{getStepTypeLabel(step.step_type)}</span>
-        </div>
-      </TableCell>
-      <TableCell>
-        {step.owner ? (
-          <div className="flex items-center gap-2">
-            <User className="h-4 w-4 text-muted-foreground" />
-            <div>
-              <div className="font-medium">{step.owner.name}</div>
-              {step.owner.role && (
-                <div className="text-xs text-muted-foreground">{step.owner.role}</div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <span className="text-muted-foreground">-</span>
+    <div 
+      ref={setNodeRef} 
+      style={style}
+      className="flex items-center gap-3 p-3 bg-background border rounded-lg hover:bg-muted/50 transition-colors"
+    >
+      <button
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded flex-shrink-0"
+      >
+        <GripVertical className="h-4 w-4 text-muted-foreground" />
+      </button>
+      
+      <span className="text-sm text-muted-foreground w-6 flex-shrink-0">{index + 1}.</span>
+      
+      <div className="flex-1 min-w-0">
+        <div className="font-medium truncate">{step.title}</div>
+        {step.description && (
+          <div className="text-sm text-muted-foreground line-clamp-1">{step.description}</div>
         )}
-      </TableCell>
-      <TableCell>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onMove(step.id, 'up')}
-            disabled={index === 0}
-          >
-            <ArrowUp className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onMove(step.id, 'down')}
-            disabled={index === totalSteps - 1}
-          >
-            <ArrowDown className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onEdit(step)}
-          >
-            <Edit className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onDelete(step.id)}
-            className="text-destructive hover:text-destructive"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+      </div>
+      
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          {getStepTypeIcon(step.step_type)}
+          <span className="hidden sm:inline">{getStepTypeLabel(step.step_type)}</span>
         </div>
-      </TableCell>
-    </TableRow>
+        
+        {step.owner && (
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <User className="h-3 w-3" />
+            <span className="hidden md:inline">{step.owner.name}</span>
+          </div>
+        )}
+      </div>
+      
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onEdit(step)}
+        >
+          <Edit className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onDelete(step.id)}
+          className="text-destructive hover:text-destructive"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
   );
 }
