@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { Check, X, Clock } from "lucide-react";
+import { Check, Clock } from "lucide-react";
 
 interface OnboardingOwner {
   id: string;
@@ -20,6 +20,7 @@ interface OnboardingStep {
   step_type: string;
   target_page_id: string | null;
   owner_id: string | null;
+  stage: string;
   owner?: OnboardingOwner | null;
 }
 
@@ -40,6 +41,15 @@ interface PageAcknowledgement {
   acknowledged_at: string;
 }
 
+// Define the correct stage order (matching OnboardingStepsManager)
+const STAGE_ORDER = [
+  "Getting Started",
+  "System & Tools",
+  "Company Policies",
+  "Training",
+  "Final Checks"
+];
+
 export function OnboardingMatrix() {
   const [steps, setSteps] = useState<OnboardingStep[]>([]);
   const [staff, setStaff] = useState<StaffMember[]>([]);
@@ -58,7 +68,7 @@ export function OnboardingMatrix() {
       const { data: stepsData, error: stepsError } = await supabase
         .from('onboarding_steps')
         .select(`
-          id, title, sort_order, step_type, target_page_id, owner_id,
+          id, title, sort_order, step_type, target_page_id, owner_id, stage,
           owner:onboarding_owners(id, name, role, email, phone)
         `)
         .order('sort_order', { ascending: true });
@@ -135,6 +145,17 @@ export function OnboardingMatrix() {
     return { completed, total: steps.length };
   };
 
+  // Group steps by stage
+  const stepsByStage = steps.reduce((acc, step) => {
+    const stageKey = step.stage || 'Getting Started';
+    if (!acc[stageKey]) acc[stageKey] = [];
+    acc[stageKey].push(step);
+    return acc;
+  }, {} as Record<string, OnboardingStep[]>);
+
+  // Use predefined order, only including stages that have steps
+  const orderedStages = STAGE_ORDER.filter(stage => stepsByStage[stage] && stepsByStage[stage].length > 0);
+
   if (loading) {
     return <div className="text-center py-8 text-muted-foreground">Loading...</div>;
   }
@@ -160,59 +181,82 @@ export function OnboardingMatrix() {
             <table className="w-full border-collapse">
               <thead>
                 <tr>
-                  <th className="sticky left-0 bg-background z-10 p-3 text-left font-medium border-b border-r min-w-[200px]">
-                    Staff Member
+                  <th className="sticky left-0 bg-background z-10 p-3 text-left font-medium border-b border-r min-w-[250px]">
+                    Onboarding Step
                   </th>
-                  {steps.map((step, index) => (
+                  {staff.map((member) => (
                     <th
-                      key={step.id}
-                      className="p-3 text-center font-medium border-b min-w-[120px]"
-                      title={step.title}
+                      key={member.user_id}
+                      className="p-3 text-center font-medium border-b min-w-[100px]"
+                      title={member.display_name || 'Unknown'}
                     >
                       <div className="flex flex-col items-center gap-1">
-                        <span className="text-lg font-bold text-primary">{index + 1}</span>
-                        <span className="text-xs text-muted-foreground truncate max-w-[100px]">
-                          {step.title}
+                        <span className="text-xs text-muted-foreground truncate max-w-[90px]">
+                          {member.display_name || 'Unknown'}
                         </span>
                       </div>
                     </th>
                   ))}
-                  <th className="p-3 text-center font-medium border-b border-l min-w-[100px]">
-                    Progress
-                  </th>
                 </tr>
               </thead>
               <tbody>
-                {staff.map((member) => {
-                  const stats = getCompletionStats(member.user_id);
-                  const progressPercent = steps.length > 0 
-                    ? Math.round((stats.completed / stats.total) * 100) 
-                    : 0;
-
-                  return (
-                    <tr key={member.user_id} className="hover:bg-muted/50">
-                      <td className="sticky left-0 bg-background z-10 p-3 border-b border-r font-medium">
-                        {member.display_name || 'Unknown'}
+                {orderedStages.map((stageName) => (
+                  <>
+                    {/* Stage header row */}
+                    <tr key={`stage-${stageName}`} className="bg-muted/50">
+                      <td 
+                        colSpan={staff.length + 1} 
+                        className="sticky left-0 p-2 font-semibold text-sm text-primary border-b"
+                      >
+                        {stageName}
                       </td>
-                      {steps.map((step) => {
-                        const completed = isStepCompleted(step.id, member.user_id, step);
-                        return (
-                          <td key={step.id} className="p-3 text-center border-b">
-                            {completed ? (
-                              <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30">
-                                <Check className="h-5 w-5 text-green-600 dark:text-green-400" />
-                              </div>
-                            ) : (
-                              <div className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-muted">
-                                <Clock className="h-4 w-4 text-muted-foreground" />
-                              </div>
-                            )}
-                          </td>
-                        );
-                      })}
-                      <td className="p-3 text-center border-b border-l">
+                    </tr>
+                    {/* Steps within this stage */}
+                    {stepsByStage[stageName].map((step, stepIndex) => (
+                      <tr key={step.id} className="hover:bg-muted/30">
+                        <td className="sticky left-0 bg-background z-10 p-3 border-b border-r">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium text-muted-foreground w-6">
+                              {stepIndex + 1}.
+                            </span>
+                            <span className="text-sm">{step.title}</span>
+                          </div>
+                        </td>
+                        {staff.map((member) => {
+                          const completed = isStepCompleted(step.id, member.user_id, step);
+                          return (
+                            <td key={member.user_id} className="p-3 text-center border-b">
+                              {completed ? (
+                                <div className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-green-100 dark:bg-green-900/30">
+                                  <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
+                                </div>
+                              ) : (
+                                <div className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-muted">
+                                  <Clock className="h-3 w-3 text-muted-foreground" />
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </>
+                ))}
+                {/* Progress summary row */}
+                <tr className="bg-muted/30 font-medium">
+                  <td className="sticky left-0 bg-background z-10 p-3 border-t-2 border-r font-semibold">
+                    Total Progress
+                  </td>
+                  {staff.map((member) => {
+                    const stats = getCompletionStats(member.user_id);
+                    const progressPercent = steps.length > 0 
+                      ? Math.round((stats.completed / stats.total) * 100) 
+                      : 0;
+
+                    return (
+                      <td key={member.user_id} className="p-3 text-center border-t-2">
                         <div className="flex flex-col items-center gap-1">
-                          <div className="w-16 h-2 bg-muted rounded-full overflow-hidden">
+                          <div className="w-12 h-2 bg-muted rounded-full overflow-hidden">
                             <div
                               className="h-full bg-primary rounded-full transition-all"
                               style={{ width: `${progressPercent}%` }}
@@ -223,9 +267,9 @@ export function OnboardingMatrix() {
                           </span>
                         </div>
                       </td>
-                    </tr>
-                  );
-                })}
+                    );
+                  })}
+                </tr>
               </tbody>
             </table>
           </div>
