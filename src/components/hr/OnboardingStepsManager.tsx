@@ -29,9 +29,18 @@ interface OnboardingStep {
   external_url: string | null;
   sort_order: number;
   owner_id: string | null;
+  stage: string;
   created_at: string;
   owner?: OnboardingOwner | null;
 }
+
+const DEFAULT_STAGES = [
+  "Getting Started",
+  "Company Policies",
+  "Training",
+  "Systems & Tools",
+  "Final Checks"
+];
 
 interface Page {
   id: string;
@@ -55,6 +64,7 @@ export function OnboardingStepsManager() {
   const [targetPageId, setTargetPageId] = useState<string>("");
   const [externalUrl, setExternalUrl] = useState("");
   const [ownerId, setOwnerId] = useState<string>("");
+  const [stage, setStage] = useState<string>("Getting Started");
 
   useEffect(() => {
     fetchSteps();
@@ -70,6 +80,7 @@ export function OnboardingStepsManager() {
           *,
           owner:onboarding_owners(id, name, role, email, phone)
         `)
+        .order('stage', { ascending: true })
         .order('sort_order', { ascending: true });
 
       if (error) throw error;
@@ -122,6 +133,7 @@ export function OnboardingStepsManager() {
     setTargetPageId("");
     setExternalUrl("");
     setOwnerId("");
+    setStage("Getting Started");
     setEditingStep(null);
   };
 
@@ -133,6 +145,7 @@ export function OnboardingStepsManager() {
     setTargetPageId(step.target_page_id || "");
     setExternalUrl(step.external_url || "");
     setOwnerId(step.owner_id || "");
+    setStage(step.stage || "Getting Started");
     setDialogOpen(true);
   };
 
@@ -149,6 +162,7 @@ export function OnboardingStepsManager() {
         target_page_id: stepType === 'internal_page' ? targetPageId || null : null,
         external_url: stepType === 'external_link' ? externalUrl || null : null,
         owner_id: ownerId || null,
+        stage,
       };
 
       if (editingStep) {
@@ -222,6 +236,8 @@ export function OnboardingStepsManager() {
         return <FileText className="h-4 w-4" />;
       case 'external_link':
         return <Link className="h-4 w-4" />;
+      case 'acknowledgement':
+        return <CheckSquare className="h-4 w-4" />;
       default:
         return <CheckSquare className="h-4 w-4" />;
     }
@@ -233,10 +249,20 @@ export function OnboardingStepsManager() {
         return 'Academy Page';
       case 'external_link':
         return 'External Link';
+      case 'acknowledgement':
+        return 'Acknowledgement';
       default:
         return 'Task';
     }
   };
+
+  // Group steps by stage
+  const stepsByStage = steps.reduce((acc, step) => {
+    const stageKey = step.stage || 'Getting Started';
+    if (!acc[stageKey]) acc[stageKey] = [];
+    acc[stageKey].push(step);
+    return acc;
+  }, {} as Record<string, OnboardingStep[]>);
 
   if (loading) {
     return <div className="text-center py-8 text-muted-foreground">Loading...</div>;
@@ -287,6 +313,20 @@ export function OnboardingStepsManager() {
               </div>
 
               <div className="space-y-2">
+                <Label htmlFor="stage">Stage</Label>
+                <Select value={stage} onValueChange={setStage}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DEFAULT_STAGES.map((s) => (
+                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="stepType">Step Type</Label>
                 <Select value={stepType} onValueChange={setStepType}>
                   <SelectTrigger>
@@ -294,6 +334,7 @@ export function OnboardingStepsManager() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="task">General Task</SelectItem>
+                    <SelectItem value="acknowledgement">Acknowledgement (information to acknowledge)</SelectItem>
                     <SelectItem value="internal_page">Academy Page (requires acknowledgement)</SelectItem>
                     <SelectItem value="external_link">External Link</SelectItem>
                   </SelectContent>
@@ -374,6 +415,7 @@ export function OnboardingStepsManager() {
               <TableRow>
                 <TableHead className="w-12">#</TableHead>
                 <TableHead>Title</TableHead>
+                <TableHead>Stage</TableHead>
                 <TableHead>Type</TableHead>
                 <TableHead>Owner</TableHead>
                 <TableHead className="w-24">Actions</TableHead>
@@ -390,6 +432,11 @@ export function OnboardingStepsManager() {
                         <div className="text-sm text-muted-foreground line-clamp-2">{step.description}</div>
                       )}
                     </div>
+                  </TableCell>
+                  <TableCell>
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary/10 text-primary">
+                      {step.stage}
+                    </span>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
