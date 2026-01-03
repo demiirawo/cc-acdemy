@@ -457,6 +457,36 @@ export function RealKnowledgeBaseSidebar({
     });
   };
 
+  // Find the path to a page in the hierarchy and return all parent IDs
+  const findPathToPage = (items: SidebarItem[], targetId: string, path: string[] = []): string[] | null => {
+    for (const item of items) {
+      if (item.id === targetId) {
+        return path;
+      }
+      if (item.children && item.children.length > 0) {
+        const result = findPathToPage(item.children, targetId, [...path, item.id]);
+        if (result !== null) {
+          return result;
+        }
+      }
+    }
+    return null;
+  };
+
+  // Auto-expand parent items when selectedId changes
+  useEffect(() => {
+    if (selectedId && hierarchyData.length > 0) {
+      const pathToSelected = findPathToPage(hierarchyData, selectedId);
+      if (pathToSelected && pathToSelected.length > 0) {
+        setExpandedItems(prev => {
+          const newSet = new Set(prev);
+          pathToSelected.forEach(id => newSet.add(id));
+          return newSet;
+        });
+      }
+    }
+  }, [selectedId, hierarchyData]);
+
   useEffect(() => {
     fetchHierarchyData();
 
