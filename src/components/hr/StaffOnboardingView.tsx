@@ -376,9 +376,22 @@ export function StaffOnboardingView() {
                               {/* Action button */}
                               <div className="flex-shrink-0">
                                 {completed ? (
-                                  <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-                                    <CheckCircle2 className="h-5 w-5" />
-                                    <span className="font-medium">Completed</span>
+                                  <div className="flex items-center gap-3">
+                                    {/* Show "View Page" button for internal_page steps even when completed */}
+                                    {step.step_type === 'internal_page' && step.target_page_id && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => navigate(`/page/${step.target_page_id}`)}
+                                      >
+                                        <FileText className="h-4 w-4 mr-2" />
+                                        View Page
+                                      </Button>
+                                    )}
+                                    <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                                      <CheckCircle2 className="h-5 w-5" />
+                                      <span className="font-medium">Completed</span>
+                                    </div>
                                   </div>
                                 ) : (
                                   <Button
