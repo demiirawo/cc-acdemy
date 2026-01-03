@@ -476,6 +476,7 @@ export type Database = {
           created_at: string
           department: string | null
           employee_id: string | null
+          employment_status: Database["public"]["Enums"]["employment_status"]
           id: string
           job_title: string | null
           notes: string | null
@@ -492,6 +493,7 @@ export type Database = {
           created_at?: string
           department?: string | null
           employee_id?: string | null
+          employment_status?: Database["public"]["Enums"]["employment_status"]
           id?: string
           job_title?: string | null
           notes?: string | null
@@ -508,6 +510,7 @@ export type Database = {
           created_at?: string
           department?: string | null
           employee_id?: string | null
+          employment_status?: Database["public"]["Enums"]["employment_status"]
           id?: string
           job_title?: string | null
           notes?: string | null
@@ -1778,6 +1781,12 @@ export type Database = {
         | "unpaid"
         | "other"
       app_role: "business_manager" | "consultant" | "admin" | "client"
+      employment_status:
+        | "onboarding_probation"
+        | "onboarding_passed"
+        | "active"
+        | "inactive_left"
+        | "inactive_fired"
       pay_record_type: "salary" | "bonus" | "deduction" | "expense" | "overtime"
       staff_request_type:
         | "overtime_standard"
@@ -1924,6 +1933,13 @@ export const Constants = {
         "other",
       ],
       app_role: ["business_manager", "consultant", "admin", "client"],
+      employment_status: [
+        "onboarding_probation",
+        "onboarding_passed",
+        "active",
+        "inactive_left",
+        "inactive_fired",
+      ],
       pay_record_type: ["salary", "bonus", "deduction", "expense", "overtime"],
       staff_request_type: [
         "overtime_standard",
