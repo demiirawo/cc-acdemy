@@ -109,7 +109,7 @@ function PageView({
   }>>([]);
   const { toast } = useToast();
   const { terms: glossaryTerms, getAllMatchableTerms } = useGlossary();
-  const { isAdmin } = useUserRole();
+  const { isAdmin, isEditor } = useUserRole();
 
   // Function to make content read-only by removing contenteditable attributes
   const makeContentReadOnly = (content: string): string => {
@@ -385,13 +385,17 @@ function PageView({
                 {isAdmin && (
                   <QuizManager pageId={currentPage.id} pageTitle={currentPage.title} />
                 )}
-                <Button variant="outline" size="sm" onClick={() => setPermissionsDialogOpen(true)} className="flex items-center gap-2">
-                  <Shield className="h-4 w-4" />
-                  Permissions
-                </Button>
-                <Button onClick={onEditPage} className="bg-gradient-primary">
-                  Edit
-                </Button>
+                {isEditor && (
+                  <Button variant="outline" size="sm" onClick={() => setPermissionsDialogOpen(true)} className="flex items-center gap-2">
+                    <Shield className="h-4 w-4" />
+                    Permissions
+                  </Button>
+                )}
+                {isEditor && (
+                  <Button onClick={onEditPage} className="bg-gradient-primary">
+                    Edit
+                  </Button>
+                )}
               </div>
             </div>
           <div className="text-sm text-muted-foreground">
@@ -410,7 +414,7 @@ function PageView({
           <ChildPagesGrid childPages={childPages} onPageSelect={onPageSelect} />
         ) : (
           <div className="text-muted-foreground italic">
-            This page has no content yet. Click Edit to add content.
+            {isEditor ? 'This page has no content yet. Click Edit to add content.' : 'This page has no content yet.'}
           </div>
         )}
 
