@@ -333,12 +333,12 @@ export function OnboardingStepsManager() {
 
               <div className="space-y-2">
                 <Label htmlFor="owner">Owner</Label>
-                <Select value={ownerId} onValueChange={setOwnerId}>
+                <Select value={ownerId || "none"} onValueChange={(value) => setOwnerId(value === "none" ? "" : value)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select an owner..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No owner assigned</SelectItem>
+                    <SelectItem value="none">No owner assigned</SelectItem>
                     {owners.map((owner) => (
                       <SelectItem key={owner.id} value={owner.id}>
                         {owner.name} {owner.role ? `(${owner.role})` : ''}
