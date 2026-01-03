@@ -4,8 +4,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { CheckCircle2, BookOpen } from "lucide-react";
+import { CheckCircle2, BookOpen, HelpCircle } from "lucide-react";
 import { format } from "date-fns";
+import { PageQuiz } from "./PageQuiz";
 
 interface PageAcknowledgementProps {
   pageId: string;
@@ -18,6 +19,8 @@ export function PageAcknowledgement({ pageId, pageTitle, pageContent }: PageAckn
   const [acknowledgedAt, setAcknowledgedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [hasQuiz, setHasQuiz] = useState(false);
+  const [quizPassed, setQuizPassed] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -32,10 +35,31 @@ export function PageAcknowledgement({ pageId, pageTitle, pageContent }: PageAckn
   useEffect(() => {
     if (user && pageId && hasActualContent) {
       checkAcknowledgement();
+      checkQuiz();
     } else {
       setLoading(false);
     }
   }, [user, pageId, hasActualContent]);
+
+  const checkQuiz = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('page_quizzes')
+        .select('id')
+        .eq('page_id', pageId)
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (error) throw error;
+      setHasQuiz(!!data);
+    } catch (error) {
+      console.error('Error checking quiz:', error);
+    }
+  };
+
+  const handleQuizComplete = (passed: boolean) => {
+    setQuizPassed(passed);
+  };
 
   const checkAcknowledgement = async () => {
     if (!user) return;
@@ -108,43 +132,70 @@ export function PageAcknowledgement({ pageId, pageTitle, pageContent }: PageAckn
     return null;
   }
 
+  const canAcknowledge = !hasQuiz || quizPassed;
+
   return (
-    <Card className="mt-8 border-primary/20 bg-primary/5">
-      <CardContent className="py-6">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-full ${acknowledged ? 'bg-green-100 dark:bg-green-900/30' : 'bg-primary/10'}`}>
-              {acknowledged ? (
-                <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
-              ) : (
-                <BookOpen className="h-6 w-6 text-primary" />
-              )}
+    <div className="mt-8 space-y-4">
+      {/* Quiz section - appears above acknowledgement if quiz exists */}
+      {hasQuiz && (
+        <PageQuiz 
+          pageId={pageId} 
+          onQuizComplete={handleQuizComplete} 
+        />
+      )}
+
+      {/* Acknowledgement section */}
+      <Card className="border-primary/20 bg-primary/5">
+        <CardContent className="py-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-full ${acknowledged ? 'bg-green-100 dark:bg-green-900/30' : 'bg-primary/10'}`}>
+                {acknowledged ? (
+                  <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
+                ) : hasQuiz && !quizPassed ? (
+                  <HelpCircle className="h-6 w-6 text-primary" />
+                ) : (
+                  <BookOpen className="h-6 w-6 text-primary" />
+                )}
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground">
+                  {acknowledged 
+                    ? 'Page Acknowledged' 
+                    : hasQuiz && !quizPassed 
+                      ? 'Complete Quiz First'
+                      : 'Acknowledge This Page'
+                  }
+                </h3>
+                <p className="text-sm text-muted-foreground">
+                  {acknowledged 
+                    ? `You acknowledged this page on ${format(new Date(acknowledgedAt!), 'dd MMM yyyy \'at\' HH:mm')}`
+                    : hasQuiz && !quizPassed
+                      ? 'You must complete the quiz above before you can acknowledge this page'
+                      : 'Please confirm you have read and understood the content of this page'
+                  }
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-semibold text-foreground">
-                {acknowledged ? 'Page Acknowledged' : 'Acknowledge This Page'}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {acknowledged 
-                  ? `You acknowledged this page on ${format(new Date(acknowledgedAt!), 'dd MMM yyyy \'at\' HH:mm')}`
-                  : 'Please confirm you have read and understood the content of this page'
+            
+            {!acknowledged && (
+              <Button 
+                onClick={handleAcknowledge} 
+                disabled={submitting || !canAcknowledge}
+                className="flex items-center gap-2"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                {submitting 
+                  ? 'Acknowledging...' 
+                  : !canAcknowledge
+                    ? 'Complete Quiz First'
+                    : 'I have read and understood this page'
                 }
-              </p>
-            </div>
+              </Button>
+            )}
           </div>
-          
-          {!acknowledged && (
-            <Button 
-              onClick={handleAcknowledge} 
-              disabled={submitting}
-              className="flex items-center gap-2"
-            >
-              <CheckCircle2 className="h-4 w-4" />
-              {submitting ? 'Acknowledging...' : 'I have read and understood this page'}
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
