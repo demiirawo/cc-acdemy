@@ -5,12 +5,22 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Check, X, Clock } from "lucide-react";
 
+interface OnboardingOwner {
+  id: string;
+  name: string;
+  role: string | null;
+  email: string | null;
+  phone: string | null;
+}
+
 interface OnboardingStep {
   id: string;
   title: string;
   sort_order: number;
   step_type: string;
   target_page_id: string | null;
+  owner_id: string | null;
+  owner?: OnboardingOwner | null;
 }
 
 interface StaffMember {
@@ -47,8 +57,10 @@ export function OnboardingMatrix() {
       // Fetch active onboarding steps
       const { data: stepsData, error: stepsError } = await supabase
         .from('onboarding_steps')
-        .select('id, title, sort_order, step_type, target_page_id')
-        .eq('is_active', true)
+        .select(`
+          id, title, sort_order, step_type, target_page_id, owner_id,
+          owner:onboarding_owners(id, name, role, email, phone)
+        `)
         .order('sort_order', { ascending: true });
 
       if (stepsError) throw stepsError;
