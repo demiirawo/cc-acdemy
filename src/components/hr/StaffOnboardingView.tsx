@@ -145,6 +145,15 @@ export function StaffOnboardingView() {
     return completions.some(c => c.step_id === step.id);
   };
 
+  // Define the correct stage order
+  const STAGE_ORDER = [
+    "Getting Started",
+    "System & Tools",
+    "Company Policies",
+    "Training",
+    "Final Checks"
+  ];
+
   // Group steps by stage
   const stepsByStage = steps.reduce((acc, step) => {
     const stageKey = step.stage || 'Getting Started';
@@ -153,7 +162,8 @@ export function StaffOnboardingView() {
     return acc;
   }, {} as Record<string, OnboardingStep[]>);
 
-  const stageOrder = Object.keys(stepsByStage);
+  // Use predefined order, only including stages that have steps
+  const stageOrder = STAGE_ORDER.filter(stage => stepsByStage[stage] && stepsByStage[stage].length > 0);
 
   const handleCompleteStep = async (step: OnboardingStep) => {
     if (!user) return;

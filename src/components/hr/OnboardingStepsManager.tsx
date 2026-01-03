@@ -56,9 +56,9 @@ interface OnboardingStep {
 
 const DEFAULT_STAGES = [
   "Getting Started",
+  "System & Tools",
   "Company Policies",
   "Training",
-  "Systems & Tools",
   "Final Checks"
 ];
 
