@@ -7,11 +7,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Edit, Trash2, GripVertical, FileText, Link, CheckSquare } from "lucide-react";
+import { Plus, Edit, Trash2, FileText, Link, CheckSquare, User } from "lucide-react";
+
+interface OnboardingOwner {
+  id: string;
+  name: string;
+  role: string | null;
+  email: string | null;
+  phone: string | null;
+}
 
 interface OnboardingStep {
   id: string;
@@ -21,8 +28,9 @@ interface OnboardingStep {
   target_page_id: string | null;
   external_url: string | null;
   sort_order: number;
-  is_active: boolean;
+  owner_id: string | null;
   created_at: string;
+  owner?: OnboardingOwner | null;
 }
 
 interface Page {
@@ -33,6 +41,7 @@ interface Page {
 export function OnboardingStepsManager() {
   const [steps, setSteps] = useState<OnboardingStep[]>([]);
   const [pages, setPages] = useState<Page[]>([]);
+  const [owners, setOwners] = useState<OnboardingOwner[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingStep, setEditingStep] = useState<OnboardingStep | null>(null);
@@ -45,18 +54,22 @@ export function OnboardingStepsManager() {
   const [stepType, setStepType] = useState("task");
   const [targetPageId, setTargetPageId] = useState<string>("");
   const [externalUrl, setExternalUrl] = useState("");
-  const [isActive, setIsActive] = useState(true);
+  const [ownerId, setOwnerId] = useState<string>("");
 
   useEffect(() => {
     fetchSteps();
     fetchPages();
+    fetchOwners();
   }, []);
 
   const fetchSteps = async () => {
     try {
       const { data, error } = await supabase
         .from('onboarding_steps')
-        .select('*')
+        .select(`
+          *,
+          owner:onboarding_owners(id, name, role, email, phone)
+        `)
         .order('sort_order', { ascending: true });
 
       if (error) throw error;
@@ -88,13 +101,27 @@ export function OnboardingStepsManager() {
     }
   };
 
+  const fetchOwners = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('onboarding_owners')
+        .select('id, name, role, email, phone')
+        .order('name');
+
+      if (error) throw error;
+      setOwners(data || []);
+    } catch (error) {
+      console.error('Error fetching owners:', error);
+    }
+  };
+
   const resetForm = () => {
     setTitle("");
     setDescription("");
     setStepType("task");
     setTargetPageId("");
     setExternalUrl("");
-    setIsActive(true);
+    setOwnerId("");
     setEditingStep(null);
   };
 
@@ -105,7 +132,7 @@ export function OnboardingStepsManager() {
     setStepType(step.step_type);
     setTargetPageId(step.target_page_id || "");
     setExternalUrl(step.external_url || "");
-    setIsActive(step.is_active);
+    setOwnerId(step.owner_id || "");
     setDialogOpen(true);
   };
 
@@ -121,11 +148,10 @@ export function OnboardingStepsManager() {
         step_type: stepType,
         target_page_id: stepType === 'internal_page' ? targetPageId || null : null,
         external_url: stepType === 'external_link' ? externalUrl || null : null,
-        is_active: isActive,
+        owner_id: ownerId || null,
       };
 
       if (editingStep) {
-        console.log('Updating existing step:', editingStep.id);
         const { error } = await supabase
           .from('onboarding_steps')
           .update(stepData)
@@ -142,13 +168,12 @@ export function OnboardingStepsManager() {
           .limit(1);
         
         const maxOrder = existingSteps && existingSteps.length > 0 ? existingSteps[0].sort_order : 0;
-        console.log('Creating new step with sort_order:', maxOrder + 1);
         
         const { error } = await supabase
           .from('onboarding_steps')
           .insert({ 
             ...stepData, 
-            sort_order: maxOrder + 1,
+            sort_order: (maxOrder || 0) + 1,
             created_by: user.id,
           });
 
@@ -248,13 +273,17 @@ export function OnboardingStepsManager() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Description</Label>
+                <Label htmlFor="description">Description (supports clickable links)</Label>
                 <Textarea
                   id="description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Optional description of what this step involves"
+                  placeholder="Optional description. Include full URLs (https://...) to make them clickable."
+                  rows={3}
                 />
+                <p className="text-xs text-muted-foreground">
+                  URLs starting with http:// or https:// will be automatically converted to clickable links.
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -302,13 +331,24 @@ export function OnboardingStepsManager() {
                 </div>
               )}
 
-              <div className="flex items-center gap-2">
-                <Switch
-                  id="isActive"
-                  checked={isActive}
-                  onCheckedChange={setIsActive}
-                />
-                <Label htmlFor="isActive">Active</Label>
+              <div className="space-y-2">
+                <Label htmlFor="owner">Owner</Label>
+                <Select value={ownerId} onValueChange={setOwnerId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select an owner..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">No owner assigned</SelectItem>
+                    {owners.map((owner) => (
+                      <SelectItem key={owner.id} value={owner.id}>
+                        {owner.name} {owner.role ? `(${owner.role})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  The owner is responsible for this step. Staff will see their contact details.
+                </p>
               </div>
 
               <div className="flex justify-end gap-2">
@@ -335,7 +375,7 @@ export function OnboardingStepsManager() {
                 <TableHead className="w-12">#</TableHead>
                 <TableHead>Title</TableHead>
                 <TableHead>Type</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Owner</TableHead>
                 <TableHead className="w-24">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -347,7 +387,7 @@ export function OnboardingStepsManager() {
                     <div>
                       <div className="font-medium">{step.title}</div>
                       {step.description && (
-                        <div className="text-sm text-muted-foreground">{step.description}</div>
+                        <div className="text-sm text-muted-foreground line-clamp-2">{step.description}</div>
                       )}
                     </div>
                   </TableCell>
@@ -358,13 +398,19 @@ export function OnboardingStepsManager() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                      step.is_active 
-                        ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' 
-                        : 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400'
-                    }`}>
-                      {step.is_active ? 'Active' : 'Inactive'}
-                    </span>
+                    {step.owner ? (
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <div className="font-medium">{step.owner.name}</div>
+                          {step.owner.role && (
+                            <div className="text-xs text-muted-foreground">{step.owner.role}</div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">-</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">

@@ -1,11 +1,10 @@
-import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
 import { useUserRole } from "@/hooks/useUserRole";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OnboardingStepsManager } from "./OnboardingStepsManager";
+import { OnboardingOwnersManager } from "./OnboardingOwnersManager";
 import { OnboardingMatrix } from "./OnboardingMatrix";
-import { Settings, Grid3X3 } from "lucide-react";
+import { Settings, Grid3X3, Users } from "lucide-react";
 
 export function OnboardingManager() {
   const { isAdmin } = useUserRole();
@@ -20,10 +19,16 @@ export function OnboardingManager() {
             Onboarding Matrix
           </TabsTrigger>
           {isAdmin && (
-            <TabsTrigger value="steps" className="flex items-center gap-2">
-              <Settings className="h-4 w-4" />
-              Configure Steps
-            </TabsTrigger>
+            <>
+              <TabsTrigger value="steps" className="flex items-center gap-2">
+                <Settings className="h-4 w-4" />
+                Configure Steps
+              </TabsTrigger>
+              <TabsTrigger value="owners" className="flex items-center gap-2">
+                <Users className="h-4 w-4" />
+                Owner Configuration
+              </TabsTrigger>
+            </>
           )}
         </TabsList>
 
@@ -32,9 +37,14 @@ export function OnboardingManager() {
         </TabsContent>
 
         {isAdmin && (
-          <TabsContent value="steps" className="mt-4">
-            <OnboardingStepsManager />
-          </TabsContent>
+          <>
+            <TabsContent value="steps" className="mt-4">
+              <OnboardingStepsManager />
+            </TabsContent>
+            <TabsContent value="owners" className="mt-4">
+              <OnboardingOwnersManager />
+            </TabsContent>
+          </>
         )}
       </Tabs>
     </div>
