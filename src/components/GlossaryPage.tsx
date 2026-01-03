@@ -7,13 +7,15 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Edit, Trash2, Search } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Plus, Edit, Trash2, Search, X } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface GlossaryTerm {
   id: string;
   term: string;
   definition: string;
+  variations: string[];
   created_at: string;
   updated_at: string;
 }
@@ -26,7 +28,8 @@ export const GlossaryPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingTerm, setEditingTerm] = useState<GlossaryTerm | null>(null);
-  const [formData, setFormData] = useState({ term: '', definition: '' });
+  const [formData, setFormData] = useState({ term: '', definition: '', variations: [] as string[] });
+  const [newVariation, setNewVariation] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -41,7 +44,10 @@ export const GlossaryPage = () => {
         .order('term', { ascending: true });
 
       if (error) throw error;
-      setTerms(data || []);
+      setTerms((data || []).map(t => ({
+        ...t,
+        variations: Array.isArray(t.variations) ? t.variations : []
+      })));
     } catch (error) {
       console.error('Error fetching glossary terms:', error);
       toast({
@@ -64,6 +70,7 @@ export const GlossaryPage = () => {
           .update({
             term: formData.term.trim(),
             definition: formData.definition.trim(),
+            variations: formData.variations.filter(v => v.trim()),
           })
           .eq('id', editingTerm.id);
 
@@ -78,6 +85,7 @@ export const GlossaryPage = () => {
           .insert({
             term: formData.term.trim(),
             definition: formData.definition.trim(),
+            variations: formData.variations.filter(v => v.trim()),
             created_by: user.id,
           });
 
@@ -88,7 +96,8 @@ export const GlossaryPage = () => {
         });
       }
 
-      setFormData({ term: '', definition: '' });
+      setFormData({ term: '', definition: '', variations: [] });
+      setNewVariation('');
       setEditingTerm(null);
       setIsDialogOpen(false);
       fetchTerms();
@@ -105,7 +114,11 @@ export const GlossaryPage = () => {
 
   const handleEdit = (term: GlossaryTerm) => {
     setEditingTerm(term);
-    setFormData({ term: term.term, definition: term.definition });
+    setFormData({ 
+      term: term.term, 
+      definition: term.definition,
+      variations: term.variations || []
+    });
     setIsDialogOpen(true);
   };
 
@@ -133,13 +146,42 @@ export const GlossaryPage = () => {
     }
   };
 
-  const filteredTerms = terms.filter(term =>
-    term.term.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    term.definition.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const addVariation = () => {
+    if (!newVariation.trim()) return;
+    if (formData.variations.includes(newVariation.trim())) {
+      toast({
+        title: "Duplicate",
+        description: "This variation already exists",
+        variant: "destructive",
+      });
+      return;
+    }
+    setFormData(prev => ({
+      ...prev,
+      variations: [...prev.variations, newVariation.trim()]
+    }));
+    setNewVariation('');
+  };
+
+  const removeVariation = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      variations: prev.variations.filter((_, i) => i !== index)
+    }));
+  };
+
+  const filteredTerms = terms.filter(term => {
+    const query = searchQuery.toLowerCase();
+    return (
+      term.term.toLowerCase().includes(query) ||
+      term.definition.toLowerCase().includes(query) ||
+      term.variations.some(v => v.toLowerCase().includes(query))
+    );
+  });
 
   const resetForm = () => {
-    setFormData({ term: '', definition: '' });
+    setFormData({ term: '', definition: '', variations: [] });
+    setNewVariation('');
     setEditingTerm(null);
   };
 
@@ -163,7 +205,7 @@ export const GlossaryPage = () => {
                 Add Term
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-lg">
               <DialogHeader>
                 <DialogTitle>
                   {editingTerm ? 'Edit Term' : 'Add New Term'}
@@ -188,6 +230,44 @@ export const GlossaryPage = () => {
                     rows={4}
                     required
                   />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-foreground">Variations</label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Add alternate words or spellings that should show this definition (e.g., plurals, abbreviations)
+                  </p>
+                  <div className="flex gap-2 mb-2">
+                    <Input
+                      value={newVariation}
+                      onChange={(e) => setNewVariation(e.target.value)}
+                      placeholder="Add a variation..."
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addVariation();
+                        }
+                      }}
+                    />
+                    <Button type="button" variant="outline" onClick={addVariation}>
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+                  {formData.variations.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {formData.variations.map((variation, index) => (
+                        <Badge key={index} variant="secondary" className="flex items-center gap-1">
+                          {variation}
+                          <button
+                            type="button"
+                            onClick={() => removeVariation(index)}
+                            className="ml-1 hover:text-destructive"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="flex justify-end space-x-2">
                   <Button
@@ -224,14 +304,23 @@ export const GlossaryPage = () => {
           <Card key={term.id}>
             <CardHeader>
               <div className="flex justify-between items-start">
-                <div>
+                <div className="flex-1">
                   <CardTitle className="text-lg">{term.term}</CardTitle>
+                  {term.variations.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-2">
+                      {term.variations.map((v, i) => (
+                        <Badge key={i} variant="outline" className="text-xs">
+                          {v}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
                   <CardDescription className="mt-2">
                     {term.definition}
                   </CardDescription>
                 </div>
                 {isAdmin && (
-                  <div className="flex space-x-2">
+                  <div className="flex space-x-2 ml-4">
                     <Button
                       variant="outline"
                       size="sm"
