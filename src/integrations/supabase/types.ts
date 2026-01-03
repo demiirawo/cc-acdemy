@@ -590,6 +590,7 @@ export type Database = {
           id: string
           owner_id: string | null
           sort_order: number | null
+          stage: string
           step_type: string
           target_page_id: string | null
           title: string
@@ -603,6 +604,7 @@ export type Database = {
           id?: string
           owner_id?: string | null
           sort_order?: number | null
+          stage?: string
           step_type?: string
           target_page_id?: string | null
           title: string
@@ -616,6 +618,7 @@ export type Database = {
           id?: string
           owner_id?: string | null
           sort_order?: number | null
+          stage?: string
           step_type?: string
           target_page_id?: string | null
           title?: string
