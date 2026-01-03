@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Check, Clock, ExternalLink, FileText, User, Mail, Phone, Briefcase, CheckCircle2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
@@ -241,194 +242,196 @@ export function StaffOnboardingView() {
       </Card>
 
       {/* Steps List grouped by Stage */}
-      <div className="space-y-8">
+      <Accordion type="multiple" defaultValue={stageOrder} className="space-y-4">
         {stageOrder.map((stageName, stageIndex) => {
           const stageSteps = stepsByStage[stageName];
           const stageCompletedCount = stageSteps.filter(s => isStepCompleted(s)).length;
           const stageComplete = stageCompletedCount === stageSteps.length;
           
           return (
-            <div key={stageName} className="space-y-4">
-              {/* Stage Header */}
-              <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                  stageComplete 
-                    ? 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400' 
-                    : 'bg-primary/10 text-primary'
-                }`}>
-                  {stageComplete ? <Check className="h-4 w-4" /> : stageIndex + 1}
+            <AccordionItem key={stageName} value={stageName} className="border rounded-lg">
+              <AccordionTrigger className="px-4 hover:no-underline">
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                    stageComplete 
+                      ? 'bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400' 
+                      : 'bg-primary/10 text-primary'
+                  }`}>
+                    {stageComplete ? <Check className="h-4 w-4" /> : stageIndex + 1}
+                  </div>
+                  <h2 className="text-xl font-semibold">{stageName}</h2>
+                  <span className="text-sm text-muted-foreground">
+                    ({stageCompletedCount}/{stageSteps.length} complete)
+                  </span>
                 </div>
-                <h2 className="text-xl font-semibold">{stageName}</h2>
-                <span className="text-sm text-muted-foreground">
-                  ({stageCompletedCount}/{stageSteps.length} complete)
-                </span>
-              </div>
+              </AccordionTrigger>
+              <AccordionContent className="px-4 pb-4">
+                {/* Stage Steps */}
+                <div className="space-y-3 ml-4 border-l-2 border-border pl-6">
+                  {stageSteps.map((step, index) => {
+                    const completed = isStepCompleted(step);
+                    
+                    return (
+                      <Card 
+                        key={step.id} 
+                        className={`transition-all ${completed ? 'border-green-200 dark:border-green-900 bg-green-50/50 dark:bg-green-950/20' : ''}`}
+                      >
+                        <CardContent className="p-6">
+                          <div className="flex gap-4">
+                            {/* Step number / status */}
+                            <div className="flex-shrink-0">
+                              {completed ? (
+                                <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center">
+                                  <Check className="h-5 w-5 text-green-600 dark:text-green-400" />
+                                </div>
+                              ) : (
+                                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                                  <span className="text-lg font-bold text-primary">{index + 1}</span>
+                                </div>
+                              )}
+                            </div>
 
-              {/* Stage Steps */}
-              <div className="space-y-3 ml-4 border-l-2 border-border pl-6">
-                {stageSteps.map((step, index) => {
-                  const completed = isStepCompleted(step);
-                  
-                  return (
-                    <Card 
-                      key={step.id} 
-                      className={`transition-all ${completed ? 'border-green-200 dark:border-green-900 bg-green-50/50 dark:bg-green-950/20' : ''}`}
-                    >
-                      <CardContent className="p-6">
-                        <div className="flex gap-4">
-                          {/* Step number / status */}
-                          <div className="flex-shrink-0">
-                            {completed ? (
-                              <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center">
-                                <Check className="h-5 w-5 text-green-600 dark:text-green-400" />
-                              </div>
-                            ) : (
-                              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                                <span className="text-lg font-bold text-primary">{index + 1}</span>
-                              </div>
-                            )}
-                          </div>
+                            {/* Step content */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-4">
+                                <div className="flex-1">
+                                  <h3 className={`font-semibold text-lg ${completed ? 'text-green-700 dark:text-green-400' : ''}`}>
+                                    {step.title}
+                                  </h3>
+                                  
+                                  {step.description && (
+                                    <p className="text-muted-foreground mt-1">
+                                      {renderDescriptionWithLinks(step.description)}
+                                    </p>
+                                  )}
 
-                          {/* Step content */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-start justify-between gap-4">
-                              <div className="flex-1">
-                                <h3 className={`font-semibold text-lg ${completed ? 'text-green-700 dark:text-green-400' : ''}`}>
-                                  {step.title}
-                                </h3>
-                                
-                                {step.description && (
-                                  <p className="text-muted-foreground mt-1">
-                                    {renderDescriptionWithLinks(step.description)}
-                                  </p>
-                                )}
+                                  {/* Step type indicator */}
+                                  <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+                                    {step.step_type === 'internal_page' && (
+                                      <>
+                                        <FileText className="h-4 w-4" />
+                                        <span>Academy Page - requires acknowledgement</span>
+                                      </>
+                                    )}
+                                    {step.step_type === 'external_link' && (
+                                      <>
+                                        <ExternalLink className="h-4 w-4" />
+                                        <span>External Resource</span>
+                                      </>
+                                    )}
+                                    {step.step_type === 'task' && (
+                                      <>
+                                        <Check className="h-4 w-4" />
+                                        <span>Task to complete</span>
+                                      </>
+                                    )}
+                                    {step.step_type === 'acknowledgement' && (
+                                      <>
+                                        <CheckCircle2 className="h-4 w-4" />
+                                        <span>Please read and acknowledge</span>
+                                      </>
+                                    )}
+                                  </div>
 
-                                {/* Step type indicator */}
-                                <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
-                                  {step.step_type === 'internal_page' && (
-                                    <>
-                                      <FileText className="h-4 w-4" />
-                                      <span>Academy Page - requires acknowledgement</span>
-                                    </>
-                                  )}
-                                  {step.step_type === 'external_link' && (
-                                    <>
-                                      <ExternalLink className="h-4 w-4" />
-                                      <span>External Resource</span>
-                                    </>
-                                  )}
-                                  {step.step_type === 'task' && (
-                                    <>
-                                      <Check className="h-4 w-4" />
-                                      <span>Task to complete</span>
-                                    </>
-                                  )}
-                                  {step.step_type === 'acknowledgement' && (
-                                    <>
-                                      <CheckCircle2 className="h-4 w-4" />
-                                      <span>Please read and acknowledge</span>
-                                    </>
+                                  {/* Owner details */}
+                                  {step.owner && (
+                                    <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                                      <div className="text-sm font-medium mb-2">Contact for this step:</div>
+                                      <div className="flex flex-wrap gap-4 text-sm">
+                                        <div className="flex items-center gap-2">
+                                          <User className="h-4 w-4 text-muted-foreground" />
+                                          <span className="font-medium">{step.owner.name}</span>
+                                        </div>
+                                        {step.owner.role && (
+                                          <div className="flex items-center gap-2">
+                                            <Briefcase className="h-4 w-4 text-muted-foreground" />
+                                            <span>{step.owner.role}</span>
+                                          </div>
+                                        )}
+                                        {step.owner.email && (
+                                          <div className="flex items-center gap-2">
+                                            <Mail className="h-4 w-4 text-muted-foreground" />
+                                            <a 
+                                              href={`mailto:${step.owner.email}`} 
+                                              className="text-primary hover:underline"
+                                            >
+                                              {step.owner.email}
+                                            </a>
+                                          </div>
+                                        )}
+                                        {step.owner.phone && (
+                                          <div className="flex items-center gap-2">
+                                            <Phone className="h-4 w-4 text-muted-foreground" />
+                                            <a 
+                                              href={`tel:${step.owner.phone}`} 
+                                              className="text-primary hover:underline"
+                                            >
+                                              {step.owner.phone}
+                                            </a>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
                                   )}
                                 </div>
 
-                                {/* Owner details */}
-                                {step.owner && (
-                                  <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                                    <div className="text-sm font-medium mb-2">Contact for this step:</div>
-                                    <div className="flex flex-wrap gap-4 text-sm">
-                                      <div className="flex items-center gap-2">
-                                        <User className="h-4 w-4 text-muted-foreground" />
-                                        <span className="font-medium">{step.owner.name}</span>
+                                {/* Action button */}
+                                <div className="flex-shrink-0">
+                                  {completed ? (
+                                    <div className="flex items-center gap-3">
+                                      {/* Show "View Page" button for internal_page steps even when completed */}
+                                      {step.step_type === 'internal_page' && step.target_page_id && (
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          onClick={() => navigate(`/page/${step.target_page_id}`)}
+                                        >
+                                          <FileText className="h-4 w-4 mr-2" />
+                                          View Page
+                                        </Button>
+                                      )}
+                                      <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                                        <CheckCircle2 className="h-5 w-5" />
+                                        <span className="font-medium">Completed</span>
                                       </div>
-                                      {step.owner.role && (
-                                        <div className="flex items-center gap-2">
-                                          <Briefcase className="h-4 w-4 text-muted-foreground" />
-                                          <span>{step.owner.role}</span>
-                                        </div>
-                                      )}
-                                      {step.owner.email && (
-                                        <div className="flex items-center gap-2">
-                                          <Mail className="h-4 w-4 text-muted-foreground" />
-                                          <a 
-                                            href={`mailto:${step.owner.email}`} 
-                                            className="text-primary hover:underline"
-                                          >
-                                            {step.owner.email}
-                                          </a>
-                                        </div>
-                                      )}
-                                      {step.owner.phone && (
-                                        <div className="flex items-center gap-2">
-                                          <Phone className="h-4 w-4 text-muted-foreground" />
-                                          <a 
-                                            href={`tel:${step.owner.phone}`} 
-                                            className="text-primary hover:underline"
-                                          >
-                                            {step.owner.phone}
-                                          </a>
-                                        </div>
-                                      )}
                                     </div>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Action button */}
-                              <div className="flex-shrink-0">
-                                {completed ? (
-                                  <div className="flex items-center gap-3">
-                                    {/* Show "View Page" button for internal_page steps even when completed */}
-                                    {step.step_type === 'internal_page' && step.target_page_id && (
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => navigate(`/page/${step.target_page_id}`)}
-                                      >
+                                  ) : (
+                                    <Button
+                                      onClick={() => handleCompleteStep(step)}
+                                      disabled={completing === step.id}
+                                    >
+                                      {completing === step.id ? (
+                                        <Clock className="h-4 w-4 mr-2 animate-spin" />
+                                      ) : step.step_type === 'internal_page' ? (
                                         <FileText className="h-4 w-4 mr-2" />
-                                        View Page
-                                      </Button>
-                                    )}
-                                    <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-                                      <CheckCircle2 className="h-5 w-5" />
-                                      <span className="font-medium">Completed</span>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <Button
-                                    onClick={() => handleCompleteStep(step)}
-                                    disabled={completing === step.id}
-                                  >
-                                    {completing === step.id ? (
-                                      <Clock className="h-4 w-4 mr-2 animate-spin" />
-                                    ) : step.step_type === 'internal_page' ? (
-                                      <FileText className="h-4 w-4 mr-2" />
-                                    ) : step.step_type === 'external_link' ? (
-                                      <ExternalLink className="h-4 w-4 mr-2" />
-                                    ) : (
-                                      <Check className="h-4 w-4 mr-2" />
-                                    )}
-                                    {step.step_type === 'internal_page' 
-                                      ? 'Go to Page' 
-                                      : step.step_type === 'external_link'
-                                        ? 'Open & Complete'
-                                        : step.step_type === 'acknowledgement'
-                                          ? 'I Acknowledge'
-                                          : 'Mark Complete'}
-                                  </Button>
-                                )}
+                                      ) : step.step_type === 'external_link' ? (
+                                        <ExternalLink className="h-4 w-4 mr-2" />
+                                      ) : (
+                                        <Check className="h-4 w-4 mr-2" />
+                                      )}
+                                      {step.step_type === 'internal_page' 
+                                        ? 'Go to Page' 
+                                        : step.step_type === 'external_link'
+                                          ? 'Open & Complete'
+                                          : step.step_type === 'acknowledgement'
+                                            ? 'I Acknowledge'
+                                            : 'Mark Complete'}
+                                    </Button>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
           );
         })}
-      </div>
+      </Accordion>
 
       {/* Completion message */}
       {completedCount === steps.length && steps.length > 0 && (
