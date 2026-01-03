@@ -7,7 +7,8 @@ import { MyHRProfile } from "./MyHRProfile";
 import { StaffScheduleManager } from "./StaffScheduleManager";
 import { StaffRequestForm } from "./StaffRequestForm";
 import { StaffRequestsManager } from "./StaffRequestsManager";
-import { CalendarClock, DollarSign, Users, User, Send, ClipboardList } from "lucide-react";
+import { OnboardingManager } from "./OnboardingManager";
+import { CalendarClock, DollarSign, Users, User, Send, ClipboardList, GraduationCap } from "lucide-react";
 
 export function HRSection() {
   const { isAdmin } = useUserRole();
@@ -24,7 +25,7 @@ export function HRSection() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: isAdmin ? 'repeat(6, 1fr)' : 'repeat(3, 1fr)' }}>
+          <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: isAdmin ? 'repeat(7, 1fr)' : 'repeat(4, 1fr)' }}>
             {isAdmin && (
               <>
                 <TabsTrigger value="profiles" className="flex items-center gap-2">
@@ -49,6 +50,10 @@ export function HRSection() {
                 </TabsTrigger>
               </>
             )}
+            <TabsTrigger value="onboarding" className="flex items-center gap-2">
+              <GraduationCap className="h-4 w-4" />
+              Onboarding
+            </TabsTrigger>
             <TabsTrigger value="my-requests" className="flex items-center gap-2">
               <Send className="h-4 w-4" />
               My Requests
@@ -81,6 +86,10 @@ export function HRSection() {
               </TabsContent>
             </>
           )}
+          
+          <TabsContent value="onboarding" className="mt-0">
+            <OnboardingManager />
+          </TabsContent>
           
           <TabsContent value="my-requests" className="mt-0">
             <StaffRequestForm />
