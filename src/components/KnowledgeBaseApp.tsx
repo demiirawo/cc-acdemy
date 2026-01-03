@@ -25,8 +25,10 @@ import { RecyclingBin } from "./RecyclingBin";
 import { HRSection } from "./hr/HRSection";
 import { ClientsSection } from "./clients/ClientsSection";
 import { useGlossary } from "@/hooks/useGlossary";
+import { useUserRole } from "@/hooks/useUserRole";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { PageAcknowledgement } from "./PageAcknowledgement";
+import { QuizManager } from "./QuizManager";
 
 // Child page card component
 interface ChildPage {
@@ -107,6 +109,7 @@ function PageView({
   }>>([]);
   const { toast } = useToast();
   const { terms: glossaryTerms } = useGlossary();
+  const { isAdmin } = useUserRole();
 
   // Function to make content read-only by removing contenteditable attributes
   const makeContentReadOnly = (content: string): string => {
@@ -373,6 +376,9 @@ function PageView({
                     Copy Public Link
                   </Button>}
                 
+                {isAdmin && (
+                  <QuizManager pageId={currentPage.id} pageTitle={currentPage.title} />
+                )}
                 <Button variant="outline" size="sm" onClick={() => setPermissionsDialogOpen(true)} className="flex items-center gap-2">
                   <Shield className="h-4 w-4" />
                   Permissions

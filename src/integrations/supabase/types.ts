@@ -781,6 +781,50 @@ export type Database = {
           },
         ]
       }
+      page_quizzes: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          is_active: boolean
+          page_id: string
+          passing_score: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          page_id: string
+          passing_score?: number
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          page_id?: string
+          passing_score?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "page_quizzes_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: true
+            referencedRelation: "pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pages: {
         Row: {
           category_order: string[] | null
@@ -1011,6 +1055,85 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "chat_folders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quiz_completions: {
+        Row: {
+          answers: Json
+          completed_at: string
+          id: string
+          passed: boolean
+          quiz_id: string
+          score: number
+          user_id: string
+        }
+        Insert: {
+          answers?: Json
+          completed_at?: string
+          id?: string
+          passed: boolean
+          quiz_id: string
+          score: number
+          user_id: string
+        }
+        Update: {
+          answers?: Json
+          completed_at?: string
+          id?: string
+          passed?: boolean
+          quiz_id?: string
+          score?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_completions_quiz_id_fkey"
+            columns: ["quiz_id"]
+            isOneToOne: false
+            referencedRelation: "page_quizzes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quiz_questions: {
+        Row: {
+          correct_answer: number
+          created_at: string
+          id: string
+          options: Json
+          question: string
+          quiz_id: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          correct_answer: number
+          created_at?: string
+          id?: string
+          options?: Json
+          question: string
+          quiz_id: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          correct_answer?: number
+          created_at?: string
+          id?: string
+          options?: Json
+          question?: string
+          quiz_id?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_questions_quiz_id_fkey"
+            columns: ["quiz_id"]
+            isOneToOne: false
+            referencedRelation: "page_quizzes"
             referencedColumns: ["id"]
           },
         ]
