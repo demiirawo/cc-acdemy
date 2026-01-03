@@ -15,6 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 
+type EmploymentStatus = 'onboarding_probation' | 'onboarding_passed' | 'active' | 'inactive_left' | 'inactive_fired';
+
 interface HRProfile {
   id: string;
   user_id: string;
@@ -28,9 +30,18 @@ interface HRProfile {
   annual_holiday_allowance: number | null;
   notes: string | null;
   scheduling_role: string;
+  employment_status: EmploymentStatus;
   created_at: string;
   updated_at: string;
 }
+
+const EMPLOYMENT_STATUSES = [
+  { value: 'onboarding_probation', label: 'Onboarding - On Probation', isOnboarding: true },
+  { value: 'onboarding_passed', label: 'Onboarding - Passed Probation', isOnboarding: true },
+  { value: 'active', label: 'Active', isOnboarding: false },
+  { value: 'inactive_left', label: 'Inactive - Left', isOnboarding: false },
+  { value: 'inactive_fired', label: 'Inactive - Fired', isOnboarding: false },
+];
 
 const SCHEDULING_ROLES = [
   { value: 'viewer', label: 'Viewer', description: 'Can only view schedules' },
@@ -141,6 +152,7 @@ export function HRProfileManager() {
     annual_holiday_allowance: 28,
     notes: '',
     scheduling_role: 'viewer',
+    employment_status: 'onboarding_probation' as EmploymentStatus,
     app_role: 'viewer'
   });
 
@@ -327,6 +339,7 @@ export function HRProfileManager() {
         annual_holiday_allowance: existingHR.annual_holiday_allowance || 28,
         notes: existingHR.notes || '',
         scheduling_role: existingHR.scheduling_role || 'viewer',
+        employment_status: existingHR.employment_status || 'onboarding_probation',
         app_role: userProfile.role || 'viewer'
       });
     } else {
@@ -343,6 +356,7 @@ export function HRProfileManager() {
         annual_holiday_allowance: 28,
         notes: '',
         scheduling_role: 'viewer',
+        employment_status: 'onboarding_probation',
         app_role: userProfile.role || 'viewer'
       });
     }
@@ -437,7 +451,8 @@ export function HRProfileManager() {
         pay_frequency: formData.pay_frequency || 'monthly',
         annual_holiday_allowance: formData.annual_holiday_allowance,
         notes: formData.notes || null,
-        scheduling_role: formData.scheduling_role
+        scheduling_role: formData.scheduling_role,
+        employment_status: formData.employment_status
       };
 
       if (editingProfile) {
@@ -1027,6 +1042,28 @@ export function HRProfileManager() {
               </Select>
               <p className="text-xs text-muted-foreground">
                 Controls access to knowledge base features. Admins have full access.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Employment Status</Label>
+              <Select
+                value={formData.employment_status}
+                onValueChange={(value) => setFormData({ ...formData, employment_status: value as EmploymentStatus })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EMPLOYMENT_STATUSES.map(status => (
+                    <SelectItem key={status.value} value={status.value}>
+                      <span>{status.label}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Staff in onboarding statuses appear in the onboarding matrix.
               </p>
             </div>
 

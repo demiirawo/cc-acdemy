@@ -24,6 +24,13 @@ interface OnboardingStep {
   owner?: OnboardingOwner | null;
 }
 
+type EmploymentStatus = 'onboarding_probation' | 'onboarding_passed' | 'active' | 'inactive_left' | 'inactive_fired';
+
+interface HRProfile {
+  user_id: string;
+  employment_status: EmploymentStatus;
+}
+
 interface StaffMember {
   user_id: string;
   display_name: string;
@@ -50,9 +57,13 @@ const STAGE_ORDER = [
   "Final Checks"
 ];
 
+// Only show staff in onboarding statuses
+const ONBOARDING_STATUSES: EmploymentStatus[] = ['onboarding_probation', 'onboarding_passed'];
+
 export function OnboardingMatrix() {
   const [steps, setSteps] = useState<OnboardingStep[]>([]);
   const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [hrProfiles, setHRProfiles] = useState<HRProfile[]>([]);
   const [completions, setCompletions] = useState<Completion[]>([]);
   const [acknowledgements, setAcknowledgements] = useState<PageAcknowledgement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,10 +86,24 @@ export function OnboardingMatrix() {
 
       if (stepsError) throw stepsError;
 
-      // Fetch all staff members (profiles)
+      // Fetch HR profiles to check employment status
+      const { data: hrData, error: hrError } = await supabase
+        .from('hr_profiles')
+        .select('user_id, employment_status');
+
+      if (hrError) throw hrError;
+      setHRProfiles(hrData || []);
+
+      // Get user IDs who are in onboarding statuses
+      const onboardingUserIds = (hrData || [])
+        .filter(hr => ONBOARDING_STATUSES.includes(hr.employment_status))
+        .map(hr => hr.user_id);
+
+      // Fetch staff members who are in onboarding
       const { data: staffData, error: staffError } = await supabase
         .from('profiles')
         .select('user_id, display_name')
+        .in('user_id', onboardingUserIds.length > 0 ? onboardingUserIds : ['no-match'])
         .order('display_name');
 
       if (staffError) throw staffError;
@@ -165,6 +190,16 @@ export function OnboardingMatrix() {
       <Card>
         <CardContent className="py-8 text-center text-muted-foreground">
           No onboarding steps configured yet. Admins can add steps in the "Configure Steps" tab.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (staff.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-muted-foreground">
+          No staff members currently in onboarding. Only staff with "Onboarding - On Probation" or "Onboarding - Passed Probation" status appear here.
         </CardContent>
       </Card>
     );
