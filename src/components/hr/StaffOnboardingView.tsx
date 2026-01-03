@@ -300,9 +300,9 @@ export function StaffOnboardingView() {
                                   </h3>
                                   
                                   {step.description && (
-                                    <p className="text-muted-foreground mt-1">
+                                    <div className="text-muted-foreground mt-1 whitespace-pre-wrap">
                                       {renderDescriptionWithLinks(step.description)}
-                                    </p>
+                                    </div>
                                   )}
 
                                   {/* Step type indicator */}
