@@ -108,7 +108,7 @@ function PageView({
     category?: string;
   }>>([]);
   const { toast } = useToast();
-  const { terms: glossaryTerms } = useGlossary();
+  const { terms: glossaryTerms, getAllMatchableTerms } = useGlossary();
   const { isAdmin } = useUserRole();
 
   // Function to make content read-only by removing contenteditable attributes
@@ -119,25 +119,26 @@ function PageView({
 
   // Function to highlight glossary terms in content
   const highlightGlossaryTerms = (content: string): string => {
-    if (!glossaryTerms.length) return content;
+    const matchableTerms = getAllMatchableTerms();
+    if (!matchableTerms.length) return content;
     
     // Create a map of positions to avoid overlapping highlights
-    const highlights: { start: number; end: number; term: any }[] = [];
-    const highlightedTerms = new Set<string>();
+    const highlights: { start: number; end: number; term: string; definition: string; mainTerm: string }[] = [];
+    const highlightedMainTerms = new Set<string>();
     
     // Sort terms by length (longest first) to prioritize longer matches
-    const sortedTerms = [...glossaryTerms].sort((a, b) => b.term.length - a.term.length);
+    const sortedTerms = [...matchableTerms].sort((a, b) => b.term.length - a.term.length);
     
-    sortedTerms.forEach(term => {
-      const regex = new RegExp(`\\b${term.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+    sortedTerms.forEach(termData => {
+      const regex = new RegExp(`\\b${termData.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
       let match;
       let isFirstMatch = true;
       
       while ((match = regex.exec(content)) !== null) {
-        const termLower = term.term.toLowerCase();
+        const mainTermLower = termData.mainTerm.toLowerCase();
         
-        // Only highlight the first occurrence of each term
-        if (isFirstMatch && !highlightedTerms.has(termLower)) {
+        // Only highlight the first occurrence of each main term (including its variations)
+        if (isFirstMatch && !highlightedMainTerms.has(mainTermLower)) {
           const start = match.index;
           const end = match.index + match[0].length;
           
@@ -149,8 +150,14 @@ function PageView({
           );
           
           if (!overlaps) {
-            highlights.push({ start, end, term });
-            highlightedTerms.add(termLower);
+            highlights.push({ 
+              start, 
+              end, 
+              term: termData.term,
+              definition: termData.definition,
+              mainTerm: termData.mainTerm
+            });
+            highlightedMainTerms.add(mainTermLower);
             isFirstMatch = false;
           }
         }
@@ -163,10 +170,9 @@ function PageView({
     // Apply highlights from end to beginning to maintain positions
     let result = content;
     highlights.forEach(highlight => {
-      const { start, end, term } = highlight;
+      const { start, end, mainTerm, definition } = highlight;
       const matchedText = content.substring(start, end);
-      const definition = term.definition;
-      const replacement = `<span class="glossary-term" data-term="${term.term}" data-definition="${definition.replace(/"/g, '&quot;')}">${matchedText}</span>`;
+      const replacement = `<span class="glossary-term" data-term="${mainTerm}" data-definition="${definition.replace(/"/g, '&quot;')}">${matchedText}</span>`;
       result = result.substring(0, start) + replacement + result.substring(end);
     });
     
