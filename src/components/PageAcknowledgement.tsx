@@ -10,15 +10,29 @@ import { format } from "date-fns";
 interface PageAcknowledgementProps {
   pageId: string;
   pageTitle: string;
+  pageContent?: string;
 }
 
-export function PageAcknowledgement({ pageId, pageTitle }: PageAcknowledgementProps) {
+export function PageAcknowledgement({ pageId, pageTitle, pageContent }: PageAcknowledgementProps) {
   const [acknowledged, setAcknowledged] = useState(false);
   const [acknowledgedAt, setAcknowledgedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
+
+  // Check if there's actual content (not just empty HTML tags or whitespace)
+  const hasActualContent = (() => {
+    if (!pageContent) return false;
+    // Remove HTML tags and check if there's any text content
+    const strippedContent = pageContent.replace(/<[^>]*>/g, '').trim();
+    return strippedContent.length > 0;
+  })();
+
+  // Don't render if there's no actual content
+  if (!hasActualContent) {
+    return null;
+  }
 
   useEffect(() => {
     if (user && pageId) {

@@ -408,7 +408,7 @@ function PageView({
       }} />
 
         {/* Page Acknowledgement */}
-        <PageAcknowledgement pageId={currentPage.id} pageTitle={currentPage.title} />
+        <PageAcknowledgement pageId={currentPage.id} pageTitle={currentPage.title} pageContent={currentPage.content} />
       </div>
     </div>;
 }
