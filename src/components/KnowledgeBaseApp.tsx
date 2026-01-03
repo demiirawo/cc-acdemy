@@ -26,6 +26,7 @@ import { HRSection } from "./hr/HRSection";
 import { ClientsSection } from "./clients/ClientsSection";
 import { useGlossary } from "@/hooks/useGlossary";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
+import { PageAcknowledgement } from "./PageAcknowledgement";
 
 // Child page card component
 interface ChildPage {
@@ -403,6 +404,9 @@ function PageView({
         <RecommendedReadingSection items={recommendedReading} orderedCategories={currentPage.category_order} onItemClick={item => {
         console.log('Recommended reading item clicked:', item);
       }} />
+
+        {/* Page Acknowledgement */}
+        <PageAcknowledgement pageId={currentPage.id} pageTitle={currentPage.title} />
       </div>
     </div>;
 }

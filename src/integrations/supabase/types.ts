@@ -516,6 +516,117 @@ export type Database = {
         }
         Relationships: []
       }
+      onboarding_completions: {
+        Row: {
+          completed_at: string
+          id: string
+          notes: string | null
+          step_id: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string
+          id?: string
+          notes?: string | null
+          step_id: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string
+          id?: string
+          notes?: string | null
+          step_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_completions_step_id_fkey"
+            columns: ["step_id"]
+            isOneToOne: false
+            referencedRelation: "onboarding_steps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      onboarding_steps: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          external_url: string | null
+          id: string
+          is_active: boolean
+          sort_order: number | null
+          step_type: string
+          target_page_id: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          external_url?: string | null
+          id?: string
+          is_active?: boolean
+          sort_order?: number | null
+          step_type?: string
+          target_page_id?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          external_url?: string | null
+          id?: string
+          is_active?: boolean
+          sort_order?: number | null
+          step_type?: string
+          target_page_id?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_steps_target_page_id_fkey"
+            columns: ["target_page_id"]
+            isOneToOne: false
+            referencedRelation: "pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      page_acknowledgements: {
+        Row: {
+          acknowledged_at: string
+          id: string
+          page_id: string
+          user_id: string
+        }
+        Insert: {
+          acknowledged_at?: string
+          id?: string
+          page_id: string
+          user_id: string
+        }
+        Update: {
+          acknowledged_at?: string
+          id?: string
+          page_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "page_acknowledgements_page_id_fkey"
+            columns: ["page_id"]
+            isOneToOne: false
+            referencedRelation: "pages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       page_audit_log: {
         Row: {
           created_at: string | null
