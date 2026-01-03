@@ -349,11 +349,13 @@ function PageView({
   };
   
   const cleanContent = currentPage.content;
+  // Check if content has text OR embedded elements like iframes, images, videos
+  const hasEmbeddedContent = /<(iframe|img|video|audio|embed|object|canvas|svg)[^>]*>/i.test(cleanContent);
   const strippedContent = cleanContent
     .replace(/<[^>]*>/g, '')
     .replace(/&nbsp;/g, ' ')
     .trim();
-  const isContentEmpty = strippedContent.length === 0;
+  const isContentEmpty = strippedContent.length === 0 && !hasEmbeddedContent;
   
   return <div className="flex-1 overflow-auto">
       <div className="max-w-none mx-8 p-6">
