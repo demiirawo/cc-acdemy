@@ -29,16 +29,13 @@ export function PageAcknowledgement({ pageId, pageTitle, pageContent }: PageAckn
     return strippedContent.length > 0;
   })();
 
-  // Don't render if there's no actual content
-  if (!hasActualContent) {
-    return null;
-  }
-
   useEffect(() => {
-    if (user && pageId) {
+    if (user && pageId && hasActualContent) {
       checkAcknowledgement();
+    } else {
+      setLoading(false);
     }
-  }, [user, pageId]);
+  }, [user, pageId, hasActualContent]);
 
   const checkAcknowledgement = async () => {
     if (!user) return;
@@ -106,7 +103,8 @@ export function PageAcknowledgement({ pageId, pageTitle, pageContent }: PageAckn
     }
   };
 
-  if (loading) {
+  // Don't render if there's no actual content or still loading
+  if (!hasActualContent || loading) {
     return null;
   }
 
