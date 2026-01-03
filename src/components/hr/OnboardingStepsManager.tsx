@@ -122,10 +122,10 @@ export function OnboardingStepsManager() {
         target_page_id: stepType === 'internal_page' ? targetPageId || null : null,
         external_url: stepType === 'external_link' ? externalUrl || null : null,
         is_active: isActive,
-        created_by: user.id,
       };
 
       if (editingStep) {
+        console.log('Updating existing step:', editingStep.id);
         const { error } = await supabase
           .from('onboarding_steps')
           .update(stepData)
@@ -134,10 +134,23 @@ export function OnboardingStepsManager() {
         if (error) throw error;
         toast({ title: "Step updated successfully" });
       } else {
-        const maxOrder = steps.length > 0 ? Math.max(...steps.map(s => s.sort_order)) : 0;
+        // Fetch current max sort order from database to avoid race conditions
+        const { data: existingSteps } = await supabase
+          .from('onboarding_steps')
+          .select('sort_order')
+          .order('sort_order', { ascending: false })
+          .limit(1);
+        
+        const maxOrder = existingSteps && existingSteps.length > 0 ? existingSteps[0].sort_order : 0;
+        console.log('Creating new step with sort_order:', maxOrder + 1);
+        
         const { error } = await supabase
           .from('onboarding_steps')
-          .insert({ ...stepData, sort_order: maxOrder + 1 });
+          .insert({ 
+            ...stepData, 
+            sort_order: maxOrder + 1,
+            created_by: user.id,
+          });
 
         if (error) throw error;
         toast({ title: "Step created successfully" });
