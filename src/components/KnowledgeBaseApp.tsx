@@ -16,7 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy, FileText } from "lucide-react";
+import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy, FileText, FolderOpen, ChevronRight } from "lucide-react";
 import { UserManagement } from "./UserManagement";
 import { ChatPage } from "./ChatPage";
 import { RecommendedReadingSection } from "./RecommendedReadingSection";
@@ -26,6 +26,58 @@ import { HRSection } from "./hr/HRSection";
 import { ClientsSection } from "./clients/ClientsSection";
 import { useGlossary } from "@/hooks/useGlossary";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
+
+// Child page card component
+interface ChildPage {
+  id: string;
+  title: string;
+  updated_at: string;
+}
+
+function ChildPagesGrid({ 
+  childPages, 
+  onPageSelect 
+}: { 
+  childPages: ChildPage[]; 
+  onPageSelect: (pageId: string) => void;
+}) {
+  if (childPages.length === 0) return null;
+  
+  return (
+    <div className="mt-6">
+      <h2 className="text-xl font-semibold text-foreground mb-4 flex items-center gap-2">
+        <FolderOpen className="h-5 w-5" />
+        Subpages
+      </h2>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {childPages.map((child) => (
+          <button
+            key={child.id}
+            onClick={() => onPageSelect(child.id)}
+            className="group p-4 bg-card border border-border rounded-lg text-left hover:border-primary hover:shadow-md transition-all duration-200"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-md">
+                  <FileText className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-medium text-foreground group-hover:text-primary transition-colors">
+                    {child.title}
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Updated {new Date(child.updated_at).toLocaleDateString()}
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // Page view component
 function PageView({
@@ -41,6 +93,7 @@ function PageView({
 }) {
   const [isPublic, setIsPublic] = useState(false);
   const [publicToken, setPublicToken] = useState('');
+  const [childPages, setChildPages] = useState<ChildPage[]>([]);
   const [recommendedReading, setRecommendedReading] = useState<Array<{
     id?: string;
     title: string;
@@ -228,6 +281,39 @@ function PageView({
     };
     fetchPageSettings();
   }, [currentPage.id, currentPage.recommended_reading, currentPage.lastUpdated]);
+
+  // Fetch child pages if content is empty
+  useEffect(() => {
+    const fetchChildPages = async () => {
+      // Check if content is empty or only contains whitespace/empty HTML
+      const strippedContent = currentPage.content
+        .replace(/<[^>]*>/g, '') // Remove HTML tags
+        .replace(/&nbsp;/g, ' ') // Replace nbsp
+        .trim();
+      
+      if (strippedContent.length > 0) {
+        setChildPages([]);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('pages')
+          .select('id, title, updated_at')
+          .eq('parent_page_id', currentPage.id)
+          .is('deleted_at', null)
+          .order('sort_order', { ascending: true });
+
+        if (error) throw error;
+        setChildPages(data || []);
+      } catch (error) {
+        console.error('Error fetching child pages:', error);
+        setChildPages([]);
+      }
+    };
+
+    fetchChildPages();
+  }, [currentPage.id, currentPage.content]);
   const togglePublicAccess = async () => {
     try {
       const newIsPublic = !isPublic;
@@ -260,7 +346,14 @@ function PageView({
       description: "Public link copied to clipboard"
     });
   };
+  
   const cleanContent = currentPage.content;
+  const strippedContent = cleanContent
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .trim();
+  const isContentEmpty = strippedContent.length === 0;
+  
   return <div className="flex-1 overflow-auto">
       <div className="max-w-none mx-8 p-6">
           <div className="mb-6">
@@ -291,11 +384,20 @@ function PageView({
           </div>
         </div>
         
-        <div className="prose prose-lg max-w-none">
-          <div className="text-foreground leading-relaxed" dangerouslySetInnerHTML={{
-          __html: makeContentReadOnly(highlightGlossaryTerms(cleanContent.split('RECOMMENDED_READING:')[0]))
-        }} />
-        </div>
+        {/* Show content if not empty, otherwise show child pages */}
+        {!isContentEmpty ? (
+          <div className="prose prose-lg max-w-none">
+            <div className="text-foreground leading-relaxed" dangerouslySetInnerHTML={{
+              __html: makeContentReadOnly(highlightGlossaryTerms(cleanContent.split('RECOMMENDED_READING:')[0]))
+            }} />
+          </div>
+        ) : childPages.length > 0 ? (
+          <ChildPagesGrid childPages={childPages} onPageSelect={onPageSelect} />
+        ) : (
+          <div className="text-muted-foreground italic">
+            This page has no content yet. Click Edit to add content.
+          </div>
+        )}
 
         {/* Recommended Reading Section */}
         <RecommendedReadingSection items={recommendedReading} orderedCategories={currentPage.category_order} onItemClick={item => {
