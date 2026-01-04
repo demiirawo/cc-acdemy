@@ -1461,6 +1461,8 @@ export type Database = {
           personal_email: string | null
           phone_number: string | null
           photograph_path: string | null
+          proof_of_address_path: string | null
+          proof_of_address_type: string | null
           proof_of_id_1_path: string | null
           proof_of_id_1_type: string | null
           proof_of_id_2_path: string | null
@@ -1486,6 +1488,8 @@ export type Database = {
           personal_email?: string | null
           phone_number?: string | null
           photograph_path?: string | null
+          proof_of_address_path?: string | null
+          proof_of_address_type?: string | null
           proof_of_id_1_path?: string | null
           proof_of_id_1_type?: string | null
           proof_of_id_2_path?: string | null
@@ -1511,6 +1515,8 @@ export type Database = {
           personal_email?: string | null
           phone_number?: string | null
           photograph_path?: string | null
+          proof_of_address_path?: string | null
+          proof_of_address_type?: string | null
           proof_of_id_1_path?: string | null
           proof_of_id_1_type?: string | null
           proof_of_id_2_path?: string | null
