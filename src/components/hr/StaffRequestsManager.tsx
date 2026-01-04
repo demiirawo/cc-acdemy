@@ -102,7 +102,7 @@ interface StaffRequestsManagerProps {
 export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProps = {}) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<string>("pending");
+  const [activeTab, setActiveTab] = useState<string>("approved");
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<StaffRequest | null>(null);
   const [reviewNotes, setReviewNotes] = useState("");
