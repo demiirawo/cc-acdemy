@@ -13,7 +13,7 @@ import { CalendarClock, DollarSign, Users, User, Send, ClipboardList, Graduation
 
 export function HRSection() {
   const { isAdmin } = useUserRole();
-  const [activeTab, setActiveTab] = useState(isAdmin ? "profiles" : "my-requests");
+  const [activeTab, setActiveTab] = useState(isAdmin ? "profiles" : "onboarding-form");
 
   return (
     <div className="flex-1 overflow-auto p-6">
@@ -26,21 +26,17 @@ export function HRSection() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: isAdmin ? 'repeat(8, 1fr)' : 'repeat(5, 1fr)' }}>
-            {isAdmin && (
+          <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: isAdmin ? 'repeat(8, 1fr)' : 'repeat(4, 1fr)' }}>
+            {isAdmin ? (
               <>
                 <TabsTrigger value="profiles" className="flex items-center gap-2">
                   <Users className="h-4 w-4" />
                   Staff Profiles
                 </TabsTrigger>
-              </>
-            )}
-            <TabsTrigger value="schedule" className="flex items-center gap-2">
-              <CalendarClock className="h-4 w-4" />
-              Schedule
-            </TabsTrigger>
-            {isAdmin && (
-              <>
+                <TabsTrigger value="schedule" className="flex items-center gap-2">
+                  <CalendarClock className="h-4 w-4" />
+                  Schedule
+                </TabsTrigger>
                 <TabsTrigger value="requests" className="flex items-center gap-2">
                   <ClipboardList className="h-4 w-4" />
                   Requests
@@ -49,24 +45,43 @@ export function HRSection() {
                   <DollarSign className="h-4 w-4" />
                   Pay Records
                 </TabsTrigger>
+                <TabsTrigger value="onboarding" className="flex items-center gap-2">
+                  <GraduationCap className="h-4 w-4" />
+                  Onboarding Steps
+                </TabsTrigger>
+                <TabsTrigger value="onboarding-form" className="flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Onboarding Form
+                </TabsTrigger>
+                <TabsTrigger value="my-requests" className="flex items-center gap-2">
+                  <Send className="h-4 w-4" />
+                  My Requests
+                </TabsTrigger>
+                <TabsTrigger value="my-profile" className="flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  My Profile
+                </TabsTrigger>
+              </>
+            ) : (
+              <>
+                <TabsTrigger value="onboarding-form" className="flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Onboarding Form
+                </TabsTrigger>
+                <TabsTrigger value="onboarding" className="flex items-center gap-2">
+                  <GraduationCap className="h-4 w-4" />
+                  Onboarding Steps
+                </TabsTrigger>
+                <TabsTrigger value="my-requests" className="flex items-center gap-2">
+                  <Send className="h-4 w-4" />
+                  My Requests
+                </TabsTrigger>
+                <TabsTrigger value="my-profile" className="flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  My Profile
+                </TabsTrigger>
               </>
             )}
-            <TabsTrigger value="onboarding" className="flex items-center gap-2">
-              <GraduationCap className="h-4 w-4" />
-              Onboarding
-            </TabsTrigger>
-            <TabsTrigger value="onboarding-form" className="flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              Onboarding Form
-            </TabsTrigger>
-            <TabsTrigger value="my-requests" className="flex items-center gap-2">
-              <Send className="h-4 w-4" />
-              My Requests
-            </TabsTrigger>
-            <TabsTrigger value="my-profile" className="flex items-center gap-2">
-              <User className="h-4 w-4" />
-              My HR Profile
-            </TabsTrigger>
           </TabsList>
 
           {isAdmin && (
