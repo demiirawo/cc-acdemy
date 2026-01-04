@@ -119,18 +119,46 @@ export function RequestDetailPage({ requestId, onBack }: RequestDetailPageProps)
     }
   });
 
+  // Fetch all staff with their client assignments (to identify bench staff)
+  const { data: allStaffWithAssignments = [] } = useQuery({
+    queryKey: ["all-staff-with-assignments"],
+    queryFn: async () => {
+      const { data: profiles, error: profilesError } = await supabase
+        .from("profiles")
+        .select("user_id, display_name, email");
+      
+      if (profilesError) throw profilesError;
+
+      const { data: assignments, error: assignmentsError } = await supabase
+        .from("staff_client_assignments")
+        .select("staff_user_id, client_name");
+      
+      if (assignmentsError) throw assignmentsError;
+
+      // Map profiles with their assignments
+      return (profiles || []).map(profile => ({
+        ...profile,
+        clientAssignments: (assignments || [])
+          .filter(a => a.staff_user_id === profile.user_id)
+          .map(a => a.client_name),
+        isBench: (assignments || []).some(
+          a => a.staff_user_id === profile.user_id && a.client_name === "Care Cuddle"
+        )
+      }));
+    }
+  });
+
   // Fetch covering staff info (for shift swaps where someone is covering this person's holiday)
-  const { data: coveringStaff } = useQuery({
+  const { data: coveringStaff, refetch: refetchCoveringStaff } = useQuery({
     queryKey: ["covering-staff", request?.id],
     enabled: !!request && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type),
     queryFn: async () => {
-      // Find shift swap requests that are approved and cover this person's dates
+      // Find shift swap requests that cover this person's dates
       const { data, error } = await supabase
         .from("staff_requests")
         .select("*")
         .eq("request_type", "shift_swap")
         .eq("swap_with_user_id", request!.user_id)
-        .eq("status", "approved")
         .gte("start_date", request!.start_date)
         .lte("end_date", request!.end_date);
       
@@ -201,6 +229,46 @@ export function RequestDetailPage({ requestId, onBack }: RequestDetailPageProps)
     },
     onError: (error) => {
       toast.error("Failed to update details: " + error.message);
+    }
+  });
+
+  // Assign cover mutation
+  const assignCoverMutation = useMutation({
+    mutationFn: async (coverUserId: string) => {
+      if (!user || !request) throw new Error("Not authenticated or no request");
+
+      // Calculate days between start and end date
+      const startDate = new Date(request.start_date);
+      const endDate = new Date(request.end_date);
+      const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+      const daysRequested = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+      // Create a shift_swap request for the covering staff member
+      const { error } = await supabase
+        .from("staff_requests")
+        .insert([{
+          user_id: coverUserId,
+          request_type: 'shift_swap',
+          swap_with_user_id: request.user_id,
+          start_date: request.start_date,
+          end_date: request.end_date,
+          days_requested: daysRequested,
+          details: `Covering for ${getStaffName(request.user_id)} during their holiday`,
+          status: 'approved',
+          reviewed_by: user.id,
+          reviewed_at: new Date().toISOString(),
+          client_informed: false
+        }]);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["covering-staff", request?.id] });
+      queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
+      toast.success("Cover assigned successfully");
+    },
+    onError: (error) => {
+      toast.error("Failed to assign cover: " + error.message);
     }
   });
 
@@ -494,9 +562,11 @@ Care Cuddle Team`;
                 Cover Arrangements
               </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-6">
+              {/* Current Cover */}
               {coveringStaff && coveringStaff.length > 0 ? (
                 <div className="space-y-3">
+                  <Label className="text-muted-foreground text-sm">Assigned Cover</Label>
                   {coveringStaff.map((cover, idx) => (
                     <div key={idx} className="flex items-center gap-3 p-3 bg-success/10 border border-success/20 rounded-lg">
                       <CheckCircle2 className="h-5 w-5 text-success" />
@@ -514,8 +584,84 @@ Care Cuddle Team`;
                   <AlertCircle className="h-5 w-5 text-amber-600" />
                   <div>
                     <p className="font-medium">No cover arranged yet</p>
-                    <p className="text-sm text-muted-foreground">Cover arrangements have not been confirmed for this period</p>
+                    <p className="text-sm text-muted-foreground">Click a staff member below to assign them as cover</p>
                   </div>
+                </div>
+              )}
+
+              {/* Assign Cover Section - only show for holiday requests */}
+              {isHolidayRequest && (
+                <div className="space-y-4">
+                  <Separator />
+                  
+                  {/* Care Cuddle Bench Staff */}
+                  {(() => {
+                    const benchStaff = allStaffWithAssignments.filter(
+                      s => s.isBench && s.user_id !== request.user_id
+                    );
+                    const otherStaff = allStaffWithAssignments.filter(
+                      s => !s.isBench && s.user_id !== request.user_id
+                    );
+                    const coveredUserIds = (coveringStaff || []).map(c => c.user_id);
+
+                    return (
+                      <>
+                        {benchStaff.length > 0 && (
+                          <div>
+                            <Label className="text-muted-foreground text-sm flex items-center gap-2">
+                              <span className="inline-block w-2 h-2 rounded-full bg-purple-500"></span>
+                              Care Cuddle Bench
+                            </Label>
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {benchStaff.map(staff => {
+                                const isAssigned = coveredUserIds.includes(staff.user_id);
+                                return (
+                                  <Button
+                                    key={staff.user_id}
+                                    variant={isAssigned ? "secondary" : "outline"}
+                                    size="sm"
+                                    disabled={isAssigned || assignCoverMutation.isPending}
+                                    onClick={() => assignCoverMutation.mutate(staff.user_id)}
+                                    className={isAssigned ? "bg-success/20 text-success border-success" : "hover:bg-purple-50 hover:border-purple-300"}
+                                  >
+                                    {isAssigned && <CheckCircle2 className="h-3 w-3 mr-1" />}
+                                    {staff.display_name || staff.email}
+                                  </Button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {otherStaff.length > 0 && (
+                          <div>
+                            <Label className="text-muted-foreground text-sm flex items-center gap-2">
+                              <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
+                              Other Staff
+                            </Label>
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {otherStaff.map(staff => {
+                                const isAssigned = coveredUserIds.includes(staff.user_id);
+                                return (
+                                  <Button
+                                    key={staff.user_id}
+                                    variant={isAssigned ? "secondary" : "outline"}
+                                    size="sm"
+                                    disabled={isAssigned || assignCoverMutation.isPending}
+                                    onClick={() => assignCoverMutation.mutate(staff.user_id)}
+                                    className={isAssigned ? "bg-success/20 text-success border-success" : "hover:bg-blue-50 hover:border-blue-300"}
+                                  >
+                                    {isAssigned && <CheckCircle2 className="h-3 w-3 mr-1" />}
+                                    {staff.display_name || staff.email}
+                                  </Button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               )}
             </CardContent>
