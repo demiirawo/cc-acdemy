@@ -69,16 +69,20 @@ const REQUEST_TYPE_INFO: Record<string, { label: string; icon: typeof Clock; col
 export function UpcomingRequestsPreview() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayISO = today.toISOString().split('T')[0];
   const thirtyDaysFromNow = addDays(today, 30);
+  const thirtyDaysISO = thirtyDaysFromNow.toISOString().split('T')[0];
 
-  // Fetch approved staff requests
+  // Fetch approved staff requests - filter in database for efficiency
   const { data: requests = [], isLoading } = useQuery({
-    queryKey: ["upcoming-approved-requests"],
+    queryKey: ["upcoming-approved-requests", todayISO],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("staff_requests")
         .select("*")
         .eq("status", "approved")
+        .gte("end_date", todayISO) // End date must be today or later
+        .lte("start_date", thirtyDaysISO) // Start date must be within 30 days
         .order("start_date", { ascending: false });
       
       if (error) throw error;
@@ -104,17 +108,8 @@ export function UpcomingRequestsPreview() {
     return profile?.display_name || profile?.email || "Unknown";
   };
 
-  // Filter requests: end date must be today or later, and start date must be within 30 days
-  const upcomingRequests = requests.filter(request => {
-    const startDate = parseISO(request.start_date);
-    const endDate = parseISO(request.end_date);
-    
-    // End date must be today or in the future
-    if (endDate < today) return false;
-    
-    // Start date must be within the next 30 days OR already started (ongoing)
-    return startDate <= thirtyDaysFromNow;
-  });
+  // Use the already-filtered requests directly
+  const upcomingRequests = requests;
 
   // Helper to find cover requests for a holiday
   const findCoverForHoliday = (holidayRequest: StaffRequest): StaffRequest[] => {
