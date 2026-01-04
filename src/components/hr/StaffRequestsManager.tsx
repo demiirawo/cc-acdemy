@@ -512,10 +512,11 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                           // Find covers for this holiday
                           const nestedCovers = isHolidayRequest ? findCoverForHoliday(request) : [];
                           
-                          // Determine row highlighting for holiday requests
+                          // Determine row highlighting for holiday requests: green if covered, red if not covered
+                          const hasCover = nestedCovers.length > 0;
                           const rowHighlightClass = isHolidayRequest 
-                            ? request.client_informed 
-                              ? 'bg-blue-100 dark:bg-blue-950/30 hover:bg-blue-200 dark:hover:bg-blue-950/50' 
+                            ? hasCover 
+                              ? 'bg-green-100 dark:bg-green-950/30 hover:bg-green-200 dark:hover:bg-green-950/50' 
                               : 'bg-red-100 dark:bg-red-950/30 hover:bg-red-200 dark:hover:bg-red-950/50'
                             : 'hover:bg-muted/50';
 
