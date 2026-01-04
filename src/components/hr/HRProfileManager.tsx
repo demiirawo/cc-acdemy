@@ -1050,7 +1050,7 @@ export function HRProfileManager() {
 
       {/* Edit Profile Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogContent className="max-w-5xl w-[90vw] max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>
               {editingProfile ? 'Edit Staff Profile' : 'Set Up Staff Profile'}
