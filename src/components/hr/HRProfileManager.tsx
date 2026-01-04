@@ -1066,6 +1066,254 @@ export function HRProfileManager() {
 
           <ScrollArea className="flex-1 pr-4">
             <div className="space-y-6 py-4">
+              {/* Core Settings - Always Editable */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold">Employment Details</h3>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Display Name</Label>
+                    <Input
+                      value={formData.display_name}
+                      onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
+                      placeholder="How their name appears in the system"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Employee ID</Label>
+                    <Input
+                      value={formData.employee_id}
+                      onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
+                      placeholder="EMP001"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Employment Status</Label>
+                    <Select
+                      value={formData.employment_status}
+                      onValueChange={(value) => setFormData({ ...formData, employment_status: value as EmploymentStatus })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EMPLOYMENT_STATUSES.map(status => (
+                          <SelectItem key={status.value} value={status.value}>
+                            {status.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Start Date</Label>
+                    <Input
+                      type="date"
+                      value={formData.start_date}
+                      onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                {formData.start_date && (
+                  <Card className="bg-muted/50">
+                    <CardContent className="p-3">
+                      <div className="text-sm space-y-1">
+                        {(() => {
+                          const allowanceInfo = calculateHolidayAllowance(formData.start_date);
+                          return (
+                            <>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Annual Allowance:</span>
+                                <span className="font-medium">{allowanceInfo.annualAllowance} days</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Accrued to date:</span>
+                                <span className="font-medium">{allowanceInfo.accruedAllowance} days</span>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Job Title</Label>
+                    <Input
+                      value={formData.job_title}
+                      onChange={(e) => setFormData({ ...formData, job_title: e.target.value })}
+                      placeholder="Care Assistant"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Application Role</Label>
+                    <Select
+                      value={formData.app_role}
+                      onValueChange={(value) => setFormData({ ...formData, app_role: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {APP_ROLES.map(role => (
+                          <SelectItem key={role.value} value={role.value}>
+                            {role.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Scheduling Role</Label>
+                  <Select
+                    value={formData.scheduling_role}
+                    onValueChange={(value) => setFormData({ ...formData, scheduling_role: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SCHEDULING_ROLES.map(role => (
+                        <SelectItem key={role.value} value={role.value}>
+                          {role.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Assigned Clients</Label>
+                  
+                  {allClients.filter(c => !staffClients.includes(c.name)).length > 0 && (
+                    <Select
+                      value={selectedClient}
+                      onValueChange={handleSelectClient}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select existing client..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allClients
+                          .filter(c => !staffClients.includes(c.name))
+                          .map(client => (
+                            <SelectItem key={client.id} value={client.name}>
+                              {client.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  
+                  <div className="flex gap-2">
+                    <Input
+                      value={newClientName}
+                      onChange={(e) => setNewClientName(e.target.value)}
+                      placeholder="Or add new client..."
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddClient();
+                        }
+                      }}
+                    />
+                    <Button type="button" variant="secondary" onClick={() => handleAddClient()}>
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  
+                  {staffClients.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {staffClients.map((client, idx) => (
+                        <Badge key={idx} variant="secondary" className="flex items-center gap-1 pr-1">
+                          {client}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveClient(client)}
+                            className="ml-1 rounded-full hover:bg-destructive/20 p-0.5"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Base Salary</Label>
+                    <Input
+                      type="number"
+                      value={formData.base_salary}
+                      onChange={(e) => setFormData({ ...formData, base_salary: parseFloat(e.target.value) || 0 })}
+                      placeholder="0.00"
+                      step="0.01"
+                      min="0"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Currency</Label>
+                    <Select
+                      value={formData.base_currency}
+                      onValueChange={(value) => setFormData({ ...formData, base_currency: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CURRENCIES.map(currency => (
+                          <SelectItem key={currency.code} value={currency.code}>
+                            {currency.symbol} {currency.code}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Pay Frequency</Label>
+                    <Select
+                      value={formData.pay_frequency}
+                      onValueChange={(value) => setFormData({ ...formData, pay_frequency: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PAY_FREQUENCIES.map(freq => (
+                          <SelectItem key={freq.value} value={freq.value}>
+                            {freq.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Notes</Label>
+                  <Textarea
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    placeholder="Additional notes..."
+                    rows={3}
+                  />
+                </div>
+              </div>
+
+              <Separator />
+
               {/* Onboarding Documents View (Read-only) */}
               {selectedUserId && (() => {
                 const onboardingDoc = getOnboardingDoc(selectedUserId);
@@ -1206,7 +1454,7 @@ export function HRProfileManager() {
                               <p className="font-medium">{onboardingDoc.address || '-'}</p>
                             </div>
                             <div>
-                              <span className="text-muted-foreground">Employment Start Date:</span>
+                              <span className="text-muted-foreground">Employment Start Date (from form):</span>
                               <p className="font-medium">
                                 {onboardingDoc.employment_start_date 
                                   ? format(new Date(onboardingDoc.employment_start_date), 'dd MMM yyyy')
@@ -1270,257 +1518,9 @@ export function HRProfileManager() {
                         </div>
                       </>
                     )}
-                    
-                    <Separator />
                   </div>
                 );
               })()}
-
-              {/* Editable HR Profile Settings */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Shield className="h-5 w-5 text-primary" />
-                  <h3 className="font-semibold">HR Settings</h3>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Display Name</Label>
-                  <Input
-                    value={formData.display_name}
-                    onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
-                    placeholder="How their name appears in the system"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Employee ID</Label>
-                    <Input
-                      value={formData.employee_id}
-                      onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
-                      placeholder="EMP001"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Job Title</Label>
-                    <Input
-                      value={formData.job_title}
-                      onChange={(e) => setFormData({ ...formData, job_title: e.target.value })}
-                      placeholder="Care Assistant"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Application Role</Label>
-                    <Select
-                      value={formData.app_role}
-                      onValueChange={(value) => setFormData({ ...formData, app_role: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {APP_ROLES.map(role => (
-                          <SelectItem key={role.value} value={role.value}>
-                            {role.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <Label>Employment Status</Label>
-                    <Select
-                      value={formData.employment_status}
-                      onValueChange={(value) => setFormData({ ...formData, employment_status: value as EmploymentStatus })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {EMPLOYMENT_STATUSES.map(status => (
-                          <SelectItem key={status.value} value={status.value}>
-                            {status.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Scheduling Role</Label>
-                  <Select
-                    value={formData.scheduling_role}
-                    onValueChange={(value) => setFormData({ ...formData, scheduling_role: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SCHEDULING_ROLES.map(role => (
-                        <SelectItem key={role.value} value={role.value}>
-                          {role.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Assigned Clients</Label>
-                  
-                  {allClients.filter(c => !staffClients.includes(c.name)).length > 0 && (
-                    <Select
-                      value={selectedClient}
-                      onValueChange={handleSelectClient}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select existing client..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {allClients
-                          .filter(c => !staffClients.includes(c.name))
-                          .map(client => (
-                            <SelectItem key={client.id} value={client.name}>
-                              {client.name}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  
-                  <div className="flex gap-2">
-                    <Input
-                      value={newClientName}
-                      onChange={(e) => setNewClientName(e.target.value)}
-                      placeholder="Or add new client..."
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleAddClient();
-                        }
-                      }}
-                    />
-                    <Button type="button" variant="secondary" onClick={() => handleAddClient()}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  
-                  {staffClients.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {staffClients.map((client, idx) => (
-                        <Badge key={idx} variant="secondary" className="flex items-center gap-1 pr-1">
-                          {client}
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveClient(client)}
-                            className="ml-1 rounded-full hover:bg-destructive/20 p-0.5"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label>Base Salary</Label>
-                    <Input
-                      type="number"
-                      value={formData.base_salary}
-                      onChange={(e) => setFormData({ ...formData, base_salary: parseFloat(e.target.value) || 0 })}
-                      placeholder="0.00"
-                      step="0.01"
-                      min="0"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Currency</Label>
-                    <Select
-                      value={formData.base_currency}
-                      onValueChange={(value) => setFormData({ ...formData, base_currency: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {CURRENCIES.map(currency => (
-                          <SelectItem key={currency.code} value={currency.code}>
-                            {currency.symbol} {currency.code}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Pay Frequency</Label>
-                    <Select
-                      value={formData.pay_frequency}
-                      onValueChange={(value) => setFormData({ ...formData, pay_frequency: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {PAY_FREQUENCIES.map(freq => (
-                          <SelectItem key={freq.value} value={freq.value}>
-                            {freq.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Start Date</Label>
-                  <Input
-                    type="date"
-                    value={formData.start_date}
-                    onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                  />
-                </div>
-
-                {formData.start_date && (
-                  <Card className="bg-muted/50">
-                    <CardContent className="p-3">
-                      <div className="text-sm space-y-1">
-                        {(() => {
-                          const allowanceInfo = calculateHolidayAllowance(formData.start_date);
-                          return (
-                            <>
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Annual Allowance:</span>
-                                <span className="font-medium">{allowanceInfo.annualAllowance} days</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Accrued to date:</span>
-                                <span className="font-medium">{allowanceInfo.accruedAllowance} days</span>
-                              </div>
-                            </>
-                          );
-                        })()}
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                <div className="space-y-2">
-                  <Label>Notes</Label>
-                  <Textarea
-                    value={formData.notes}
-                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    placeholder="Additional notes..."
-                    rows={3}
-                  />
-                </div>
-              </div>
             </div>
           </ScrollArea>
 
