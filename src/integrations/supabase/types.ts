@@ -1624,6 +1624,7 @@ export type Database = {
       }
       staff_requests: {
         Row: {
+          client_informed: boolean | null
           created_at: string
           days_requested: number
           details: string | null
@@ -1642,6 +1643,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          client_informed?: boolean | null
           created_at?: string
           days_requested?: number
           details?: string | null
@@ -1660,6 +1662,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          client_informed?: boolean | null
           created_at?: string
           days_requested?: number
           details?: string | null
