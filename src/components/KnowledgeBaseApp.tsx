@@ -24,6 +24,7 @@ import { GlossaryPage } from "./GlossaryPage";
 import { RecyclingBin } from "./RecyclingBin";
 import { HRSection } from "./hr/HRSection";
 import { ClientsSection } from "./clients/ClientsSection";
+import { SchedulePage } from "./SchedulePage";
 import { useGlossary } from "@/hooks/useGlossary";
 import { useUserRole } from "@/hooks/useUserRole";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
@@ -428,7 +429,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'clients';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'clients' | 'schedule';
 interface SidebarItem {
   id: string;
   title: string;
@@ -543,7 +544,8 @@ export function KnowledgeBaseApp() {
         'glossary': 'glossary',
         'recycling-bin': 'recycling-bin',
         'hr': 'hr',
-        'clients': 'clients'
+        'clients': 'clients',
+        'schedule': 'schedule'
       };
         
         if (viewMap[viewName]) {
@@ -1106,6 +1108,7 @@ export function KnowledgeBaseApp() {
         )}
         {currentView === 'hr' && <HRSection />}
         {currentView === 'clients' && <ClientsSection />}
+        {currentView === 'schedule' && <SchedulePage />}
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePageSaved} />}
         

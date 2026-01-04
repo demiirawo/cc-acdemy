@@ -4,12 +4,11 @@ import { useUserRole } from "@/hooks/useUserRole";
 import { StaffPayManager } from "./StaffPayManager";
 import { HRProfileManager } from "./HRProfileManager";
 import { MyHRProfile } from "./MyHRProfile";
-import { StaffScheduleManager } from "./StaffScheduleManager";
 import { StaffRequestForm } from "./StaffRequestForm";
 import { StaffRequestsManager } from "./StaffRequestsManager";
 import { OnboardingManager } from "./OnboardingManager";
 import { StaffOnboardingForm } from "./StaffOnboardingForm";
-import { CalendarClock, DollarSign, Users, User, Send, ClipboardList, GraduationCap, FileText } from "lucide-react";
+import { DollarSign, Users, User, Send, ClipboardList, GraduationCap, FileText } from "lucide-react";
 
 export function HRSection() {
   const { isAdmin } = useUserRole();
@@ -21,21 +20,17 @@ export function HRSection() {
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-foreground">HR Management</h1>
           <p className="text-muted-foreground mt-1">
-            {isAdmin ? "Manage staff schedules, requests, pay and profiles" : "View your schedule, submit requests and view your HR profile"}
+            {isAdmin ? "Manage staff requests, pay and profiles" : "Submit requests and view your HR profile"}
           </p>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: isAdmin ? 'repeat(8, 1fr)' : 'repeat(4, 1fr)' }}>
+          <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: isAdmin ? 'repeat(7, 1fr)' : 'repeat(4, 1fr)' }}>
             {isAdmin ? (
               <>
                 <TabsTrigger value="profiles" className="flex items-center gap-2">
                   <Users className="h-4 w-4" />
                   Staff Profiles
-                </TabsTrigger>
-                <TabsTrigger value="schedule" className="flex items-center gap-2">
-                  <CalendarClock className="h-4 w-4" />
-                  Schedule
                 </TabsTrigger>
                 <TabsTrigger value="requests" className="flex items-center gap-2">
                   <ClipboardList className="h-4 w-4" />
@@ -91,10 +86,6 @@ export function HRSection() {
               </TabsContent>
             </>
           )}
-          
-          <TabsContent value="schedule" className="mt-0">
-            <StaffScheduleManager />
-          </TabsContent>
           
           {isAdmin && (
             <>
