@@ -374,7 +374,7 @@ I hope this email finds you well.
 
 I am writing to inform you that ${staffName} will be on approved leave ${dateText}.${coverInfo}
 
-If you have any questions or concerns regarding the care arrangements during this period, please do not hesitate to contact us.
+If you have any questions or concerns regarding this, please do not hesitate to contact us.
 
 Thank you for your understanding.
 
