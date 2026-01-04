@@ -579,8 +579,29 @@ export function StaffScheduleManager() {
           });
         });
         
-        // If no schedules and not on holiday, add bench schedules for Mon-Fri 9-5
-        if (!hasAnyScheduleThisWeek && !isOnHolidayAnyDay) {
+        // Check if they're covering someone else's shift (shift_swap or overtime with linked_holiday)
+        const isCoveringAnyDay = weekdaysDates.some(day => {
+          return staffRequests.some(r => {
+            if (r.user_id !== staff.user_id) return false;
+            if (r.status !== 'approved') return false;
+            // Check shift_swap requests
+            if (r.request_type === 'shift_swap' && r.swap_with_user_id) {
+              const start = startOfDay(parseISO(r.start_date));
+              const end = endOfDay(parseISO(r.end_date));
+              return isWithinInterval(day, { start, end });
+            }
+            // Check overtime covering holiday
+            if (['overtime', 'overtime_standard', 'overtime_double_up'].includes(r.request_type) && r.linked_holiday_id) {
+              const start = startOfDay(parseISO(r.start_date));
+              const end = endOfDay(parseISO(r.end_date));
+              return isWithinInterval(day, { start, end });
+            }
+            return false;
+          });
+        });
+        
+        // If no schedules, not on holiday, and not covering anyone, add bench schedules
+        if (!hasAnyScheduleThisWeek && !isOnHolidayAnyDay && !isCoveringAnyDay) {
           for (const day of weekdaysDates) {
             const dateStr = format(day, "yyyy-MM-dd");
             benchSchedules.push({
@@ -600,7 +621,7 @@ export function StaffScheduleManager() {
     }
     
     return [...combinedSchedules, ...benchSchedules];
-  }, [schedules, virtualSchedulesFromPatterns, staffMembers, weekDays, holidays]);
+  }, [schedules, virtualSchedulesFromPatterns, staffMembers, weekDays, holidays, staffRequests]);
 
   // Get unique clients from schedules (sorted alphabetically)
   const uniqueClients = useMemo(() => {
