@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users } from "lucide-react";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User } from "lucide-react";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay } from "date-fns";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 
@@ -115,6 +115,29 @@ interface RecurringBonus {
   start_date: string;
   end_date: string | null;
 }
+
+interface OnboardingFormData {
+  id: string;
+  employment_start_date: string | null;
+  full_name: string | null;
+  date_of_birth: string | null;
+  phone_number: string | null;
+  personal_email: string | null;
+  address: string | null;
+  proof_of_id_1_path: string | null;
+  proof_of_id_1_type: string | null;
+  proof_of_id_2_path: string | null;
+  proof_of_id_2_type: string | null;
+  photograph_path: string | null;
+  bank_name: string | null;
+  account_number: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_relationship: string | null;
+  emergency_contact_phone: string | null;
+  emergency_contact_email: string | null;
+  form_status: string;
+  submitted_at: string | null;
+}
 const CURRENCIES: Record<string, string> = {
   'GBP': '£',
   'USD': '$',
@@ -188,6 +211,7 @@ export function MyHRProfile() {
   const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
   const [staffRequests, setStaffRequests] = useState<StaffRequest[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
+  const [onboardingData, setOnboardingData] = useState<OnboardingFormData | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
   
   // Admin staff selection
@@ -309,6 +333,12 @@ export function MyHRProfile() {
         data: bonusesData
       } = await supabase.from('recurring_bonuses').select('*').eq('user_id', targetUserId);
       setRecurringBonuses(bonusesData || []);
+
+      // Fetch onboarding form data
+      const {
+        data: onboardingFormData
+      } = await supabase.from('staff_onboarding_documents').select('*').eq('user_id', targetUserId).maybeSingle();
+      setOnboardingData(onboardingFormData);
 
       // Fetch public holidays for next 12 months (current year + next year if needed)
       await fetchPublicHolidays();
@@ -760,6 +790,156 @@ export function MyHRProfile() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Onboarding Information Section */}
+      {onboardingData && (
+        <Accordion type="single" collapsible className="w-full">
+          <AccordionItem value="onboarding-info" className="border-2 border-primary/20 rounded-lg">
+            <AccordionTrigger className="px-6 py-4 hover:no-underline">
+              <div className="flex items-center gap-2">
+                <User className="h-5 w-5 text-primary" />
+                <span className="text-lg font-semibold">Onboarding Information</span>
+                <Badge variant={onboardingData.form_status === 'complete' ? 'default' : 'secondary'} className="ml-2">
+                  {onboardingData.form_status === 'complete' ? 'Complete' : 'In Progress'}
+                </Badge>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="px-6 pb-4">
+              <div className="space-y-6">
+                {/* Personal Details */}
+                <div>
+                  <h4 className="font-medium text-sm text-muted-foreground mb-3 flex items-center gap-2">
+                    <UserCircle className="h-4 w-4" />
+                    Personal Details
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Full Name</p>
+                      <p className="font-medium">{onboardingData.full_name || 'Not provided'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Date of Birth</p>
+                      <p className="font-medium">
+                        {onboardingData.date_of_birth 
+                          ? format(parseISO(onboardingData.date_of_birth), 'dd MMM yyyy') 
+                          : 'Not provided'}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Phone Number</p>
+                      <p className="font-medium">{onboardingData.phone_number || 'Not provided'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Personal Email</p>
+                      <p className="font-medium">{onboardingData.personal_email || 'Not provided'}</p>
+                    </div>
+                    <div className="space-y-1 md:col-span-2">
+                      <p className="text-sm text-muted-foreground">Address</p>
+                      <p className="font-medium">{onboardingData.address || 'Not provided'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Employment Start Date</p>
+                      <p className="font-medium">
+                        {onboardingData.employment_start_date 
+                          ? format(parseISO(onboardingData.employment_start_date), 'dd MMM yyyy') 
+                          : 'Not provided'}
+                      </p>
+                    </div>
+                    {onboardingData.submitted_at && (
+                      <div className="space-y-1">
+                        <p className="text-sm text-muted-foreground">Form Submitted</p>
+                        <p className="font-medium">
+                          {format(parseISO(onboardingData.submitted_at), 'dd MMM yyyy HH:mm')}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Identity Documents */}
+                <div className="border-t pt-4">
+                  <h4 className="font-medium text-sm text-muted-foreground mb-3 flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Identity Documents
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">First ID Type</p>
+                      <p className="font-medium">{onboardingData.proof_of_id_1_type || 'Not provided'}</p>
+                      {onboardingData.proof_of_id_1_path && (
+                        <Badge variant="outline" className="text-xs bg-success/10 text-success">Document uploaded</Badge>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Second ID Type</p>
+                      <p className="font-medium">{onboardingData.proof_of_id_2_type || 'Not provided'}</p>
+                      {onboardingData.proof_of_id_2_path && (
+                        <Badge variant="outline" className="text-xs bg-success/10 text-success">Document uploaded</Badge>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Photograph</p>
+                      {onboardingData.photograph_path ? (
+                        <Badge variant="outline" className="text-xs bg-success/10 text-success">Photo uploaded</Badge>
+                      ) : (
+                        <p className="font-medium">Not provided</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Payroll Information */}
+                <div className="border-t pt-4">
+                  <h4 className="font-medium text-sm text-muted-foreground mb-3 flex items-center gap-2">
+                    <DollarSign className="h-4 w-4" />
+                    Payroll Information
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Bank Name</p>
+                      <p className="font-medium">{onboardingData.bank_name || 'Not provided'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Account Number</p>
+                      <p className="font-medium">
+                        {onboardingData.account_number 
+                          ? `****${onboardingData.account_number.slice(-4)}` 
+                          : 'Not provided'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Emergency Contact */}
+                <div className="border-t pt-4">
+                  <h4 className="font-medium text-sm text-muted-foreground mb-3 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" />
+                    Emergency Contact
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Contact Name</p>
+                      <p className="font-medium">{onboardingData.emergency_contact_name || 'Not provided'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Relationship</p>
+                      <p className="font-medium">{onboardingData.emergency_contact_relationship || 'Not provided'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Phone Number</p>
+                      <p className="font-medium">{onboardingData.emergency_contact_phone || 'Not provided'}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">Email</p>
+                      <p className="font-medium">{onboardingData.emergency_contact_email || 'Not provided'}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      )}
 
       {/* 12-Month Pay Forecast Section */}
       {monthlyPreviews.length > 0 && (
