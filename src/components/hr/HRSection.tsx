@@ -32,7 +32,7 @@ export function HRSection() {
                 </TabsTrigger>
                 <TabsTrigger value="pay" className="flex items-center gap-2">
                   <DollarSign className="h-4 w-4" />
-                  Pay Records
+                  Payroll
                 </TabsTrigger>
                 <TabsTrigger value="onboarding" className="flex items-center gap-2">
                   <GraduationCap className="h-4 w-4" />
