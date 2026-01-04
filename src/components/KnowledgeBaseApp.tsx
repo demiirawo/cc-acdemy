@@ -675,6 +675,11 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
       setBreadcrumbs([]);
       navigate('/view/clients');
+    } else if (item.id === 'schedule') {
+      setCurrentView('schedule');
+      setCurrentPage(null);
+      setBreadcrumbs([]);
+      navigate('/view/schedule');
     } else if (item.type === 'page') {
       try {
         // Fetch real page data from Supabase

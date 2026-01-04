@@ -882,7 +882,7 @@ export function RealKnowledgeBaseSidebar({
                 )}
                 onClick={() => handleItemSelect({
                   ...item,
-                  type: ['chat', 'hr', 'home', 'whiteboard', 'settings', 'clients'].includes(item.id) ? 'space' : 'page'
+                  type: ['chat', 'hr', 'home', 'whiteboard', 'settings', 'clients', 'schedule'].includes(item.id) ? 'space' : 'page'
                 })}
               >
                 <Icon className="h-4 w-4 text-sidebar-foreground/70" />
