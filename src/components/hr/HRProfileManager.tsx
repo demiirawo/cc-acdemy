@@ -1064,7 +1064,7 @@ export function HRProfileManager() {
             </DialogDescription>
           </DialogHeader>
 
-          <ScrollArea className="flex-1 pr-4">
+          <ScrollArea className="flex-1 pr-4 max-h-[calc(90vh-180px)] overflow-y-auto">
             <div className="space-y-6 py-4">
               {/* Core Settings - Always Editable */}
               <div className="space-y-4">
