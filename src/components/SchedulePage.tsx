@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUserRole } from "@/hooks/useUserRole";
 import { StaffScheduleManager } from "./hr/StaffScheduleManager";
@@ -7,10 +7,27 @@ import { StaffRequestsManager } from "./hr/StaffRequestsManager";
 import { RequestDetailPage } from "./hr/RequestDetailPage";
 import { Calendar, Send, ClipboardList } from "lucide-react";
 
-export function SchedulePage() {
+interface SchedulePageProps {
+  initialRequestId?: string | null;
+  onRequestClosed?: () => void;
+}
+
+export function SchedulePage({ initialRequestId, onRequestClosed }: SchedulePageProps) {
   const { isAdmin } = useUserRole();
   const [activeTab, setActiveTab] = useState("schedule");
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(initialRequestId || null);
+
+  // Update selectedRequestId when initialRequestId changes
+  useEffect(() => {
+    if (initialRequestId) {
+      setSelectedRequestId(initialRequestId);
+    }
+  }, [initialRequestId]);
+
+  const handleBack = () => {
+    setSelectedRequestId(null);
+    onRequestClosed?.();
+  };
 
   // If a request is selected, show the detail page
   if (selectedRequestId) {
@@ -19,7 +36,7 @@ export function SchedulePage() {
         <div className="max-w-7xl mx-auto">
           <RequestDetailPage 
             requestId={selectedRequestId} 
-            onBack={() => setSelectedRequestId(null)} 
+            onBack={handleBack} 
           />
         </div>
       </div>

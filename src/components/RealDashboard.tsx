@@ -32,10 +32,12 @@ interface DashboardStats {
 interface DashboardProps {
   onCreatePage: () => void;
   onPageSelect: (pageId: string) => void;
+  onViewRequest?: (requestId: string) => void;
 }
 export function RealDashboard({
   onCreatePage,
-  onPageSelect
+  onPageSelect,
+  onViewRequest
 }: DashboardProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Page[]>([]);
@@ -324,7 +326,7 @@ export function RealDashboard({
         <CompanyNoticeboard />
 
         {/* Upcoming Approved Requests */}
-        <UpcomingRequestsPreview />
+        <UpcomingRequestsPreview onViewRequest={onViewRequest} />
 
         {/* Birthdays and Anniversaries */}
         <div className="flex gap-6 mb-6">

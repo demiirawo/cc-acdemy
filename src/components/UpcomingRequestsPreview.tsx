@@ -66,7 +66,11 @@ const REQUEST_TYPE_INFO: Record<string, { label: string; icon: typeof Clock; col
   }
 };
 
-export function UpcomingRequestsPreview() {
+interface UpcomingRequestsPreviewProps {
+  onViewRequest?: (requestId: string) => void;
+}
+
+export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPreviewProps) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayISO = today.toISOString().split('T')[0];
@@ -232,7 +236,11 @@ export function UpcomingRequestsPreview() {
                     
                     return (
                       <>
-                        <TableRow key={request.id} className={`h-20 ${rowHighlightClass}`}>
+                        <TableRow 
+                          key={request.id} 
+                          className={`h-20 cursor-pointer transition-colors ${rowHighlightClass}`}
+                          onClick={() => onViewRequest?.(request.id)}
+                        >
                           <TableCell className="font-medium py-4">
                             {getStaffName(request.user_id)}
                           </TableCell>
@@ -289,7 +297,8 @@ export function UpcomingRequestsPreview() {
                           return (
                             <TableRow 
                               key={cover.id} 
-                              className="h-20 bg-purple-50 dark:bg-purple-950/20 hover:bg-purple-100 dark:hover:bg-purple-950/40 border-l-4 border-purple-400"
+                              className="h-20 cursor-pointer transition-colors bg-purple-50 dark:bg-purple-950/20 hover:bg-purple-100 dark:hover:bg-purple-950/40 border-l-4 border-purple-400"
+                              onClick={() => onViewRequest?.(cover.id)}
                             >
                               <TableCell className="font-medium py-4">
                                 <div className="flex flex-col gap-1">

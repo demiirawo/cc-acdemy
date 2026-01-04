@@ -472,6 +472,7 @@ export function KnowledgeBaseApp() {
   const [createPageParentId, setCreatePageParentId] = useState<string | null>(null);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbData[]>([]);
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const navigate = useNavigate();
   const { pageId, viewName } = useParams();
   const {
@@ -1088,7 +1089,16 @@ export function KnowledgeBaseApp() {
           </div>
         </div>
 
-        {currentView === 'dashboard' && <RealDashboard onCreatePage={handleCreatePage} onPageSelect={handlePageSelect} />}
+        {currentView === 'dashboard' && <RealDashboard 
+          onCreatePage={handleCreatePage} 
+          onPageSelect={handlePageSelect} 
+          onViewRequest={(requestId) => {
+            setSelectedRequestId(requestId);
+            setCurrentView('schedule');
+            setSelectedItemId('schedule');
+            navigate('/view/schedule');
+          }}
+        />}
 
         
 
@@ -1113,7 +1123,10 @@ export function KnowledgeBaseApp() {
         )}
         {currentView === 'hr' && <HRSection />}
         {currentView === 'clients' && <ClientsSection />}
-        {currentView === 'schedule' && <SchedulePage />}
+        {currentView === 'schedule' && <SchedulePage 
+          initialRequestId={selectedRequestId} 
+          onRequestClosed={() => setSelectedRequestId(null)} 
+        />}
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePageSaved} />}
         
