@@ -1194,6 +1194,43 @@ export function StaffScheduleManager() {
     });
   };
 
+  // Check if the covered user has shifts on a specific day (for shift_swap filtering)
+  const doesCoveredUserHaveShiftsOnDay = (coveredUserId: string, day: Date) => {
+    // Check manual schedules
+    const hasManualSchedules = allSchedules.some(s => {
+      if (s.user_id !== coveredUserId) return false;
+      const scheduleDate = parseISO(s.start_datetime);
+      return format(scheduleDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd");
+    });
+    if (hasManualSchedules) return true;
+
+    // Check recurring patterns
+    const dayOfWeek = getDay(day);
+    const dateStr = format(day, "yyyy-MM-dd");
+    
+    const hasPatternShifts = recurringPatterns.some(pattern => {
+      if (pattern.user_id !== coveredUserId) return false;
+      const patternStartDate = parseISO(pattern.start_date);
+      const patternEndDate = pattern.end_date ? parseISO(pattern.end_date) : null;
+      
+      // Check date range
+      if (isBefore(day, patternStartDate)) return false;
+      if (patternEndDate && isAfter(day, patternEndDate)) return false;
+      
+      // Check if day matches pattern
+      if (pattern.recurrence_interval === 'daily') return true;
+      if (pattern.recurrence_interval === 'weekly') return pattern.days_of_week.includes(dayOfWeek);
+      if (pattern.recurrence_interval === 'biweekly') {
+        if (!pattern.days_of_week.includes(dayOfWeek)) return false;
+        const weeksDiff = differenceInWeeks(startOfWeek(day, { weekStartsOn: 1 }), startOfWeek(patternStartDate, { weekStartsOn: 1 }));
+        return weeksDiff % 2 === 0;
+      }
+      return false;
+    });
+    
+    return hasPatternShifts;
+  };
+
   const getRequestTypeInfo = (type: string, status: string) => {
     const isPending = status === 'pending';
     switch (type) {
@@ -2266,13 +2303,17 @@ export function StaffScheduleManager() {
                           </div>
                         ))}
 
-                        {/* Staff Requests - filter out holidays and overtime with linked holiday (already shown in covering section) */}
+                        {/* Staff Requests - filter out holidays, overtime with linked holiday, and shift_swap on days without shifts */}
                         {getRequestsForStaffDay(staff.user_id, day)
                           .filter(r => {
                             // Filter out holiday types
                             if (['holiday', 'holiday_paid', 'holiday_unpaid'].includes(r.request_type)) return false;
                             // Filter out overtime that's linked to a holiday (shown in "Covering" section)
                             if (['overtime', 'overtime_standard', 'overtime_double_up'].includes(r.request_type) && r.linked_holiday_id) return false;
+                            // Filter out shift_swap on days when the covered person has no shifts
+                            if (r.request_type === 'shift_swap' && r.swap_with_user_id) {
+                              if (!doesCoveredUserHaveShiftsOnDay(r.swap_with_user_id, day)) return false;
+                            }
                             return true;
                           })
                           .map(request => {
@@ -2299,7 +2340,12 @@ export function StaffScheduleManager() {
                             );
                           })}
 
-                        {!onHoliday && daySchedules.length === 0 && dayOvertime.length === 0 && getRequestsForStaffDay(staff.user_id, day).filter(r => !['holiday', 'holiday_paid', 'holiday_unpaid'].includes(r.request_type) && !(['overtime', 'overtime_standard', 'overtime_double_up'].includes(r.request_type) && r.linked_holiday_id)).length === 0 && !coveringFor?.length && (
+                        {!onHoliday && daySchedules.length === 0 && dayOvertime.length === 0 && getRequestsForStaffDay(staff.user_id, day).filter(r => {
+                          if (['holiday', 'holiday_paid', 'holiday_unpaid'].includes(r.request_type)) return false;
+                          if (['overtime', 'overtime_standard', 'overtime_double_up'].includes(r.request_type) && r.linked_holiday_id) return false;
+                          if (r.request_type === 'shift_swap' && r.swap_with_user_id && !doesCoveredUserHaveShiftsOnDay(r.swap_with_user_id, day)) return false;
+                          return true;
+                        }).length === 0 && !coveringFor?.length && (
                           <div className="text-xs text-muted-foreground italic flex items-center justify-center h-full">
                             No schedule
                           </div>
