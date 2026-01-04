@@ -9,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { CompanyNoticeboard } from "./CompanyNoticeboard";
-import { UpcomingStaffCards } from "./UpcomingStaffCards";
+import { UpcomingRequestsPreview } from "./UpcomingRequestsPreview";
 interface Page {
   id: string;
   title: string;
@@ -321,8 +321,8 @@ export function RealDashboard({
         {/* Company Noticeboard */}
         <CompanyNoticeboard />
 
-
-
+        {/* Upcoming Approved Requests */}
+        <UpcomingRequestsPreview />
       </div>
     </div>;
 }
