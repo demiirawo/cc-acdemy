@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Edit, UserCircle, AlertCircle, CheckCircle2, X, Info, Users, Trash2, Mail, Eye, BookOpen, TrendingUp, Clock, CheckCircle, Shield, FileCheck } from "lucide-react";
+import { Plus, Edit, UserCircle, CheckCircle2, X, Users, Trash2, Mail, Eye, BookOpen, Clock, CheckCircle, Shield, FileCheck } from "lucide-react";
 import { StaffDocumentationMatrix } from "./StaffDocumentationMatrix";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
