@@ -422,15 +422,15 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
+          <TabsTrigger value="approved" className="gap-2">
+            Approved
+            <Badge variant="outline" className="ml-1">{approvedCount}</Badge>
+          </TabsTrigger>
           <TabsTrigger value="pending" className="gap-2">
             Pending
             {pendingCount > 0 && (
               <Badge variant="secondary" className="ml-1">{pendingCount}</Badge>
             )}
-          </TabsTrigger>
-          <TabsTrigger value="approved" className="gap-2">
-            Approved
-            <Badge variant="outline" className="ml-1">{approvedCount}</Badge>
           </TabsTrigger>
           <TabsTrigger value="rejected" className="gap-2">
             Rejected
