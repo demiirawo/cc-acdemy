@@ -37,6 +37,8 @@ interface MonthlyPayPreview {
   }>;
   unusedHolidayPayout: number;
   unusedHolidayDays: number;
+  excessHolidayDeduction: number;
+  excessHolidayDays: number;
   totalPay: number;
   payrollStatus: 'pending' | 'ready' | 'paid';
   currency: string;
@@ -554,10 +556,12 @@ export function MyHRProfile() {
       // Overtime pay = 1.5 × daily rate × overtime days
       const overtimePay = 1.5 * dailyRate * overtimeDays;
       
-      // Calculate unused holiday payout for June (end of holiday year)
-      // Holiday year runs June 1 to May 31, so June payroll includes payout for unused days
+      // Calculate unused holiday payout or excess holiday deduction for June (end of holiday year)
+      // Holiday year runs June 1 to May 31, so June payroll includes payout for unused days or deduction for excess
       let unusedHolidayPayout = 0;
       let unusedHolidayDays = 0;
+      let excessHolidayDeduction = 0;
+      let excessHolidayDays = 0;
       const targetMonthNum = targetMonth.getMonth(); // 0-indexed, June = 5
       
       if (targetMonthNum === 5) { // June
@@ -576,12 +580,20 @@ export function MyHRProfile() {
         // Use the shared calculateHolidayAllowance function for consistency
         const { accruedAllowance } = calculateHolidayAllowance(hrProfile.start_date);
         
-        unusedHolidayDays = Math.max(0, accruedAllowance - holidaysTakenInYear);
-        // Unused holiday pay = Base Pay / 20 * unused days
-        unusedHolidayPayout = (monthlyBaseSalary / 20) * unusedHolidayDays;
+        const holidayBalance = accruedAllowance - holidaysTakenInYear;
+        
+        if (holidayBalance >= 0) {
+          // Staff has unused holidays - payout
+          unusedHolidayDays = holidayBalance;
+          unusedHolidayPayout = (monthlyBaseSalary / 20) * unusedHolidayDays;
+        } else {
+          // Staff has used more holidays than accrued - deduction required
+          excessHolidayDays = Math.abs(holidayBalance);
+          excessHolidayDeduction = (monthlyBaseSalary / 20) * excessHolidayDays;
+        }
       }
       
-      const totalPay = monthlyBaseSalary + bonuses + overtimePay + holidayOvertimeBonus + unusedHolidayPayout - deductions;
+      const totalPay = monthlyBaseSalary + bonuses + overtimePay + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction;
 
       // Determine payroll status
       let payrollStatus: 'pending' | 'ready' | 'paid' = 'pending';
@@ -610,6 +622,8 @@ export function MyHRProfile() {
         holidayShifts,
         unusedHolidayPayout,
         unusedHolidayDays,
+        excessHolidayDeduction,
+        excessHolidayDays,
         totalPay,
         payrollStatus,
         currency: hrProfile.base_currency
@@ -1022,6 +1036,11 @@ export function MyHRProfile() {
                                   {preview.unusedHolidayPayout > 0 && <div className="flex justify-between items-center py-2 border-b">
                                       <span className="text-muted-foreground">Unused Holiday Payout ({preview.unusedHolidayDays.toFixed(1)} days)</span>
                                       <span className="font-medium text-success">+{formatCurrency(preview.unusedHolidayPayout, preview.currency)}</span>
+                                    </div>}
+                                  
+                                  {preview.excessHolidayDeduction > 0 && <div className="flex justify-between items-center py-2 border-b">
+                                      <span className="text-muted-foreground">Excess Holiday Deduction ({preview.excessHolidayDays.toFixed(1)} days over allowance)</span>
+                                      <span className="font-medium text-destructive">-{formatCurrency(preview.excessHolidayDeduction, preview.currency)}</span>
                                     </div>}
                                   
                                   {preview.deductions > 0 && <div className="flex justify-between items-center py-2 border-b">
