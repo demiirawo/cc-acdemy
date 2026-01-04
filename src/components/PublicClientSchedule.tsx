@@ -106,7 +106,8 @@ const SHIFT_TYPES = [
   "Call Monitoring",
   "Supervisions",
   "Floating Support",
-  "General Admin"
+  "General Admin",
+  "Bench"
 ];
 
 const SHIFT_TYPE_COLORS: Record<string, { bg: string; border: string; text: string; badge: string }> = {
@@ -133,6 +134,12 @@ const SHIFT_TYPE_COLORS: Record<string, { bg: string; border: string; text: stri
     border: "border-sky-300", 
     text: "text-sky-900",
     badge: "bg-sky-500 text-white"
+  },
+  "Bench": { 
+    bg: "bg-amber-100", 
+    border: "border-amber-300", 
+    text: "text-amber-900",
+    badge: "bg-amber-500 text-white"
   },
   "default": { 
     bg: "bg-gray-100", 
@@ -196,6 +203,21 @@ export const PublicClientSchedule = () => {
     enabled: !!decodedClientName,
   });
 
+  // Fetch ALL schedules for the week (needed for bench calculation)
+  const { data: allStaffSchedules = [] } = useQuery({
+    queryKey: ["public-all-schedules", currentWeekStart.toISOString()],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff_schedules")
+        .select("id, user_id, client_name, start_datetime, end_datetime, notes, shift_type")
+        .gte("start_datetime", currentWeekStart.toISOString())
+        .lte("end_datetime", currentWeekEnd.toISOString());
+      
+      if (error) throw error;
+      return (data || []) as Schedule[];
+    },
+  });
+
   // Fetch recurring patterns for this client
   const { data: patterns = [], isLoading: patternsLoading } = useQuery({
     queryKey: ["public-client-patterns", decodedClientName],
@@ -209,6 +231,19 @@ export const PublicClientSchedule = () => {
       return (data || []) as RecurringPattern[];
     },
     enabled: !!decodedClientName,
+  });
+
+  // Fetch ALL recurring patterns (needed for bench calculation)
+  const { data: allPatterns = [] } = useQuery({
+    queryKey: ["public-all-patterns"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("recurring_shift_patterns")
+        .select("*");
+      
+      if (error) throw error;
+      return (data || []) as RecurringPattern[];
+    },
   });
 
   // Fetch staff profiles
@@ -452,10 +487,146 @@ export const PublicClientSchedule = () => {
     return virtualSchedules;
   }, [patterns, weekDays, schedules]);
 
-  // Combine manual and virtual schedules
+  // Generate virtual schedules from ALL patterns (for bench calculation)
+  const allVirtualSchedulesFromPatterns = useMemo(() => {
+    const virtualSchedules: Schedule[] = [];
+    
+    allPatterns.forEach(pattern => {
+      const patternStart = parseISO(pattern.start_date);
+      const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+      
+      weekDays.forEach(day => {
+        const dayOfWeek = getDay(day);
+        
+        if (!pattern.days_of_week.includes(dayOfWeek)) return;
+        if (isBefore(day, patternStart)) return;
+        if (patternEnd && isAfter(day, patternEnd)) return;
+        
+        if (pattern.recurrence_interval === 'biweekly') {
+          const weeksDiff = differenceInWeeks(day, patternStart);
+          if (weeksDiff % 2 !== 0) return;
+        } else if (pattern.recurrence_interval === 'monthly') {
+          const patternDayOfMonth = getDate(patternStart);
+          if (getDate(day) !== patternDayOfMonth) return;
+        }
+        
+        const dayStr = format(day, 'yyyy-MM-dd');
+        const hasManualSchedule = allStaffSchedules.some(s => {
+          const scheduleDate = format(parseISO(s.start_datetime), 'yyyy-MM-dd');
+          return scheduleDate === dayStr && s.user_id === pattern.user_id;
+        });
+        
+        if (hasManualSchedule) return;
+        
+        const startDatetime = parse(
+          `${dayStr} ${pattern.start_time}`,
+          'yyyy-MM-dd HH:mm:ss',
+          new Date()
+        );
+        const endDatetime = parse(
+          `${dayStr} ${pattern.end_time}`,
+          'yyyy-MM-dd HH:mm:ss',
+          new Date()
+        );
+        
+        virtualSchedules.push({
+          id: `pattern-${pattern.id}-${dayStr}`,
+          user_id: pattern.user_id,
+          client_name: pattern.client_name,
+          start_datetime: startDatetime.toISOString(),
+          end_datetime: endDatetime.toISOString(),
+          notes: pattern.notes,
+          shift_type: pattern.shift_type,
+          is_pattern_overtime: pattern.is_overtime,
+        });
+      });
+    });
+    
+    return virtualSchedules;
+  }, [allPatterns, weekDays, allStaffSchedules]);
+
+  // Combine manual and virtual schedules and generate bench schedules
   const allSchedules = useMemo(() => {
-    return [...schedules, ...virtualSchedulesFromPatterns];
-  }, [schedules, virtualSchedulesFromPatterns]);
+    const combinedSchedules = [...schedules, ...virtualSchedulesFromPatterns];
+    const benchSchedules: Schedule[] = [];
+    
+    // Only generate bench if viewing Care Cuddle
+    if (decodedClientName !== "Care Cuddle") {
+      return combinedSchedules;
+    }
+    
+    // All schedules across all clients (manual + pattern-based)
+    const allCombinedSchedules = [...allStaffSchedules, ...allVirtualSchedulesFromPatterns];
+    
+    // For each staff member, check if they have a full week without client assignment
+    staffMembers.forEach(staff => {
+      // Get weekdays only (Mon-Fri, indexes 1-5 in JS getDay)
+      const weekdaysDates = weekDays.filter(d => {
+        const dayOfWeek = getDay(d);
+        return dayOfWeek >= 1 && dayOfWeek <= 5;
+      });
+      
+      // Check if this staff has any schedule this week
+      const hasAnyScheduleThisWeek = weekdaysDates.some(day => {
+        const dayStr = format(day, 'yyyy-MM-dd');
+        return allCombinedSchedules.some(s => {
+          if (s.user_id !== staff.user_id) return false;
+          const scheduleDate = format(parseISO(s.start_datetime), 'yyyy-MM-dd');
+          return scheduleDate === dayStr;
+        });
+      });
+      
+      // Check if they're on holiday any day this week
+      const isOnHolidayAnyDay = weekdaysDates.some(day => {
+        return holidays.some(h => {
+          if (h.user_id !== staff.user_id) return false;
+          if (h.status !== 'approved') return false;
+          const start = startOfDay(parseISO(h.start_date));
+          const end = endOfDay(parseISO(h.end_date));
+          return isWithinInterval(day, { start, end });
+        });
+      });
+      
+      // Check if they're covering someone else's shift
+      const isCoveringAnyDay = weekdaysDates.some(day => {
+        return staffRequests.some(r => {
+          if (r.user_id !== staff.user_id) return false;
+          if (r.status !== 'approved') return false;
+          // Check shift_swap requests
+          if (r.request_type === 'shift_swap' && r.swap_with_user_id) {
+            const start = startOfDay(parseISO(r.start_date));
+            const end = endOfDay(parseISO(r.end_date));
+            return isWithinInterval(day, { start, end });
+          }
+          // Check overtime covering holiday
+          if (['overtime', 'overtime_standard', 'overtime_double_up'].includes(r.request_type) && r.linked_holiday_id) {
+            const start = startOfDay(parseISO(r.start_date));
+            const end = endOfDay(parseISO(r.end_date));
+            return isWithinInterval(day, { start, end });
+          }
+          return false;
+        });
+      });
+      
+      // If no schedules, not on holiday, and not covering anyone, add bench schedules
+      if (!hasAnyScheduleThisWeek && !isOnHolidayAnyDay && !isCoveringAnyDay) {
+        for (const day of weekdaysDates) {
+          const dateStr = format(day, "yyyy-MM-dd");
+          benchSchedules.push({
+            id: `bench-${staff.user_id}-${dateStr}`,
+            user_id: staff.user_id,
+            client_name: "Care Cuddle",
+            start_datetime: parse(`${dateStr} 09:00:00`, 'yyyy-MM-dd HH:mm:ss', new Date()).toISOString(),
+            end_datetime: parse(`${dateStr} 17:00:00`, 'yyyy-MM-dd HH:mm:ss', new Date()).toISOString(),
+            notes: "Default bench assignment",
+            shift_type: "Bench",
+          });
+        }
+      }
+    });
+    
+    return [...combinedSchedules, ...benchSchedules];
+  }, [schedules, virtualSchedulesFromPatterns, decodedClientName, allStaffSchedules, allVirtualSchedulesFromPatterns, staffMembers, weekDays, holidays, staffRequests]);
 
   const getSchedulesForDay = (day: Date) => {
     return allSchedules.filter(schedule => {
