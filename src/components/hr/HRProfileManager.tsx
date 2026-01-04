@@ -10,8 +10,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Edit, UserCircle, CheckCircle2, X, Users, Trash2, Mail, Eye, BookOpen, Clock, CheckCircle, Shield, FileCheck } from "lucide-react";
+import { Plus, Edit, UserCircle, CheckCircle2, X, Users, Trash2, Mail, Eye, BookOpen, Clock, CheckCircle, Shield, FileCheck, FileText, User, Phone, Home, CreditCard, Image as ImageIcon } from "lucide-react";
 import { StaffDocumentationMatrix } from "./StaffDocumentationMatrix";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
@@ -90,6 +93,27 @@ interface PageView {
   last_viewed: string;
 }
 
+interface OnboardingDocument {
+  user_id: string;
+  full_name: string | null;
+  date_of_birth: string | null;
+  phone_number: string | null;
+  personal_email: string | null;
+  address: string | null;
+  proof_of_id_1_path: string | null;
+  proof_of_id_1_type: string | null;
+  proof_of_id_2_path: string | null;
+  proof_of_id_2_type: string | null;
+  photograph_path: string | null;
+  bank_name: string | null;
+  account_number: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_relationship: string | null;
+  emergency_contact_phone: string | null;
+  emergency_contact_email: string | null;
+  form_status: string;
+}
+
 const CURRENCIES = [
   { code: 'GBP', name: 'British Pound', symbol: '£' },
   { code: 'USD', name: 'US Dollar', symbol: '$' },
@@ -138,6 +162,9 @@ export function HRProfileManager() {
   const [pageViewsDialogOpen, setPageViewsDialogOpen] = useState(false);
   const [pageViewsLoading, setPageViewsLoading] = useState(false);
   const [selectedProfileForViews, setSelectedProfileForViews] = useState<UserProfile | null>(null);
+  const [onboardingDocs, setOnboardingDocs] = useState<OnboardingDocument[]>([]);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewTitle, setPreviewTitle] = useState<string>('');
   
   const { toast } = useToast();
 
@@ -280,6 +307,14 @@ export function HRProfileManager() {
 
       if (clientsError) throw clientsError;
       setAllClients(clientsData || []);
+
+      // Fetch all onboarding documents
+      const { data: onboardingData, error: onboardingError } = await supabase
+        .from('staff_onboarding_documents')
+        .select('*');
+
+      if (onboardingError) throw onboardingError;
+      setOnboardingDocs(onboardingData || []);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast({
@@ -316,6 +351,27 @@ export function HRProfileManager() {
     return clientAssignments
       .filter(ca => ca.staff_user_id === userId)
       .map(ca => ca.client_name);
+  };
+
+  // Get onboarding document for a user
+  const getOnboardingDoc = (userId: string): OnboardingDocument | undefined => {
+    return onboardingDocs.find(doc => doc.user_id === userId);
+  };
+
+  // Get file URL from storage
+  const getFileUrl = (filePath: string | null): string | null => {
+    if (!filePath) return null;
+    const { data } = supabase.storage.from('onboarding-documents').getPublicUrl(filePath);
+    return data?.publicUrl || null;
+  };
+
+  const handleFileClick = (filePath: string | null, title: string) => {
+    if (!filePath) return;
+    const url = getFileUrl(filePath);
+    if (url) {
+      setPreviewImage(url);
+      setPreviewTitle(title);
+    }
   };
 
   const handleOpenDialog = (userProfile: UserProfile) => {
@@ -777,24 +833,21 @@ export function HRProfileManager() {
                     <TableHead>Staff Member</TableHead>
                     <TableHead>Employment Status</TableHead>
                     <TableHead>App Role</TableHead>
-                    <TableHead>Job Title</TableHead>
                     <TableHead>Scheduling</TableHead>
                     <TableHead>Clients</TableHead>
-                    <TableHead>Activity</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {userProfiles.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                         No staff members found.
                       </TableCell>
                     </TableRow>
                   ) : (
                     userProfiles.map(user => {
                       const hrProfile = getHRProfile(user.user_id);
-                      const hasHR = !!hrProfile;
                       const userClients = getClientsForUser(user.user_id);
                       const confirmStatus = getConfirmationStatus(user.email_confirmed_at);
                       const StatusIcon = confirmStatus.icon;
@@ -838,7 +891,6 @@ export function HRProfileManager() {
                               {user.role || 'viewer'}
                             </Badge>
                           </TableCell>
-                          <TableCell>{hrProfile?.job_title || '-'}</TableCell>
                           <TableCell>
                             {hrProfile?.scheduling_role === 'editor' ? (
                               <Badge variant="default" className="bg-primary text-primary-foreground">
@@ -867,33 +919,6 @@ export function HRProfileManager() {
                             ) : (
                               <span className="text-muted-foreground">-</span>
                             )}
-                          </TableCell>
-                          <TableCell>
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => {
-                                      setSelectedProfileForViews(user);
-                                      fetchUserPageViews(user.user_id);
-                                      setPageViewsDialogOpen(true);
-                                    }}
-                                    className="h-8 px-2"
-                                  >
-                                    <Eye className="h-3 w-3 mr-1" />
-                                    {user.total_pages_viewed || 0}
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>{user.unique_pages_viewed || 0} unique pages viewed</p>
-                                  {user.last_page_viewed && (
-                                    <p className="text-xs">Last: {user.last_page_viewed}</p>
-                                  )}
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1">
@@ -1021,7 +1046,7 @@ export function HRProfileManager() {
 
       {/* Edit Profile Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>
               {editingProfile ? 'Edit Staff Profile' : 'Set Up Staff Profile'}
@@ -1035,268 +1060,459 @@ export function HRProfileManager() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Display Name</Label>
-              <Input
-                value={formData.display_name}
-                onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
-                placeholder="How their name appears in the system"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Employee ID</Label>
-                <Input
-                  value={formData.employee_id}
-                  onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
-                  placeholder="EMP001"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Job Title</Label>
-                <Input
-                  value={formData.job_title}
-                  onChange={(e) => setFormData({ ...formData, job_title: e.target.value })}
-                  placeholder="Care Assistant"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                <Shield className="h-4 w-4" />
-                Application Role
-              </Label>
-              <Select
-                value={formData.app_role}
-                onValueChange={(value) => setFormData({ ...formData, app_role: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {APP_ROLES.map(role => (
-                    <SelectItem key={role.value} value={role.value}>
-                      <div className="flex flex-col">
-                        <span>{role.label}</span>
-                        <span className="text-xs text-muted-foreground">{role.description}</span>
+          <ScrollArea className="flex-1 pr-4">
+            <div className="space-y-6 py-4">
+              {/* Onboarding Documents View (Read-only) */}
+              {selectedUserId && (() => {
+                const onboardingDoc = getOnboardingDoc(selectedUserId);
+                if (!onboardingDoc) return null;
+                
+                return (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-primary" />
+                      <h3 className="font-semibold">Onboarding Documents</h3>
+                      <Badge variant={onboardingDoc.form_status === 'complete' ? 'default' : 'secondary'}>
+                        {onboardingDoc.form_status === 'complete' ? 'Complete' : 'In Progress'}
+                      </Badge>
+                    </div>
+                    
+                    {/* Photo and ID Documents */}
+                    <div className="grid grid-cols-3 gap-4">
+                      {/* Photograph */}
+                      <Card className="p-3">
+                        <Label className="text-xs text-muted-foreground">Photograph</Label>
+                        {onboardingDoc.photograph_path ? (
+                          <button
+                            onClick={() => handleFileClick(onboardingDoc.photograph_path, 'Photograph')}
+                            className="mt-2 w-full aspect-square rounded-lg overflow-hidden border bg-muted hover:opacity-80 transition-opacity"
+                          >
+                            <img 
+                              src={getFileUrl(onboardingDoc.photograph_path) || ''} 
+                              alt="Staff photograph"
+                              className="w-full h-full object-cover"
+                            />
+                          </button>
+                        ) : (
+                          <div className="mt-2 w-full aspect-square rounded-lg border bg-muted flex items-center justify-center">
+                            <User className="h-8 w-8 text-muted-foreground" />
+                          </div>
+                        )}
+                      </Card>
+                      
+                      {/* ID Document 1 */}
+                      <Card className="p-3">
+                        <Label className="text-xs text-muted-foreground">ID Document 1</Label>
+                        <p className="text-xs font-medium truncate mt-1">{onboardingDoc.proof_of_id_1_type || 'Not specified'}</p>
+                        {onboardingDoc.proof_of_id_1_path ? (
+                          <button
+                            onClick={() => handleFileClick(onboardingDoc.proof_of_id_1_path, 'ID Document 1')}
+                            className="mt-2 w-full aspect-video rounded-lg overflow-hidden border bg-muted hover:opacity-80 transition-opacity"
+                          >
+                            {onboardingDoc.proof_of_id_1_path.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                              <img 
+                                src={getFileUrl(onboardingDoc.proof_of_id_1_path) || ''} 
+                                alt="ID Document 1"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <FileText className="h-8 w-8 text-muted-foreground" />
+                              </div>
+                            )}
+                          </button>
+                        ) : (
+                          <div className="mt-2 w-full aspect-video rounded-lg border bg-muted flex items-center justify-center">
+                            <Clock className="h-6 w-6 text-muted-foreground" />
+                          </div>
+                        )}
+                      </Card>
+                      
+                      {/* ID Document 2 */}
+                      <Card className="p-3">
+                        <Label className="text-xs text-muted-foreground">ID Document 2</Label>
+                        <p className="text-xs font-medium truncate mt-1">{onboardingDoc.proof_of_id_2_type || 'Not specified'}</p>
+                        {onboardingDoc.proof_of_id_2_path ? (
+                          <button
+                            onClick={() => handleFileClick(onboardingDoc.proof_of_id_2_path, 'ID Document 2')}
+                            className="mt-2 w-full aspect-video rounded-lg overflow-hidden border bg-muted hover:opacity-80 transition-opacity"
+                          >
+                            {onboardingDoc.proof_of_id_2_path.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                              <img 
+                                src={getFileUrl(onboardingDoc.proof_of_id_2_path) || ''} 
+                                alt="ID Document 2"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                <FileText className="h-8 w-8 text-muted-foreground" />
+                              </div>
+                            )}
+                          </button>
+                        ) : (
+                          <div className="mt-2 w-full aspect-video rounded-lg border bg-muted flex items-center justify-center">
+                            <Clock className="h-6 w-6 text-muted-foreground" />
+                          </div>
+                        )}
+                      </Card>
+                    </div>
+                    
+                    {/* Personal Details */}
+                    <Card className="p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <User className="h-4 w-4 text-primary" />
+                        <h4 className="font-medium text-sm">Personal Details</h4>
                       </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Controls access to knowledge base features. Admins have full access.
-              </p>
-            </div>
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">Full Name:</span>
+                          <p className="font-medium">{onboardingDoc.full_name || '-'}</p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Date of Birth:</span>
+                          <p className="font-medium">
+                            {onboardingDoc.date_of_birth 
+                              ? format(new Date(onboardingDoc.date_of_birth), 'dd MMM yyyy')
+                              : '-'}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Phone:</span>
+                          <p className="font-medium">{onboardingDoc.phone_number || '-'}</p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Personal Email:</span>
+                          <p className="font-medium">{onboardingDoc.personal_email || '-'}</p>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-muted-foreground">Address:</span>
+                          <p className="font-medium">{onboardingDoc.address || '-'}</p>
+                        </div>
+                      </div>
+                    </Card>
+                    
+                    {/* Bank & Emergency Contact */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <Card className="p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <CreditCard className="h-4 w-4 text-primary" />
+                          <h4 className="font-medium text-sm">Bank Details</h4>
+                        </div>
+                        <div className="space-y-2 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Bank Name:</span>
+                            <p className="font-medium">{onboardingDoc.bank_name || '-'}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Account Number:</span>
+                            <p className="font-medium">{onboardingDoc.account_number || '-'}</p>
+                          </div>
+                        </div>
+                      </Card>
+                      
+                      <Card className="p-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Phone className="h-4 w-4 text-primary" />
+                          <h4 className="font-medium text-sm">Emergency Contact</h4>
+                        </div>
+                        <div className="space-y-2 text-sm">
+                          <div>
+                            <span className="text-muted-foreground">Name:</span>
+                            <p className="font-medium">{onboardingDoc.emergency_contact_name || '-'}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Relationship:</span>
+                            <p className="font-medium">{onboardingDoc.emergency_contact_relationship || '-'}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Phone:</span>
+                            <p className="font-medium">{onboardingDoc.emergency_contact_phone || '-'}</p>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Email:</span>
+                            <p className="font-medium">{onboardingDoc.emergency_contact_email || '-'}</p>
+                          </div>
+                        </div>
+                      </Card>
+                    </div>
+                    
+                    <Separator />
+                  </div>
+                );
+              })()}
 
-            <div className="space-y-2">
-              <Label>Employment Status</Label>
-              <Select
-                value={formData.employment_status}
-                onValueChange={(value) => setFormData({ ...formData, employment_status: value as EmploymentStatus })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {EMPLOYMENT_STATUSES.map(status => (
-                    <SelectItem key={status.value} value={status.value}>
-                      <span>{status.label}</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Staff in onboarding statuses appear in the onboarding matrix.
-              </p>
-            </div>
+              {/* Editable HR Profile Settings */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-primary" />
+                  <h3 className="font-semibold">HR Settings</h3>
+                </div>
 
-            <div className="space-y-2">
-              <Label>Scheduling Role</Label>
-              <Select
-                value={formData.scheduling_role}
-                onValueChange={(value) => setFormData({ ...formData, scheduling_role: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {SCHEDULING_ROLES.map(role => (
-                    <SelectItem key={role.value} value={role.value}>
-                      <span>{role.label}</span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                Controls access to schedule management for assigned clients.
-              </p>
-            </div>
+                <div className="space-y-2">
+                  <Label>Display Name</Label>
+                  <Input
+                    value={formData.display_name}
+                    onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
+                    placeholder="How their name appears in the system"
+                  />
+                </div>
 
-            <div className="space-y-2">
-              <Label>Assigned Clients</Label>
-              
-              {allClients.filter(c => !staffClients.includes(c.name)).length > 0 && (
-                <Select
-                  value={selectedClient}
-                  onValueChange={handleSelectClient}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select existing client..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allClients
-                      .filter(c => !staffClients.includes(c.name))
-                      .map(client => (
-                        <SelectItem key={client.id} value={client.name}>
-                          {client.name}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Employee ID</Label>
+                    <Input
+                      value={formData.employee_id}
+                      onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
+                      placeholder="EMP001"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Job Title</Label>
+                    <Input
+                      value={formData.job_title}
+                      onChange={(e) => setFormData({ ...formData, job_title: e.target.value })}
+                      placeholder="Care Assistant"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Application Role</Label>
+                    <Select
+                      value={formData.app_role}
+                      onValueChange={(value) => setFormData({ ...formData, app_role: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {APP_ROLES.map(role => (
+                          <SelectItem key={role.value} value={role.value}>
+                            {role.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label>Employment Status</Label>
+                    <Select
+                      value={formData.employment_status}
+                      onValueChange={(value) => setFormData({ ...formData, employment_status: value as EmploymentStatus })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EMPLOYMENT_STATUSES.map(status => (
+                          <SelectItem key={status.value} value={status.value}>
+                            {status.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Scheduling Role</Label>
+                  <Select
+                    value={formData.scheduling_role}
+                    onValueChange={(value) => setFormData({ ...formData, scheduling_role: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SCHEDULING_ROLES.map(role => (
+                        <SelectItem key={role.value} value={role.value}>
+                          {role.label}
                         </SelectItem>
                       ))}
-                  </SelectContent>
-                </Select>
-              )}
-              
-              <div className="flex gap-2">
-                <Input
-                  value={newClientName}
-                  onChange={(e) => setNewClientName(e.target.value)}
-                  placeholder="Or add new client..."
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddClient();
-                    }
-                  }}
-                />
-                <Button type="button" variant="secondary" onClick={() => handleAddClient()}>
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
-              
-              {staffClients.length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {staffClients.map((client, idx) => (
-                    <Badge key={idx} variant="secondary" className="flex items-center gap-1 pr-1">
-                      {client}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveClient(client)}
-                        className="ml-1 rounded-full hover:bg-destructive/20 p-0.5"
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    </Badge>
-                  ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
-            </div>
 
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Base Salary</Label>
-                <Input
-                  type="number"
-                  value={formData.base_salary}
-                  onChange={(e) => setFormData({ ...formData, base_salary: parseFloat(e.target.value) || 0 })}
-                  placeholder="0.00"
-                  step="0.01"
-                  min="0"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Currency</Label>
-                <Select
-                  value={formData.base_currency}
-                  onValueChange={(value) => setFormData({ ...formData, base_currency: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CURRENCIES.map(currency => (
-                      <SelectItem key={currency.code} value={currency.code}>
-                        {currency.symbol} {currency.code}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Pay Frequency</Label>
-                <Select
-                  value={formData.pay_frequency}
-                  onValueChange={(value) => setFormData({ ...formData, pay_frequency: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PAY_FREQUENCIES.map(freq => (
-                      <SelectItem key={freq.value} value={freq.value}>
-                        {freq.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Start Date</Label>
-              <Input
-                type="date"
-                value={formData.start_date}
-                onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-              />
-              <p className="text-xs text-muted-foreground">
-                Holiday allowance is automatically calculated based on start date
-              </p>
-            </div>
-
-            {formData.start_date && (
-              <Card className="bg-muted/50">
-                <CardContent className="p-3">
-                  <div className="text-sm space-y-1">
-                    {(() => {
-                      const allowanceInfo = calculateHolidayAllowance(formData.start_date);
-                      return (
-                        <>
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Annual Allowance:</span>
-                            <span className="font-medium">{allowanceInfo.annualAllowance} days</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Accrued to date:</span>
-                            <span className="font-medium">{allowanceInfo.accruedAllowance} days</span>
-                          </div>
-                        </>
-                      );
-                    })()}
+                <div className="space-y-2">
+                  <Label>Assigned Clients</Label>
+                  
+                  {allClients.filter(c => !staffClients.includes(c.name)).length > 0 && (
+                    <Select
+                      value={selectedClient}
+                      onValueChange={handleSelectClient}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select existing client..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allClients
+                          .filter(c => !staffClients.includes(c.name))
+                          .map(client => (
+                            <SelectItem key={client.id} value={client.name}>
+                              {client.name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  
+                  <div className="flex gap-2">
+                    <Input
+                      value={newClientName}
+                      onChange={(e) => setNewClientName(e.target.value)}
+                      placeholder="Or add new client..."
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddClient();
+                        }
+                      }}
+                    />
+                    <Button type="button" variant="secondary" onClick={() => handleAddClient()}>
+                      <Plus className="h-4 w-4" />
+                    </Button>
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                  
+                  {staffClients.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {staffClients.map((client, idx) => (
+                        <Badge key={idx} variant="secondary" className="flex items-center gap-1 pr-1">
+                          {client}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveClient(client)}
+                            className="ml-1 rounded-full hover:bg-destructive/20 p-0.5"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
-            <div className="space-y-2">
-              <Label>Notes</Label>
-              <Textarea
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                placeholder="Additional notes..."
-                rows={3}
-              />
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Base Salary</Label>
+                    <Input
+                      type="number"
+                      value={formData.base_salary}
+                      onChange={(e) => setFormData({ ...formData, base_salary: parseFloat(e.target.value) || 0 })}
+                      placeholder="0.00"
+                      step="0.01"
+                      min="0"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Currency</Label>
+                    <Select
+                      value={formData.base_currency}
+                      onValueChange={(value) => setFormData({ ...formData, base_currency: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CURRENCIES.map(currency => (
+                          <SelectItem key={currency.code} value={currency.code}>
+                            {currency.symbol} {currency.code}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Pay Frequency</Label>
+                    <Select
+                      value={formData.pay_frequency}
+                      onValueChange={(value) => setFormData({ ...formData, pay_frequency: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PAY_FREQUENCIES.map(freq => (
+                          <SelectItem key={freq.value} value={freq.value}>
+                            {freq.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Start Date</Label>
+                  <Input
+                    type="date"
+                    value={formData.start_date}
+                    onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                  />
+                </div>
+
+                {formData.start_date && (
+                  <Card className="bg-muted/50">
+                    <CardContent className="p-3">
+                      <div className="text-sm space-y-1">
+                        {(() => {
+                          const allowanceInfo = calculateHolidayAllowance(formData.start_date);
+                          return (
+                            <>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Annual Allowance:</span>
+                                <span className="font-medium">{allowanceInfo.annualAllowance} days</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Accrued to date:</span>
+                                <span className="font-medium">{allowanceInfo.accruedAllowance} days</span>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <div className="space-y-2">
+                  <Label>Notes</Label>
+                  <Textarea
+                    value={formData.notes}
+                    onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                    placeholder="Additional notes..."
+                    rows={3}
+                  />
+                </div>
+              </div>
             </div>
-          </div>
+          </ScrollArea>
 
-          <DialogFooter>
+          <DialogFooter className="pt-4 border-t">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleSave}>
               {editingProfile ? 'Update' : 'Create'} Profile
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Preview Dialog */}
+      <Dialog open={!!previewImage} onOpenChange={() => setPreviewImage(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{previewTitle}</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center justify-center">
+            {previewImage && (
+              <img 
+                src={previewImage} 
+                alt={previewTitle}
+                className="max-w-full max-h-[70vh] object-contain rounded-lg"
+              />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
