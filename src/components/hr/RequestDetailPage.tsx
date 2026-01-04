@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { 
   ArrowLeft, Check, X, Clock, Palmtree, RefreshCw, Bell, BellOff, 
-  Copy, Calendar, User, FileText, CheckCircle2, AlertCircle, Trash2
+  Copy, Calendar, User, FileText, CheckCircle2, AlertCircle, Trash2, Pencil
 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -73,6 +73,8 @@ export function RequestDetailPage({ requestId, onBack }: RequestDetailPageProps)
   const queryClient = useQueryClient();
   const [reviewNotes, setReviewNotes] = useState("");
   const [emailCopied, setEmailCopied] = useState(false);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [detailsValue, setDetailsValue] = useState("");
 
   // Fetch the specific request
   const { data: request, isLoading } = useQuery({
@@ -147,6 +149,7 @@ export function RequestDetailPage({ requestId, onBack }: RequestDetailPageProps)
   useEffect(() => {
     if (request) {
       setReviewNotes(request.review_notes || "");
+      setDetailsValue(request.details || "");
     }
   }, [request]);
 
@@ -177,6 +180,27 @@ export function RequestDetailPage({ requestId, onBack }: RequestDetailPageProps)
     },
     onError: (error) => {
       toast.error("Failed to update: " + error.message);
+    }
+  });
+
+  // Update details mutation
+  const updateDetailsMutation = useMutation({
+    mutationFn: async (newDetails: string) => {
+      const { error } = await supabase
+        .from("staff_requests")
+        .update({ details: newDetails || null })
+        .eq("id", requestId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["staff-request", requestId] });
+      queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
+      toast.success("Details updated");
+      setEditingDetails(false);
+    },
+    onError: (error) => {
+      toast.error("Failed to update details: " + error.message);
     }
   });
 
@@ -394,15 +418,56 @@ Care Cuddle Team`;
                 </div>
               </div>
 
-              {request.details && (
-                <>
-                  <Separator />
-                  <div>
-                    <Label className="text-muted-foreground text-sm">Additional Details</Label>
-                    <p className="mt-2 p-4 bg-muted rounded-lg">{request.details}</p>
+              <Separator />
+              <div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-muted-foreground text-sm">Additional Details</Label>
+                  {!editingDetails && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => setEditingDetails(true)}
+                      className="h-8"
+                    >
+                      <Pencil className="h-3 w-3 mr-1" />
+                      Edit
+                    </Button>
+                  )}
+                </div>
+                {editingDetails ? (
+                  <div className="mt-2 space-y-2">
+                    <Textarea
+                      value={detailsValue}
+                      onChange={(e) => setDetailsValue(e.target.value)}
+                      placeholder="Add additional details..."
+                      className="min-h-[100px]"
+                    />
+                    <div className="flex gap-2">
+                      <Button 
+                        size="sm" 
+                        onClick={() => updateDetailsMutation.mutate(detailsValue)}
+                        disabled={updateDetailsMutation.isPending}
+                      >
+                        {updateDetailsMutation.isPending ? "Saving..." : "Save"}
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => {
+                          setDetailsValue(request.details || "");
+                          setEditingDetails(false);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
                   </div>
-                </>
-              )}
+                ) : (
+                  <p className="mt-2 p-4 bg-muted rounded-lg">
+                    {request.details || <span className="text-muted-foreground italic">No additional details</span>}
+                  </p>
+                )}
+              </div>
 
               {/* Assigned Clients */}
               {clientAssignments.length > 0 && (
