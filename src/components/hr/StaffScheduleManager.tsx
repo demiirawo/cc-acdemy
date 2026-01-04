@@ -107,7 +107,8 @@ const SHIFT_TYPES = [
   "Call Monitoring",
   "Supervisions",
   "Floating Support",
-  "General Admin"
+  "General Admin",
+  "Bench"
 ];
 
 const SHIFT_TYPE_COLORS: Record<string, { bg: string; border: string; text: string; badge: string }> = {
@@ -134,6 +135,12 @@ const SHIFT_TYPE_COLORS: Record<string, { bg: string; border: string; text: stri
     border: "border-sky-300", 
     text: "text-sky-900",
     badge: "bg-sky-500 text-white"
+  },
+  "Bench": { 
+    bg: "bg-amber-100", 
+    border: "border-amber-300", 
+    text: "text-amber-900",
+    badge: "bg-amber-500 text-white"
   },
   "default": { 
     bg: "bg-gray-100", 
@@ -528,7 +535,7 @@ export function StaffScheduleManager() {
     return virtualSchedules;
   }, [recurringPatterns, weekDays, shiftExceptions]);
 
-  // Combine real schedules with virtual ones from patterns
+  // Combine real schedules with virtual ones from patterns and add bench schedules
   const allSchedules = useMemo(() => {
     // Filter out duplicates - if there's a real schedule at the same time, use that
     const realScheduleKeys = new Set(
@@ -540,8 +547,60 @@ export function StaffScheduleManager() {
       return !realScheduleKeys.has(key);
     });
     
-    return [...schedules, ...uniqueVirtual];
-  }, [schedules, virtualSchedulesFromPatterns]);
+    const combinedSchedules = [...schedules, ...uniqueVirtual];
+    
+    // Generate bench schedules for staff with no assignments for full weeks (Mon-Fri)
+    const benchSchedules: Schedule[] = [];
+    const weekdaysDates = weekDays.filter(day => {
+      const dayOfWeek = getDay(day);
+      return dayOfWeek >= 1 && dayOfWeek <= 5; // Monday = 1, Friday = 5
+    });
+    
+    // Only proceed if we have a full Mon-Fri week
+    if (weekdaysDates.length === 5) {
+      for (const staff of staffMembers) {
+        // Check if staff has NO schedules at all for any weekday this week
+        const hasAnyScheduleThisWeek = weekdaysDates.some(day => {
+          const dateStr = format(day, "yyyy-MM-dd");
+          return combinedSchedules.some(s => {
+            if (s.user_id !== staff.user_id) return false;
+            const scheduleDate = format(parseISO(s.start_datetime), "yyyy-MM-dd");
+            return scheduleDate === dateStr;
+          });
+        });
+        
+        // Also check if they're on holiday any day this week
+        const isOnHolidayAnyDay = weekdaysDates.some(day => {
+          return holidays.some(h => {
+            if (h.user_id !== staff.user_id) return false;
+            const start = startOfDay(parseISO(h.start_date));
+            const end = endOfDay(parseISO(h.end_date));
+            return isWithinInterval(day, { start, end });
+          });
+        });
+        
+        // If no schedules and not on holiday, add bench schedules for Mon-Fri 9-5
+        if (!hasAnyScheduleThisWeek && !isOnHolidayAnyDay) {
+          for (const day of weekdaysDates) {
+            const dateStr = format(day, "yyyy-MM-dd");
+            benchSchedules.push({
+              id: `bench-${staff.user_id}-${dateStr}`,
+              user_id: staff.user_id,
+              client_name: "Care Cuddle",
+              start_datetime: `${dateStr}T09:00:00`,
+              end_datetime: `${dateStr}T17:00:00`,
+              notes: "Default bench assignment",
+              hourly_rate: null,
+              currency: "GBP",
+              shift_type: "Bench"
+            });
+          }
+        }
+      }
+    }
+    
+    return [...combinedSchedules, ...benchSchedules];
+  }, [schedules, virtualSchedulesFromPatterns, staffMembers, weekDays, holidays]);
 
   // Get unique clients from schedules (sorted alphabetically)
   const uniqueClients = useMemo(() => {
