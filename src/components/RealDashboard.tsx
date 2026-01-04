@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { CompanyNoticeboard } from "./CompanyNoticeboard";
+import { UpcomingStaffCards } from "./UpcomingStaffCards";
 interface Page {
   id: string;
   title: string;
@@ -316,6 +317,9 @@ export function RealDashboard({
               </div>}
           </div>
         </div>
+
+        {/* Upcoming Staff Cards */}
+        <UpcomingStaffCards />
 
         {/* Company Noticeboard */}
         <CompanyNoticeboard />
