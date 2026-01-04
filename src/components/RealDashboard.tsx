@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useUserRole } from "@/hooks/useUserRole";
 import { CompanyNoticeboard } from "./CompanyNoticeboard";
 import { UpcomingRequestsPreview } from "./UpcomingRequestsPreview";
 import { UpcomingBirthdaysCard } from "./UpcomingBirthdaysCard";
@@ -57,6 +58,7 @@ export function RealDashboard({
   const {
     toast
   } = useToast();
+  const { isAdmin } = useUserRole();
 
   // Utility function to strip HTML tags and get clean text, excluding bold content
   const stripHtmlTags = (html: string): string => {
@@ -325,8 +327,8 @@ export function RealDashboard({
         {/* Company Noticeboard */}
         <CompanyNoticeboard />
 
-        {/* Upcoming Approved Requests */}
-        <UpcomingRequestsPreview onViewRequest={onViewRequest} />
+        {/* Upcoming Approved Requests - Admin only */}
+        {isAdmin && <UpcomingRequestsPreview onViewRequest={onViewRequest} />}
 
         {/* Birthdays and Anniversaries */}
         <div className="flex gap-6 mb-6">
