@@ -481,10 +481,17 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                           const coveredStaff = getCoveredStaffInfo(request.linked_holiday_id);
                           const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
                           
+                          // Determine row highlighting for holiday requests
+                          const rowHighlightClass = isHolidayRequest 
+                            ? request.client_informed 
+                              ? 'bg-blue-100 dark:bg-blue-950/30 hover:bg-blue-200 dark:hover:bg-blue-950/50' 
+                              : 'bg-red-100 dark:bg-red-950/30 hover:bg-red-200 dark:hover:bg-red-950/50'
+                            : 'hover:bg-muted/50';
+                          
                           return (
                             <TableRow 
                               key={request.id} 
-                              className="h-20 cursor-pointer hover:bg-muted/50 transition-colors"
+                              className={`h-20 cursor-pointer transition-colors ${rowHighlightClass}`}
                               onClick={() => onViewRequest ? onViewRequest(request.id) : openReviewDialog(request)}
                             >
                               <TableCell className="font-medium py-4">
