@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Check, X, Clock, Palmtree, RefreshCw, Eye, Trash2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Check, X, Clock, Palmtree, RefreshCw, Eye, Trash2, ChevronLeft, ChevronRight, Bell, BellOff } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -32,6 +33,7 @@ interface StaffRequest {
   created_at: string;
   linked_holiday_id: string | null;
   overtime_type: 'standard_hours' | 'outside_hours' | null;
+  client_informed: boolean;
 }
 
 interface UserProfile {
@@ -100,6 +102,8 @@ export function StaffRequestsManager() {
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [selectedRequest, setSelectedRequest] = useState<StaffRequest | null>(null);
   const [reviewNotes, setReviewNotes] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
 
   // Fetch all staff requests
   const { data: requests = [], isLoading } = useQuery({
@@ -328,9 +332,41 @@ export function StaffRequestsManager() {
     return r.status === activeTab;
   });
 
+  // Pagination
+  const totalPages = Math.ceil(filteredRequests.length / ITEMS_PER_PAGE);
+  const paginatedRequests = filteredRequests.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
+
+  // Reset to page 1 when tab changes
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    setCurrentPage(1);
+  };
+
   const pendingCount = requests.filter(r => r.status === 'pending').length;
   const approvedCount = requests.filter(r => r.status === 'approved').length;
   const rejectedCount = requests.filter(r => r.status === 'rejected').length;
+
+  // Client informed mutation
+  const clientInformedMutation = useMutation({
+    mutationFn: async ({ requestId, informed }: { requestId: string; informed: boolean }) => {
+      const { error } = await supabase
+        .from("staff_requests")
+        .update({ client_informed: informed })
+        .eq("id", requestId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
+      toast.success("Client notification status updated");
+    },
+    onError: (error) => {
+      toast.error("Failed to update: " + error.message);
+    }
+  });
 
   if (isLoading) {
     return (
@@ -356,7 +392,7 @@ export function StaffRequestsManager() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="pending" className="gap-2">
             Pending
@@ -383,44 +419,47 @@ export function StaffRequestsManager() {
                   <TableRow>
                     <TableHead>Staff Member</TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead>Start Date</TableHead>
-                    <TableHead>End Date</TableHead>
+                    <TableHead>Dates</TableHead>
                     <TableHead>Days</TableHead>
                     <TableHead>Details</TableHead>
+                    <TableHead>Client Notified</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Submitted</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredRequests.length === 0 ? (
+                  {paginatedRequests.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                         No {activeTab === "all" ? "" : activeTab} requests found.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredRequests.map(request => {
+                    paginatedRequests.map(request => {
                       const typeInfo = REQUEST_TYPE_INFO[request.request_type];
                       const Icon = typeInfo?.icon || Clock;
                       const coveredStaff = getCoveredStaffInfo(request.linked_holiday_id);
+                      const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
                       
                       return (
-                        <TableRow key={request.id}>
-                          <TableCell className="font-medium">
-                            {getStaffName(request.user_id)}
-                            {request.request_type === 'shift_swap' && request.swap_with_user_id && (
-                              <div className="text-xs text-muted-foreground">
-                                ↔ {getStaffName(request.swap_with_user_id)}
-                              </div>
-                            )}
-                            {request.request_type === 'overtime' && coveredStaff && (
-                              <div className="text-xs text-muted-foreground">
-                                Covering: {coveredStaff.staffName}
-                              </div>
-                            )}
+                        <TableRow key={request.id} className="h-20">
+                          <TableCell className="font-medium py-4">
+                            <div className="flex flex-col gap-1">
+                              <span>{getStaffName(request.user_id)}</span>
+                              {request.request_type === 'shift_swap' && request.swap_with_user_id && (
+                                <span className="text-xs text-muted-foreground">
+                                  ↔ {getStaffName(request.swap_with_user_id)}
+                                </span>
+                              )}
+                              {request.request_type === 'overtime' && coveredStaff && (
+                                <span className="text-xs text-muted-foreground">
+                                  Covering: {coveredStaff.staffName}
+                                </span>
+                              )}
+                            </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="py-4">
                             <div className="flex flex-col gap-1">
                               <div className="flex items-center gap-2">
                                 <Icon className={`h-4 w-4 ${typeInfo?.color || ''}`} />
@@ -433,31 +472,61 @@ export function StaffRequestsManager() {
                               )}
                             </div>
                           </TableCell>
-                          <TableCell>{format(new Date(request.start_date), 'dd MMM yyyy')}</TableCell>
-                          <TableCell>{format(new Date(request.end_date), 'dd MMM yyyy')}</TableCell>
-                          <TableCell>{request.days_requested}</TableCell>
-                          <TableCell className="max-w-[250px]">
+                          <TableCell className="py-4">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-sm">{format(new Date(request.start_date), 'dd MMM yyyy')}</span>
+                              <span className="text-xs text-muted-foreground">to {format(new Date(request.end_date), 'dd MMM yyyy')}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-4">{request.days_requested}</TableCell>
+                          <TableCell className="max-w-[200px] py-4">
                             {request.request_type === 'overtime' && coveredStaff ? (
                               <div className="text-xs">
                                 <div className="font-medium">{coveredStaff.staffName}'s {coveredStaff.absenceType}</div>
                                 <div className="text-muted-foreground">
                                   {format(new Date(coveredStaff.startDate), 'dd MMM')} – {format(new Date(coveredStaff.endDate), 'dd MMM')}
                                 </div>
-                                {request.details && <div className="text-muted-foreground mt-1 break-words whitespace-normal">{request.details}</div>}
+                                {request.details && <div className="text-muted-foreground mt-1 break-words whitespace-normal line-clamp-2">{request.details}</div>}
                               </div>
                             ) : (
-                              <span className="block break-words whitespace-normal text-sm" title={request.details || ''}>{request.details || '-'}</span>
+                              <span className="block break-words whitespace-normal text-sm line-clamp-2" title={request.details || ''}>{request.details || '-'}</span>
                             )}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="py-4">
+                            {isHolidayRequest ? (
+                              <div className="flex items-center gap-2">
+                                <Checkbox
+                                  checked={(request as any).client_informed || false}
+                                  onCheckedChange={(checked) => 
+                                    clientInformedMutation.mutate({ requestId: request.id, informed: !!checked })
+                                  }
+                                  disabled={clientInformedMutation.isPending}
+                                />
+                                <span className="text-xs text-muted-foreground">
+                                  {(request as any).client_informed ? (
+                                    <span className="flex items-center gap-1 text-green-600">
+                                      <Bell className="h-3 w-3" /> Informed
+                                    </span>
+                                  ) : (
+                                    <span className="flex items-center gap-1 text-amber-600">
+                                      <BellOff className="h-3 w-3" /> Not yet
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">N/A</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-4">
                             <Badge variant="outline" className={STATUS_COLORS[request.status] || ''}>
                               {request.status}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-sm text-muted-foreground">
+                          <TableCell className="text-sm text-muted-foreground py-4">
                             {format(new Date(request.created_at), 'dd MMM yyyy')}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="py-4">
                             <div className="flex gap-1">
                               {request.status === 'pending' ? (
                                 <Button
@@ -498,6 +567,38 @@ export function StaffRequestsManager() {
                 </TableBody>
               </Table>
             </CardContent>
+            
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t">
+                <div className="text-sm text-muted-foreground">
+                  Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1} to {Math.min(currentPage * ITEMS_PER_PAGE, filteredRequests.length)} of {filteredRequests.length} requests
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                    Previous
+                  </Button>
+                  <span className="text-sm text-muted-foreground">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                  >
+                    Next
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </Card>
         </TabsContent>
       </Tabs>
@@ -565,6 +666,35 @@ export function StaffRequestsManager() {
                 <div>
                   <Label className="text-muted-foreground">Details</Label>
                   <p className="text-sm mt-1 p-3 bg-muted rounded-md">{selectedRequest.details}</p>
+                </div>
+              )}
+
+              {/* Client Informed checkbox for holiday requests */}
+              {['holiday', 'holiday_paid', 'holiday_unpaid'].includes(selectedRequest.request_type) && (
+                <div className="p-4 border rounded-md bg-muted/50">
+                  <div className="flex items-center gap-3">
+                    <Checkbox
+                      id="client-informed"
+                      checked={(selectedRequest as any).client_informed || false}
+                      onCheckedChange={(checked) => 
+                        clientInformedMutation.mutate({ requestId: selectedRequest.id, informed: !!checked })
+                      }
+                      disabled={clientInformedMutation.isPending}
+                    />
+                    <div className="flex-1">
+                      <Label htmlFor="client-informed" className="font-medium cursor-pointer">
+                        Client has been informed of this holiday
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Check this box once you have notified the relevant client(s) about this staff member's time off
+                      </p>
+                    </div>
+                    {(selectedRequest as any).client_informed ? (
+                      <Bell className="h-5 w-5 text-green-600" />
+                    ) : (
+                      <BellOff className="h-5 w-5 text-amber-600" />
+                    )}
+                  </div>
                 </div>
               )}
 
