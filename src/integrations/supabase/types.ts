@@ -1443,6 +1443,84 @@ export type Database = {
         }
         Relationships: []
       }
+      staff_onboarding_documents: {
+        Row: {
+          account_number: string | null
+          address: string | null
+          bank_name: string | null
+          created_at: string
+          date_of_birth: string | null
+          emergency_contact_email: string | null
+          emergency_contact_name: string | null
+          emergency_contact_phone: string | null
+          emergency_contact_relationship: string | null
+          employment_start_date: string | null
+          form_status: string
+          full_name: string | null
+          id: string
+          personal_email: string | null
+          phone_number: string | null
+          photograph_path: string | null
+          proof_of_id_1_path: string | null
+          proof_of_id_1_type: string | null
+          proof_of_id_2_path: string | null
+          proof_of_id_2_type: string | null
+          submitted_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_number?: string | null
+          address?: string | null
+          bank_name?: string | null
+          created_at?: string
+          date_of_birth?: string | null
+          emergency_contact_email?: string | null
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          emergency_contact_relationship?: string | null
+          employment_start_date?: string | null
+          form_status?: string
+          full_name?: string | null
+          id?: string
+          personal_email?: string | null
+          phone_number?: string | null
+          photograph_path?: string | null
+          proof_of_id_1_path?: string | null
+          proof_of_id_1_type?: string | null
+          proof_of_id_2_path?: string | null
+          proof_of_id_2_type?: string | null
+          submitted_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_number?: string | null
+          address?: string | null
+          bank_name?: string | null
+          created_at?: string
+          date_of_birth?: string | null
+          emergency_contact_email?: string | null
+          emergency_contact_name?: string | null
+          emergency_contact_phone?: string | null
+          emergency_contact_relationship?: string | null
+          employment_start_date?: string | null
+          form_status?: string
+          full_name?: string | null
+          id?: string
+          personal_email?: string | null
+          phone_number?: string | null
+          photograph_path?: string | null
+          proof_of_id_1_path?: string | null
+          proof_of_id_1_type?: string | null
+          proof_of_id_2_path?: string | null
+          proof_of_id_2_type?: string | null
+          submitted_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       staff_overtime: {
         Row: {
           created_at: string

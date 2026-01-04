@@ -8,7 +8,8 @@ import { StaffScheduleManager } from "./StaffScheduleManager";
 import { StaffRequestForm } from "./StaffRequestForm";
 import { StaffRequestsManager } from "./StaffRequestsManager";
 import { OnboardingManager } from "./OnboardingManager";
-import { CalendarClock, DollarSign, Users, User, Send, ClipboardList, GraduationCap } from "lucide-react";
+import { StaffOnboardingForm } from "./StaffOnboardingForm";
+import { CalendarClock, DollarSign, Users, User, Send, ClipboardList, GraduationCap, FileText } from "lucide-react";
 
 export function HRSection() {
   const { isAdmin } = useUserRole();
@@ -25,7 +26,7 @@ export function HRSection() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: isAdmin ? 'repeat(7, 1fr)' : 'repeat(4, 1fr)' }}>
+          <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: isAdmin ? 'repeat(8, 1fr)' : 'repeat(5, 1fr)' }}>
             {isAdmin && (
               <>
                 <TabsTrigger value="profiles" className="flex items-center gap-2">
@@ -53,6 +54,10 @@ export function HRSection() {
             <TabsTrigger value="onboarding" className="flex items-center gap-2">
               <GraduationCap className="h-4 w-4" />
               Onboarding
+            </TabsTrigger>
+            <TabsTrigger value="onboarding-form" className="flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              Onboarding Form
             </TabsTrigger>
             <TabsTrigger value="my-requests" className="flex items-center gap-2">
               <Send className="h-4 w-4" />
@@ -89,6 +94,10 @@ export function HRSection() {
           
           <TabsContent value="onboarding" className="mt-0">
             <OnboardingManager />
+          </TabsContent>
+          
+          <TabsContent value="onboarding-form" className="mt-0">
+            <StaffOnboardingForm />
           </TabsContent>
           
           <TabsContent value="my-requests" className="mt-0">
