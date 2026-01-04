@@ -22,6 +22,7 @@ interface Holiday {
   days_taken: number;
   status: string;
   notes: string | null;
+  no_cover_required: boolean;
   approved_by: string | null;
   approved_at: string | null;
   created_at: string;
@@ -145,12 +146,22 @@ const STATUS_COLORS: Record<string, string> = {
   rejected: 'bg-destructive/20 text-destructive border-destructive',
 };
 
+type FilterType = 'all' | 'approved' | 'pending' | 'shift_cover' | 'no_cover';
+
+interface ShiftCoverRequest {
+  holiday_id: string;
+  cover_user_id: string;
+  cover_user_name: string;
+}
+
 export function StaffHolidaysManager() {
-  const [holidays, setHolidays] = useState<(Holiday & { user?: UserProfile; hrProfile?: HRProfile })[]>([]);
+  const [holidays, setHolidays] = useState<(Holiday & { user?: UserProfile; hrProfile?: HRProfile; hasCover?: boolean })[]>([]);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
   const [hrProfiles, setHRProfiles] = useState<HRProfile[]>([]);
+  const [shiftCoverMap, setShiftCoverMap] = useState<Map<string, ShiftCoverRequest>>(new Map());
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [filter, setFilter] = useState<FilterType>('all');
   const { toast } = useToast();
 
   const [formData, setFormData] = useState({
@@ -189,10 +200,34 @@ export function StaffHolidaysManager() {
 
       if (holidayError) throw holidayError;
 
+      // Fetch shift cover requests (shift_swap requests linked to holidays)
+      const { data: shiftCoverData, error: shiftCoverError } = await supabase
+        .from('staff_requests')
+        .select('*')
+        .eq('request_type', 'shift_swap')
+        .not('linked_holiday_id', 'is', null);
+
+      if (shiftCoverError) throw shiftCoverError;
+
+      // Build map of holiday_id -> cover info
+      const coverMap = new Map<string, ShiftCoverRequest>();
+      (shiftCoverData || []).forEach(req => {
+        if (req.linked_holiday_id && req.user_id) {
+          const coverUser = users?.find(u => u.user_id === req.user_id);
+          coverMap.set(req.linked_holiday_id, {
+            holiday_id: req.linked_holiday_id,
+            cover_user_id: req.user_id,
+            cover_user_name: coverUser?.display_name || coverUser?.email || 'Unknown'
+          });
+        }
+      });
+      setShiftCoverMap(coverMap);
+
       const mergedHolidays = (holidayData || []).map(h => ({
         ...h,
         user: users?.find(u => u.user_id === h.user_id),
-        hrProfile: hrData?.find(hr => hr.user_id === h.user_id)
+        hrProfile: hrData?.find(hr => hr.user_id === h.user_id),
+        hasCover: coverMap.has(h.id)
       }));
 
       setHolidays(mergedHolidays);
@@ -312,6 +347,30 @@ export function StaffHolidaysManager() {
     );
   }
 
+  // Filter holidays based on selected filter
+  const filteredHolidays = holidays.filter(holiday => {
+    switch (filter) {
+      case 'approved':
+        return holiday.status === 'approved';
+      case 'pending':
+        return holiday.status === 'pending';
+      case 'shift_cover':
+        return holiday.hasCover;
+      case 'no_cover':
+        return holiday.status === 'approved' && !holiday.hasCover && !holiday.no_cover_required;
+      default:
+        return true;
+    }
+  });
+
+  const FILTER_OPTIONS = [
+    { value: 'all', label: 'All' },
+    { value: 'approved', label: 'Holidays (Approved)' },
+    { value: 'pending', label: 'Holiday Requests' },
+    { value: 'shift_cover', label: 'Shift Cover' },
+    { value: 'no_cover', label: 'Holidays (No Cover)' },
+  ];
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -320,6 +379,20 @@ export function StaffHolidaysManager() {
           <Plus className="h-4 w-4 mr-2" />
           Record Absence
         </Button>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Label className="text-sm font-medium">Filter:</Label>
+        <Select value={filter} onValueChange={(v) => setFilter(v as FilterType)}>
+          <SelectTrigger className="w-[200px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {FILTER_OPTIONS.map(opt => (
+              <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <Card>
@@ -333,59 +406,74 @@ export function StaffHolidaysManager() {
                 <TableHead>End Date</TableHead>
                 <TableHead>Days</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead>Cover</TableHead>
                 <TableHead>Notes</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {holidays.length === 0 ? (
+              {filteredHolidays.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                     No holiday/absence records found.
                   </TableCell>
                 </TableRow>
               ) : (
-                holidays.map(holiday => (
-                  <TableRow key={holiday.id}>
-                    <TableCell className="font-medium">
-                      {holiday.user?.display_name || holiday.user?.email || 'Unknown'}
-                    </TableCell>
-                    <TableCell className="capitalize">
-                      {ABSENCE_TYPES.find(t => t.value === holiday.absence_type)?.label || holiday.absence_type}
-                    </TableCell>
-                    <TableCell>{format(new Date(holiday.start_date), 'dd MMM yyyy')}</TableCell>
-                    <TableCell>{format(new Date(holiday.end_date), 'dd MMM yyyy')}</TableCell>
-                    <TableCell>{holiday.days_taken}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={STATUS_COLORS[holiday.status] || ''}>
-                        {holiday.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="max-w-[200px] truncate">{holiday.notes || '-'}</TableCell>
-                    <TableCell>
-                      {holiday.status === 'pending' && (
-                        <div className="flex gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleUpdateStatus(holiday.id, 'approved')}
-                            className="text-success hover:text-success"
-                          >
-                            <Check className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleUpdateStatus(holiday.id, 'rejected')}
-                            className="text-destructive hover:text-destructive"
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
+                filteredHolidays.map(holiday => {
+                  const coverInfo = shiftCoverMap.get(holiday.id);
+                  return (
+                    <TableRow key={holiday.id}>
+                      <TableCell className="font-medium">
+                        {holiday.user?.display_name || holiday.user?.email || 'Unknown'}
+                      </TableCell>
+                      <TableCell className="capitalize">
+                        {ABSENCE_TYPES.find(t => t.value === holiday.absence_type)?.label || holiday.absence_type}
+                      </TableCell>
+                      <TableCell>{format(new Date(holiday.start_date), 'dd MMM yyyy')}</TableCell>
+                      <TableCell>{format(new Date(holiday.end_date), 'dd MMM yyyy')}</TableCell>
+                      <TableCell>{holiday.days_taken}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={STATUS_COLORS[holiday.status] || ''}>
+                          {holiday.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {coverInfo ? (
+                          <Badge variant="outline" className="bg-primary/10 text-primary border-primary">
+                            {coverInfo.cover_user_name}
+                          </Badge>
+                        ) : holiday.no_cover_required ? (
+                          <span className="text-xs text-muted-foreground">Not required</span>
+                        ) : (
+                          <span className="text-xs text-warning">No cover</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate">{holiday.notes || '-'}</TableCell>
+                      <TableCell>
+                        {holiday.status === 'pending' && (
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleUpdateStatus(holiday.id, 'approved')}
+                              className="text-success hover:text-success"
+                            >
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleUpdateStatus(holiday.id, 'rejected')}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
