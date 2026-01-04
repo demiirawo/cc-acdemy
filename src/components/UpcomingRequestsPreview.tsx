@@ -79,7 +79,7 @@ export function UpcomingRequestsPreview() {
         .from("staff_requests")
         .select("*")
         .eq("status", "approved")
-        .order("start_date", { ascending: true });
+        .order("start_date", { ascending: false });
       
       if (error) throw error;
       return data as StaffRequest[];
