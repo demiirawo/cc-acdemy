@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Clock, Palmtree, RefreshCw, Calendar, Bell, BellOff } from "lucide-react";
-import { format, addDays, isWithinInterval, parseISO } from "date-fns";
+import { format, addDays, parseISO } from "date-fns";
 
 type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
 
@@ -104,16 +104,16 @@ export function UpcomingRequestsPreview() {
     return profile?.display_name || profile?.email || "Unknown";
   };
 
-  // Filter requests to only show those in the next 30 days
+  // Filter requests: end date must be today or later, and start date must be within 30 days
   const upcomingRequests = requests.filter(request => {
     const startDate = parseISO(request.start_date);
     const endDate = parseISO(request.end_date);
     
-    return (
-      isWithinInterval(startDate, { start: today, end: thirtyDaysFromNow }) ||
-      isWithinInterval(endDate, { start: today, end: thirtyDaysFromNow }) ||
-      (startDate <= today && endDate >= today)
-    );
+    // End date must be today or in the future
+    if (endDate < today) return false;
+    
+    // Start date must be within the next 30 days OR already started (ongoing)
+    return startDate <= thirtyDaysFromNow;
   });
 
   // Helper to find cover requests for a holiday
