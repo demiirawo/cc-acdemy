@@ -4,11 +4,27 @@ import { useUserRole } from "@/hooks/useUserRole";
 import { StaffScheduleManager } from "./hr/StaffScheduleManager";
 import { StaffRequestForm } from "./hr/StaffRequestForm";
 import { StaffRequestsManager } from "./hr/StaffRequestsManager";
+import { RequestDetailPage } from "./hr/RequestDetailPage";
 import { Calendar, Send, ClipboardList } from "lucide-react";
 
 export function SchedulePage() {
   const { isAdmin } = useUserRole();
   const [activeTab, setActiveTab] = useState("schedule");
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+
+  // If a request is selected, show the detail page
+  if (selectedRequestId) {
+    return (
+      <div className="flex-1 overflow-auto p-6">
+        <div className="max-w-7xl mx-auto">
+          <RequestDetailPage 
+            requestId={selectedRequestId} 
+            onBack={() => setSelectedRequestId(null)} 
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 overflow-auto p-6">
@@ -44,7 +60,7 @@ export function SchedulePage() {
 
           {isAdmin && (
             <TabsContent value="requests" className="mt-0">
-              <StaffRequestsManager />
+              <StaffRequestsManager onViewRequest={(id) => setSelectedRequestId(id)} />
             </TabsContent>
           )}
 
