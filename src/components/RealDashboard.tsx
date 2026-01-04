@@ -10,6 +10,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { CompanyNoticeboard } from "./CompanyNoticeboard";
 import { UpcomingRequestsPreview } from "./UpcomingRequestsPreview";
+import { UpcomingBirthdaysCard } from "./UpcomingBirthdaysCard";
+import { UpcomingAnniversariesCard } from "./UpcomingAnniversariesCard";
 interface Page {
   id: string;
   title: string;
@@ -323,6 +325,12 @@ export function RealDashboard({
 
         {/* Upcoming Approved Requests */}
         <UpcomingRequestsPreview />
+
+        {/* Birthdays and Anniversaries */}
+        <div className="flex gap-6 mb-6">
+          <UpcomingBirthdaysCard />
+          <UpcomingAnniversariesCard />
+        </div>
       </div>
     </div>;
 }
