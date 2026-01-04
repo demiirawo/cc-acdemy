@@ -447,7 +447,11 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                       const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
                       
                       return (
-                        <TableRow key={request.id} className="h-20">
+                        <TableRow 
+                          key={request.id} 
+                          className="h-20 cursor-pointer hover:bg-muted/50 transition-colors"
+                          onClick={() => onViewRequest ? onViewRequest(request.id) : openReviewDialog(request)}
+                        >
                           <TableCell className="font-medium py-4">
                             <div className="flex flex-col gap-1">
                               <span>{getStaffName(request.user_id)}</span>
@@ -496,7 +500,7 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                               <span className="block break-words whitespace-normal text-sm line-clamp-2" title={request.details || ''}>{request.details || '-'}</span>
                             )}
                           </TableCell>
-                          <TableCell className="py-4">
+                          <TableCell className="py-4" onClick={(e) => e.stopPropagation()}>
                             {isHolidayRequest ? (
                               <div className="flex items-center gap-2">
                                 <Checkbox
@@ -530,37 +534,22 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                           <TableCell className="text-sm text-muted-foreground py-4">
                             {format(new Date(request.created_at), 'dd MMM yyyy')}
                           </TableCell>
-                          <TableCell className="py-4">
+                          <TableCell className="py-4" onClick={(e) => e.stopPropagation()}>
                             <div className="flex gap-1">
                               {request.status === 'pending' ? (
+                                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                                  Pending Review
+                                </Badge>
+                              ) : (
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => onViewRequest ? onViewRequest(request.id) : openReviewDialog(request)}
-                                  className="text-primary hover:text-primary"
+                                  onClick={() => deleteMutation.mutate(request.id)}
+                                  className="text-destructive hover:text-destructive"
+                                  disabled={deleteMutation.isPending}
                                 >
-                                  <Eye className="h-4 w-4 mr-1" />
-                                  Review
+                                  <Trash2 className="h-4 w-4" />
                                 </Button>
-                              ) : (
-                                <>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => onViewRequest ? onViewRequest(request.id) : openReviewDialog(request)}
-                                  >
-                                    <Eye className="h-4 w-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => deleteMutation.mutate(request.id)}
-                                    className="text-destructive hover:text-destructive"
-                                    disabled={deleteMutation.isPending}
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </>
                               )}
                             </div>
                           </TableCell>
