@@ -690,9 +690,11 @@ export function StaffPayManager() {
       // Total overtime = manual records + calculated from requests
       const overtime = overtimeManualRecords + calculatedOvertimePay;
       
-      // Calculate unused holiday payout for June (end of holiday year: June 1 - May 31)
+      // Calculate unused holiday payout or excess holiday deduction for June (end of holiday year: June 1 - May 31)
       let unusedHolidayPayout = 0;
       let unusedHolidayDays = 0;
+      let excessHolidayDeduction = 0;
+      let excessHolidayDays = 0;
       const selectedMonthNum = selectedMonth.getMonth(); // 0-indexed, June = 5
       
       if (selectedMonthNum === 5) { // June
@@ -716,15 +718,27 @@ export function StaffPayManager() {
         // Calculate accrued allowance using the same logic as StaffHolidaysManager
         const { accruedAllowance } = calculateHolidayAllowance(employeeStartDateStr);
         
-        unusedHolidayDays = Math.max(0, accruedAllowance - userHolidaysTaken);
+        const holidayBalance = accruedAllowance - userHolidaysTaken;
         
-        // Unused holiday pay = Base Pay / 20 * unused days
-        unusedHolidayPayout = (monthlyBaseSalary / 20) * unusedHolidayDays;
+        if (holidayBalance >= 0) {
+          // Staff has unused holidays - payout
+          unusedHolidayDays = holidayBalance;
+          unusedHolidayPayout = (monthlyBaseSalary / 20) * unusedHolidayDays;
+        } else {
+          // Staff has used more holidays than accrued - deduction required
+          excessHolidayDays = Math.abs(holidayBalance);
+          excessHolidayDeduction = (monthlyBaseSalary / 20) * excessHolidayDays;
+        }
       }
       
-      // Total pay now includes holiday overtime bonus, calculated overtime pay, and unused holiday payout
-      const totalPay = monthlyBaseSalary + bonuses + overtime + expenses + holidayOvertimeBonus + unusedHolidayPayout - deductions;
+      // Total pay now includes holiday overtime bonus, calculated overtime pay, unused holiday payout, and excess holiday deduction
+      const totalPay = monthlyBaseSalary + bonuses + overtime + expenses + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction;
       const hasSalaryRecord = salaryRecords.length > 0;
+      
+      // Check if excess holiday deduction already exists for this month
+      const hasExcessHolidayDeduction = deductionRecords.some(r => 
+        r.description?.includes('Excess holiday deduction')
+      );
       
       // Convert total pay to GBP for aggregation
       const totalPayInGBP = convertToGBP(totalPay, hr.base_currency);
@@ -748,6 +762,9 @@ export function StaffPayManager() {
         holidayShifts,
         unusedHolidayPayout,
         unusedHolidayDays,
+        excessHolidayDeduction,
+        excessHolidayDays,
+        hasExcessHolidayDeduction,
         totalPay,
         totalPayInGBP,
         hasSalaryRecord,
@@ -834,23 +851,43 @@ export function StaffPayManager() {
       const payPeriodStart = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
       const payPeriodEnd = payDate;
 
-      const { error } = await supabase
-        .from('staff_pay_records')
-        .insert([{
+      const recordsToInsert: any[] = [{
+        user_id: userId,
+        record_type: 'salary' as any,
+        amount: staff.baseSalary,
+        currency: staff.currency,
+        description: `Monthly salary for ${format(selectedMonth, 'MMMM yyyy')}`,
+        pay_date: payDate,
+        pay_period_start: payPeriodStart,
+        pay_period_end: payPeriodEnd,
+        created_by: user?.id!
+      }];
+
+      // Auto-create excess holiday deduction in June if applicable
+      if (staff.excessHolidayDeduction > 0 && !staff.hasExcessHolidayDeduction) {
+        recordsToInsert.push({
           user_id: userId,
-          record_type: 'salary' as any,
-          amount: staff.baseSalary,
+          record_type: 'deduction' as any,
+          amount: staff.excessHolidayDeduction,
           currency: staff.currency,
-          description: `Monthly salary for ${format(selectedMonth, 'MMMM yyyy')}`,
+          description: `Excess holiday deduction: ${staff.excessHolidayDays} days over accrued allowance`,
           pay_date: payDate,
           pay_period_start: payPeriodStart,
           pay_period_end: payPeriodEnd,
           created_by: user?.id!
-        }]);
+        });
+      }
+
+      const { error } = await supabase
+        .from('staff_pay_records')
+        .insert(recordsToInsert);
 
       if (error) throw error;
 
-      toast({ title: "Success", description: `Salary recorded for ${staff.displayName}` });
+      const message = staff.excessHolidayDeduction > 0 && !staff.hasExcessHolidayDeduction
+        ? `Salary and excess holiday deduction recorded for ${staff.displayName}`
+        : `Salary recorded for ${staff.displayName}`;
+      toast({ title: "Success", description: message });
       fetchData();
     } catch (error: any) {
       console.error('Error running payroll:', error);
@@ -1608,6 +1645,15 @@ export function StaffPayManager() {
                             </span>
                             <span className="text-[10px] text-muted-foreground">
                               {staff.unusedHolidayDays.toFixed(1)} day{staff.unusedHolidayDays !== 1 ? 's' : ''} unused
+                            </span>
+                          </div>
+                        ) : staff.excessHolidayDeduction > 0 ? (
+                          <div className="flex flex-col items-end">
+                            <span className="text-destructive">
+                              -{formatCurrency(staff.excessHolidayDeduction, staff.currency)}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {staff.excessHolidayDays.toFixed(1)} day{staff.excessHolidayDays !== 1 ? 's' : ''} over allowance
                             </span>
                           </div>
                         ) : '-'}
