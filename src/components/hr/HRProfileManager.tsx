@@ -10,7 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Edit, UserCircle, AlertCircle, CheckCircle2, X, Info, Users, Trash2, Mail, Eye, BookOpen, TrendingUp, Clock, CheckCircle, Shield } from "lucide-react";
+import { Plus, Edit, UserCircle, AlertCircle, CheckCircle2, X, Info, Users, Trash2, Mail, Eye, BookOpen, TrendingUp, Clock, CheckCircle, Shield, FileCheck } from "lucide-react";
+import { StaffDocumentationMatrix } from "./StaffDocumentationMatrix";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
@@ -757,6 +758,10 @@ export function HRProfileManager() {
             <Users className="h-4 w-4" />
             Staff Members
           </TabsTrigger>
+          <TabsTrigger value="matrix" className="flex items-center gap-2">
+            <FileCheck className="h-4 w-4" />
+            Documentation Matrix
+          </TabsTrigger>
           <TabsTrigger value="exceptions" className="flex items-center gap-2">
             <Mail className="h-4 w-4" />
             Email Exceptions
@@ -913,6 +918,10 @@ export function HRProfileManager() {
               </Table>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="matrix" className="space-y-4">
+          <StaffDocumentationMatrix />
         </TabsContent>
 
         <TabsContent value="exceptions" className="space-y-4">
