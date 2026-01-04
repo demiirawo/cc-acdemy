@@ -504,6 +504,40 @@ export function HRProfileManager() {
     }
   };
 
+  const handleQuickStatusChange = async (userId: string, newStatus: EmploymentStatus, existingProfile: HRProfile | undefined) => {
+    try {
+      if (existingProfile) {
+        // Update existing HR profile
+        const { error } = await supabase
+          .from('hr_profiles')
+          .update({ employment_status: newStatus })
+          .eq('id', existingProfile.id);
+
+        if (error) throw error;
+      } else {
+        // Create new HR profile with the status
+        const { error } = await supabase
+          .from('hr_profiles')
+          .insert({
+            user_id: userId,
+            employment_status: newStatus
+          });
+
+        if (error) throw error;
+      }
+
+      toast({ title: "Success", description: "Employment status updated" });
+      fetchData();
+    } catch (error: any) {
+      console.error('Error updating status:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update status",
+        variant: "destructive"
+      });
+    }
+  };
+
   const deleteUser = async (userId: string) => {
     if (!confirm("Are you sure you want to completely delete this user? This will remove them from the system entirely and cannot be undone.")) {
       return;
@@ -736,7 +770,7 @@ export function HRProfileManager() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Staff Member</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Employment Status</TableHead>
                     <TableHead>App Role</TableHead>
                     <TableHead>Job Title</TableHead>
                     <TableHead>Scheduling</TableHead>
@@ -777,17 +811,21 @@ export function HRProfileManager() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {hasHR ? (
-                              <Badge variant="outline" className="bg-success/20 text-success border-success">
-                                <CheckCircle2 className="h-3 w-3 mr-1" />
-                                Configured
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="bg-warning/20 text-warning-foreground border-warning">
-                                <AlertCircle className="h-3 w-3 mr-1" />
-                                Not Set Up
-                              </Badge>
-                            )}
+                            <Select
+                              value={hrProfile?.employment_status || 'onboarding_probation'}
+                              onValueChange={(value) => handleQuickStatusChange(user.user_id, value as EmploymentStatus, hrProfile)}
+                            >
+                              <SelectTrigger className="w-[180px] h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {EMPLOYMENT_STATUSES.map(status => (
+                                  <SelectItem key={status.value} value={status.value}>
+                                    <span className="text-xs">{status.label}</span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </TableCell>
                           <TableCell>
                             <Badge variant={getRoleBadgeVariant(user.role)}>
