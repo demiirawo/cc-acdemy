@@ -1069,192 +1069,207 @@ export function HRProfileManager() {
               {/* Onboarding Documents View (Read-only) */}
               {selectedUserId && (() => {
                 const onboardingDoc = getOnboardingDoc(selectedUserId);
-                if (!onboardingDoc) return null;
                 
                 return (
                   <div className="space-y-4">
                     <div className="flex items-center gap-2">
                       <FileText className="h-5 w-5 text-primary" />
                       <h3 className="font-semibold">Onboarding Documents</h3>
-                      <Badge variant={onboardingDoc.form_status === 'complete' ? 'default' : 'secondary'}>
-                        {onboardingDoc.form_status === 'complete' ? 'Complete' : 'In Progress'}
-                      </Badge>
+                      {onboardingDoc ? (
+                        <Badge variant={onboardingDoc.form_status === 'complete' ? 'default' : 'secondary'}>
+                          {onboardingDoc.form_status === 'complete' ? 'Complete' : 'In Progress'}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline">No Record</Badge>
+                      )}
                     </div>
                     
-                    {/* Photo and ID Documents */}
-                    <div className="grid grid-cols-3 gap-4">
-                      {/* Photograph */}
-                      <Card className="p-3">
-                        <Label className="text-xs text-muted-foreground">Photograph</Label>
-                        {onboardingDoc.photograph_path ? (
-                          <button
-                            onClick={() => handleFileClick(onboardingDoc.photograph_path, 'Photograph')}
-                            className="mt-2 w-full aspect-square rounded-lg overflow-hidden border bg-muted hover:opacity-80 transition-opacity"
-                          >
-                            <img 
-                              src={getFileUrl(onboardingDoc.photograph_path) || ''} 
-                              alt="Staff photograph"
-                              className="w-full h-full object-cover"
-                            />
-                          </button>
-                        ) : (
-                          <div className="mt-2 w-full aspect-square rounded-lg border bg-muted flex items-center justify-center">
-                            <User className="h-8 w-8 text-muted-foreground" />
-                          </div>
-                        )}
+                    {!onboardingDoc ? (
+                      <Card className="p-6">
+                        <div className="flex flex-col items-center justify-center text-center py-4">
+                          <FileText className="h-12 w-12 text-muted-foreground mb-3" />
+                          <p className="text-muted-foreground">No onboarding documentation on record for this staff member.</p>
+                          <p className="text-xs text-muted-foreground mt-1">They can complete their onboarding form in the HR section.</p>
+                        </div>
                       </Card>
-                      
-                      {/* ID Document 1 */}
-                      <Card className="p-3">
-                        <Label className="text-xs text-muted-foreground">ID Document 1</Label>
-                        <p className="text-xs font-medium truncate mt-1">{onboardingDoc.proof_of_id_1_type || 'Not specified'}</p>
-                        {onboardingDoc.proof_of_id_1_path ? (
-                          <button
-                            onClick={() => handleFileClick(onboardingDoc.proof_of_id_1_path, 'ID Document 1')}
-                            className="mt-2 w-full aspect-video rounded-lg overflow-hidden border bg-muted hover:opacity-80 transition-opacity"
-                          >
-                            {onboardingDoc.proof_of_id_1_path.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                              <img 
-                                src={getFileUrl(onboardingDoc.proof_of_id_1_path) || ''} 
-                                alt="ID Document 1"
-                                className="w-full h-full object-cover"
-                              />
+                    ) : (
+                      <>
+                        {/* Photo and ID Documents */}
+                        <div className="grid grid-cols-3 gap-4">
+                          {/* Photograph */}
+                          <Card className="p-3">
+                            <Label className="text-xs text-muted-foreground">Photograph</Label>
+                            {onboardingDoc.photograph_path ? (
+                              <button
+                                onClick={() => handleFileClick(onboardingDoc.photograph_path, 'Photograph')}
+                                className="mt-2 w-full aspect-square rounded-lg overflow-hidden border bg-muted hover:opacity-80 transition-opacity"
+                              >
+                                <img 
+                                  src={getFileUrl(onboardingDoc.photograph_path) || ''} 
+                                  alt="Staff photograph"
+                                  className="w-full h-full object-cover"
+                                />
+                              </button>
                             ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <FileText className="h-8 w-8 text-muted-foreground" />
+                              <div className="mt-2 w-full aspect-square rounded-lg border bg-muted flex items-center justify-center">
+                                <User className="h-8 w-8 text-muted-foreground" />
                               </div>
                             )}
-                          </button>
-                        ) : (
-                          <div className="mt-2 w-full aspect-video rounded-lg border bg-muted flex items-center justify-center">
-                            <Clock className="h-6 w-6 text-muted-foreground" />
-                          </div>
-                        )}
-                      </Card>
-                      
-                      {/* ID Document 2 */}
-                      <Card className="p-3">
-                        <Label className="text-xs text-muted-foreground">ID Document 2</Label>
-                        <p className="text-xs font-medium truncate mt-1">{onboardingDoc.proof_of_id_2_type || 'Not specified'}</p>
-                        {onboardingDoc.proof_of_id_2_path ? (
-                          <button
-                            onClick={() => handleFileClick(onboardingDoc.proof_of_id_2_path, 'ID Document 2')}
-                            className="mt-2 w-full aspect-video rounded-lg overflow-hidden border bg-muted hover:opacity-80 transition-opacity"
-                          >
-                            {onboardingDoc.proof_of_id_2_path.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                              <img 
-                                src={getFileUrl(onboardingDoc.proof_of_id_2_path) || ''} 
-                                alt="ID Document 2"
-                                className="w-full h-full object-cover"
-                              />
+                          </Card>
+                          
+                          {/* ID Document 1 */}
+                          <Card className="p-3">
+                            <Label className="text-xs text-muted-foreground">ID Document 1</Label>
+                            <p className="text-xs font-medium truncate mt-1">{onboardingDoc.proof_of_id_1_type || 'Not specified'}</p>
+                            {onboardingDoc.proof_of_id_1_path ? (
+                              <button
+                                onClick={() => handleFileClick(onboardingDoc.proof_of_id_1_path, 'ID Document 1')}
+                                className="mt-2 w-full aspect-video rounded-lg overflow-hidden border bg-muted hover:opacity-80 transition-opacity"
+                              >
+                                {onboardingDoc.proof_of_id_1_path.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                                  <img 
+                                    src={getFileUrl(onboardingDoc.proof_of_id_1_path) || ''} 
+                                    alt="ID Document 1"
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    <FileText className="h-8 w-8 text-muted-foreground" />
+                                  </div>
+                                )}
+                              </button>
                             ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <FileText className="h-8 w-8 text-muted-foreground" />
+                              <div className="mt-2 w-full aspect-video rounded-lg border bg-muted flex items-center justify-center">
+                                <Clock className="h-6 w-6 text-muted-foreground" />
                               </div>
                             )}
-                          </button>
-                        ) : (
-                          <div className="mt-2 w-full aspect-video rounded-lg border bg-muted flex items-center justify-center">
-                            <Clock className="h-6 w-6 text-muted-foreground" />
+                          </Card>
+                          
+                          {/* ID Document 2 */}
+                          <Card className="p-3">
+                            <Label className="text-xs text-muted-foreground">ID Document 2</Label>
+                            <p className="text-xs font-medium truncate mt-1">{onboardingDoc.proof_of_id_2_type || 'Not specified'}</p>
+                            {onboardingDoc.proof_of_id_2_path ? (
+                              <button
+                                onClick={() => handleFileClick(onboardingDoc.proof_of_id_2_path, 'ID Document 2')}
+                                className="mt-2 w-full aspect-video rounded-lg overflow-hidden border bg-muted hover:opacity-80 transition-opacity"
+                              >
+                                {onboardingDoc.proof_of_id_2_path.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                                  <img 
+                                    src={getFileUrl(onboardingDoc.proof_of_id_2_path) || ''} 
+                                    alt="ID Document 2"
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    <FileText className="h-8 w-8 text-muted-foreground" />
+                                  </div>
+                                )}
+                              </button>
+                            ) : (
+                              <div className="mt-2 w-full aspect-video rounded-lg border bg-muted flex items-center justify-center">
+                                <Clock className="h-6 w-6 text-muted-foreground" />
+                              </div>
+                            )}
+                          </Card>
+                        </div>
+                        
+                        {/* Personal Details */}
+                        <Card className="p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <User className="h-4 w-4 text-primary" />
+                            <h4 className="font-medium text-sm">Personal Details</h4>
                           </div>
-                        )}
-                      </Card>
-                    </div>
-                    
-                    {/* Personal Details */}
-                    <Card className="p-4">
-                      <div className="flex items-center gap-2 mb-3">
-                        <User className="h-4 w-4 text-primary" />
-                        <h4 className="font-medium text-sm">Personal Details</h4>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <span className="text-muted-foreground">Full Name:</span>
-                          <p className="font-medium">{onboardingDoc.full_name || '-'}</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Date of Birth:</span>
-                          <p className="font-medium">
-                            {onboardingDoc.date_of_birth 
-                              ? format(new Date(onboardingDoc.date_of_birth), 'dd MMM yyyy')
-                              : '-'}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Phone:</span>
-                          <p className="font-medium">{onboardingDoc.phone_number || '-'}</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Personal Email:</span>
-                          <p className="font-medium">{onboardingDoc.personal_email || '-'}</p>
-                        </div>
-                        <div className="col-span-2">
-                          <span className="text-muted-foreground">Address:</span>
-                          <p className="font-medium">{onboardingDoc.address || '-'}</p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Employment Start Date:</span>
-                          <p className="font-medium">
-                            {onboardingDoc.employment_start_date 
-                              ? format(new Date(onboardingDoc.employment_start_date), 'dd MMM yyyy')
-                              : '-'}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground">Form Submitted:</span>
-                          <p className="font-medium">
-                            {onboardingDoc.submitted_at 
-                              ? format(new Date(onboardingDoc.submitted_at), 'dd MMM yyyy HH:mm')
-                              : 'Not submitted'}
-                          </p>
-                        </div>
-                      </div>
-                    </Card>
-                    
-                    {/* Bank & Emergency Contact */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <Card className="p-4">
-                        <div className="flex items-center gap-2 mb-3">
-                          <CreditCard className="h-4 w-4 text-primary" />
-                          <h4 className="font-medium text-sm">Bank Details</h4>
-                        </div>
-                        <div className="space-y-2 text-sm">
-                          <div>
-                            <span className="text-muted-foreground">Bank Name:</span>
-                            <p className="font-medium">{onboardingDoc.bank_name || '-'}</p>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <span className="text-muted-foreground">Full Name:</span>
+                              <p className="font-medium">{onboardingDoc.full_name || '-'}</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Date of Birth:</span>
+                              <p className="font-medium">
+                                {onboardingDoc.date_of_birth 
+                                  ? format(new Date(onboardingDoc.date_of_birth), 'dd MMM yyyy')
+                                  : '-'}
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Phone:</span>
+                              <p className="font-medium">{onboardingDoc.phone_number || '-'}</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Personal Email:</span>
+                              <p className="font-medium">{onboardingDoc.personal_email || '-'}</p>
+                            </div>
+                            <div className="col-span-2">
+                              <span className="text-muted-foreground">Address:</span>
+                              <p className="font-medium">{onboardingDoc.address || '-'}</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Employment Start Date:</span>
+                              <p className="font-medium">
+                                {onboardingDoc.employment_start_date 
+                                  ? format(new Date(onboardingDoc.employment_start_date), 'dd MMM yyyy')
+                                  : '-'}
+                              </p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Form Submitted:</span>
+                              <p className="font-medium">
+                                {onboardingDoc.submitted_at 
+                                  ? format(new Date(onboardingDoc.submitted_at), 'dd MMM yyyy HH:mm')
+                                  : 'Not submitted'}
+                              </p>
+                            </div>
                           </div>
-                          <div>
-                            <span className="text-muted-foreground">Account Number:</span>
-                            <p className="font-medium">{onboardingDoc.account_number || '-'}</p>
-                          </div>
+                        </Card>
+                        
+                        {/* Bank & Emergency Contact */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <Card className="p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <CreditCard className="h-4 w-4 text-primary" />
+                              <h4 className="font-medium text-sm">Bank Details</h4>
+                            </div>
+                            <div className="space-y-2 text-sm">
+                              <div>
+                                <span className="text-muted-foreground">Bank Name:</span>
+                                <p className="font-medium">{onboardingDoc.bank_name || '-'}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Account Number:</span>
+                                <p className="font-medium">{onboardingDoc.account_number || '-'}</p>
+                              </div>
+                            </div>
+                          </Card>
+                          
+                          <Card className="p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <Phone className="h-4 w-4 text-primary" />
+                              <h4 className="font-medium text-sm">Emergency Contact</h4>
+                            </div>
+                            <div className="space-y-2 text-sm">
+                              <div>
+                                <span className="text-muted-foreground">Name:</span>
+                                <p className="font-medium">{onboardingDoc.emergency_contact_name || '-'}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Relationship:</span>
+                                <p className="font-medium">{onboardingDoc.emergency_contact_relationship || '-'}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Phone:</span>
+                                <p className="font-medium">{onboardingDoc.emergency_contact_phone || '-'}</p>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Email:</span>
+                                <p className="font-medium">{onboardingDoc.emergency_contact_email || '-'}</p>
+                              </div>
+                            </div>
+                          </Card>
                         </div>
-                      </Card>
-                      
-                      <Card className="p-4">
-                        <div className="flex items-center gap-2 mb-3">
-                          <Phone className="h-4 w-4 text-primary" />
-                          <h4 className="font-medium text-sm">Emergency Contact</h4>
-                        </div>
-                        <div className="space-y-2 text-sm">
-                          <div>
-                            <span className="text-muted-foreground">Name:</span>
-                            <p className="font-medium">{onboardingDoc.emergency_contact_name || '-'}</p>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Relationship:</span>
-                            <p className="font-medium">{onboardingDoc.emergency_contact_relationship || '-'}</p>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Phone:</span>
-                            <p className="font-medium">{onboardingDoc.emergency_contact_phone || '-'}</p>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Email:</span>
-                            <p className="font-medium">{onboardingDoc.emergency_contact_email || '-'}</p>
-                          </div>
-                        </div>
-                      </Card>
-                    </div>
+                      </>
+                    )}
                     
                     <Separator />
                   </div>
