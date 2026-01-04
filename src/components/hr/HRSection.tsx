@@ -4,11 +4,9 @@ import { useUserRole } from "@/hooks/useUserRole";
 import { StaffPayManager } from "./StaffPayManager";
 import { HRProfileManager } from "./HRProfileManager";
 import { MyHRProfile } from "./MyHRProfile";
-import { StaffRequestForm } from "./StaffRequestForm";
-import { StaffRequestsManager } from "./StaffRequestsManager";
 import { OnboardingManager } from "./OnboardingManager";
 import { StaffOnboardingForm } from "./StaffOnboardingForm";
-import { DollarSign, Users, User, Send, ClipboardList, GraduationCap, FileText } from "lucide-react";
+import { DollarSign, Users, User, GraduationCap, FileText } from "lucide-react";
 
 export function HRSection() {
   const { isAdmin } = useUserRole();
@@ -20,21 +18,17 @@ export function HRSection() {
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-foreground">HR Management</h1>
           <p className="text-muted-foreground mt-1">
-            {isAdmin ? "Manage staff requests, pay and profiles" : "Submit requests and view your HR profile"}
+            {isAdmin ? "Manage staff pay and profiles" : "View your HR profile and onboarding"}
           </p>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: isAdmin ? 'repeat(7, 1fr)' : 'repeat(4, 1fr)' }}>
+          <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: isAdmin ? 'repeat(5, 1fr)' : 'repeat(3, 1fr)' }}>
             {isAdmin ? (
               <>
                 <TabsTrigger value="profiles" className="flex items-center gap-2">
                   <Users className="h-4 w-4" />
                   Staff Profiles
-                </TabsTrigger>
-                <TabsTrigger value="requests" className="flex items-center gap-2">
-                  <ClipboardList className="h-4 w-4" />
-                  Requests
                 </TabsTrigger>
                 <TabsTrigger value="pay" className="flex items-center gap-2">
                   <DollarSign className="h-4 w-4" />
@@ -47,10 +41,6 @@ export function HRSection() {
                 <TabsTrigger value="onboarding-form" className="flex items-center gap-2">
                   <FileText className="h-4 w-4" />
                   Onboarding Form
-                </TabsTrigger>
-                <TabsTrigger value="my-requests" className="flex items-center gap-2">
-                  <Send className="h-4 w-4" />
-                  My Requests
                 </TabsTrigger>
                 <TabsTrigger value="my-profile" className="flex items-center gap-2">
                   <User className="h-4 w-4" />
@@ -67,10 +57,6 @@ export function HRSection() {
                   <GraduationCap className="h-4 w-4" />
                   Onboarding Steps
                 </TabsTrigger>
-                <TabsTrigger value="my-requests" className="flex items-center gap-2">
-                  <Send className="h-4 w-4" />
-                  My Requests
-                </TabsTrigger>
                 <TabsTrigger value="my-profile" className="flex items-center gap-2">
                   <User className="h-4 w-4" />
                   My Profile
@@ -84,14 +70,6 @@ export function HRSection() {
               <TabsContent value="profiles" className="mt-0">
                 <HRProfileManager />
               </TabsContent>
-            </>
-          )}
-          
-          {isAdmin && (
-            <>
-              <TabsContent value="requests" className="mt-0">
-                <StaffRequestsManager />
-              </TabsContent>
               <TabsContent value="pay" className="mt-0">
                 <StaffPayManager />
               </TabsContent>
@@ -104,10 +82,6 @@ export function HRSection() {
           
           <TabsContent value="onboarding-form" className="mt-0">
             <StaffOnboardingForm />
-          </TabsContent>
-          
-          <TabsContent value="my-requests" className="mt-0">
-            <StaffRequestForm />
           </TabsContent>
           
           <TabsContent value="my-profile" className="mt-0">
