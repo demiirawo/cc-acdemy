@@ -336,12 +336,36 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
     return r.status === activeTab;
   });
 
-  // Pagination
+  // Sort by start_date descending, then group by month
+  const sortedRequests = [...filteredRequests].sort((a, b) => 
+    new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+  );
+
+  // Group requests by month (based on start_date)
+  const groupRequestsByMonth = (requests: StaffRequest[]) => {
+    const grouped: { [key: string]: StaffRequest[] } = {};
+    requests.forEach(request => {
+      const monthKey = format(new Date(request.start_date), 'MMMM yyyy');
+      if (!grouped[monthKey]) {
+        grouped[monthKey] = [];
+      }
+      grouped[monthKey].push(request);
+    });
+    return grouped;
+  };
+
+  const groupedRequests = groupRequestsByMonth(sortedRequests);
+  const monthKeys = Object.keys(groupedRequests);
+
+  // Pagination - now based on total requests
   const totalPages = Math.ceil(filteredRequests.length / ITEMS_PER_PAGE);
-  const paginatedRequests = filteredRequests.slice(
+  const paginatedRequests = sortedRequests.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
+
+  // Group paginated requests by month for display
+  const paginatedGrouped = groupRequestsByMonth(paginatedRequests);
 
   // Reset to page 1 when tab changes
   const handleTabChange = (tab: string) => {
@@ -433,129 +457,142 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {paginatedRequests.length === 0 ? (
+                  {Object.keys(paginatedGrouped).length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                         No {activeTab === "all" ? "" : activeTab} requests found.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    paginatedRequests.map(request => {
-                      const typeInfo = REQUEST_TYPE_INFO[request.request_type];
-                      const Icon = typeInfo?.icon || Clock;
-                      const coveredStaff = getCoveredStaffInfo(request.linked_holiday_id);
-                      const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
-                      
-                      return (
-                        <TableRow 
-                          key={request.id} 
-                          className="h-20 cursor-pointer hover:bg-muted/50 transition-colors"
-                          onClick={() => onViewRequest ? onViewRequest(request.id) : openReviewDialog(request)}
-                        >
-                          <TableCell className="font-medium py-4">
-                            <div className="flex flex-col gap-1">
-                              <span>{getStaffName(request.user_id)}</span>
-                              {request.request_type === 'shift_swap' && request.swap_with_user_id && (
-                                <span className="text-xs text-muted-foreground">
-                                  ↔ {getStaffName(request.swap_with_user_id)}
-                                </span>
-                              )}
-                              {request.request_type === 'overtime' && coveredStaff && (
-                                <span className="text-xs text-muted-foreground">
-                                  Covering: {coveredStaff.staffName}
-                                </span>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-4">
-                            <div className="flex flex-col gap-1">
-                              <div className="flex items-center gap-2">
-                                <Icon className={`h-4 w-4 ${typeInfo?.color || ''}`} />
-                                <span className="text-sm">{typeInfo?.label || request.request_type}</span>
-                              </div>
-                              {request.request_type === 'overtime' && request.overtime_type && (
-                                <Badge variant="outline" className="w-fit text-xs">
-                                  {request.overtime_type === 'standard_hours' ? 'Standard Hours' : 'Outside Hours'}
-                                </Badge>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-4">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-sm">{format(new Date(request.start_date), 'dd MMM yyyy')}</span>
-                              <span className="text-xs text-muted-foreground">to {format(new Date(request.end_date), 'dd MMM yyyy')}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-4">{request.days_requested}</TableCell>
-                          <TableCell className="max-w-[200px] py-4">
-                            {request.request_type === 'overtime' && coveredStaff ? (
-                              <div className="text-xs">
-                                <div className="font-medium">{coveredStaff.staffName}'s {coveredStaff.absenceType}</div>
-                                <div className="text-muted-foreground">
-                                  {format(new Date(coveredStaff.startDate), 'dd MMM')} – {format(new Date(coveredStaff.endDate), 'dd MMM')}
-                                </div>
-                                {request.details && <div className="text-muted-foreground mt-1 break-words whitespace-normal line-clamp-2">{request.details}</div>}
-                              </div>
-                            ) : (
-                              <span className="block break-words whitespace-normal text-sm line-clamp-2" title={request.details || ''}>{request.details || '-'}</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="py-4" onClick={(e) => e.stopPropagation()}>
-                            {isHolidayRequest ? (
-                              <div className="flex items-center gap-2">
-                                <Checkbox
-                                  checked={(request as any).client_informed || false}
-                                  onCheckedChange={(checked) => 
-                                    clientInformedMutation.mutate({ requestId: request.id, informed: !!checked })
-                                  }
-                                  disabled={clientInformedMutation.isPending}
-                                />
-                                <span className="text-xs text-muted-foreground">
-                                  {(request as any).client_informed ? (
-                                    <span className="flex items-center gap-1 text-green-600">
-                                      <Bell className="h-3 w-3" /> Informed
-                                    </span>
-                                  ) : (
-                                    <span className="flex items-center gap-1 text-amber-600">
-                                      <BellOff className="h-3 w-3" /> Not yet
-                                    </span>
-                                  )}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">N/A</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="py-4">
-                            <Badge variant="outline" className={STATUS_COLORS[request.status] || ''}>
-                              {request.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground py-4">
-                            {format(new Date(request.created_at), 'dd MMM yyyy')}
-                          </TableCell>
-                          <TableCell className="py-4" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex gap-1">
-                              {request.status === 'pending' ? (
-                                <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                                  Pending Review
-                                </Badge>
-                              ) : (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => deleteMutation.mutate(request.id)}
-                                  className="text-destructive hover:text-destructive"
-                                  disabled={deleteMutation.isPending}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              )}
-                            </div>
+                    Object.entries(paginatedGrouped).map(([monthKey, monthRequests]) => (
+                      <>
+                        {/* Month header row */}
+                        <TableRow key={`month-${monthKey}`} className="bg-muted/30">
+                          <TableCell colSpan={9} className="py-3 font-semibold text-sm">
+                            {monthKey}
+                            <span className="ml-2 text-muted-foreground font-normal">
+                              ({monthRequests.length} request{monthRequests.length !== 1 ? 's' : ''})
+                            </span>
                           </TableCell>
                         </TableRow>
-                      );
-                    })
+                        {monthRequests.map(request => {
+                          const typeInfo = REQUEST_TYPE_INFO[request.request_type];
+                          const Icon = typeInfo?.icon || Clock;
+                          const coveredStaff = getCoveredStaffInfo(request.linked_holiday_id);
+                          const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
+                          
+                          return (
+                            <TableRow 
+                              key={request.id} 
+                              className="h-20 cursor-pointer hover:bg-muted/50 transition-colors"
+                              onClick={() => onViewRequest ? onViewRequest(request.id) : openReviewDialog(request)}
+                            >
+                              <TableCell className="font-medium py-4">
+                                <div className="flex flex-col gap-1">
+                                  <span>{getStaffName(request.user_id)}</span>
+                                  {request.request_type === 'shift_swap' && request.swap_with_user_id && (
+                                    <span className="text-xs text-muted-foreground">
+                                      ↔ {getStaffName(request.swap_with_user_id)}
+                                    </span>
+                                  )}
+                                  {request.request_type === 'overtime' && coveredStaff && (
+                                    <span className="text-xs text-muted-foreground">
+                                      Covering: {coveredStaff.staffName}
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-4">
+                                <div className="flex flex-col gap-1">
+                                  <div className="flex items-center gap-2">
+                                    <Icon className={`h-4 w-4 ${typeInfo?.color || ''}`} />
+                                    <span className="text-sm">{typeInfo?.label || request.request_type}</span>
+                                  </div>
+                                  {request.request_type === 'overtime' && request.overtime_type && (
+                                    <Badge variant="outline" className="w-fit text-xs">
+                                      {request.overtime_type === 'standard_hours' ? 'Standard Hours' : 'Outside Hours'}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-4">
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="text-sm">{format(new Date(request.start_date), 'dd MMM yyyy')}</span>
+                                  <span className="text-xs text-muted-foreground">to {format(new Date(request.end_date), 'dd MMM yyyy')}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="py-4">{request.days_requested}</TableCell>
+                              <TableCell className="max-w-[200px] py-4">
+                                {request.request_type === 'overtime' && coveredStaff ? (
+                                  <div className="text-xs">
+                                    <div className="font-medium">{coveredStaff.staffName}'s {coveredStaff.absenceType}</div>
+                                    <div className="text-muted-foreground">
+                                      {format(new Date(coveredStaff.startDate), 'dd MMM')} – {format(new Date(coveredStaff.endDate), 'dd MMM')}
+                                    </div>
+                                    {request.details && <div className="text-muted-foreground mt-1 break-words whitespace-normal line-clamp-2">{request.details}</div>}
+                                  </div>
+                                ) : (
+                                  <span className="block break-words whitespace-normal text-sm line-clamp-2" title={request.details || ''}>{request.details || '-'}</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="py-4" onClick={(e) => e.stopPropagation()}>
+                                {isHolidayRequest ? (
+                                  <div className="flex items-center gap-2">
+                                    <Checkbox
+                                      checked={(request as any).client_informed || false}
+                                      onCheckedChange={(checked) => 
+                                        clientInformedMutation.mutate({ requestId: request.id, informed: !!checked })
+                                      }
+                                      disabled={clientInformedMutation.isPending}
+                                    />
+                                    <span className="text-xs text-muted-foreground">
+                                      {(request as any).client_informed ? (
+                                        <span className="flex items-center gap-1 text-green-600">
+                                          <Bell className="h-3 w-3" /> Informed
+                                        </span>
+                                      ) : (
+                                        <span className="flex items-center gap-1 text-amber-600">
+                                          <BellOff className="h-3 w-3" /> Not yet
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground text-xs">N/A</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="py-4">
+                                <Badge variant="outline" className={STATUS_COLORS[request.status] || ''}>
+                                  {request.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground py-4">
+                                {format(new Date(request.created_at), 'dd MMM yyyy')}
+                              </TableCell>
+                              <TableCell className="py-4" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex gap-1">
+                                  {request.status === 'pending' ? (
+                                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
+                                      Pending Review
+                                    </Badge>
+                                  ) : (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => deleteMutation.mutate(request.id)}
+                                      className="text-destructive hover:text-destructive"
+                                      disabled={deleteMutation.isPending}
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </>
+                    ))
                   )}
                 </TableBody>
               </Table>
