@@ -104,6 +104,8 @@ interface OnboardingDocument {
   proof_of_id_1_type: string | null;
   proof_of_id_2_path: string | null;
   proof_of_id_2_type: string | null;
+  proof_of_address_path: string | null;
+  proof_of_address_type: string | null;
   photograph_path: string | null;
   bank_name: string | null;
   account_number: string | null;
@@ -1343,7 +1345,7 @@ export function HRProfileManager() {
                     ) : (
                       <>
                         {/* Photo and ID Documents */}
-                        <div className="grid grid-cols-3 gap-4">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                           {/* Photograph */}
                           <Card className="p-3">
                             <Label className="text-xs text-muted-foreground">Photograph</Label>
@@ -1411,6 +1413,34 @@ export function HRProfileManager() {
                                 ) : (
                                   <div className="w-full h-full flex items-center justify-center">
                                     <FileText className="h-8 w-8 text-muted-foreground" />
+                                  </div>
+                                )}
+                              </button>
+                            ) : (
+                              <div className="mt-2 w-full aspect-video rounded-lg border bg-muted flex items-center justify-center">
+                                <Clock className="h-6 w-6 text-muted-foreground" />
+                              </div>
+                            )}
+                          </Card>
+                          
+                          {/* Proof of Address */}
+                          <Card className="p-3">
+                            <Label className="text-xs text-muted-foreground">Proof of Address</Label>
+                            <p className="text-xs font-medium truncate mt-1">{(onboardingDoc as any).proof_of_address_type || 'Not specified'}</p>
+                            {(onboardingDoc as any).proof_of_address_path ? (
+                              <button
+                                onClick={() => handleFileClick((onboardingDoc as any).proof_of_address_path, 'Proof of Address')}
+                                className="mt-2 w-full aspect-video rounded-lg overflow-hidden border bg-muted hover:opacity-80 transition-opacity"
+                              >
+                                {(onboardingDoc as any).proof_of_address_path.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                                  <img 
+                                    src={getFileUrl((onboardingDoc as any).proof_of_address_path) || ''} 
+                                    alt="Proof of Address"
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center">
+                                    <Home className="h-8 w-8 text-muted-foreground" />
                                   </div>
                                 )}
                               </button>

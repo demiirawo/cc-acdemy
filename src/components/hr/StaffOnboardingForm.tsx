@@ -26,6 +26,8 @@ interface OnboardingFormData {
   proof_of_id_1_type: string;
   proof_of_id_2_path: string;
   proof_of_id_2_type: string;
+  proof_of_address_path: string;
+  proof_of_address_type: string;
   photograph_path: string;
   bank_name: string;
   account_number: string;
@@ -44,6 +46,16 @@ const ID_TYPES = [
   "Birth Certificate",
 ];
 
+const ADDRESS_PROOF_TYPES = [
+  "Utility Bill (Electricity, Water, or Refuse - within last 3 months)",
+  "Tenancy/Lease Agreement",
+  "Bank/Credit Card Statement",
+  "Affidavit of Residency",
+  "Official Letter (Employer, Public Authority, or Educational Institution)",
+  "Driver's License",
+  "Voter Registration Card",
+];
+
 export function StaffOnboardingForm() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -60,6 +72,8 @@ export function StaffOnboardingForm() {
     proof_of_id_1_type: "",
     proof_of_id_2_path: "",
     proof_of_id_2_type: "",
+    proof_of_address_path: "",
+    proof_of_address_type: "",
     photograph_path: "",
     bank_name: "",
     account_number: "",
@@ -101,6 +115,8 @@ export function StaffOnboardingForm() {
           proof_of_id_1_type: data.proof_of_id_1_type || "",
           proof_of_id_2_path: data.proof_of_id_2_path || "",
           proof_of_id_2_type: data.proof_of_id_2_type || "",
+          proof_of_address_path: (data as any).proof_of_address_path || "",
+          proof_of_address_type: (data as any).proof_of_address_type || "",
           photograph_path: data.photograph_path || "",
           bank_name: data.bank_name || "",
           account_number: data.account_number || "",
@@ -125,7 +141,7 @@ export function StaffOnboardingForm() {
 
   const handleFileUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    field: "proof_of_id_1_path" | "proof_of_id_2_path" | "photograph_path"
+    field: "proof_of_id_1_path" | "proof_of_id_2_path" | "proof_of_address_path" | "photograph_path"
   ) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
@@ -164,6 +180,8 @@ export function StaffOnboardingForm() {
       "proof_of_id_1_type",
       "proof_of_id_2_path",
       "proof_of_id_2_type",
+      "proof_of_address_path",
+      "proof_of_address_type",
       "photograph_path",
       "bank_name",
       "account_number",
@@ -201,6 +219,8 @@ export function StaffOnboardingForm() {
         proof_of_id_1_type: formData.proof_of_id_1_type || null,
         proof_of_id_2_path: formData.proof_of_id_2_path || null,
         proof_of_id_2_type: formData.proof_of_id_2_type || null,
+        proof_of_address_path: formData.proof_of_address_path || null,
+        proof_of_address_type: formData.proof_of_address_type || null,
         photograph_path: formData.photograph_path || null,
         bank_name: formData.bank_name || null,
         account_number: formData.account_number || null,
@@ -251,7 +271,7 @@ export function StaffOnboardingForm() {
   };
 
   const renderFileUpload = (
-    field: "proof_of_id_1_path" | "proof_of_id_2_path" | "photograph_path",
+    field: "proof_of_id_1_path" | "proof_of_id_2_path" | "proof_of_address_path" | "photograph_path",
     label: string
   ) => {
     const isUploading = uploading === field;
@@ -528,6 +548,56 @@ export function StaffOnboardingForm() {
               onChange={(e) => handleInputChange("address", e.target.value)}
               rows={3}
             />
+          </div>
+
+          <Separator />
+
+          {/* Proof of Address */}
+          <div className="space-y-4">
+            <div>
+              <h4 className="font-medium">Proof of Address</h4>
+              <p className="text-sm text-muted-foreground">
+                Please provide a proof of address from the list below, this is to verify your location and ensure compliance with our recruitment policies. Please attach clear copies of any of the below:
+              </p>
+              <div className="mt-2 text-sm text-muted-foreground">
+                <ul className="list-disc list-inside mt-1 space-y-1">
+                  <li><strong>Utility Bills:</strong> Electricity (PHCN bill), water bill, or refuse disposal bill, usually required to be recent (e.g., within the last three months).</li>
+                  <li><strong>Tenancy/Lease Agreement:</strong> A signed rental or mortgage agreement for the current residence.</li>
+                  <li><strong>Bank/Credit Card Statement:</strong> A recent bank or credit card statement showing your name and address.</li>
+                  <li><strong>Affidavit of Residency:</strong> A sworn, legally binding statement confirmed by a Commissioner for Oaths or Notary Public, often used when standard bills are unavailable.</li>
+                  <li><strong>Official Letters:</strong> Letters from an employer, a public authority, or a recognized educational institution.</li>
+                  <li><strong>Government-issued IDs (in some cases):</strong> A valid driver's license can sometimes serve as both proof of ID and address.</li>
+                  <li><strong>Voter Registration Card.</strong></li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Proof of Address Type</Label>
+                  {renderFieldStatus("proof_of_address_type")}
+                </div>
+                <Select
+                  value={formData.proof_of_address_type}
+                  onValueChange={(value) =>
+                    handleInputChange("proof_of_address_type", value)
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select proof of address type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ADDRESS_PROOF_TYPES.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {renderFileUpload("proof_of_address_path", "Proof of Address Document")}
+            </div>
           </div>
 
           <Separator />
