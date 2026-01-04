@@ -150,36 +150,39 @@ export function StaffRequestForm() {
     }
   });
 
-  // Fetch user's recurring shift patterns to calculate working days
+  // Determine which user ID to use for pattern lookups (admin submitting on behalf of staff uses selectedStaffId)
+  const targetUserId = isAdmin && selectedStaffId ? selectedStaffId : user?.id;
+
+  // Fetch target user's recurring shift patterns to calculate working days
   const { data: shiftPatterns = [] } = useQuery({
-    queryKey: ["my-shift-patterns", user?.id],
+    queryKey: ["target-shift-patterns", targetUserId],
     queryFn: async () => {
-      if (!user) return [];
+      if (!targetUserId) return [];
       const { data, error } = await supabase
         .from("recurring_shift_patterns")
         .select("*")
-        .eq("user_id", user.id);
+        .eq("user_id", targetUserId);
       
       if (error) throw error;
       return data;
     },
-    enabled: !!user
+    enabled: !!targetUserId
   });
 
-  // Fetch user's individual schedules
+  // Fetch target user's individual schedules
   const { data: individualSchedules = [] } = useQuery({
-    queryKey: ["my-schedules", user?.id],
+    queryKey: ["target-schedules", targetUserId],
     queryFn: async () => {
-      if (!user) return [];
+      if (!targetUserId) return [];
       const { data, error } = await supabase
         .from("staff_schedules")
         .select("*")
-        .eq("user_id", user.id);
+        .eq("user_id", targetUserId);
       
       if (error) throw error;
       return data;
     },
-    enabled: !!user
+    enabled: !!targetUserId
   });
 
   // Fetch approved holidays for the selected staff member being covered
@@ -374,7 +377,7 @@ export function StaffRequestForm() {
 
       setDaysRequested(workingDays.toString());
     }
-  }, [requestType, startDate, endDate, shiftPatterns, individualSchedules]);
+  }, [requestType, startDate, endDate, shiftPatterns, individualSchedules, selectedStaffId]);
 
   // Auto-populate dates from selected holiday for overtime requests
   useEffect(() => {
