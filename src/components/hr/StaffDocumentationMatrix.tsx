@@ -1,11 +1,9 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { CheckCircle2, AlertCircle, XCircle, FileText, User, Briefcase, Phone, Home, CreditCard, Users } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
+import { Check, Clock } from "lucide-react";
 
 interface UserProfile {
   user_id: string;
@@ -46,47 +44,46 @@ interface OnboardingDocument {
 interface DocumentationField {
   key: string;
   label: string;
-  category: 'hr' | 'personal' | 'id' | 'bank' | 'emergency';
-  icon: React.ReactNode;
+  category: string;
 }
 
 const DOCUMENTATION_FIELDS: DocumentationField[] = [
   // HR Profile fields
-  { key: 'employee_id', label: 'Employee ID', category: 'hr', icon: <Briefcase className="h-3 w-3" /> },
-  { key: 'job_title', label: 'Job Title', category: 'hr', icon: <Briefcase className="h-3 w-3" /> },
-  { key: 'start_date', label: 'Start Date', category: 'hr', icon: <Briefcase className="h-3 w-3" /> },
-  { key: 'base_salary', label: 'Base Salary', category: 'hr', icon: <Briefcase className="h-3 w-3" /> },
+  { key: 'employee_id', label: 'Employee ID', category: 'HR Profile' },
+  { key: 'job_title', label: 'Job Title', category: 'HR Profile' },
+  { key: 'start_date', label: 'Start Date', category: 'HR Profile' },
+  { key: 'base_salary', label: 'Base Salary', category: 'HR Profile' },
   
   // Personal Details
-  { key: 'full_name', label: 'Full Name', category: 'personal', icon: <User className="h-3 w-3" /> },
-  { key: 'date_of_birth', label: 'Date of Birth', category: 'personal', icon: <User className="h-3 w-3" /> },
-  { key: 'phone_number', label: 'Phone Number', category: 'personal', icon: <Phone className="h-3 w-3" /> },
-  { key: 'personal_email', label: 'Personal Email', category: 'personal', icon: <User className="h-3 w-3" /> },
-  { key: 'address', label: 'Address', category: 'personal', icon: <Home className="h-3 w-3" /> },
-  { key: 'photograph_path', label: 'Photograph', category: 'personal', icon: <User className="h-3 w-3" /> },
+  { key: 'full_name', label: 'Full Name', category: 'Personal Details' },
+  { key: 'date_of_birth', label: 'Date of Birth', category: 'Personal Details' },
+  { key: 'phone_number', label: 'Phone Number', category: 'Personal Details' },
+  { key: 'personal_email', label: 'Personal Email', category: 'Personal Details' },
+  { key: 'address', label: 'Address', category: 'Personal Details' },
+  { key: 'photograph_path', label: 'Photograph', category: 'Personal Details' },
   
   // ID Documents
-  { key: 'proof_of_id_1', label: 'ID Document 1', category: 'id', icon: <FileText className="h-3 w-3" /> },
-  { key: 'proof_of_id_2', label: 'ID Document 2', category: 'id', icon: <FileText className="h-3 w-3" /> },
+  { key: 'proof_of_id_1', label: 'ID Document 1', category: 'ID Documents' },
+  { key: 'proof_of_id_2', label: 'ID Document 2', category: 'ID Documents' },
   
   // Bank Details
-  { key: 'bank_name', label: 'Bank Name', category: 'bank', icon: <CreditCard className="h-3 w-3" /> },
-  { key: 'account_number', label: 'Account Number', category: 'bank', icon: <CreditCard className="h-3 w-3" /> },
+  { key: 'bank_name', label: 'Bank Name', category: 'Bank Details' },
+  { key: 'account_number', label: 'Account Number', category: 'Bank Details' },
   
   // Emergency Contact
-  { key: 'emergency_contact_name', label: 'Emergency Contact', category: 'emergency', icon: <Users className="h-3 w-3" /> },
-  { key: 'emergency_contact_relationship', label: 'Relationship', category: 'emergency', icon: <Users className="h-3 w-3" /> },
-  { key: 'emergency_contact_phone', label: 'Emergency Phone', category: 'emergency', icon: <Phone className="h-3 w-3" /> },
-  { key: 'emergency_contact_email', label: 'Emergency Email', category: 'emergency', icon: <Users className="h-3 w-3" /> },
+  { key: 'emergency_contact_name', label: 'Emergency Contact Name', category: 'Emergency Contact' },
+  { key: 'emergency_contact_relationship', label: 'Relationship', category: 'Emergency Contact' },
+  { key: 'emergency_contact_phone', label: 'Emergency Phone', category: 'Emergency Contact' },
+  { key: 'emergency_contact_email', label: 'Emergency Email', category: 'Emergency Contact' },
 ];
 
-const CATEGORY_LABELS: Record<string, string> = {
-  'hr': 'HR Profile',
-  'personal': 'Personal Details',
-  'id': 'ID Documents',
-  'bank': 'Bank Details',
-  'emergency': 'Emergency Contact'
-};
+const CATEGORY_ORDER = [
+  'HR Profile',
+  'Personal Details',
+  'ID Documents',
+  'Bank Details',
+  'Emergency Contact'
+];
 
 export function StaffDocumentationMatrix() {
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
@@ -172,234 +169,146 @@ export function StaffDocumentationMatrix() {
     return false;
   };
 
-  const getStaffCompletionStats = (userId: string) => {
-    let complete = 0;
-    let total = DOCUMENTATION_FIELDS.length;
-
+  const getCompletionStats = (userId: string): { completed: number; total: number } => {
+    let completed = 0;
     DOCUMENTATION_FIELDS.forEach(field => {
       if (getFieldValue(userId, field.key)) {
-        complete++;
+        completed++;
       }
     });
-
-    return { complete, total, percentage: Math.round((complete / total) * 100) };
+    return { completed, total: DOCUMENTATION_FIELDS.length };
   };
 
-  const getCategoryCompletionForUser = (userId: string, category: string) => {
-    const categoryFields = DOCUMENTATION_FIELDS.filter(f => f.category === category);
-    let complete = 0;
-    categoryFields.forEach(field => {
-      if (getFieldValue(userId, field.key)) complete++;
-    });
-    return { complete, total: categoryFields.length };
-  };
+  // Group fields by category
+  const fieldsByCategory = DOCUMENTATION_FIELDS.reduce((acc, field) => {
+    if (!acc[field.category]) acc[field.category] = [];
+    acc[field.category].push(field);
+    return acc;
+  }, {} as Record<string, DocumentationField[]>);
 
-  const getFieldsByCategory = () => {
-    const categories: Record<string, DocumentationField[]> = {};
-    DOCUMENTATION_FIELDS.forEach(field => {
-      if (!categories[field.category]) {
-        categories[field.category] = [];
-      }
-      categories[field.category].push(field);
-    });
-    return categories;
-  };
+  // Use predefined order, only including categories that have fields
+  const orderedCategories = CATEGORY_ORDER.filter(cat => fieldsByCategory[cat] && fieldsByCategory[cat].length > 0);
 
   if (loading) {
+    return <div className="text-center py-8 text-muted-foreground">Loading...</div>;
+  }
+
+  if (userProfiles.length === 0) {
     return (
       <Card>
-        <CardContent className="p-6">
-          <div className="animate-pulse space-y-4">
-            <div className="h-4 bg-muted rounded w-1/4"></div>
-            <div className="h-64 bg-muted rounded"></div>
-          </div>
+        <CardContent className="py-8 text-center text-muted-foreground">
+          No staff members found.
         </CardContent>
       </Card>
     );
   }
 
-  const fieldsByCategory = getFieldsByCategory();
-  const categoryOrder = ['hr', 'personal', 'id', 'bank', 'emergency'];
-
-  // Calculate overall stats
-  const totalGaps = userProfiles.reduce((acc, user) => {
-    const stats = getStaffCompletionStats(user.user_id);
-    return acc + (stats.total - stats.complete);
-  }, 0);
-
-  const usersWithGaps = userProfiles.filter(user => {
-    const stats = getStaffCompletionStats(user.user_id);
-    return stats.complete < stats.total;
-  }).length;
-
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold">Documentation Matrix</h3>
-          <p className="text-sm text-muted-foreground">
-            Overview of all staff documentation status
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          {usersWithGaps > 0 ? (
-            <Badge variant="destructive" className="flex items-center gap-1">
-              <AlertCircle className="h-3 w-3" />
-              {usersWithGaps} staff with gaps
-            </Badge>
-          ) : (
-            <Badge variant="default" className="flex items-center gap-1 bg-green-600">
-              <CheckCircle2 className="h-3 w-3" />
-              All complete
-            </Badge>
-          )}
-          <Badge variant="outline">
-            {totalGaps} missing items
-          </Badge>
-        </div>
-      </div>
-
-      <Card>
-        <CardContent className="p-0">
-          <ScrollArea className="h-[600px]">
-            <div className="min-w-max">
-              <table className="w-full border-collapse">
-                <thead className="sticky top-0 bg-background z-20">
-                  <tr className="border-b">
-                    <th className="text-left p-3 font-medium sticky left-0 bg-background z-30 min-w-[200px]">
-                      Staff Member
+    <Card>
+      <CardHeader>
+        <CardTitle>Staff Documentation Status</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ScrollArea className="w-full">
+          <div className="min-w-max">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr>
+                  <th className="sticky left-0 bg-background z-10 p-3 text-left font-medium border-b border-r min-w-[250px]">
+                    Documentation Item
+                  </th>
+                  {userProfiles.map((member) => (
+                    <th
+                      key={member.user_id}
+                      className="p-3 text-center font-medium border-b min-w-[100px]"
+                      title={member.display_name || member.email || 'Unknown'}
+                    >
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="text-xs text-muted-foreground truncate max-w-[90px]">
+                          {member.display_name || member.email || 'Unknown'}
+                        </span>
+                      </div>
                     </th>
-                    <th className="text-center p-3 font-medium min-w-[80px]">
-                      Progress
-                    </th>
-                    {categoryOrder.map(category => (
-                      <th 
-                        key={category} 
-                        colSpan={fieldsByCategory[category]?.length || 0}
-                        className="text-center p-2 font-medium border-l bg-muted/50"
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {orderedCategories.map((categoryName) => (
+                  <>
+                    {/* Category header row */}
+                    <tr key={`category-${categoryName}`} className="bg-muted/50">
+                      <td 
+                        colSpan={userProfiles.length + 1} 
+                        className="sticky left-0 p-2 font-semibold text-sm text-primary border-b"
                       >
-                        <span className="text-xs">{CATEGORY_LABELS[category]}</span>
-                      </th>
-                    ))}
-                  </tr>
-                  <tr className="border-b bg-muted/30">
-                    <th className="sticky left-0 bg-muted/30 z-30"></th>
-                    <th></th>
-                    {categoryOrder.flatMap(category =>
-                      (fieldsByCategory[category] || []).map((field, idx) => (
-                        <th 
-                          key={field.key} 
-                          className={`text-center p-2 min-w-[40px] ${idx === 0 ? 'border-l' : ''}`}
-                        >
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger>
-                                <div className="flex items-center justify-center">
-                                  {field.icon}
+                        {categoryName}
+                      </td>
+                    </tr>
+                    {/* Fields within this category */}
+                    {fieldsByCategory[categoryName].map((field, fieldIndex) => (
+                      <tr key={field.key} className="hover:bg-muted/30">
+                        <td className="sticky left-0 bg-background z-10 p-3 border-b border-r">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium text-muted-foreground w-6">
+                              {fieldIndex + 1}.
+                            </span>
+                            <span className="text-sm">{field.label}</span>
+                          </div>
+                        </td>
+                        {userProfiles.map((member) => {
+                          const hasValue = getFieldValue(member.user_id, field.key);
+                          return (
+                            <td key={member.user_id} className="p-3 text-center border-b">
+                              {hasValue ? (
+                                <div className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-green-100 dark:bg-green-900/30">
+                                  <Check className="h-4 w-4 text-green-600 dark:text-green-400" />
                                 </div>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>{field.label}</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </th>
-                      ))
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {userProfiles.map(user => {
-                    const stats = getStaffCompletionStats(user.user_id);
-                    const hrProfile = getHRProfile(user.user_id);
-                    
-                    return (
-                      <tr key={user.user_id} className="border-b hover:bg-muted/50">
-                        <td className="p-3 sticky left-0 bg-background z-10">
-                          <div className="flex flex-col">
-                            <span className="font-medium text-sm">
-                              {user.display_name || 'No name'}
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              {user.email}
-                            </span>
-                            {hrProfile && (
-                              <Badge 
-                                variant="outline" 
-                                className="text-xs mt-1 w-fit"
-                              >
-                                {hrProfile.employment_status.replace(/_/g, ' ')}
-                              </Badge>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-3 text-center">
-                          <div className="flex flex-col items-center gap-1">
-                            <div 
-                              className={`text-sm font-medium ${
-                                stats.percentage === 100 
-                                  ? 'text-green-600' 
-                                  : stats.percentage >= 50 
-                                    ? 'text-amber-600' 
-                                    : 'text-red-600'
-                              }`}
-                            >
-                              {stats.percentage}%
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {stats.complete}/{stats.total}
-                            </div>
-                          </div>
-                        </td>
-                        {categoryOrder.flatMap(category =>
-                          (fieldsByCategory[category] || []).map((field, idx) => {
-                            const hasValue = getFieldValue(user.user_id, field.key);
-                            return (
-                              <td 
-                                key={`${user.user_id}-${field.key}`}
-                                className={`text-center p-2 ${idx === 0 ? 'border-l' : ''}`}
-                              >
-                                <TooltipProvider>
-                                  <Tooltip>
-                                    <TooltipTrigger>
-                                      {hasValue ? (
-                                        <CheckCircle2 className="h-4 w-4 text-green-500 mx-auto" />
-                                      ) : (
-                                        <XCircle className="h-4 w-4 text-red-400 mx-auto" />
-                                      )}
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>
-                                        {field.label}: {hasValue ? 'Complete' : 'Missing'}
-                                      </p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              </td>
-                            );
-                          })
-                        )}
+                              ) : (
+                                <div className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-muted">
+                                  <Clock className="h-3 w-3 text-muted-foreground" />
+                                </div>
+                              )}
+                            </td>
+                          );
+                        })}
                       </tr>
+                    ))}
+                  </>
+                ))}
+                {/* Progress summary row */}
+                <tr className="bg-muted/30 font-medium">
+                  <td className="sticky left-0 bg-background z-10 p-3 border-t-2 border-r font-semibold">
+                    Total Progress
+                  </td>
+                  {userProfiles.map((member) => {
+                    const stats = getCompletionStats(member.user_id);
+                    const progressPercent = DOCUMENTATION_FIELDS.length > 0 
+                      ? Math.round((stats.completed / stats.total) * 100) 
+                      : 0;
+
+                    return (
+                      <td key={member.user_id} className="p-3 text-center border-t-2">
+                        <div className="flex flex-col items-center gap-1">
+                          <div className="w-12 h-2 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-primary rounded-full transition-all"
+                              style={{ width: `${progressPercent}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {stats.completed}/{stats.total}
+                          </span>
+                        </div>
+                      </td>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          </ScrollArea>
-        </CardContent>
-      </Card>
-
-      {/* Legend */}
-      <div className="flex items-center gap-6 text-sm text-muted-foreground">
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4 text-green-500" />
-          <span>Complete</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <XCircle className="h-4 w-4 text-red-400" />
-          <span>Missing</span>
-        </div>
-      </div>
-    </div>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <ScrollBar orientation="horizontal" />
+        </ScrollArea>
+      </CardContent>
+    </Card>
   );
 }
