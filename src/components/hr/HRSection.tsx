@@ -10,7 +10,7 @@ import { DollarSign, Users, User, GraduationCap, FileText } from "lucide-react";
 
 export function HRSection() {
   const { isAdmin } = useUserRole();
-  const [activeTab, setActiveTab] = useState(isAdmin ? "profiles" : "onboarding-form");
+  const [activeTab, setActiveTab] = useState(isAdmin ? "profiles" : "my-profile");
 
   return (
     <div className="flex-1 overflow-auto p-6">
@@ -48,7 +48,11 @@ export function HRSection() {
                 </TabsTrigger>
               </>
             ) : (
-              <>
+            <>
+                <TabsTrigger value="my-profile" className="flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  My Profile
+                </TabsTrigger>
                 <TabsTrigger value="onboarding-form" className="flex items-center gap-2">
                   <FileText className="h-4 w-4" />
                   Onboarding Form
@@ -56,10 +60,6 @@ export function HRSection() {
                 <TabsTrigger value="onboarding" className="flex items-center gap-2">
                   <GraduationCap className="h-4 w-4" />
                   Onboarding Steps
-                </TabsTrigger>
-                <TabsTrigger value="my-profile" className="flex items-center gap-2">
-                  <User className="h-4 w-4" />
-                  My Profile
                 </TabsTrigger>
               </>
             )}
