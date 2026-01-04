@@ -95,7 +95,11 @@ const STATUS_COLORS: Record<string, string> = {
   rejected: 'bg-destructive/20 text-destructive border-destructive',
 };
 
-export function StaffRequestsManager() {
+interface StaffRequestsManagerProps {
+  onViewRequest?: (requestId: string) => void;
+}
+
+export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProps = {}) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<string>("pending");
@@ -532,7 +536,7 @@ export function StaffRequestsManager() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => openReviewDialog(request)}
+                                  onClick={() => onViewRequest ? onViewRequest(request.id) : openReviewDialog(request)}
                                   className="text-primary hover:text-primary"
                                 >
                                   <Eye className="h-4 w-4 mr-1" />
@@ -543,7 +547,7 @@ export function StaffRequestsManager() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => openReviewDialog(request)}
+                                    onClick={() => onViewRequest ? onViewRequest(request.id) : openReviewDialog(request)}
                                   >
                                     <Eye className="h-4 w-4" />
                                   </Button>
