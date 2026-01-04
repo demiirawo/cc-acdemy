@@ -112,6 +112,10 @@ interface OnboardingDocument {
   emergency_contact_phone: string | null;
   emergency_contact_email: string | null;
   form_status: string;
+  employment_start_date: string | null;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 const CURRENCIES = [
@@ -1187,6 +1191,22 @@ export function HRProfileManager() {
                         <div className="col-span-2">
                           <span className="text-muted-foreground">Address:</span>
                           <p className="font-medium">{onboardingDoc.address || '-'}</p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Employment Start Date:</span>
+                          <p className="font-medium">
+                            {onboardingDoc.employment_start_date 
+                              ? format(new Date(onboardingDoc.employment_start_date), 'dd MMM yyyy')
+                              : '-'}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Form Submitted:</span>
+                          <p className="font-medium">
+                            {onboardingDoc.submitted_at 
+                              ? format(new Date(onboardingDoc.submitted_at), 'dd MMM yyyy HH:mm')
+                              : 'Not submitted'}
+                          </p>
                         </div>
                       </div>
                     </Card>
