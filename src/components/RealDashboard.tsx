@@ -318,9 +318,6 @@ export function RealDashboard({
           </div>
         </div>
 
-        {/* Upcoming Staff Cards */}
-        <UpcomingStaffCards />
-
         {/* Company Noticeboard */}
         <CompanyNoticeboard />
 
