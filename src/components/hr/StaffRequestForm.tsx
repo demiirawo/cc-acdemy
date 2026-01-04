@@ -475,6 +475,9 @@ export function StaffRequestForm() {
       // Use selected staff ID if admin, otherwise current user
       const targetUserId = isAdmin && selectedStaffId ? selectedStaffId : user.id;
 
+      // Admin-submitted requests go straight to approved
+      const requestStatus = isAdmin ? 'approved' : 'pending';
+
       const { error } = await supabase.from("staff_requests").insert({
         user_id: targetUserId,
         request_type: requestType,
@@ -484,7 +487,10 @@ export function StaffRequestForm() {
         start_date: format(requestStartDate!, "yyyy-MM-dd"),
         end_date: format(requestEndDate!, "yyyy-MM-dd"),
         days_requested: requestDays,
-        details: requestDetails || null
+        details: requestDetails || null,
+        status: requestStatus,
+        reviewed_by: isAdmin ? user.id : null,
+        reviewed_at: isAdmin ? new Date().toISOString() : null
       });
 
       if (error) throw error;
