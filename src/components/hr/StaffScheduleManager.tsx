@@ -14,9 +14,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar, Link2, Check } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar, Link2, Check } from "lucide-react";
 
 interface Schedule {
   id: string;
@@ -214,8 +216,8 @@ export function StaffScheduleManager() {
   const [editingPattern, setEditingPattern] = useState<RecurringPattern | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; isPattern: boolean; patternId?: string; exceptionDate?: string } | null>(null);
-  const [selectedStaff, setSelectedStaff] = useState<string>("all");
-  const [selectedClient, setSelectedClient] = useState<string>("all");
+  const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
+  const [selectedClient, setSelectedClient] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("staff");
   const [isEditScheduleDialogOpen, setIsEditScheduleDialogOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
@@ -1535,12 +1537,12 @@ export function StaffScheduleManager() {
     return hours * schedule.hourly_rate;
   };
 
-  const filteredStaff = selectedStaff && selectedStaff !== "all"
-    ? visibleStaffMembers.filter(s => s.user_id === selectedStaff)
+  const filteredStaff = selectedStaff.length > 0
+    ? visibleStaffMembers.filter(s => selectedStaff.includes(s.user_id))
     : visibleStaffMembers;
 
-  const filteredClients = selectedClient && selectedClient !== "all"
-    ? visibleClients.filter(c => c === selectedClient)
+  const filteredClients = selectedClient.length > 0
+    ? visibleClients.filter(c => selectedClient.includes(c))
     : visibleClients;
 
   return (
@@ -1621,35 +1623,89 @@ export function StaffScheduleManager() {
 
             <div className="flex items-center gap-4">
               {viewMode === "staff" && (
-                <Select value={selectedStaff} onValueChange={setSelectedStaff}>
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="All Staff" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background z-50">
-                    <SelectItem value="all">All Staff</SelectItem>
-                    {visibleStaffMembers.map(staff => (
-                      <SelectItem key={staff.user_id} value={staff.user_id}>
-                        {staff.display_name || staff.email}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-[200px] justify-between">
+                      {selectedStaff.length === 0 
+                        ? "All Staff" 
+                        : selectedStaff.length === 1 
+                          ? visibleStaffMembers.find(s => s.user_id === selectedStaff[0])?.display_name || "1 selected"
+                          : `${selectedStaff.length} selected`}
+                      <ChevronDown className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[200px] p-2 bg-background z-50" align="start">
+                    <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                      <div 
+                        className="flex items-center gap-2 p-2 hover:bg-muted rounded cursor-pointer"
+                        onClick={() => setSelectedStaff([])}
+                      >
+                        <Checkbox checked={selectedStaff.length === 0} />
+                        <span className="text-sm font-medium">All Staff</span>
+                      </div>
+                      <Separator className="my-1" />
+                      {visibleStaffMembers.map(staff => (
+                        <div 
+                          key={staff.user_id}
+                          className="flex items-center gap-2 p-2 hover:bg-muted rounded cursor-pointer"
+                          onClick={() => {
+                            setSelectedStaff(prev => 
+                              prev.includes(staff.user_id)
+                                ? prev.filter(id => id !== staff.user_id)
+                                : [...prev, staff.user_id]
+                            );
+                          }}
+                        >
+                          <Checkbox checked={selectedStaff.includes(staff.user_id)} />
+                          <span className="text-sm truncate">{staff.display_name || staff.email}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               )}
 
               {viewMode === "client" && (
-                <Select value={selectedClient} onValueChange={setSelectedClient}>
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="All Clients" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background z-50">
-                    <SelectItem value="all">All Clients</SelectItem>
-                    {uniqueClients.map(clientName => (
-                      <SelectItem key={clientName} value={clientName}>
-                        {clientName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="w-[200px] justify-between">
+                      {selectedClient.length === 0 
+                        ? "All Clients" 
+                        : selectedClient.length === 1 
+                          ? selectedClient[0]
+                          : `${selectedClient.length} selected`}
+                      <ChevronDown className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[200px] p-2 bg-background z-50" align="start">
+                    <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                      <div 
+                        className="flex items-center gap-2 p-2 hover:bg-muted rounded cursor-pointer"
+                        onClick={() => setSelectedClient([])}
+                      >
+                        <Checkbox checked={selectedClient.length === 0} />
+                        <span className="text-sm font-medium">All Clients</span>
+                      </div>
+                      <Separator className="my-1" />
+                      {uniqueClients.map(clientName => (
+                        <div 
+                          key={clientName}
+                          className="flex items-center gap-2 p-2 hover:bg-muted rounded cursor-pointer"
+                          onClick={() => {
+                            setSelectedClient(prev => 
+                              prev.includes(clientName)
+                                ? prev.filter(c => c !== clientName)
+                                : [...prev, clientName]
+                            );
+                          }}
+                        >
+                          <Checkbox checked={selectedClient.includes(clientName)} />
+                          <span className="text-sm truncate">{clientName}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
               )}
 
               {/* Recurring Schedule Dialog - Only show for editors/admins */}
