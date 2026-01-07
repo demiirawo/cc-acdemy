@@ -18,7 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar, Link2, Check } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar, Link2, Check, X } from "lucide-react";
 
 interface Schedule {
   id: string;
@@ -1163,11 +1163,12 @@ export function StaffScheduleManager() {
     setIsEditHolidayDialogOpen(true);
   };
 
-  // Update holiday mutation
+  // Update holiday mutation - also syncs to linked staff_requests
   const updateHolidayMutation = useMutation({
     mutationFn: async () => {
       if (!editingHoliday) throw new Error("No holiday selected");
       
+      // Update the holiday
       const { error } = await supabase
         .from("staff_holidays")
         .update({
@@ -1181,6 +1182,39 @@ export function StaffScheduleManager() {
         .eq("id", editingHoliday.id);
       
       if (error) throw error;
+      
+      // Also update any linked staff_requests (by linked_holiday_id)
+      const { error: linkedRequestError } = await supabase
+        .from("staff_requests")
+        .update({
+          start_date: editHolidayForm.start_date,
+          end_date: editHolidayForm.end_date,
+          days_requested: editHolidayForm.days_taken,
+          details: editHolidayForm.notes || null
+        })
+        .eq("linked_holiday_id", editingHoliday.id);
+      
+      if (linkedRequestError) {
+        console.warn("Could not sync holiday update to requests:", linkedRequestError);
+      }
+      
+      // Also update matching staff requests by user_id and original date range
+      const { error: matchingRequestError } = await supabase
+        .from("staff_requests")
+        .update({
+          start_date: editHolidayForm.start_date,
+          end_date: editHolidayForm.end_date,
+          days_requested: editHolidayForm.days_taken,
+          details: editHolidayForm.notes || null
+        })
+        .eq("user_id", editingHoliday.user_id)
+        .eq("start_date", editingHoliday.start_date)
+        .eq("end_date", editingHoliday.end_date)
+        .in("request_type", ["holiday", "holiday_paid", "holiday_unpaid"]);
+      
+      if (matchingRequestError) {
+        console.warn("Could not sync holiday update to matching requests:", matchingRequestError);
+      }
     },
     onSuccess: () => {
       toast.success("Holiday updated successfully");
@@ -1188,6 +1222,8 @@ export function StaffScheduleManager() {
       setIsViewingHoliday(true);
       refetchHolidays();
       queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-requests-for-schedule"] });
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to update holiday");
@@ -1237,6 +1273,26 @@ export function StaffScheduleManager() {
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to delete holiday");
+    }
+  });
+
+  // Delete cover request mutation - removes cover assignment and syncs to staff_requests
+  const deleteCoverRequestMutation = useMutation({
+    mutationFn: async (requestId: string) => {
+      const { error } = await supabase
+        .from("staff_requests")
+        .delete()
+        .eq("id", requestId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Cover assignment removed");
+      queryClient.invalidateQueries({ queryKey: ["staff-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-requests-for-schedule"] });
+    },
+    onError: (error: any) => {
+      toast.error(error.message || "Failed to remove cover assignment");
     }
   });
 
@@ -1418,8 +1474,9 @@ export function StaffScheduleManager() {
     
     if (allCoverageRequests.length === 0) return null;
     
-    // Return covering staff info
+    // Return covering staff info with request IDs for deletion
     return allCoverageRequests.map(r => ({
+      requestId: r.id,
       userId: r.user_id,
       name: getStaffName(r.user_id),
       type: r.request_type
@@ -1519,6 +1576,7 @@ export function StaffScheduleManager() {
       if (coveredSchedules.length === 0) return null;
       
       return {
+        requestId: req.id,
         holidayUserId: coveredUserId,
         holidayUserName: getStaffName(coveredUserId),
         overtimeType: req.request_type,
@@ -1528,7 +1586,7 @@ export function StaffScheduleManager() {
           endTime: format(parseISO(s.end_datetime), "HH:mm")
         }))
       };
-    }).filter(Boolean);
+    }).filter(Boolean) as { requestId: string; holidayUserId: string; holidayUserName: string; overtimeType: string; shifts: { clientName: string; startTime: string; endTime: string }[] }[];
   };
 
   const calculateScheduleCost = (schedule: Schedule) => {
@@ -2333,7 +2391,25 @@ export function StaffScheduleManager() {
                             </div>
                             {hasCoverage ? (
                               <div className="text-[10px] text-green-700 bg-green-100 rounded px-1 py-0.5 mt-0.5">
-                                <span className="font-medium">Covered by:</span> {coverage.map(c => c.name).join(', ')}
+                                <span className="font-medium">Covered by:</span>
+                                {coverage.map((c, coverIdx) => (
+                                  <span key={coverIdx} className="inline-flex items-center gap-0.5 ml-1">
+                                    {c.name}
+                                    {canEditSchedule && (
+                                      <button
+                                        className="hover:text-red-600 ml-0.5"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          deleteCoverRequestMutation.mutate(c.requestId);
+                                        }}
+                                        title="Remove cover"
+                                      >
+                                        <X className="h-2.5 w-2.5" />
+                                      </button>
+                                    )}
+                                    {coverIdx < coverage.length - 1 && ','}
+                                  </span>
+                                ))}
                               </div>
                             ) : needsCoverage && (
                               <div className="text-[10px] text-red-600 bg-red-100 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1">
@@ -2344,12 +2420,26 @@ export function StaffScheduleManager() {
                           </div>
                         )}
 
-                        {/* Covering for someone indicator */}
+                        {/* Covering for someone indicator - with delete option */}
                         {coveringFor && coveringFor.length > 0 && coveringFor.map((cover, idx) => (
-                          <div key={idx} className="text-[10px] text-blue-700 bg-blue-50 rounded px-1 py-0.5 mb-1">
+                          <div key={idx} className="text-[10px] text-blue-700 bg-blue-50 rounded px-1 py-0.5 mb-1 group relative">
                             <div className="flex items-center gap-1 font-medium">
                               <Users className="h-2.5 w-2.5 flex-shrink-0" />
-                              <span>Covering: {cover?.holidayUserName}</span>
+                              <span className="flex-1">Covering: {cover?.holidayUserName}</span>
+                              {canEditSchedule && cover?.requestId && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-4 w-4 opacity-0 group-hover:opacity-100 -mr-0.5"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteCoverRequestMutation.mutate(cover.requestId);
+                                  }}
+                                  title="Remove cover assignment"
+                                >
+                                  <X className="h-2.5 w-2.5 text-destructive" />
+                                </Button>
+                              )}
                             </div>
                             {cover?.shifts && cover.shifts.length > 0 ? (
                               cover.shifts.map((shift, shiftIdx) => (
