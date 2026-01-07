@@ -2369,41 +2369,51 @@ export function StaffScheduleManager() {
                           );
                         })}
 
-                        {dayOvertime.map(ot => (
-                          <div 
-                            key={ot.id} 
-                            className={`bg-orange-100 border border-orange-300 rounded p-1 mb-1 text-xs group relative ${canEditSchedule ? 'cursor-pointer hover:ring-2 hover:ring-primary/50' : ''}`}
-                            onClick={() => handleOvertimeClick(ot)}
-                            onDoubleClick={() => handleOvertimeClick(ot)}
-                            title={scheduleEditHint}
-                          >
-                            <div className="flex items-center gap-1 font-medium text-orange-700">
-                              <Clock className="h-3 w-3" />
-                              {ot.hours}h overtime
-                            </div>
-                            {ot.hourly_rate && (
-                              <div className="text-orange-600">
-                                {ot.currency} {(ot.hours * ot.hourly_rate).toFixed(2)}
+                        {dayOvertime.map(ot => {
+                          // Extract client name from notes if present (format: "ClientName: notes" or just "ClientName")
+                          const noteParts = ot.notes?.split(':') || [];
+                          const clientName = noteParts.length > 0 ? noteParts[0].trim() : null;
+                          const additionalNotes = noteParts.length > 1 ? noteParts.slice(1).join(':').trim() : null;
+                          
+                          return (
+                            <div 
+                              key={ot.id} 
+                              className={`bg-orange-50 border border-orange-300 rounded p-1 mb-1 text-xs group relative ${canEditSchedule ? 'cursor-pointer hover:ring-2 hover:ring-primary/50' : ''}`}
+                              onClick={() => handleOvertimeClick(ot)}
+                              onDoubleClick={() => handleOvertimeClick(ot)}
+                              title={scheduleEditHint}
+                            >
+                              <div className="font-medium truncate flex items-center gap-1">
+                                {clientName || 'Overtime'}
+                                <Clock className="h-3 w-3 text-orange-500" />
                               </div>
-                            )}
-                            {ot.notes && (
-                              <div className="text-orange-600 italic truncate">{ot.notes}</div>
-                            )}
-                            {canEditSchedule && (
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  deleteOvertimeMutation.mutate(ot.id);
-                                }}
-                              >
-                                <Trash2 className="h-3 w-3 text-destructive" />
-                              </Button>
-                            )}
-                          </div>
-                        ))}
+                              <div className="text-muted-foreground">
+                                {ot.hours}h overtime
+                              </div>
+                              {ot.hourly_rate && (
+                                <div className="text-muted-foreground">
+                                  {ot.currency} {(ot.hours * ot.hourly_rate).toFixed(2)}
+                                </div>
+                              )}
+                              {additionalNotes && (
+                                <div className="italic truncate text-muted-foreground">{additionalNotes}</div>
+                              )}
+                              {canEditSchedule && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    deleteOvertimeMutation.mutate(ot.id);
+                                  }}
+                                >
+                                  <Trash2 className="h-3 w-3 text-destructive" />
+                                </Button>
+                              )}
+                            </div>
+                          );
+                        })}
 
                         {/* Staff Requests - filter out holidays, overtime with linked holiday, and shift_swap on days without shifts */}
                         {getRequestsForStaffDay(staff.user_id, day)
