@@ -1197,6 +1197,26 @@ export function StaffScheduleManager() {
     mutationFn: async () => {
       if (!editingHoliday) throw new Error("No holiday selected");
       
+      // First, delete any staff requests that are linked via linked_holiday_id
+      const { error: linkedRequestsError } = await supabase
+        .from("staff_requests")
+        .delete()
+        .eq("linked_holiday_id", editingHoliday.id);
+      
+      if (linkedRequestsError) throw linkedRequestsError;
+      
+      // Also delete matching staff requests by user_id and date range (for requests created before linked_holiday_id was used)
+      const { error: matchingRequestsError } = await supabase
+        .from("staff_requests")
+        .delete()
+        .eq("user_id", editingHoliday.user_id)
+        .eq("start_date", editingHoliday.start_date)
+        .eq("end_date", editingHoliday.end_date)
+        .in("request_type", ["holiday", "holiday_paid", "holiday_unpaid"]);
+      
+      if (matchingRequestsError) throw matchingRequestsError;
+      
+      // Now delete the holiday itself
       const { error } = await supabase
         .from("staff_holidays")
         .delete()
@@ -1205,11 +1225,13 @@ export function StaffScheduleManager() {
       if (error) throw error;
     },
     onSuccess: () => {
-      toast.success("Holiday deleted successfully");
+      toast.success("Holiday and associated requests deleted successfully");
       setIsDeleteHolidayConfirmOpen(false);
       setIsEditHolidayDialogOpen(false);
       refetchHolidays();
       queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-requests-for-schedule"] });
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to delete holiday");
