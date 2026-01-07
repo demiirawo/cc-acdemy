@@ -218,6 +218,8 @@ export function StaffScheduleManager() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; isPattern: boolean; patternId?: string; exceptionDate?: string } | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
   const [selectedClient, setSelectedClient] = useState<string[]>([]);
+  const [staffSearch, setStaffSearch] = useState("");
+  const [clientSearch, setClientSearch] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("staff");
   const [isEditScheduleDialogOpen, setIsEditScheduleDialogOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
@@ -1692,7 +1694,13 @@ export function StaffScheduleManager() {
                       <ChevronDown className="h-4 w-4 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[200px] p-2 bg-background z-50" align="start">
+                  <PopoverContent className="w-[250px] p-2 bg-background z-50" align="start">
+                    <Input
+                      placeholder="Search staff..."
+                      value={staffSearch}
+                      onChange={(e) => setStaffSearch(e.target.value)}
+                      className="mb-2"
+                    />
                     <div className="space-y-1 max-h-[300px] overflow-y-auto">
                       <div 
                         className="flex items-center gap-2 p-2 hover:bg-muted rounded cursor-pointer"
@@ -1702,7 +1710,14 @@ export function StaffScheduleManager() {
                         <span className="text-sm font-medium">All Staff</span>
                       </div>
                       <Separator className="my-1" />
-                      {visibleStaffMembers.map(staff => (
+                      {visibleStaffMembers
+                        .filter(staff => {
+                          if (!staffSearch.trim()) return true;
+                          const searchLower = staffSearch.toLowerCase();
+                          return (staff.display_name?.toLowerCase().includes(searchLower) || 
+                                  staff.email?.toLowerCase().includes(searchLower));
+                        })
+                        .map(staff => (
                         <div 
                           key={staff.user_id}
                           className="flex items-center gap-2 p-2 hover:bg-muted rounded cursor-pointer"
@@ -1735,7 +1750,13 @@ export function StaffScheduleManager() {
                       <ChevronDown className="h-4 w-4 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[200px] p-2 bg-background z-50" align="start">
+                  <PopoverContent className="w-[250px] p-2 bg-background z-50" align="start">
+                    <Input
+                      placeholder="Search clients..."
+                      value={clientSearch}
+                      onChange={(e) => setClientSearch(e.target.value)}
+                      className="mb-2"
+                    />
                     <div className="space-y-1 max-h-[300px] overflow-y-auto">
                       <div 
                         className="flex items-center gap-2 p-2 hover:bg-muted rounded cursor-pointer"
@@ -1745,7 +1766,12 @@ export function StaffScheduleManager() {
                         <span className="text-sm font-medium">All Clients</span>
                       </div>
                       <Separator className="my-1" />
-                      {uniqueClients.map(clientName => (
+                      {uniqueClients
+                        .filter(clientName => {
+                          if (!clientSearch.trim()) return true;
+                          return clientName.toLowerCase().includes(clientSearch.toLowerCase());
+                        })
+                        .map(clientName => (
                         <div 
                           key={clientName}
                           className="flex items-center gap-2 p-2 hover:bg-muted rounded cursor-pointer"
