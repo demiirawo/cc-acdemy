@@ -189,11 +189,16 @@ export function StaffRequestForm() {
   const { data: approvedHolidays = [] } = useQuery({
     queryKey: ["approved-holidays-for-staff", coveringStaffId],
     queryFn: async () => {
+      if (!coveringStaffId) return [];
+      const today = format(new Date(), "yyyy-MM-dd");
+
       const { data, error } = await supabase
         .from("staff_holidays")
         .select("id, user_id, start_date, end_date, days_taken, notes, absence_type")
         .eq("status", "approved")
         .eq("user_id", coveringStaffId)
+        // Only show current/future holidays in dropdowns
+        .gte("end_date", today)
         .order("start_date", { ascending: false });
       
       if (error) throw error;
@@ -294,11 +299,15 @@ export function StaffRequestForm() {
     queryKey: ["swap-partner-holidays", swapWithUserId],
     queryFn: async () => {
       if (!swapWithUserId) return [];
+      const today = format(new Date(), "yyyy-MM-dd");
+
       const { data, error } = await supabase
         .from("staff_holidays")
         .select("id, user_id, start_date, end_date, days_taken, notes, absence_type")
         .eq("status", "approved")
         .eq("user_id", swapWithUserId)
+        // Only show current/future holidays in dropdowns
+        .gte("end_date", today)
         .order("start_date", { ascending: false });
       
       if (error) throw error;
