@@ -221,7 +221,7 @@ export function StaffRequestForm() {
     enabled: !!swapWithUserId && !!swapStartDate && !!swapEndDate && shiftCoverType === 'shifts'
   });
 
-  // Fetch swap partner's recurring patterns to generate virtual shifts
+  // Fetch swap partner's recurring patterns to generate virtual shifts (needed for both shifts and holidays mode)
   const { data: swapPartnerPatterns = [] } = useQuery({
     queryKey: ["swap-partner-patterns", swapWithUserId],
     queryFn: async () => {
@@ -234,8 +234,60 @@ export function StaffRequestForm() {
       if (error) throw error;
       return data;
     },
-    enabled: !!swapWithUserId && shiftCoverType === 'shifts'
+    enabled: !!swapWithUserId
   });
+
+  // Fetch swap partner's individual schedules for holiday cover calculation
+  const { data: swapPartnerAllSchedules = [] } = useQuery({
+    queryKey: ["swap-partner-all-schedules", swapWithUserId],
+    queryFn: async () => {
+      if (!swapWithUserId) return [];
+      const { data, error } = await supabase
+        .from("staff_schedules")
+        .select("*")
+        .eq("user_id", swapWithUserId);
+      
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!swapWithUserId
+  });
+
+  // Helper function to calculate actual working days for a user in a date range
+  const calculateActualWorkingDays = (userId: string, startDate: Date, endDate: Date): number => {
+    const patterns = swapPartnerPatterns.filter(p => p.user_id === userId);
+    const schedules = swapPartnerAllSchedules.filter(s => s.user_id === userId);
+    const daysInRange = eachDayOfInterval({ start: startDate, end: endDate });
+    
+    let workingDays = 0;
+    
+    daysInRange.forEach(day => {
+      const dayOfWeek = getDay(day);
+      const dateStr = format(day, "yyyy-MM-dd");
+      
+      // Check non-overtime patterns (standard working days)
+      const hasRecurringShift = patterns.some(pattern => {
+        if (pattern.is_overtime) return false; // Exclude overtime patterns
+        const patternStart = parseISO(pattern.start_date);
+        const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+        const inDateRange = day >= patternStart && (!patternEnd || day <= patternEnd);
+        const dayMatches = pattern.days_of_week?.includes(dayOfWeek);
+        return inDateRange && dayMatches;
+      });
+      
+      // Check individual schedules
+      const hasIndividualShift = schedules.some(schedule => {
+        const scheduleStart = parseISO(schedule.start_datetime);
+        return format(scheduleStart, "yyyy-MM-dd") === dateStr;
+      });
+      
+      if (hasRecurringShift || hasIndividualShift) {
+        workingDays++;
+      }
+    });
+    
+    return workingDays;
+  };
 
   // Fetch swap partner's approved holidays for holiday cover
   const { data: swapPartnerHolidays = [] } = useQuery({
@@ -466,11 +518,13 @@ export function StaffRequestForm() {
         } else if (shiftCoverType === 'holidays' && selectedCoverHolidayId) {
           const holiday = swapPartnerHolidays.find(h => h.id === selectedCoverHolidayId);
           if (holiday) {
-            const holidayDetails = `Holiday: ${format(parseISO(holiday.start_date), "dd MMM yyyy")} – ${format(parseISO(holiday.end_date), "dd MMM yyyy")} (${holiday.days_taken} days)`;
-            requestDetails = details ? `${details}\n\n${holidayDetails}` : holidayDetails;
             requestStartDate = parseISO(holiday.start_date);
             requestEndDate = parseISO(holiday.end_date);
-            requestDays = holiday.days_taken;
+            // Calculate actual working days based on the person being covered's schedule
+            const actualWorkingDays = calculateActualWorkingDays(swapWithUserId, requestStartDate, requestEndDate);
+            requestDays = actualWorkingDays > 0 ? actualWorkingDays : holiday.days_taken;
+            const holidayDetails = `Covering for ${staffMembers.find(s => s.user_id === swapWithUserId)?.display_name || 'staff member'} during their holiday`;
+            requestDetails = details ? `${details}\n\n${holidayDetails}` : holidayDetails;
           }
         }
       }
