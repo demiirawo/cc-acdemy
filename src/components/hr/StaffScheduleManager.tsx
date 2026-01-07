@@ -19,6 +19,7 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
 import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar, Link2, Check, X } from "lucide-react";
+import { UnifiedShiftEditor, ShiftToEdit } from "./UnifiedShiftEditor";
 
 interface Schedule {
   id: string;
@@ -221,6 +222,11 @@ export function StaffScheduleManager() {
   const [staffSearch, setStaffSearch] = useState("");
   const [clientSearch, setClientSearch] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("staff");
+  
+  // Unified shift editor state
+  const [isUnifiedEditorOpen, setIsUnifiedEditorOpen] = useState(false);
+  const [shiftToEdit, setShiftToEdit] = useState<ShiftToEdit | null>(null);
+  
   const [isEditScheduleDialogOpen, setIsEditScheduleDialogOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<Schedule | null>(null);
   const [editScheduleForm, setEditScheduleForm] = useState({
@@ -228,8 +234,6 @@ export function StaffScheduleManager() {
     start_time: "09:00",
     end_time: "17:00",
     notes: "",
-    hourly_rate: "",
-    currency: "GBP",
     shift_type: "",
     is_overtime: false
   });
@@ -1099,25 +1103,22 @@ export function StaffScheduleManager() {
     }
     
     const parsed = parsePatternScheduleId(schedule.id);
-    if (parsed) {
-      openEditPatternDialog(parsed.patternId);
-    } else {
-      // Open edit dialog for regular schedules
-      setEditingSchedule(schedule);
-      const startDate = parseISO(schedule.start_datetime);
-      const endDate = parseISO(schedule.end_datetime);
-      setEditScheduleForm({
-        client_name: schedule.client_name,
-        start_time: format(startDate, "HH:mm"),
-        end_time: format(endDate, "HH:mm"),
-        notes: schedule.notes || "",
-        hourly_rate: schedule.hourly_rate?.toString() || "",
-        currency: schedule.currency,
-        shift_type: schedule.shift_type || "",
-        is_overtime: false
-      });
-      setIsEditScheduleDialogOpen(true);
-    }
+    const scheduleDate = parseISO(schedule.start_datetime);
+    
+    // Use unified editor for all shifts
+    setShiftToEdit({
+      patternId: parsed?.patternId,
+      scheduleId: parsed ? undefined : schedule.id,
+      userId: schedule.user_id,
+      clientName: schedule.client_name,
+      date: scheduleDate,
+      startTime: format(scheduleDate, "HH:mm"),
+      endTime: format(parseISO(schedule.end_datetime), "HH:mm"),
+      shiftType: schedule.shift_type,
+      notes: schedule.notes,
+      isOvertime: schedule.is_pattern_overtime || false,
+    });
+    setIsUnifiedEditorOpen(true);
   };
 
   const handleOvertimeClick = (ot: Overtime) => {
@@ -2888,505 +2889,19 @@ export function StaffScheduleManager() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Edit Recurring Pattern Dialog */}
-      <Dialog open={isEditPatternDialogOpen} onOpenChange={setIsEditPatternDialogOpen}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit Recurring Schedule</DialogTitle>
-            <DialogDescription>
-              Modify this recurring shift pattern. Changes will affect all future occurrences.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Staff Member</Label>
-              <Select value={editPatternForm.user_id} onValueChange={v => setEditPatternForm(p => ({ ...p, user_id: v }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select staff" />
-                </SelectTrigger>
-                <SelectContent className="bg-background z-50">
-                  {staffMembers.map(staff => (
-                    <SelectItem key={staff.user_id} value={staff.user_id}>
-                      {staff.display_name || staff.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Client</Label>
-              <Select value={editPatternForm.client_name} onValueChange={v => setEditPatternForm(p => ({ ...p, client_name: v }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select client" />
-                </SelectTrigger>
-                <SelectContent className="bg-background z-50">
-                  {clients.map(client => (
-                    <SelectItem key={client.id} value={client.name}>
-                      {client.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            {/* Recurrence Interval */}
-            <div>
-              <Label>Recurrence Pattern</Label>
-              <Select 
-                value={editPatternForm.recurrence_interval} 
-                onValueChange={v => setEditPatternForm(p => ({ ...p, recurrence_interval: v as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off' }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-background z-50">
-                  <SelectItem value="one_off">One-off / Fixed dates</SelectItem>
-                  <SelectItem value="daily">Every day</SelectItem>
-                  <SelectItem value="weekly">Every week</SelectItem>
-                  <SelectItem value="biweekly">Every other week</SelectItem>
-                  <SelectItem value="monthly">Every month (same week)</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">
-                {editPatternForm.recurrence_interval === 'one_off' && 'The shift will only occur within the start/end date range'}
-                {editPatternForm.recurrence_interval === 'daily' && 'The shift will repeat every single day'}
-                {editPatternForm.recurrence_interval === 'weekly' && 'The shift will repeat on selected days every week'}
-                {editPatternForm.recurrence_interval === 'biweekly' && 'The shift will repeat on selected days every other week'}
-                {editPatternForm.recurrence_interval === 'monthly' && 'The shift will repeat on selected days in the same week of each month'}
-              </p>
-            </div>
-
-            {/* Select Days - hide for daily recurrence and one_off (auto-calculated from date range) */}
-            {editPatternForm.recurrence_interval !== 'daily' && editPatternForm.recurrence_interval !== 'one_off' && (
-              <div>
-                <Label>Select Days</Label>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {DAYS_OF_WEEK.map(day => (
-                    <Button
-                      key={day.value}
-                      type="button"
-                      variant={editPatternForm.selected_days.includes(day.value) ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => toggleEditPatternDay(day.value)}
-                    >
-                      {day.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Start Time</Label>
-                <Input
-                  type="time"
-                  value={editPatternForm.start_time}
-                  onChange={e => setEditPatternForm(p => ({ ...p, start_time: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label>End Time</Label>
-                <Input
-                  type="time"
-                  value={editPatternForm.end_time}
-                  onChange={e => setEditPatternForm(p => ({ ...p, end_time: e.target.value }))}
-                />
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Start Date</Label>
-                <Input
-                  type="date"
-                  value={editPatternForm.start_date}
-                  onChange={e => setEditPatternForm(p => ({ ...p, start_date: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label>End Date (optional)</Label>
-                <Input
-                  type="date"
-                  value={editPatternForm.end_date}
-                  onChange={e => setEditPatternForm(p => ({ ...p, end_date: e.target.value }))}
-                />
-                <p className="text-xs text-muted-foreground mt-1">Leave empty for indefinite</p>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="edit_is_overtime"
-                checked={editPatternForm.is_overtime}
-                onCheckedChange={(checked) => setEditPatternForm(p => ({ ...p, is_overtime: checked === true }))}
-              />
-              <Label htmlFor="edit_is_overtime" className="text-sm font-normal cursor-pointer">
-                Mark as overtime
-              </Label>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Hourly Rate (optional)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editPatternForm.hourly_rate}
-                  onChange={e => setEditPatternForm(p => ({ ...p, hourly_rate: e.target.value }))}
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <Label>Currency</Label>
-                <Select value={editPatternForm.currency} onValueChange={v => setEditPatternForm(p => ({ ...p, currency: v }))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background z-50">
-                    <SelectItem value="GBP">GBP</SelectItem>
-                    <SelectItem value="USD">USD</SelectItem>
-                    <SelectItem value="EUR">EUR</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div>
-              <Label>Shift Type (optional)</Label>
-              <Select 
-                value={editPatternForm.shift_type} 
-                onValueChange={v => setEditPatternForm(p => ({ ...p, shift_type: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select shift type" />
-                </SelectTrigger>
-                <SelectContent className="bg-background z-50">
-                  {SHIFT_TYPES.map(type => (
-                    <SelectItem key={type} value={type}>{type}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Notes (optional)</Label>
-              <Textarea
-                value={editPatternForm.notes}
-                onChange={e => setEditPatternForm(p => ({ ...p, notes: e.target.value }))}
-                placeholder="Add any notes..."
-              />
-            </div>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setIsEditPatternDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={() => editingPattern && updatePatternMutation.mutate({ ...editPatternForm, id: editingPattern.id })}
-              disabled={!editPatternForm.user_id || !editPatternForm.client_name || (editPatternForm.recurrence_interval !== 'daily' && editPatternForm.recurrence_interval !== 'one_off' && editPatternForm.selected_days.length === 0) || updatePatternMutation.isPending}
-            >
-              {updatePatternMutation.isPending ? "Saving..." : "Save Changes"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Individual Schedule Dialog */}
-      <Dialog open={isEditScheduleDialogOpen} onOpenChange={setIsEditScheduleDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Schedule</DialogTitle>
-            <DialogDescription>
-              Modify the details of this scheduled shift.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Staff Member</Label>
-              <div className="mt-1 p-2 bg-muted rounded text-sm">
-                {editingSchedule ? getStaffName(editingSchedule.user_id) : ''}
-              </div>
-            </div>
-            <div>
-              <Label>Date</Label>
-              <div className="mt-1 p-2 bg-muted rounded text-sm">
-                {editingSchedule ? format(parseISO(editingSchedule.start_datetime), "EEEE, d MMMM yyyy") : ''}
-              </div>
-            </div>
-            <div>
-              <Label>Client</Label>
-              <Select 
-                value={editScheduleForm.client_name} 
-                onValueChange={v => setEditScheduleForm(p => ({ ...p, client_name: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select client" />
-                </SelectTrigger>
-                <SelectContent className="bg-background z-50">
-                  {clients.map(client => (
-                    <SelectItem key={client.id} value={client.name}>{client.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Start Time</Label>
-                <Input
-                  type="time"
-                  value={editScheduleForm.start_time}
-                  onChange={e => setEditScheduleForm(p => ({ ...p, start_time: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label>End Time</Label>
-                <Input
-                  type="time"
-                  value={editScheduleForm.end_time}
-                  onChange={e => setEditScheduleForm(p => ({ ...p, end_time: e.target.value }))}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Hourly Rate (optional)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editScheduleForm.hourly_rate}
-                  onChange={e => setEditScheduleForm(p => ({ ...p, hourly_rate: e.target.value }))}
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <Label>Currency</Label>
-                <Select value={editScheduleForm.currency} onValueChange={v => setEditScheduleForm(p => ({ ...p, currency: v }))}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background z-50">
-                    <SelectItem value="GBP">GBP</SelectItem>
-                    <SelectItem value="USD">USD</SelectItem>
-                    <SelectItem value="EUR">EUR</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div>
-              <Label>Shift Type (optional)</Label>
-              <Select 
-                value={editScheduleForm.shift_type} 
-                onValueChange={v => setEditScheduleForm(p => ({ ...p, shift_type: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select shift type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {SHIFT_TYPES.map(type => (
-                    <SelectItem key={type} value={type}>{type}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Notes (optional)</Label>
-              <Textarea
-                value={editScheduleForm.notes}
-                onChange={e => setEditScheduleForm(p => ({ ...p, notes: e.target.value }))}
-                placeholder="Add any notes..."
-              />
-            </div>
-            <div className="flex items-center space-x-2 pt-2 border-t">
-              <Checkbox
-                id="edit_schedule_is_overtime"
-                checked={editScheduleForm.is_overtime}
-                onCheckedChange={(checked) => setEditScheduleForm(p => ({ ...p, is_overtime: checked === true }))}
-              />
-              <Label htmlFor="edit_schedule_is_overtime" className="text-sm font-normal cursor-pointer">
-                Convert to overtime
-              </Label>
-            </div>
-            {editScheduleForm.is_overtime && (
-              <div className="text-xs text-muted-foreground bg-orange-50 p-2 rounded border border-orange-200">
-                <Clock className="h-3 w-3 inline mr-1 text-orange-500" />
-                This shift will be converted to an overtime entry and removed from regular schedules.
-              </div>
-            )}
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setIsEditScheduleDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={() => {
-                if (!editingSchedule) return;
-                const scheduleDate = format(parseISO(editingSchedule.start_datetime), "yyyy-MM-dd");
-                
-                if (editScheduleForm.is_overtime) {
-                  // Convert to overtime
-                  convertToOvertimeMutation.mutate({
-                    scheduleId: editingSchedule.id,
-                    user_id: editingSchedule.user_id,
-                    overtime_date: scheduleDate,
-                    client_name: editScheduleForm.client_name,
-                    start_time: editScheduleForm.start_time,
-                    end_time: editScheduleForm.end_time,
-                    hourly_rate: editScheduleForm.hourly_rate ? parseFloat(editScheduleForm.hourly_rate) : null,
-                    currency: editScheduleForm.currency,
-                    notes: editScheduleForm.notes || null
-                  });
-                } else {
-                  // Normal update
-                  updateScheduleMutation.mutate({
-                    id: editingSchedule.id,
-                    client_name: editScheduleForm.client_name,
-                    start_datetime: `${scheduleDate}T${editScheduleForm.start_time}:00`,
-                    end_datetime: `${scheduleDate}T${editScheduleForm.end_time}:00`,
-                    notes: editScheduleForm.notes || null,
-                    hourly_rate: editScheduleForm.hourly_rate ? parseFloat(editScheduleForm.hourly_rate) : null,
-                    currency: editScheduleForm.currency,
-                    shift_type: editScheduleForm.shift_type || null
-                  });
-                }
-              }}
-              disabled={!editScheduleForm.client_name || updateScheduleMutation.isPending || convertToOvertimeMutation.isPending}
-            >
-              {(updateScheduleMutation.isPending || convertToOvertimeMutation.isPending) ? "Saving..." : editScheduleForm.is_overtime ? "Convert to Overtime" : "Save Changes"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Overtime Dialog */}
-      <Dialog
-        open={isEditOvertimeDialogOpen}
-        onOpenChange={(open) => {
-          setIsEditOvertimeDialogOpen(open);
-          if (!open) setEditingOvertime(null);
+      {/* Unified Shift Editor - handles all shift editing (patterns, schedules, overtime) */}
+      <UnifiedShiftEditor
+        open={isUnifiedEditorOpen}
+        onOpenChange={setIsUnifiedEditorOpen}
+        shift={shiftToEdit}
+        staffMembers={staffMembers}
+        clients={clients}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["staff-schedules"] });
+          queryClient.invalidateQueries({ queryKey: ["staff-overtime"] });
+          queryClient.invalidateQueries({ queryKey: ["recurring-shift-patterns"] });
         }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Overtime</DialogTitle>
-            <DialogDescription>
-              Modify the details of this overtime entry.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label>Staff Member</Label>
-              <div className="mt-1 p-2 bg-muted rounded text-sm">
-                {editingOvertime ? getStaffName(editingOvertime.user_id) : ""}
-              </div>
-            </div>
-            <div>
-              <Label>Date</Label>
-              <div className="mt-1 p-2 bg-muted rounded text-sm">
-                {editingOvertime ? format(parseISO(editingOvertime.overtime_date), "EEEE, d MMMM yyyy") : ""}
-              </div>
-            </div>
-            <div>
-              <Label>Client</Label>
-              <Select 
-                value={editOvertimeForm.client_name} 
-                onValueChange={v => setEditOvertimeForm(p => ({ ...p, client_name: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select client" />
-                </SelectTrigger>
-                <SelectContent className="bg-background z-50">
-                  {clients.map(client => (
-                    <SelectItem key={client.id} value={client.name}>{client.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Start Time</Label>
-                <Input
-                  type="time"
-                  value={editOvertimeForm.start_time}
-                  onChange={e => setEditOvertimeForm(p => ({ ...p, start_time: e.target.value }))}
-                />
-              </div>
-              <div>
-                <Label>End Time</Label>
-                <Input
-                  type="time"
-                  value={editOvertimeForm.end_time}
-                  onChange={e => setEditOvertimeForm(p => ({ ...p, end_time: e.target.value }))}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Hourly Rate (optional)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={editOvertimeForm.hourly_rate}
-                  onChange={(e) => setEditOvertimeForm((p) => ({ ...p, hourly_rate: e.target.value }))}
-                  placeholder="0.00"
-                />
-              </div>
-              <div>
-                <Label>Currency</Label>
-                <Select
-                  value={editOvertimeForm.currency}
-                  onValueChange={(v) => setEditOvertimeForm((p) => ({ ...p, currency: v }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background z-50">
-                    <SelectItem value="GBP">GBP</SelectItem>
-                    <SelectItem value="USD">USD</SelectItem>
-                    <SelectItem value="EUR">EUR</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div>
-              <Label>Notes (optional)</Label>
-              <Textarea
-                value={editOvertimeForm.notes}
-                onChange={(e) => setEditOvertimeForm((p) => ({ ...p, notes: e.target.value }))}
-                placeholder="Add any notes..."
-              />
-            </div>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setIsEditOvertimeDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!editingOvertime) return;
-                // Calculate hours from start/end time
-                const [startHour, startMin] = editOvertimeForm.start_time.split(':').map(Number);
-                const [endHour, endMin] = editOvertimeForm.end_time.split(':').map(Number);
-                const hours = (endHour + endMin / 60) - (startHour + startMin / 60);
-                
-                updateOvertimeMutation.mutate({
-                  id: editingOvertime.id,
-                  hours: hours,
-                  hourly_rate: editOvertimeForm.hourly_rate ? parseFloat(editOvertimeForm.hourly_rate) : null,
-                  currency: editOvertimeForm.currency,
-                  client_name: editOvertimeForm.client_name,
-                  notes: editOvertimeForm.notes || null,
-                });
-              }}
-              disabled={
-                !editOvertimeForm.client_name ||
-                !editOvertimeForm.start_time ||
-                !editOvertimeForm.end_time ||
-                updateOvertimeMutation.isPending
-              }
-            >
-              {updateOvertimeMutation.isPending ? "Saving..." : "Save Changes"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      />
 
       {/* Holiday Edit Dialog */}
       <Dialog open={isEditHolidayDialogOpen} onOpenChange={setIsEditHolidayDialogOpen}>
