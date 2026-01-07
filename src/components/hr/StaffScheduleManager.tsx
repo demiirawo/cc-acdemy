@@ -1330,22 +1330,96 @@ export function StaffScheduleManager() {
     );
   };
 
+  // Check if a user has a standard (non-overtime) working day on a given date
+  // This is used to determine if a holiday should apply to that day
+  const isStandardWorkingDay = (userId: string, day: Date): boolean => {
+    const dateStr = format(day, "yyyy-MM-dd");
+    const dayOfWeek = getDay(day);
+    
+    // Check for non-overtime recurring patterns that apply to this day
+    const hasStandardPattern = recurringPatterns.some(pattern => {
+      if (pattern.user_id !== userId) return false;
+      if (pattern.is_overtime) return false; // Exclude overtime patterns
+      
+      const patternStartDate = parseISO(pattern.start_date);
+      const patternEndDate = pattern.end_date ? parseISO(pattern.end_date) : null;
+      
+      // Check if day is within the pattern's date range
+      if (isBefore(day, patternStartDate)) return false;
+      if (patternEndDate && isAfter(day, patternEndDate)) return false;
+      
+      // Check if there's an exception for this date
+      const hasException = shiftExceptions.some(
+        e => e.pattern_id === pattern.id && e.exception_date === dateStr
+      );
+      if (hasException) return false;
+      
+      // Check recurrence interval
+      const recurrenceInterval = pattern.recurrence_interval || 'weekly';
+      
+      if (recurrenceInterval === 'one_off') {
+        return pattern.days_of_week.includes(dayOfWeek);
+      } else if (recurrenceInterval === 'daily') {
+        return true;
+      } else if (recurrenceInterval === 'weekly') {
+        return pattern.days_of_week.includes(dayOfWeek);
+      } else if (recurrenceInterval === 'biweekly') {
+        if (!pattern.days_of_week.includes(dayOfWeek)) return false;
+        const weeksDiff = differenceInWeeks(startOfWeek(day, { weekStartsOn: 1 }), startOfWeek(patternStartDate, { weekStartsOn: 1 }));
+        return weeksDiff % 2 === 0;
+      } else if (recurrenceInterval === 'monthly') {
+        if (!pattern.days_of_week.includes(dayOfWeek)) return false;
+        const startDayOfMonth = getDate(patternStartDate);
+        const currentDayOfMonth = getDate(day);
+        const startWeekOfMonth = Math.ceil(startDayOfMonth / 7);
+        const currentWeekOfMonth = Math.ceil(currentDayOfMonth / 7);
+        return startWeekOfMonth === currentWeekOfMonth;
+      }
+      return false;
+    });
+    
+    if (hasStandardPattern) return true;
+    
+    // Check for manual schedules (staff_schedules) on this day - these are standard work
+    const hasManualSchedule = schedules.some(s => {
+      if (s.user_id !== userId) return false;
+      const scheduleDate = format(parseISO(s.start_datetime), "yyyy-MM-dd");
+      return scheduleDate === dateStr;
+    });
+    
+    return hasManualSchedule;
+  };
+
+  // Check if staff is on holiday - only applies to days they are normally scheduled to work
   const isStaffOnHoliday = (userId: string, day: Date) => {
-    return holidays.some(h => {
+    // First check if there's a holiday record covering this day
+    const hasHolidayRecord = holidays.some(h => {
       if (h.user_id !== userId) return false;
       const start = startOfDay(parseISO(h.start_date));
       const end = endOfDay(parseISO(h.end_date));
       return isWithinInterval(day, { start, end });
     });
+    
+    if (!hasHolidayRecord) return false;
+    
+    // Only consider it a holiday if they would normally be working this day (standard hours, not overtime)
+    return isStandardWorkingDay(userId, day);
   };
 
   const getHolidayInfo = (userId: string, day: Date) => {
-    return holidays.find(h => {
+    const holiday = holidays.find(h => {
       if (h.user_id !== userId) return false;
       const start = parseISO(h.start_date);
       const end = parseISO(h.end_date);
       return isWithinInterval(day, { start, end });
     });
+    
+    if (!holiday) return undefined;
+    
+    // Only return holiday info if it's a standard working day
+    if (!isStandardWorkingDay(userId, day)) return undefined;
+    
+    return holiday;
   };
 
   const getRequestsForStaffDay = (userId: string, day: Date) => {
@@ -1431,18 +1505,10 @@ export function StaffScheduleManager() {
   };
 
   // Check if staff has a holiday request for a specific day (coverage issue)
-  // Only returns true if the staff member is actually scheduled to work that day
+  // Only returns true if the staff member is actually scheduled to work that day (standard hours, not overtime)
   const hasHolidayRequestForDay = (userId: string, day: Date) => {
-    // First check if the user is actually scheduled to work on this day
-    const dateStr = format(day, "yyyy-MM-dd");
-    const isScheduledToWork = allSchedules.some(s => {
-      if (s.user_id !== userId) return false;
-      const scheduleDate = format(parseISO(s.start_datetime), "yyyy-MM-dd");
-      return scheduleDate === dateStr;
-    });
-    
-    // If not scheduled to work, no holiday needed for this day
-    if (!isScheduledToWork) return false;
+    // Only applies if this is a standard working day
+    if (!isStandardWorkingDay(userId, day)) return false;
     
     return staffRequests.some(r => {
       if (r.user_id !== userId) return false;
@@ -2494,8 +2560,13 @@ export function StaffScheduleManager() {
                           </div>
                         ))}
                         
-                        {/* Only show schedules if NOT on holiday - they're not working that day */}
-                        {!onHoliday && daySchedules.map(schedule => {
+                        {/* Show schedules: hide standard schedules if on holiday, but always show overtime pattern schedules */}
+                        {daySchedules.filter(schedule => {
+                          // If not on holiday, show all schedules
+                          if (!onHoliday) return true;
+                          // If on holiday, still show overtime pattern schedules
+                          return schedule.is_pattern_overtime === true;
+                        }).map(schedule => {
                           const cost = calculateScheduleCost(schedule);
                           const isFromPattern = schedule.id.startsWith('pattern-');
                           const isPatternOvertime = schedule.is_pattern_overtime;

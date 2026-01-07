@@ -422,24 +422,87 @@ export const PublicClientSchedule = () => {
     },
   });
 
+  // Check if a user has a standard (non-overtime) working day on a given date
+  // This is used to determine if a holiday should apply to that day
+  const isStandardWorkingDay = (userId: string, day: Date): boolean => {
+    const dateStr = format(day, "yyyy-MM-dd");
+    const dayOfWeek = getDay(day);
+    
+    // Check for non-overtime recurring patterns that apply to this day
+    const hasStandardPattern = allPatterns.some(pattern => {
+      if (pattern.user_id !== userId) return false;
+      if (pattern.is_overtime) return false; // Exclude overtime patterns
+      
+      const patternStart = parseISO(pattern.start_date);
+      const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+      
+      // Check if day is within the pattern's date range
+      if (isBefore(day, patternStart)) return false;
+      if (patternEnd && isAfter(day, patternEnd)) return false;
+      
+      // Check recurrence interval
+      if (pattern.recurrence_interval === 'one_off') {
+        return pattern.days_of_week.includes(dayOfWeek);
+      } else if (pattern.recurrence_interval === 'daily') {
+        return true;
+      } else if (pattern.recurrence_interval === 'weekly') {
+        return pattern.days_of_week.includes(dayOfWeek);
+      } else if (pattern.recurrence_interval === 'biweekly') {
+        if (!pattern.days_of_week.includes(dayOfWeek)) return false;
+        const weeksDiff = differenceInWeeks(day, patternStart);
+        return weeksDiff % 2 === 0;
+      } else if (pattern.recurrence_interval === 'monthly') {
+        if (!pattern.days_of_week.includes(dayOfWeek)) return false;
+        const patternDayOfMonth = getDate(patternStart);
+        return getDate(day) === patternDayOfMonth;
+      }
+      return false;
+    });
+    
+    if (hasStandardPattern) return true;
+    
+    // Check for manual schedules on this day
+    const hasManualSchedule = allStaffSchedules.some(s => {
+      if (s.user_id !== userId) return false;
+      const scheduleDate = format(parseISO(s.start_datetime), "yyyy-MM-dd");
+      return scheduleDate === dateStr;
+    });
+    
+    return hasManualSchedule;
+  };
+
   // Check if a staff member is on holiday for a specific day
+  // Only returns true if they would normally work that day (standard hours, not overtime)
   const isStaffOnHoliday = (userId: string, day: Date) => {
-    return holidays.some(h => {
+    const hasHolidayRecord = holidays.some(h => {
       if (h.user_id !== userId) return false;
       const start = parseISO(h.start_date);
       const end = parseISO(h.end_date);
       return isWithinInterval(day, { start: startOfDay(start), end: endOfDay(end) });
     });
+    
+    if (!hasHolidayRecord) return false;
+    
+    // Only consider it a holiday if they would normally be working this day (standard hours)
+    return isStandardWorkingDay(userId, day);
   };
 
   // Get holiday info for a staff member on a specific day
+  // Only returns info if it's a standard working day
   const getHolidayInfo = (userId: string, day: Date) => {
-    return holidays.find(h => {
+    const holiday = holidays.find(h => {
       if (h.user_id !== userId) return false;
       const start = parseISO(h.start_date);
       const end = parseISO(h.end_date);
       return isWithinInterval(day, { start: startOfDay(start), end: endOfDay(end) });
     });
+    
+    if (!holiday) return undefined;
+    
+    // Only return holiday info if it's a standard working day
+    if (!isStandardWorkingDay(userId, day)) return undefined;
+    
+    return holiday;
   };
 
   // Get coverage for a holiday
