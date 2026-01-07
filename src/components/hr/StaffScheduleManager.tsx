@@ -1434,7 +1434,7 @@ export function StaffScheduleManager() {
   const hasHolidayRequestForDay = (userId: string, day: Date) => {
     return staffRequests.some(r => {
       if (r.user_id !== userId) return false;
-      if (r.request_type !== 'holiday') return false;
+      if (r.request_type !== 'holiday' && r.request_type !== 'holiday_paid' && r.request_type !== 'holiday_unpaid') return false;
       if (r.status === 'rejected') return false;
       const start = parseISO(r.start_date);
       const end = parseISO(r.end_date);

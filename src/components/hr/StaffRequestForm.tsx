@@ -494,6 +494,28 @@ export function StaffRequestForm() {
       });
 
       if (error) throw error;
+
+      // If admin is submitting an approved holiday request, also create staff_holidays entry
+      if (isAdmin && (requestType === 'holiday_paid' || requestType === 'holiday_unpaid')) {
+        const absenceType = requestType === 'holiday_unpaid' ? 'unpaid' : 'holiday';
+        const { error: holidayError } = await supabase
+          .from("staff_holidays")
+          .insert({
+            user_id: targetUserId,
+            absence_type: absenceType,
+            start_date: format(requestStartDate!, "yyyy-MM-dd"),
+            end_date: format(requestEndDate!, "yyyy-MM-dd"),
+            days_taken: requestDays,
+            status: 'approved',
+            notes: requestDetails || `Requested by ${user.email} on behalf of staff`,
+            approved_by: user.id,
+            approved_at: new Date().toISOString()
+          });
+
+        if (holidayError) {
+          console.error('Failed to sync to staff_holidays:', holidayError);
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-staff-requests"] });
