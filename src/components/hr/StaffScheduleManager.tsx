@@ -2626,20 +2626,20 @@ export function StaffScheduleManager() {
 
       {/* Legend - Dynamic based on view mode */}
       <div className="flex flex-wrap gap-4 text-sm">
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded bg-primary/10 border border-primary/30" />
-          <span>Scheduled Shift</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded bg-violet-50 border border-violet-300" />
-          <span className="flex items-center gap-1">Recurring Shift <Infinity className="h-3 w-3 text-violet-500" /></span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded bg-orange-50 border border-orange-300" />
-          <span className="flex items-center gap-1">Overtime <Clock className="h-3 w-3 text-orange-500" /></span>
-        </div>
         {viewMode === "staff" && (
           <>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-primary/10 border border-primary/30" />
+              <span>Scheduled Shift</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-violet-50 border border-violet-300" />
+              <span className="flex items-center gap-1">Recurring Shift <Infinity className="h-3 w-3 text-violet-500" /></span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-orange-50 border border-orange-300" />
+              <span className="flex items-center gap-1">Overtime <Clock className="h-3 w-3 text-orange-500" /></span>
+            </div>
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 rounded bg-amber-50 border border-amber-200" />
               <span>Holiday/Absence</span>
@@ -2660,13 +2660,30 @@ export function StaffScheduleManager() {
         )}
         {viewMode === "client" && (
           <>
+            {/* Shift type colors - show a sample of the color-coded shift types */}
             <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded bg-green-100 border border-green-300" />
-              <span>Cover Shift</span>
+              <div className="w-4 h-4 rounded bg-teal-100 border border-teal-300" />
+              <span>Day Shift</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded bg-amber-50 border border-amber-200" />
-              <span>Staff on Holiday</span>
+              <div className="w-4 h-4 rounded bg-purple-100 border border-purple-300" />
+              <span>Night Shift</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-orange-50 border border-orange-300" />
+              <span className="flex items-center gap-1">Overtime <Clock className="h-3 w-3 text-orange-500" /></span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-amber-100 border border-amber-300" />
+              <span className="flex items-center gap-1">Staff on Holiday <Palmtree className="h-3 w-3 text-amber-600" /></span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-green-50 border border-green-200" />
+              <span>Covered (within shift)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-red-50 border border-red-200" />
+              <span className="flex items-center gap-1">No Cover <AlertTriangle className="h-3 w-3 text-red-500" /></span>
             </div>
           </>
         )}
