@@ -237,28 +237,49 @@ export function RequestDetailPage({ requestId, onBack }: RequestDetailPageProps)
     mutationFn: async (coverUserId: string) => {
       if (!user || !request) throw new Error("Not authenticated or no request");
 
-      // Calculate days between start and end date
-      const startDate = new Date(request.start_date);
-      const endDate = new Date(request.end_date);
-      const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
-      const daysRequested = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+      // The holiday request already stores the correct working-day count in days_requested
+      const daysRequested = request.days_requested;
+
+      const payload = {
+        user_id: coverUserId,
+        request_type: 'shift_swap' as const,
+        swap_with_user_id: request.user_id,
+        start_date: request.start_date,
+        end_date: request.end_date,
+        days_requested: daysRequested,
+        details: `Covering for ${getStaffName(request.user_id)} during their holiday`,
+        status: 'approved',
+        reviewed_by: user.id,
+        reviewed_at: new Date().toISOString(),
+        client_informed: false
+      };
+
+      // If a cover request already exists for this exact period, update it instead of inserting a duplicate
+      const { data: existing, error: existingError } = await supabase
+        .from("staff_requests")
+        .select("id")
+        .eq("request_type", "shift_swap")
+        .eq("user_id", coverUserId)
+        .eq("swap_with_user_id", request.user_id)
+        .eq("start_date", request.start_date)
+        .eq("end_date", request.end_date)
+        .limit(1);
+
+      if (existingError) throw existingError;
+
+      if (existing && existing.length > 0) {
+        const { error } = await supabase
+          .from("staff_requests")
+          .update(payload)
+          .eq("id", existing[0].id);
+        if (error) throw error;
+        return;
+      }
 
       // Create a shift_swap request for the covering staff member
       const { error } = await supabase
         .from("staff_requests")
-        .insert([{
-          user_id: coverUserId,
-          request_type: 'shift_swap',
-          swap_with_user_id: request.user_id,
-          start_date: request.start_date,
-          end_date: request.end_date,
-          days_requested: daysRequested,
-          details: `Covering for ${getStaffName(request.user_id)} during their holiday`,
-          status: 'approved',
-          reviewed_by: user.id,
-          reviewed_at: new Date().toISOString(),
-          client_informed: false
-        }]);
+        .insert([payload]);
 
       if (error) throw error;
     },
