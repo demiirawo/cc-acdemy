@@ -487,7 +487,10 @@ export function StaffScheduleManager() {
         // Check recurrence interval
         let shouldInclude = false;
         
-        if (recurrenceInterval === 'daily') {
+        if (recurrenceInterval === 'one_off') {
+          // One-off: include if day is in days_of_week and within date range (already checked above)
+          shouldInclude = pattern.days_of_week.includes(dayOfWeek);
+        } else if (recurrenceInterval === 'daily') {
           // Daily: include every day
           shouldInclude = true;
         } else if (recurrenceInterval === 'weekly') {
@@ -672,164 +675,59 @@ export function StaffScheduleManager() {
     return staffMembers.filter(s => staffWithSharedClients.has(s.user_id));
   }, [isAdmin, user?.id, staffMembers, myClientAssignments, allClientAssignments, allSchedules]);
 
-  // Create recurring schedule mutation
+  // Create recurring schedule mutation - ALL shifts are stored as patterns for consistent editing
   const createRecurringScheduleMutation = useMutation({
     mutationFn: async (data: typeof recurringForm) => {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error("Not authenticated");
 
-      // Handle one-off (single shift) schedule
+      // Calculate end date based on recurrence type
+      let endDate: string | null = null;
+      let daysOfWeek: number[] = [];
+
       if (data.recurrence_interval === 'one_off') {
-        // Create schedules for each day in the date range
+        // One-off: end_date = end of date range, days = all days of week for the date range
+        endDate = data.end_date;
+        // Get unique days of week for the date range
         const startDate = parseISO(data.start_date);
-        const endDate = parseISO(data.end_date);
-        const daysInRange = eachDayOfInterval({ start: startDate, end: endDate });
-        
-        if (data.is_overtime) {
-          const overtimeToCreate = daysInRange.map(day => {
-            const [startHour, startMin] = data.start_time.split(':').map(Number);
-            const [endHour, endMin] = data.end_time.split(':').map(Number);
-            const hours = (endHour + endMin / 60) - (startHour + startMin / 60);
-            
-            return {
-              user_id: data.user_id,
-              overtime_date: format(day, "yyyy-MM-dd"),
-              hours: hours,
-              hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
-              currency: data.currency,
-              notes: data.notes ? `${data.client_name}: ${data.notes}` : data.client_name,
-              created_by: userData.user.id
-            };
-          });
-          
-          const { error } = await supabase.from("staff_overtime").insert(overtimeToCreate);
-          if (error) throw error;
-          return { count: overtimeToCreate.length, type: 'overtime' };
-        } else {
-          const schedulesToCreate = daysInRange.map(day => ({
-            user_id: data.user_id,
-            client_name: data.client_name,
-            start_datetime: `${format(day, "yyyy-MM-dd")}T${data.start_time}:00`,
-            end_datetime: `${format(day, "yyyy-MM-dd")}T${data.end_time}:00`,
-            notes: data.notes || null,
-            hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
-            currency: data.currency,
-            shift_type: data.shift_type || null,
-            created_by: userData.user.id
-          }));
-          
-          const { error } = await supabase.from("staff_schedules").insert(schedulesToCreate);
-          if (error) throw error;
-          return { count: schedulesToCreate.length, type: 'schedule' };
-        }
-      }
-
-      // For true indefinite, save as a pattern (no end date)
-      if (data.is_indefinite) {
-        const { error } = await supabase.from("recurring_shift_patterns").insert({
-          user_id: data.user_id,
-          client_name: data.client_name,
-          days_of_week: data.recurrence_interval === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : data.selected_days,
-          start_time: data.start_time,
-          end_time: data.end_time,
-          hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
-          currency: data.currency,
-          is_overtime: data.is_overtime,
-          notes: data.notes || null,
-          start_date: data.start_date,
-          end_date: null, // null = indefinite
-          created_by: userData.user.id,
-          recurrence_interval: data.recurrence_interval,
-          shift_type: data.shift_type || null
-        });
-
-        if (error) throw error;
-        return { type: 'pattern', indefinite: true };
-      }
-
-      // For fixed duration, create individual entries
-      const weeksToCreate = data.weeks_to_create;
-      const startDate = parseISO(data.start_date);
-
-      if (data.is_overtime) {
-        // Create overtime entries
-        const overtimeToCreate: any[] = [];
-        
-        for (let week = 0; week < weeksToCreate; week++) {
-          const weekStart = addWeeks(startOfWeek(startDate, { weekStartsOn: 1 }), week);
-          
-          for (const dayOfWeek of data.selected_days) {
-            const daysToAdd = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-            const scheduleDate = addDays(weekStart, daysToAdd);
-            
-            // Skip if before start date
-            if (isBefore(scheduleDate, startDate)) continue;
-            
-            // Calculate hours from start and end time
-            const [startHour, startMin] = data.start_time.split(':').map(Number);
-            const [endHour, endMin] = data.end_time.split(':').map(Number);
-            const hours = (endHour + endMin / 60) - (startHour + startMin / 60);
-
-            overtimeToCreate.push({
-              user_id: data.user_id,
-              overtime_date: format(scheduleDate, "yyyy-MM-dd"),
-              hours: hours,
-              hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
-              currency: data.currency,
-              notes: data.notes ? `${data.client_name}: ${data.notes}` : data.client_name,
-              created_by: userData.user.id
-            });
-          }
-        }
-
-        if (overtimeToCreate.length === 0) {
-          throw new Error("No overtime entries to create. Please select at least one day.");
-        }
-
-        const { error } = await supabase.from("staff_overtime").insert(overtimeToCreate);
-        if (error) throw error;
-
-        return { count: overtimeToCreate.length, type: 'overtime' };
+        const endDateParsed = parseISO(data.end_date);
+        const daysInRange = eachDayOfInterval({ start: startDate, end: endDateParsed });
+        daysOfWeek = [...new Set(daysInRange.map(day => getDay(day)))];
+      } else if (data.recurrence_interval === 'daily') {
+        // Daily: all days
+        daysOfWeek = [0, 1, 2, 3, 4, 5, 6];
+        endDate = data.is_indefinite ? null : calculateEndDateFromWeeks(data.start_date, data.weeks_to_create);
       } else {
-        // Create regular schedule entries
-        const schedulesToCreate: any[] = [];
-
-        for (let week = 0; week < weeksToCreate; week++) {
-          const weekStart = addWeeks(startOfWeek(startDate, { weekStartsOn: 1 }), week);
-          
-          for (const dayOfWeek of data.selected_days) {
-            const daysToAdd = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-            const scheduleDate = addDays(weekStart, daysToAdd);
-            
-            // Skip if before start date
-            if (isBefore(scheduleDate, startDate)) continue;
-            
-            const startDatetime = `${format(scheduleDate, "yyyy-MM-dd")}T${data.start_time}:00`;
-            const endDatetime = `${format(scheduleDate, "yyyy-MM-dd")}T${data.end_time}:00`;
-
-            schedulesToCreate.push({
-              user_id: data.user_id,
-              client_name: data.client_name,
-              start_datetime: startDatetime,
-              end_datetime: endDatetime,
-              notes: data.notes || null,
-              hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
-              currency: data.currency,
-              shift_type: data.shift_type || null,
-              created_by: userData.user.id
-            });
-          }
-        }
-
-        if (schedulesToCreate.length === 0) {
-          throw new Error("No schedules to create. Please select at least one day.");
-        }
-
-        const { error } = await supabase.from("staff_schedules").insert(schedulesToCreate);
-        if (error) throw error;
-
-        return { count: schedulesToCreate.length, type: 'schedule' };
+        // Weekly/biweekly/monthly: use selected days
+        daysOfWeek = data.selected_days;
+        endDate = data.is_indefinite ? null : calculateEndDateFromWeeks(data.start_date, data.weeks_to_create);
       }
+
+      // Store as a pattern - this gives consistent editing experience
+      const { error } = await supabase.from("recurring_shift_patterns").insert({
+        user_id: data.user_id,
+        client_name: data.client_name,
+        days_of_week: daysOfWeek,
+        start_time: data.start_time,
+        end_time: data.end_time,
+        hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
+        currency: data.currency,
+        is_overtime: data.is_overtime,
+        notes: data.notes || null,
+        start_date: data.start_date,
+        end_date: endDate,
+        created_by: userData.user.id,
+        recurrence_interval: data.recurrence_interval,
+        shift_type: data.shift_type || null
+      });
+
+      if (error) throw error;
+      
+      return { 
+        type: 'pattern', 
+        indefinite: data.is_indefinite,
+        one_off: data.recurrence_interval === 'one_off'
+      };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["staff-schedules"] });
@@ -837,16 +735,25 @@ export function StaffScheduleManager() {
       queryClient.invalidateQueries({ queryKey: ["recurring-shift-patterns"] });
       setIsRecurringDialogOpen(false);
       resetRecurringForm();
-      if ('indefinite' in result) {
-        toast.success("Created indefinite recurring pattern - shifts will generate automatically");
+      if (result.one_off) {
+        toast.success("Created shift pattern");
+      } else if (result.indefinite) {
+        toast.success("Created indefinite recurring pattern");
       } else {
-        toast.success(`Created ${result.count} recurring ${result.type} entries`);
+        toast.success("Created recurring pattern with end date");
       }
     },
     onError: (error) => {
-      toast.error("Failed to create recurring schedule: " + error.message);
+      toast.error("Failed to create schedule: " + error.message);
     }
   });
+
+  // Helper to calculate end date from weeks
+  const calculateEndDateFromWeeks = (startDateStr: string, weeks: number): string => {
+    const startDate = parseISO(startDateStr);
+    const endDate = addWeeks(startDate, weeks);
+    return format(endDate, "yyyy-MM-dd");
+  };
 
   // Delete recurring pattern mutation
   const deletePatternMutation = useMutation({
@@ -863,12 +770,26 @@ export function StaffScheduleManager() {
   // Update recurring pattern mutation
   const updatePatternMutation = useMutation({
     mutationFn: async (data: typeof editPatternForm & { id: string }) => {
+      // Calculate days_of_week based on recurrence interval
+      let daysOfWeek: number[];
+      if (data.recurrence_interval === 'daily') {
+        daysOfWeek = [0, 1, 2, 3, 4, 5, 6];
+      } else if (data.recurrence_interval === 'one_off') {
+        // For one-off, calculate days from date range
+        const startDate = parseISO(data.start_date);
+        const endDate = data.end_date ? parseISO(data.end_date) : startDate;
+        const daysInRange = eachDayOfInterval({ start: startDate, end: endDate });
+        daysOfWeek = [...new Set(daysInRange.map(day => getDay(day)))];
+      } else {
+        daysOfWeek = data.selected_days;
+      }
+
       const { error } = await supabase
         .from("recurring_shift_patterns")
         .update({
           user_id: data.user_id,
           client_name: data.client_name,
-          days_of_week: data.recurrence_interval === 'daily' ? [0, 1, 2, 3, 4, 5, 6] : data.selected_days,
+          days_of_week: daysOfWeek,
           start_time: data.start_time,
           end_time: data.end_time,
           hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
@@ -888,7 +809,7 @@ export function StaffScheduleManager() {
       queryClient.invalidateQueries({ queryKey: ["recurring-shift-patterns"] });
       setIsEditPatternDialogOpen(false);
       setEditingPattern(null);
-      toast.success("Recurring pattern updated");
+      toast.success("Pattern updated");
     },
     onError: (error) => {
       toast.error("Failed to update pattern: " + error.message);
@@ -2800,12 +2721,13 @@ export function StaffScheduleManager() {
               <Label>Recurrence Pattern</Label>
               <Select 
                 value={editPatternForm.recurrence_interval} 
-                onValueChange={v => setEditPatternForm(p => ({ ...p, recurrence_interval: v as 'daily' | 'weekly' | 'biweekly' | 'monthly' }))}
+                onValueChange={v => setEditPatternForm(p => ({ ...p, recurrence_interval: v as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off' }))}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-background z-50">
+                  <SelectItem value="one_off">One-off / Fixed dates</SelectItem>
                   <SelectItem value="daily">Every day</SelectItem>
                   <SelectItem value="weekly">Every week</SelectItem>
                   <SelectItem value="biweekly">Every other week</SelectItem>
@@ -2813,6 +2735,7 @@ export function StaffScheduleManager() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground mt-1">
+                {editPatternForm.recurrence_interval === 'one_off' && 'The shift will only occur within the start/end date range'}
                 {editPatternForm.recurrence_interval === 'daily' && 'The shift will repeat every single day'}
                 {editPatternForm.recurrence_interval === 'weekly' && 'The shift will repeat on selected days every week'}
                 {editPatternForm.recurrence_interval === 'biweekly' && 'The shift will repeat on selected days every other week'}
@@ -2820,8 +2743,8 @@ export function StaffScheduleManager() {
               </p>
             </div>
 
-            {/* Select Days - hide for daily recurrence */}
-            {editPatternForm.recurrence_interval !== 'daily' && (
+            {/* Select Days - hide for daily recurrence and one_off (auto-calculated from date range) */}
+            {editPatternForm.recurrence_interval !== 'daily' && editPatternForm.recurrence_interval !== 'one_off' && (
               <div>
                 <Label>Select Days</Label>
                 <div className="flex flex-wrap gap-2 mt-2">
@@ -2945,7 +2868,7 @@ export function StaffScheduleManager() {
             </Button>
             <Button 
               onClick={() => editingPattern && updatePatternMutation.mutate({ ...editPatternForm, id: editingPattern.id })}
-              disabled={!editPatternForm.user_id || !editPatternForm.client_name || (editPatternForm.recurrence_interval !== 'daily' && editPatternForm.selected_days.length === 0) || updatePatternMutation.isPending}
+              disabled={!editPatternForm.user_id || !editPatternForm.client_name || (editPatternForm.recurrence_interval !== 'daily' && editPatternForm.recurrence_interval !== 'one_off' && editPatternForm.selected_days.length === 0) || updatePatternMutation.isPending}
             >
               {updatePatternMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
