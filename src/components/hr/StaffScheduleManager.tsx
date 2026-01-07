@@ -1431,7 +1431,19 @@ export function StaffScheduleManager() {
   };
 
   // Check if staff has a holiday request for a specific day (coverage issue)
+  // Only returns true if the staff member is actually scheduled to work that day
   const hasHolidayRequestForDay = (userId: string, day: Date) => {
+    // First check if the user is actually scheduled to work on this day
+    const dateStr = format(day, "yyyy-MM-dd");
+    const isScheduledToWork = allSchedules.some(s => {
+      if (s.user_id !== userId) return false;
+      const scheduleDate = format(parseISO(s.start_datetime), "yyyy-MM-dd");
+      return scheduleDate === dateStr;
+    });
+    
+    // If not scheduled to work, no holiday needed for this day
+    if (!isScheduledToWork) return false;
+    
     return staffRequests.some(r => {
       if (r.user_id !== userId) return false;
       if (r.request_type !== 'holiday' && r.request_type !== 'holiday_paid' && r.request_type !== 'holiday_unpaid') return false;
