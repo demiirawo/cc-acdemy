@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { toast } from "sonner";
+import { UnifiedShiftEditor, ShiftToEdit } from "@/components/hr/UnifiedShiftEditor";
 
 interface ClientWhiteboard {
   id: string;
@@ -173,6 +174,10 @@ export const PublicClientSchedule = () => {
     notes: '',
     no_cover_required: false
   });
+
+  // Unified shift editor state
+  const [isUnifiedEditorOpen, setIsUnifiedEditorOpen] = useState(false);
+  const [shiftToEdit, setShiftToEdit] = useState<ShiftToEdit | null>(null);
   
   const currentWeekStart = useMemo(() => {
     return startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
@@ -259,9 +264,48 @@ export const PublicClientSchedule = () => {
     },
   });
 
+  // Fetch clients for the editor
+  const { data: clients = [] } = useQuery({
+    queryKey: ["clients-list"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("clients")
+        .select("id, name")
+        .order("name");
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
   const getStaffName = (userId: string) => {
     const staff = staffMembers.find(s => s.user_id === userId);
     return staff?.display_name || staff?.email?.split('@')[0] || 'Unknown';
+  };
+
+  // Handle shift click to open unified editor
+  const handleShiftClick = (schedule: Schedule, day: Date, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    // Check if it's a bench or auto-generated shift that shouldn't be edited
+    if (schedule.id.startsWith('bench-')) return;
+    
+    const isPatternBased = schedule.id.startsWith('pattern-');
+    const patternId = isPatternBased ? schedule.id.replace(/^pattern-/, '').split('-').slice(0, -3).join('-') : undefined;
+    const actualPatternId = isPatternBased ? schedule.id.split('-')[1] : undefined;
+    
+    setShiftToEdit({
+      patternId: isPatternBased ? actualPatternId : undefined,
+      scheduleId: !isPatternBased ? schedule.id : undefined,
+      userId: schedule.user_id,
+      clientName: schedule.client_name,
+      date: day,
+      startTime: format(parseISO(schedule.start_datetime), "HH:mm"),
+      endTime: format(parseISO(schedule.end_datetime), "HH:mm"),
+      shiftType: schedule.shift_type,
+      notes: schedule.notes,
+      isOvertime: schedule.is_pattern_overtime || false,
+    });
+    setIsUnifiedEditorOpen(true);
   };
 
   // Fetch approved holidays for the week
@@ -708,10 +752,16 @@ export const PublicClientSchedule = () => {
                     return (
                       <div 
                         key={schedule.id}
-                        onClick={staffOnHoliday && holidayInfo ? (e) => handleHolidayClick(holidayInfo, e) : undefined}
-                        className={`p-3 rounded-lg border ${
+                        onClick={(e) => {
+                          if (staffOnHoliday && holidayInfo) {
+                            handleHolidayClick(holidayInfo, e);
+                          } else if (!schedule.id.startsWith('bench-')) {
+                            handleShiftClick(schedule, day, e);
+                          }
+                        }}
+                        className={`p-3 rounded-lg border cursor-pointer hover:shadow-md transition-shadow ${
                           staffOnHoliday 
-                            ? 'bg-amber-50 border-amber-200 cursor-pointer' 
+                            ? 'bg-amber-50 border-amber-200' 
                             : isOvertime
                               ? 'bg-orange-50 border-orange-200'
                               : `${colors.bg} ${colors.border}`
@@ -825,10 +875,16 @@ export const PublicClientSchedule = () => {
                       return (
                         <div 
                           key={schedule.id} 
-                          onClick={staffOnHoliday && holidayInfo ? (e) => handleHolidayClick(holidayInfo, e) : undefined}
-                          className={`rounded p-1.5 mb-1 text-xs border ${
+                          onClick={(e) => {
+                            if (staffOnHoliday && holidayInfo) {
+                              handleHolidayClick(holidayInfo, e);
+                            } else if (!schedule.id.startsWith('bench-')) {
+                              handleShiftClick(schedule, day, e);
+                            }
+                          }}
+                          className={`rounded p-1.5 mb-1 text-xs border cursor-pointer hover:shadow-md transition-shadow ${
                             staffOnHoliday 
-                              ? 'bg-amber-100 border-amber-300 cursor-pointer hover:bg-amber-200 transition-colors' 
+                              ? 'bg-amber-100 border-amber-300 hover:bg-amber-200' 
                               : isOvertime
                                 ? 'bg-orange-100 border-orange-300'
                                 : `${colors.bg} ${colors.border}`
@@ -1174,6 +1230,19 @@ export const PublicClientSchedule = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Unified Shift Editor */}
+      <UnifiedShiftEditor
+        open={isUnifiedEditorOpen}
+        onOpenChange={setIsUnifiedEditorOpen}
+        shift={shiftToEdit}
+        staffMembers={staffMembers}
+        clients={clients}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ["public-client-schedules"] });
+          queryClient.invalidateQueries({ queryKey: ["public-client-patterns"] });
+        }}
+      />
     </div>
   );
 };
