@@ -484,11 +484,7 @@ export function StaffScheduleManager() {
         // Check recurrence interval
         let shouldInclude = false;
         
-        if (recurrenceInterval === 'one_off') {
-          // One-off: include if this day is within the date range AND matches days_of_week
-          // The date range check is already done above, so just check days_of_week
-          shouldInclude = pattern.days_of_week.includes(dayOfWeek);
-        } else if (recurrenceInterval === 'daily') {
+        if (recurrenceInterval === 'daily') {
           // Daily: include every day
           shouldInclude = true;
         } else if (recurrenceInterval === 'weekly') {
@@ -539,53 +535,7 @@ export function StaffScheduleManager() {
     return virtualSchedules;
   }, [recurringPatterns, weekDays, shiftExceptions]);
 
-  // Convert overtime entries to virtual schedules for display
-  const virtualSchedulesFromOvertime = useMemo(() => {
-    return overtimeEntries.map(ot => {
-      let clientName = 'Overtime';
-      let shiftType: string | null = null;
-      let startTime = '09:00:00';
-      let endTime = '17:00:00';
-      let additionalNotes: string | null = null;
-      
-      // Try to parse JSON format first (new format)
-      if (ot.notes) {
-        try {
-          const parsed = JSON.parse(ot.notes);
-          clientName = parsed.client_name || 'Overtime';
-          shiftType = parsed.shift_type || null;
-          startTime = parsed.start_time ? `${parsed.start_time}:00` : '09:00:00';
-          endTime = parsed.end_time ? `${parsed.end_time}:00` : '17:00:00';
-          additionalNotes = parsed.notes || null;
-        } catch {
-          // Legacy format: "ClientName" or "ClientName: notes"
-          const noteParts = ot.notes.split(':');
-          clientName = noteParts[0]?.trim() || 'Overtime';
-          additionalNotes = noteParts.length > 1 ? noteParts.slice(1).join(':').trim() : null;
-          // Calculate end time from hours for legacy data
-          const startHour = 9;
-          const endHour = startHour + ot.hours;
-          startTime = `${String(startHour).padStart(2, '0')}:00:00`;
-          endTime = `${String(Math.floor(endHour)).padStart(2, '0')}:${String(Math.round((endHour % 1) * 60)).padStart(2, '0')}:00`;
-        }
-      }
-      
-      return {
-        id: `overtime-${ot.id}`,
-        user_id: ot.user_id,
-        client_name: clientName,
-        start_datetime: `${ot.overtime_date}T${startTime}`,
-        end_datetime: `${ot.overtime_date}T${endTime}`,
-        notes: additionalNotes,
-        hourly_rate: ot.hourly_rate,
-        currency: ot.currency,
-        shift_type: shiftType,
-        is_pattern_overtime: true // Mark as overtime for styling
-      } as Schedule;
-    });
-  }, [overtimeEntries]);
-
-  // Combine real schedules with virtual ones from patterns, overtime, and add bench schedules
+  // Combine real schedules with virtual ones from patterns and add bench schedules
   const allSchedules = useMemo(() => {
     // Filter out duplicates - if there's a real schedule at the same time, use that
     const realScheduleKeys = new Set(
@@ -597,13 +547,7 @@ export function StaffScheduleManager() {
       return !realScheduleKeys.has(key);
     });
     
-    // Add overtime schedules (also filter duplicates)
-    const uniqueOvertime = virtualSchedulesFromOvertime.filter(os => {
-      const key = `${os.user_id}-${format(parseISO(os.start_datetime), "yyyy-MM-dd-HH:mm")}`;
-      return !realScheduleKeys.has(key);
-    });
-    
-    const combinedSchedules = [...schedules, ...uniqueVirtual, ...uniqueOvertime];
+    const combinedSchedules = [...schedules, ...uniqueVirtual];
     
     // Generate bench schedules for staff with no assignments for full weeks (Mon-Fri)
     const benchSchedules: Schedule[] = [];
@@ -677,7 +621,7 @@ export function StaffScheduleManager() {
     }
     
     return [...combinedSchedules, ...benchSchedules];
-  }, [schedules, virtualSchedulesFromPatterns, virtualSchedulesFromOvertime, staffMembers, weekDays, holidays, staffRequests]);
+  }, [schedules, virtualSchedulesFromPatterns, staffMembers, weekDays, holidays, staffRequests]);
 
   // Get unique clients from schedules (sorted alphabetically)
   const uniqueClients = useMemo(() => {
@@ -739,29 +683,25 @@ export function StaffScheduleManager() {
         const daysInRange = eachDayOfInterval({ start: startDate, end: endDate });
         
         if (data.is_overtime) {
-          // Create a recurring_shift_patterns entry with recurrence_interval 'one_off' for consistent display
-          // This allows it to show up properly in both Staff View and Client View like other patterns
-          const daysOfWeek = [...new Set(daysInRange.map(day => getDay(day)))];
-          
-          const { error } = await supabase.from("recurring_shift_patterns").insert({
-            user_id: data.user_id,
-            client_name: data.client_name,
-            days_of_week: daysOfWeek,
-            start_time: data.start_time,
-            end_time: data.end_time,
-            hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
-            currency: data.currency,
-            is_overtime: true,
-            notes: data.notes || null,
-            start_date: data.start_date,
-            end_date: data.end_date, // Set end date so it only shows for these specific days
-            recurrence_interval: 'one_off',
-            shift_type: data.shift_type || null,
-            created_by: userData.user.id
+          const overtimeToCreate = daysInRange.map(day => {
+            const [startHour, startMin] = data.start_time.split(':').map(Number);
+            const [endHour, endMin] = data.end_time.split(':').map(Number);
+            const hours = (endHour + endMin / 60) - (startHour + startMin / 60);
+            
+            return {
+              user_id: data.user_id,
+              overtime_date: format(day, "yyyy-MM-dd"),
+              hours: hours,
+              hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
+              currency: data.currency,
+              notes: data.notes ? `${data.client_name}: ${data.notes}` : data.client_name,
+              created_by: userData.user.id
+            };
           });
           
+          const { error } = await supabase.from("staff_overtime").insert(overtimeToCreate);
           if (error) throw error;
-          return { count: daysInRange.length, type: 'overtime' };
+          return { count: overtimeToCreate.length, type: 'overtime' };
         } else {
           const schedulesToCreate = daysInRange.map(day => ({
             user_id: data.user_id,
@@ -827,22 +767,13 @@ export function StaffScheduleManager() {
             const [endHour, endMin] = data.end_time.split(':').map(Number);
             const hours = (endHour + endMin / 60) - (startHour + startMin / 60);
 
-            // Encode client_name, shift_type, and times in notes as JSON for proper display
-            const overtimeData = {
-              client_name: data.client_name,
-              shift_type: data.shift_type || null,
-              start_time: data.start_time,
-              end_time: data.end_time,
-              notes: data.notes || null
-            };
-
             overtimeToCreate.push({
               user_id: data.user_id,
               overtime_date: format(scheduleDate, "yyyy-MM-dd"),
               hours: hours,
               hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
               currency: data.currency,
-              notes: JSON.stringify(overtimeData),
+              notes: data.notes ? `${data.client_name}: ${data.notes}` : data.client_name,
               created_by: userData.user.id
             });
           }
