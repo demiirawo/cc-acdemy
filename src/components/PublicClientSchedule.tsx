@@ -434,12 +434,15 @@ export const PublicClientSchedule = () => {
       weekDays.forEach(day => {
         const dayOfWeek = getDay(day);
         
-        // Check if this day matches the pattern
-        if (!pattern.days_of_week.includes(dayOfWeek)) return;
-        
         // Check if day is within pattern date range
         if (isBefore(day, patternStart)) return;
         if (patternEnd && isAfter(day, patternEnd)) return;
+        
+        // For one-off patterns, we just need to be within the date range (already checked above)
+        // For recurring patterns, check if this day matches the pattern's days_of_week
+        if (pattern.recurrence_interval !== 'one_off') {
+          if (!pattern.days_of_week.includes(dayOfWeek)) return;
+        }
         
         // Check recurrence interval
         if (pattern.recurrence_interval === 'biweekly') {
@@ -498,9 +501,15 @@ export const PublicClientSchedule = () => {
       weekDays.forEach(day => {
         const dayOfWeek = getDay(day);
         
-        if (!pattern.days_of_week.includes(dayOfWeek)) return;
+        // Check if day is within pattern date range
         if (isBefore(day, patternStart)) return;
         if (patternEnd && isAfter(day, patternEnd)) return;
+        
+        // For one-off patterns, we just need to be within the date range (already checked above)
+        // For recurring patterns, check if this day matches the pattern's days_of_week
+        if (pattern.recurrence_interval !== 'one_off') {
+          if (!pattern.days_of_week.includes(dayOfWeek)) return;
+        }
         
         if (pattern.recurrence_interval === 'biweekly') {
           const weeksDiff = differenceInWeeks(day, patternStart);
