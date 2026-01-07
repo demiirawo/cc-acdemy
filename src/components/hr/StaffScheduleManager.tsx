@@ -2624,7 +2624,7 @@ export function StaffScheduleManager() {
         </CardContent>
       </Card>
 
-      {/* Legend */}
+      {/* Legend - Dynamic based on view mode */}
       <div className="flex flex-wrap gap-4 text-sm">
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 rounded bg-primary/10 border border-primary/30" />
@@ -2636,16 +2636,40 @@ export function StaffScheduleManager() {
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 rounded bg-orange-50 border border-orange-300" />
-          <span className="flex items-center gap-1">Recurring Overtime <Infinity className="h-3 w-3 text-orange-500" /> <Clock className="h-3 w-3 text-orange-500" /></span>
+          <span className="flex items-center gap-1">Overtime <Clock className="h-3 w-3 text-orange-500" /></span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded bg-orange-100 border border-orange-300" />
-          <span>One-off Overtime</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 rounded bg-amber-50 border border-amber-200" />
-          <span>Holiday/Absence</span>
-        </div>
+        {viewMode === "staff" && (
+          <>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-amber-50 border border-amber-200" />
+              <span>Holiday/Absence</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-green-50 border border-green-200" />
+              <span>On Holiday (Covered)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-red-50 border border-red-200" />
+              <span>On Holiday (Needs Cover)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-blue-50 border border-blue-200" />
+              <span>Covering for Someone</span>
+            </div>
+          </>
+        )}
+        {viewMode === "client" && (
+          <>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-green-100 border border-green-300" />
+              <span>Cover Shift</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-amber-50 border border-amber-200" />
+              <span>Staff on Holiday</span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Delete Confirmation Dialog for Recurring Shifts */}
