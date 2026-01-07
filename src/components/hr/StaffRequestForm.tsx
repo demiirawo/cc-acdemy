@@ -328,8 +328,9 @@ export function StaffRequestForm() {
     daysInRange.forEach(day => {
       const dayOfWeek = getDay(day);
       
-      // Check if this day is part of the current user's recurring shift pattern
+      // Check if this day is part of the current user's standard (non-overtime) recurring shift pattern
       const hasRecurringShift = shiftPatterns.some(pattern => {
+        if (pattern.is_overtime) return false; // Exclude overtime patterns
         const patternStart = parseISO(pattern.start_date);
         const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
         const inDateRange = day >= patternStart && (!patternEnd || day <= patternEnd);
@@ -355,7 +356,9 @@ export function StaffRequestForm() {
         const dayOfWeek = getDay(day);
         const dateStr = format(day, "yyyy-MM-dd");
 
+        // Only count non-overtime patterns (holidays don't cover overtime shifts)
         const hasRecurringShift = shiftPatterns.some(pattern => {
+          if (pattern.is_overtime) return false; // Exclude overtime patterns from holiday day calculation
           const patternStart = parseISO(pattern.start_date);
           const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
           const inDateRange = day >= patternStart && (!patternEnd || day <= patternEnd);
