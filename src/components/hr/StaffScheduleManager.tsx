@@ -535,7 +535,36 @@ export function StaffScheduleManager() {
     return virtualSchedules;
   }, [recurringPatterns, weekDays, shiftExceptions]);
 
-  // Combine real schedules with virtual ones from patterns and add bench schedules
+  // Convert overtime entries to virtual schedules for display
+  const virtualSchedulesFromOvertime = useMemo(() => {
+    return overtimeEntries.map(ot => {
+      // Parse client name from notes field (format: "ClientName" or "ClientName: additional notes")
+      const noteParts = ot.notes?.split(':') || [];
+      const clientName = noteParts[0]?.trim() || 'Overtime';
+      const additionalNotes = noteParts.length > 1 ? noteParts.slice(1).join(':').trim() : null;
+      
+      // Default to 09:00 start time, calculate end from hours
+      const startHour = 9;
+      const endHour = startHour + ot.hours;
+      const startTime = `${String(startHour).padStart(2, '0')}:00:00`;
+      const endTime = `${String(Math.floor(endHour)).padStart(2, '0')}:${String(Math.round((endHour % 1) * 60)).padStart(2, '0')}:00`;
+      
+      return {
+        id: `overtime-${ot.id}`,
+        user_id: ot.user_id,
+        client_name: clientName,
+        start_datetime: `${ot.overtime_date}T${startTime}`,
+        end_datetime: `${ot.overtime_date}T${endTime}`,
+        notes: additionalNotes,
+        hourly_rate: ot.hourly_rate,
+        currency: ot.currency,
+        shift_type: null,
+        is_pattern_overtime: true // Mark as overtime for styling
+      } as Schedule;
+    });
+  }, [overtimeEntries]);
+
+  // Combine real schedules with virtual ones from patterns, overtime, and add bench schedules
   const allSchedules = useMemo(() => {
     // Filter out duplicates - if there's a real schedule at the same time, use that
     const realScheduleKeys = new Set(
@@ -547,7 +576,13 @@ export function StaffScheduleManager() {
       return !realScheduleKeys.has(key);
     });
     
-    const combinedSchedules = [...schedules, ...uniqueVirtual];
+    // Add overtime schedules (also filter duplicates)
+    const uniqueOvertime = virtualSchedulesFromOvertime.filter(os => {
+      const key = `${os.user_id}-${format(parseISO(os.start_datetime), "yyyy-MM-dd-HH:mm")}`;
+      return !realScheduleKeys.has(key);
+    });
+    
+    const combinedSchedules = [...schedules, ...uniqueVirtual, ...uniqueOvertime];
     
     // Generate bench schedules for staff with no assignments for full weeks (Mon-Fri)
     const benchSchedules: Schedule[] = [];
@@ -621,7 +656,7 @@ export function StaffScheduleManager() {
     }
     
     return [...combinedSchedules, ...benchSchedules];
-  }, [schedules, virtualSchedulesFromPatterns, staffMembers, weekDays, holidays, staffRequests]);
+  }, [schedules, virtualSchedulesFromPatterns, virtualSchedulesFromOvertime, staffMembers, weekDays, holidays, staffRequests]);
 
   // Get unique clients from schedules (sorted alphabetically)
   const uniqueClients = useMemo(() => {
