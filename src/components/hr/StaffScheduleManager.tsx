@@ -226,13 +226,16 @@ export function StaffScheduleManager() {
     notes: "",
     hourly_rate: "",
     currency: "GBP",
-    shift_type: ""
+    shift_type: "",
+    is_overtime: false
   });
 
   const [isEditOvertimeDialogOpen, setIsEditOvertimeDialogOpen] = useState(false);
   const [editingOvertime, setEditingOvertime] = useState<Overtime | null>(null);
   const [editOvertimeForm, setEditOvertimeForm] = useState({
-    hours: "",
+    client_name: "",
+    start_time: "09:00",
+    end_time: "17:00",
     hourly_rate: "",
     currency: "GBP",
     notes: "",
@@ -954,16 +957,82 @@ export function StaffScheduleManager() {
     }
   });
 
+  // Convert schedule to overtime mutation
+  const convertToOvertimeMutation = useMutation({
+    mutationFn: async (data: { 
+      scheduleId: string; 
+      user_id: string; 
+      overtime_date: string; 
+      client_name: string;
+      start_time: string;
+      end_time: string;
+      hourly_rate: number | null; 
+      currency: string; 
+      notes: string | null 
+    }) => {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error("Not authenticated");
+
+      // Calculate hours from start/end time
+      const [startHour, startMin] = data.start_time.split(':').map(Number);
+      const [endHour, endMin] = data.end_time.split(':').map(Number);
+      const hours = (endHour + endMin / 60) - (startHour + startMin / 60);
+
+      // Combine client name and notes
+      const combinedNotes = data.notes 
+        ? `${data.client_name}: ${data.notes}` 
+        : data.client_name;
+
+      // Delete the schedule first
+      const { error: deleteError } = await supabase
+        .from("staff_schedules")
+        .delete()
+        .eq("id", data.scheduleId);
+      
+      if (deleteError) throw deleteError;
+
+      // Create the overtime entry
+      const { error: insertError } = await supabase
+        .from("staff_overtime")
+        .insert({
+          user_id: data.user_id,
+          overtime_date: data.overtime_date,
+          hours: hours,
+          hourly_rate: data.hourly_rate,
+          currency: data.currency,
+          notes: combinedNotes,
+          created_by: userData.user.id
+        });
+
+      if (insertError) throw insertError;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["staff-schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-overtime"] });
+      setIsEditScheduleDialogOpen(false);
+      setEditingSchedule(null);
+      toast.success("Schedule converted to overtime");
+    },
+    onError: (error) => {
+      toast.error("Failed to convert to overtime: " + error.message);
+    }
+  });
+
   // Update overtime mutation
   const updateOvertimeMutation = useMutation({
-    mutationFn: async (data: { id: string; hours: number; hourly_rate: number | null; currency: string; notes: string | null }) => {
+    mutationFn: async (data: { id: string; hours: number; hourly_rate: number | null; currency: string; client_name: string; notes: string | null }) => {
+      // Combine client name and notes into the notes field (format: "ClientName: notes" or just "ClientName")
+      const combinedNotes = data.notes 
+        ? `${data.client_name}: ${data.notes}` 
+        : data.client_name;
+      
       const { error } = await supabase
         .from("staff_overtime")
         .update({
           hours: data.hours,
           hourly_rate: data.hourly_rate,
           currency: data.currency,
-          notes: data.notes,
+          notes: combinedNotes,
         })
         .eq("id", data.id);
 
@@ -1119,7 +1188,8 @@ export function StaffScheduleManager() {
         notes: schedule.notes || "",
         hourly_rate: schedule.hourly_rate?.toString() || "",
         currency: schedule.currency,
-        shift_type: schedule.shift_type || ""
+        shift_type: schedule.shift_type || "",
+        is_overtime: false
       });
       setIsEditScheduleDialogOpen(true);
     }
@@ -1132,11 +1202,20 @@ export function StaffScheduleManager() {
     }
     
     setEditingOvertime(ot);
+    // Parse client name from notes (format: "ClientName: notes" or just "ClientName")
+    const noteParts = ot.notes?.split(':') || [];
+    const clientName = noteParts.length > 0 ? noteParts[0].trim() : '';
+    const additionalNotes = noteParts.length > 1 ? noteParts.slice(1).join(':').trim() : '';
+    // Calculate times from hours (default 8 hour shift)
+    const startHour = 9;
+    const endHour = startHour + ot.hours;
     setEditOvertimeForm({
-      hours: ot.hours.toString(),
+      client_name: clientName,
+      start_time: `${String(Math.floor(startHour)).padStart(2, '0')}:00`,
+      end_time: `${String(Math.floor(endHour)).padStart(2, '0')}:${String(Math.round((endHour % 1) * 60)).padStart(2, '0')}`,
       hourly_rate: ot.hourly_rate?.toString() || "",
       currency: ot.currency,
-      notes: ot.notes || "",
+      notes: additionalNotes,
     });
     setIsEditOvertimeDialogOpen(true);
   };
@@ -2979,6 +3058,22 @@ export function StaffScheduleManager() {
                 placeholder="Add any notes..."
               />
             </div>
+            <div className="flex items-center space-x-2 pt-2 border-t">
+              <Checkbox
+                id="edit_schedule_is_overtime"
+                checked={editScheduleForm.is_overtime}
+                onCheckedChange={(checked) => setEditScheduleForm(p => ({ ...p, is_overtime: checked === true }))}
+              />
+              <Label htmlFor="edit_schedule_is_overtime" className="text-sm font-normal cursor-pointer">
+                Convert to overtime
+              </Label>
+            </div>
+            {editScheduleForm.is_overtime && (
+              <div className="text-xs text-muted-foreground bg-orange-50 p-2 rounded border border-orange-200">
+                <Clock className="h-3 w-3 inline mr-1 text-orange-500" />
+                This shift will be converted to an overtime entry and removed from regular schedules.
+              </div>
+            )}
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
             <Button variant="outline" onClick={() => setIsEditScheduleDialogOpen(false)}>
@@ -2988,20 +3083,37 @@ export function StaffScheduleManager() {
               onClick={() => {
                 if (!editingSchedule) return;
                 const scheduleDate = format(parseISO(editingSchedule.start_datetime), "yyyy-MM-dd");
-                updateScheduleMutation.mutate({
-                  id: editingSchedule.id,
-                  client_name: editScheduleForm.client_name,
-                  start_datetime: `${scheduleDate}T${editScheduleForm.start_time}:00`,
-                  end_datetime: `${scheduleDate}T${editScheduleForm.end_time}:00`,
-                  notes: editScheduleForm.notes || null,
-                  hourly_rate: editScheduleForm.hourly_rate ? parseFloat(editScheduleForm.hourly_rate) : null,
-                  currency: editScheduleForm.currency,
-                  shift_type: editScheduleForm.shift_type || null
-                });
+                
+                if (editScheduleForm.is_overtime) {
+                  // Convert to overtime
+                  convertToOvertimeMutation.mutate({
+                    scheduleId: editingSchedule.id,
+                    user_id: editingSchedule.user_id,
+                    overtime_date: scheduleDate,
+                    client_name: editScheduleForm.client_name,
+                    start_time: editScheduleForm.start_time,
+                    end_time: editScheduleForm.end_time,
+                    hourly_rate: editScheduleForm.hourly_rate ? parseFloat(editScheduleForm.hourly_rate) : null,
+                    currency: editScheduleForm.currency,
+                    notes: editScheduleForm.notes || null
+                  });
+                } else {
+                  // Normal update
+                  updateScheduleMutation.mutate({
+                    id: editingSchedule.id,
+                    client_name: editScheduleForm.client_name,
+                    start_datetime: `${scheduleDate}T${editScheduleForm.start_time}:00`,
+                    end_datetime: `${scheduleDate}T${editScheduleForm.end_time}:00`,
+                    notes: editScheduleForm.notes || null,
+                    hourly_rate: editScheduleForm.hourly_rate ? parseFloat(editScheduleForm.hourly_rate) : null,
+                    currency: editScheduleForm.currency,
+                    shift_type: editScheduleForm.shift_type || null
+                  });
+                }
               }}
-              disabled={!editScheduleForm.client_name || updateScheduleMutation.isPending}
+              disabled={!editScheduleForm.client_name || updateScheduleMutation.isPending || convertToOvertimeMutation.isPending}
             >
-              {updateScheduleMutation.isPending ? "Saving..." : "Save Changes"}
+              {(updateScheduleMutation.isPending || convertToOvertimeMutation.isPending) ? "Saving..." : editScheduleForm.is_overtime ? "Convert to Overtime" : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3035,17 +3147,41 @@ export function StaffScheduleManager() {
                 {editingOvertime ? format(parseISO(editingOvertime.overtime_date), "EEEE, d MMMM yyyy") : ""}
               </div>
             </div>
+            <div>
+              <Label>Client</Label>
+              <Select 
+                value={editOvertimeForm.client_name} 
+                onValueChange={v => setEditOvertimeForm(p => ({ ...p, client_name: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select client" />
+                </SelectTrigger>
+                <SelectContent className="bg-background z-50">
+                  {clients.map(client => (
+                    <SelectItem key={client.id} value={client.name}>{client.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Hours</Label>
+                <Label>Start Time</Label>
                 <Input
-                  type="number"
-                  step="0.25"
-                  value={editOvertimeForm.hours}
-                  onChange={(e) => setEditOvertimeForm((p) => ({ ...p, hours: e.target.value }))}
-                  placeholder="0"
+                  type="time"
+                  value={editOvertimeForm.start_time}
+                  onChange={e => setEditOvertimeForm(p => ({ ...p, start_time: e.target.value }))}
                 />
               </div>
+              <div>
+                <Label>End Time</Label>
+                <Input
+                  type="time"
+                  value={editOvertimeForm.end_time}
+                  onChange={e => setEditOvertimeForm(p => ({ ...p, end_time: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Hourly Rate (optional)</Label>
                 <Input
@@ -3056,22 +3192,22 @@ export function StaffScheduleManager() {
                   placeholder="0.00"
                 />
               </div>
-            </div>
-            <div>
-              <Label>Currency</Label>
-              <Select
-                value={editOvertimeForm.currency}
-                onValueChange={(v) => setEditOvertimeForm((p) => ({ ...p, currency: v }))}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-background z-50">
-                  <SelectItem value="GBP">GBP</SelectItem>
-                  <SelectItem value="USD">USD</SelectItem>
-                  <SelectItem value="EUR">EUR</SelectItem>
-                </SelectContent>
-              </Select>
+              <div>
+                <Label>Currency</Label>
+                <Select
+                  value={editOvertimeForm.currency}
+                  onValueChange={(v) => setEditOvertimeForm((p) => ({ ...p, currency: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background z-50">
+                    <SelectItem value="GBP">GBP</SelectItem>
+                    <SelectItem value="USD">USD</SelectItem>
+                    <SelectItem value="EUR">EUR</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div>
               <Label>Notes (optional)</Label>
@@ -3089,18 +3225,24 @@ export function StaffScheduleManager() {
             <Button
               onClick={() => {
                 if (!editingOvertime) return;
+                // Calculate hours from start/end time
+                const [startHour, startMin] = editOvertimeForm.start_time.split(':').map(Number);
+                const [endHour, endMin] = editOvertimeForm.end_time.split(':').map(Number);
+                const hours = (endHour + endMin / 60) - (startHour + startMin / 60);
+                
                 updateOvertimeMutation.mutate({
                   id: editingOvertime.id,
-                  hours: parseFloat(editOvertimeForm.hours),
+                  hours: hours,
                   hourly_rate: editOvertimeForm.hourly_rate ? parseFloat(editOvertimeForm.hourly_rate) : null,
                   currency: editOvertimeForm.currency,
+                  client_name: editOvertimeForm.client_name,
                   notes: editOvertimeForm.notes || null,
                 });
               }}
               disabled={
-                !editOvertimeForm.hours ||
-                Number.isNaN(parseFloat(editOvertimeForm.hours)) ||
-                parseFloat(editOvertimeForm.hours) <= 0 ||
+                !editOvertimeForm.client_name ||
+                !editOvertimeForm.start_time ||
+                !editOvertimeForm.end_time ||
                 updateOvertimeMutation.isPending
               }
             >
