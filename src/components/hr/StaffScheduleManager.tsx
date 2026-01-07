@@ -484,7 +484,11 @@ export function StaffScheduleManager() {
         // Check recurrence interval
         let shouldInclude = false;
         
-        if (recurrenceInterval === 'daily') {
+        if (recurrenceInterval === 'one_off') {
+          // One-off: include if this day is within the date range AND matches days_of_week
+          // The date range check is already done above, so just check days_of_week
+          shouldInclude = pattern.days_of_week.includes(dayOfWeek);
+        } else if (recurrenceInterval === 'daily') {
           // Daily: include every day
           shouldInclude = true;
         } else if (recurrenceInterval === 'weekly') {
@@ -735,34 +739,29 @@ export function StaffScheduleManager() {
         const daysInRange = eachDayOfInterval({ start: startDate, end: endDate });
         
         if (data.is_overtime) {
-          const overtimeToCreate = daysInRange.map(day => {
-            const [startHour, startMin] = data.start_time.split(':').map(Number);
-            const [endHour, endMin] = data.end_time.split(':').map(Number);
-            const hours = (endHour + endMin / 60) - (startHour + startMin / 60);
-            
-            // Encode client_name, shift_type, and times in notes as JSON for proper display
-            const overtimeData = {
-              client_name: data.client_name,
-              shift_type: data.shift_type || null,
-              start_time: data.start_time,
-              end_time: data.end_time,
-              notes: data.notes || null
-            };
-            
-            return {
-              user_id: data.user_id,
-              overtime_date: format(day, "yyyy-MM-dd"),
-              hours: hours,
-              hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
-              currency: data.currency,
-              notes: JSON.stringify(overtimeData),
-              created_by: userData.user.id
-            };
+          // Create a recurring_shift_patterns entry with recurrence_interval 'one_off' for consistent display
+          // This allows it to show up properly in both Staff View and Client View like other patterns
+          const daysOfWeek = [...new Set(daysInRange.map(day => getDay(day)))];
+          
+          const { error } = await supabase.from("recurring_shift_patterns").insert({
+            user_id: data.user_id,
+            client_name: data.client_name,
+            days_of_week: daysOfWeek,
+            start_time: data.start_time,
+            end_time: data.end_time,
+            hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
+            currency: data.currency,
+            is_overtime: true,
+            notes: data.notes || null,
+            start_date: data.start_date,
+            end_date: data.end_date, // Set end date so it only shows for these specific days
+            recurrence_interval: 'one_off',
+            shift_type: data.shift_type || null,
+            created_by: userData.user.id
           });
           
-          const { error } = await supabase.from("staff_overtime").insert(overtimeToCreate);
           if (error) throw error;
-          return { count: overtimeToCreate.length, type: 'overtime' };
+          return { count: daysInRange.length, type: 'overtime' };
         } else {
           const schedulesToCreate = daysInRange.map(day => ({
             user_id: data.user_id,
