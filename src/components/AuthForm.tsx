@@ -81,11 +81,43 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
 
       if (error) {
         console.error('Magic link error:', error);
-        toast({
-          title: "Failed to send magic link",
-          description: error.message || "Unable to send magic link. Please try again.",
-          variant: "destructive",
-        });
+        
+        // Check for common error types and provide user-friendly messages
+        const errorMessage = error.message?.toLowerCase() || '';
+        const errorCode = error.code || '';
+        
+        if (
+          errorMessage.includes('already registered') ||
+          errorMessage.includes('user already exists') ||
+          errorMessage.includes('already been registered') ||
+          errorCode === 'user_already_exists' ||
+          errorMessage.includes('duplicate') ||
+          (error.status === 400 && errorMessage.includes('email'))
+        ) {
+          toast({
+            title: "Email already registered",
+            description: "This email address is already signed up. Please contact support@ccforms.co.uk for assistance.",
+            variant: "destructive",
+          });
+        } else if (
+          error.status === 500 || 
+          error.status === 502 || 
+          error.status === 503 ||
+          errorMessage.includes('edge function') ||
+          errorMessage.includes('non-2xx')
+        ) {
+          toast({
+            title: "Sign up issue",
+            description: "There was an issue with sign up. Please contact support@ccforms.co.uk for assistance.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Failed to send magic link",
+            description: "There was an issue sending the magic link. Please contact support@ccforms.co.uk for assistance.",
+            variant: "destructive",
+          });
+        }
       } else {
         toast({
           title: "Magic link sent!",
@@ -95,11 +127,27 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
       }
     } catch (error: any) {
       console.error('Unexpected magic link error:', error);
-      toast({
-        title: "Error",
-        description: error?.message || "An unexpected error occurred. Please try again.",
-        variant: "destructive",
-      });
+      
+      // Provide friendly catch-all error message
+      const errorMessage = error?.message?.toLowerCase() || '';
+      
+      if (
+        errorMessage.includes('already registered') ||
+        errorMessage.includes('user already exists') ||
+        errorMessage.includes('already been registered')
+      ) {
+        toast({
+          title: "Email already registered",
+          description: "This email address is already signed up. Please contact support@ccforms.co.uk for assistance.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Sign up issue",
+          description: "There was an issue with sign up. Please contact support@ccforms.co.uk for assistance.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsLoading(false);
     }
