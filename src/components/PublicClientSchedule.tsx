@@ -1622,10 +1622,11 @@ const LINK_CATEGORIES = [
   { value: 'documents', label: 'Documents' },
   { value: 'guidance', label: 'Guidance' },
   { value: 'training', label: 'Training' },
+  { value: 'form', label: 'Form' },
   { value: 'other', label: 'Other' },
 ] as const;
 
-type LinkCategory = 'software' | 'documents' | 'guidance' | 'training' | 'other';
+type LinkCategory = 'software' | 'documents' | 'guidance' | 'training' | 'form' | 'other';
 
 const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
   const queryClient = useQueryClient();
@@ -1805,6 +1806,7 @@ const ClientPasswordManager = ({ clientName }: { clientName: string }) => {
       documents: [],
       guidance: [],
       training: [],
+      form: [],
       other: [],
     };
     
