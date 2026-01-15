@@ -1758,9 +1758,57 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      hr_profiles_public: {
+        Row: {
+          created_at: string | null
+          department: string | null
+          employee_id: string | null
+          employment_status:
+            | Database["public"]["Enums"]["employment_status"]
+            | null
+          id: string | null
+          job_title: string | null
+          scheduling_role: string | null
+          start_date: string | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          department?: string | null
+          employee_id?: string | null
+          employment_status?:
+            | Database["public"]["Enums"]["employment_status"]
+            | null
+          id?: string | null
+          job_title?: string | null
+          scheduling_role?: string | null
+          start_date?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          department?: string | null
+          employee_id?: string | null
+          employment_status?:
+            | Database["public"]["Enums"]["employment_status"]
+            | null
+          id?: string | null
+          job_title?: string | null
+          scheduling_role?: string | null
+          start_date?: string | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
+      can_view_full_hr_profile: {
+        Args: { profile_user_id: string }
+        Returns: boolean
+      }
       can_view_schedule_for_client: {
         Args: { _client_name: string; _user_id: string }
         Returns: boolean
