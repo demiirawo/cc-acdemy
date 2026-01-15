@@ -2801,6 +2801,9 @@ export function StaffScheduleManager() {
                                         {/* Holiday/Coverage info */}
                                         {staffOnHoliday && (
                                           <div className="mt-0.5">
+                                            <div className="text-[10px] text-amber-800 opacity-80">
+                                              {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
+                                            </div>
                                             <div className="text-[10px] text-amber-700 capitalize">
                                               {holidayInfo?.absence_type || 'On holiday'}
                                             </div>
