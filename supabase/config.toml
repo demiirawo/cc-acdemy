@@ -48,3 +48,6 @@ verify_jwt = false
 
 [functions.get-public-holidays]
 verify_jwt = false
+
+[functions.send-request-email]
+verify_jwt = true
