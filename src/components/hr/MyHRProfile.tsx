@@ -10,9 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User } from "lucide-react";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye } from "lucide-react";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay } from "date-fns";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
+import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 interface UserProfile {
   user_id: string;
   display_name: string | null;
@@ -237,6 +238,12 @@ export function MyHRProfile() {
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [onboardingData, setOnboardingData] = useState<OnboardingFormData | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
+  const [documentPreview, setDocumentPreview] = useState<{
+    open: boolean;
+    filePath: string | null;
+    documentType: string;
+    documentLabel: string;
+  }>({ open: false, filePath: null, documentType: '', documentLabel: '' });
 
   // Admin staff selection
   const [allStaff, setAllStaff] = useState<UserProfile[]>([]);
@@ -814,50 +821,102 @@ export function MyHRProfile() {
                     Onboarding Documents
                   </h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="border rounded-lg p-4 space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => onboardingData.photograph_path && setDocumentPreview({
+                        open: true,
+                        filePath: onboardingData.photograph_path,
+                        documentType: 'Staff Photograph',
+                        documentLabel: 'Photograph'
+                      })}
+                      disabled={!onboardingData.photograph_path}
+                      className="border rounded-lg p-4 space-y-2 text-left hover:border-primary/50 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
                       <p className="text-xs text-muted-foreground">Photograph</p>
                       <p className="font-medium text-sm">Staff photograph</p>
                       <div className="h-20 flex items-center justify-center bg-muted/50 rounded">
                         {onboardingData.photograph_path ? (
-                          <Badge variant="outline" className="text-xs bg-success/10 text-success">Uploaded</Badge>
+                          <div className="flex flex-col items-center gap-1">
+                            <Eye className="h-6 w-6 text-primary" />
+                            <span className="text-xs text-primary">Click to view</span>
+                          </div>
                         ) : (
                           <p className="text-xs text-muted-foreground">Not provided</p>
                         )}
                       </div>
-                    </div>
-                    <div className="border rounded-lg p-4 space-y-2">
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onboardingData.proof_of_id_1_path && setDocumentPreview({
+                        open: true,
+                        filePath: onboardingData.proof_of_id_1_path,
+                        documentType: onboardingData.proof_of_id_1_type || 'ID Document',
+                        documentLabel: 'ID Document 1'
+                      })}
+                      disabled={!onboardingData.proof_of_id_1_path}
+                      className="border rounded-lg p-4 space-y-2 text-left hover:border-primary/50 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
                       <p className="text-xs text-muted-foreground">ID Document 1</p>
                       <p className="font-medium text-sm">{onboardingData.proof_of_id_1_type || 'Not provided'}</p>
                       <div className="h-20 flex items-center justify-center bg-muted/50 rounded">
                         {onboardingData.proof_of_id_1_path ? (
-                          <FileText className="h-8 w-8 text-muted-foreground" />
+                          <div className="flex flex-col items-center gap-1">
+                            <Eye className="h-6 w-6 text-primary" />
+                            <span className="text-xs text-primary">Click to view</span>
+                          </div>
                         ) : (
                           <p className="text-xs text-muted-foreground">Not provided</p>
                         )}
                       </div>
-                    </div>
-                    <div className="border rounded-lg p-4 space-y-2">
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onboardingData.proof_of_id_2_path && setDocumentPreview({
+                        open: true,
+                        filePath: onboardingData.proof_of_id_2_path,
+                        documentType: onboardingData.proof_of_id_2_type || 'ID Document',
+                        documentLabel: 'ID Document 2'
+                      })}
+                      disabled={!onboardingData.proof_of_id_2_path}
+                      className="border rounded-lg p-4 space-y-2 text-left hover:border-primary/50 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
                       <p className="text-xs text-muted-foreground">ID Document 2</p>
                       <p className="font-medium text-sm">{onboardingData.proof_of_id_2_type || 'Not provided'}</p>
                       <div className="h-20 flex items-center justify-center bg-muted/50 rounded">
                         {onboardingData.proof_of_id_2_path ? (
-                          <FileText className="h-8 w-8 text-muted-foreground" />
+                          <div className="flex flex-col items-center gap-1">
+                            <Eye className="h-6 w-6 text-primary" />
+                            <span className="text-xs text-primary">Click to view</span>
+                          </div>
                         ) : (
                           <p className="text-xs text-muted-foreground">Not provided</p>
                         )}
                       </div>
-                    </div>
-                    <div className="border rounded-lg p-4 space-y-2">
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onboardingData.proof_of_address_path && setDocumentPreview({
+                        open: true,
+                        filePath: onboardingData.proof_of_address_path,
+                        documentType: onboardingData.proof_of_address_type || 'Address Document',
+                        documentLabel: 'Proof of Address'
+                      })}
+                      disabled={!onboardingData.proof_of_address_path}
+                      className="border rounded-lg p-4 space-y-2 text-left hover:border-primary/50 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
                       <p className="text-xs text-muted-foreground">Proof of Address</p>
-                      <p className="font-medium text-sm">Address document</p>
+                      <p className="font-medium text-sm">{onboardingData.proof_of_address_type || 'Address document'}</p>
                       <div className="h-20 flex items-center justify-center bg-muted/50 rounded">
                         {onboardingData.proof_of_address_path ? (
-                          <Briefcase className="h-8 w-8 text-muted-foreground" />
+                          <div className="flex flex-col items-center gap-1">
+                            <Eye className="h-6 w-6 text-primary" />
+                            <span className="text-xs text-primary">Click to view</span>
+                          </div>
                         ) : (
                           <p className="text-xs text-muted-foreground">Not provided</p>
                         )}
                       </div>
-                    </div>
+                    </button>
                   </div>
                 </div>
 
@@ -1238,5 +1297,13 @@ export function MyHRProfile() {
         </AccordionItem>
       </Accordion>
 
+      {/* Document Preview Dialog */}
+      <DocumentPreviewDialog
+        open={documentPreview.open}
+        onOpenChange={(open) => setDocumentPreview(prev => ({ ...prev, open }))}
+        filePath={documentPreview.filePath}
+        documentType={documentPreview.documentType}
+        documentLabel={documentPreview.documentLabel}
+      />
     </div>;
 }
