@@ -134,44 +134,40 @@ export function RequestDetailPage({ requestId, onBack }: RequestDetailPageProps)
     }
   });
 
-  // Get shift times affected by the request period
-  const getAffectedShiftTimes = (): { clientName: string; shiftTime: string }[] => {
+  // Get day-by-day breakdown of affected shift times
+  const getAffectedShiftsByDay = (): { date: Date; clientName: string; shiftTime: string }[] => {
     if (!request || shiftPatterns.length === 0) return [];
     
     const startDate = new Date(request.start_date);
     const endDate = new Date(request.end_date);
+    const result: { date: Date; clientName: string; shiftTime: string }[] = [];
     
-    // Get all days of the week that fall within the request period
-    const requestDaysOfWeek = new Set<number>();
+    // Iterate through each day of the request period
     let currentDate = new Date(startDate);
     while (currentDate <= endDate) {
-      requestDaysOfWeek.add(currentDate.getDay());
+      const dayOfWeek = currentDate.getDay();
+      
+      // Find patterns that apply to this day
+      shiftPatterns.forEach(pattern => {
+        const patternDays = pattern.days_of_week as number[];
+        if (patternDays.includes(dayOfWeek)) {
+          const startTime = pattern.start_time.substring(0, 5);
+          const endTime = pattern.end_time.substring(0, 5);
+          const shiftTime = `${startTime} - ${endTime}`;
+          
+          result.push({
+            date: new Date(currentDate),
+            clientName: pattern.client_name,
+            shiftTime
+          });
+        }
+      });
+      
       currentDate.setDate(currentDate.getDate() + 1);
     }
     
-    // Find patterns that match the request days and collect unique shift times per client
-    const shiftsByClient = new Map<string, Set<string>>();
-    shiftPatterns.forEach(pattern => {
-      const patternDays = pattern.days_of_week as number[];
-      const hasOverlap = patternDays.some(day => requestDaysOfWeek.has(day));
-      if (hasOverlap) {
-        const startTime = pattern.start_time.substring(0, 5);
-        const endTime = pattern.end_time.substring(0, 5);
-        const shiftTime = `${startTime} - ${endTime}`;
-        
-        if (!shiftsByClient.has(pattern.client_name)) {
-          shiftsByClient.set(pattern.client_name, new Set());
-        }
-        shiftsByClient.get(pattern.client_name)!.add(shiftTime);
-      }
-    });
-    
-    const result: { clientName: string; shiftTime: string }[] = [];
-    shiftsByClient.forEach((times, clientName) => {
-      times.forEach(shiftTime => {
-        result.push({ clientName, shiftTime });
-      });
-    });
+    // Sort by date
+    result.sort((a, b) => a.date.getTime() - b.date.getTime());
     
     return result;
   };
@@ -564,18 +560,26 @@ Care Cuddle Team`;
                 </div>
               </div>
 
-              {/* Affected Shift Times */}
-              {getAffectedShiftTimes().length > 0 && (
+              {/* Affected Shift Times - Day by Day Breakdown */}
+              {getAffectedShiftsByDay().length > 0 && (
                 <>
                   <Separator />
                   <div>
                     <Label className="text-muted-foreground text-sm">Affected Shift Times</Label>
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {getAffectedShiftTimes().map((shift, idx) => (
-                        <Badge key={idx} variant="outline" className="bg-muted">
-                          <Clock className="h-3 w-3 mr-1" />
-                          {shift.clientName}: {shift.shiftTime}
-                        </Badge>
+                    <div className="mt-2 space-y-1">
+                      {getAffectedShiftsByDay().map((shift, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-sm">
+                          <span className="font-medium min-w-[140px]">
+                            {format(shift.date, 'EEE, dd MMM yyyy')}
+                          </span>
+                          <Badge variant="outline" className="bg-muted">
+                            <Clock className="h-3 w-3 mr-1" />
+                            {shift.shiftTime}
+                          </Badge>
+                          <span className="text-muted-foreground text-xs">
+                            ({shift.clientName})
+                          </span>
+                        </div>
                       ))}
                     </div>
                   </div>
