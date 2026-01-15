@@ -1362,7 +1362,7 @@ const UpcomingHolidaysCard = ({
     queryFn: async () => {
       const { data, error } = await supabase
         .from("recurring_shift_patterns")
-        .select("user_id, start_time, end_time, shift_type")
+        .select("user_id, start_time, end_time, shift_type, days_of_week")
         .eq("client_name", clientName);
       
       if (error) throw error;
@@ -1387,15 +1387,33 @@ const UpcomingHolidaysCard = ({
     enabled: !!clientName && upcomingHolidays.length > 0,
   });
 
-  // Get shift time for a user from their pattern
-  const getShiftTimeForUser = (userId: string): string | null => {
-    const pattern = clientPatterns.find(p => p.user_id === userId);
-    if (!pattern) return null;
+  // Get shift times for a user during a holiday period
+  // Returns an array of unique shift times that would be affected
+  const getShiftTimesForHoliday = (userId: string, startDate: Date, endDate: Date): string[] => {
+    const userPatterns = clientPatterns.filter(p => p.user_id === userId);
+    if (userPatterns.length === 0) return [];
     
-    // Format times (remove seconds if present)
-    const startTime = pattern.start_time.substring(0, 5);
-    const endTime = pattern.end_time.substring(0, 5);
-    return `${startTime} - ${endTime}`;
+    // Get all days of the week that fall within the holiday period
+    const holidayDaysOfWeek = new Set<number>();
+    let currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
+      holidayDaysOfWeek.add(currentDate.getDay());
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    // Find patterns that match the holiday days and collect unique shift times
+    const uniqueShiftTimes = new Set<string>();
+    userPatterns.forEach(pattern => {
+      const patternDays = pattern.days_of_week as number[];
+      const hasOverlap = patternDays.some(day => holidayDaysOfWeek.has(day));
+      if (hasOverlap) {
+        const startTime = pattern.start_time.substring(0, 5);
+        const endTime = pattern.end_time.substring(0, 5);
+        uniqueShiftTimes.add(`${startTime} - ${endTime}`);
+      }
+    });
+    
+    return Array.from(uniqueShiftTimes);
   };
 
   // Get cover person(s) for a specific holiday by matching swap_with_user_id and date overlap
@@ -1491,7 +1509,7 @@ const UpcomingHolidaysCard = ({
             const isOngoing = startDate <= today && endDate >= today;
             const coverNames = getCoverForHoliday(holiday);
             const hasCover = coverNames.length > 0;
-            const shiftTime = getShiftTimeForUser(holiday.user_id);
+            const shiftTimes = getShiftTimesForHoliday(holiday.user_id, startDate, endDate);
             
             return (
               <div 
@@ -1508,11 +1526,11 @@ const UpcomingHolidaysCard = ({
                     <span className="font-medium text-sm">
                       {getStaffName(holiday.user_id)}
                     </span>
-                    {shiftTime && (
-                      <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                    {shiftTimes.map((shiftTime, idx) => (
+                      <span key={idx} className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
                         {shiftTime}
                       </span>
-                    )}
+                    ))}
                     {isOngoing ? (
                       <span className="font-bold text-sm text-amber-700">(Currently Away)</span>
                     ) : isStartingToday ? (
