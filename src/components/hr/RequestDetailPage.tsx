@@ -15,6 +15,7 @@ import {
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification";
 
 type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
 
@@ -72,6 +73,7 @@ interface RequestDetailPageProps {
 export function RequestDetailPage({ requestId, onBack, onViewProfile }: RequestDetailPageProps) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const { sendReviewEmail } = useRequestEmailNotification();
   const [reviewNotes, setReviewNotes] = useState("");
   const [emailCopied, setEmailCopied] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
@@ -380,6 +382,23 @@ export function RequestDetailPage({ requestId, onBack, onViewProfile }: RequestD
             approved_by: user.id,
             approved_at: new Date().toISOString()
           }]);
+      }
+
+      // Send email notification to the requester
+      const requesterProfile = userProfiles.find(p => p.user_id === request.user_id);
+      const reviewerProfile = userProfiles.find(p => p.user_id === user.id);
+      if (requesterProfile?.email) {
+        sendReviewEmail({
+          type: status === 'approved' ? 'request_approved' : 'request_rejected',
+          requestType: request.request_type,
+          requesterName: requesterProfile.display_name || "Staff Member",
+          requesterEmail: requesterProfile.email,
+          startDate: request.start_date,
+          endDate: request.end_date,
+          daysRequested: request.days_requested,
+          reviewNotes: reviewNotes || undefined,
+          reviewerName: reviewerProfile?.display_name || user.email,
+        }).catch(err => console.error("Failed to send email notification:", err));
       }
     },
     onSuccess: (_, status) => {

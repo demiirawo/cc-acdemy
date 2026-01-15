@@ -17,6 +17,7 @@ import { CalendarIcon, Clock, Palmtree, RefreshCw, AlertCircle, Send, RotateCcw,
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRole } from "@/hooks/useUserRole";
+import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification";
 
 type RequestType = 'overtime' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap' | 'overtime_standard' | 'overtime_double_up';
 
@@ -120,6 +121,7 @@ export function StaffRequestForm() {
   const { user } = useAuth();
   const { isAdmin } = useUserRole();
   const queryClient = useQueryClient();
+  const { sendNewRequestEmail, sendReviewEmail } = useRequestEmailNotification();
   
   const [requestType, setRequestType] = useState<RequestType | "">("");
   const [selectedStaffId, setSelectedStaffId] = useState<string>(""); // Admin: submit on behalf of staff
@@ -582,6 +584,19 @@ export function StaffRequestForm() {
           console.error('Failed to sync to staff_holidays:', holidayError);
         }
       }
+      // Send email notification to admins for new requests (not when admin submits)
+      if (!isAdmin) {
+        const requesterProfile = staffMembers.find(s => s.user_id === user.id);
+        sendNewRequestEmail({
+          requestType,
+          requesterName: requesterProfile?.display_name || user.email || "Staff Member",
+          requesterEmail: requesterProfile?.email || user.email || "",
+          startDate: format(requestStartDate!, "yyyy-MM-dd"),
+          endDate: format(requestEndDate!, "yyyy-MM-dd"),
+          daysRequested: requestDays,
+          details: requestDetails || undefined,
+        }).catch(err => console.error("Failed to send email notification:", err));
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["my-staff-requests"] });
@@ -643,6 +658,22 @@ export function StaffRequestForm() {
           console.error('Failed to sync to staff_holidays:', holidayError);
           // Don't throw - the request is already approved, just log the sync failure
         }
+      }
+      // Send email notification to the requester
+      const requesterProfile = staffMembers.find(s => s.user_id === request.user_id);
+      const reviewerProfile = staffMembers.find(s => s.user_id === user.id);
+      if (requesterProfile?.email) {
+        sendReviewEmail({
+          type: status === 'approved' ? 'request_approved' : 'request_rejected',
+          requestType: request.request_type,
+          requesterName: requesterProfile.display_name || "Staff Member",
+          requesterEmail: requesterProfile.email,
+          startDate: request.start_date,
+          endDate: request.end_date,
+          daysRequested: request.days_requested,
+          reviewNotes: notes,
+          reviewerName: reviewerProfile?.display_name || user.email,
+        }).catch(err => console.error("Failed to send email notification:", err));
       }
     },
     onSuccess: (_, variables) => {
