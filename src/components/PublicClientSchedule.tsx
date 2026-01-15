@@ -854,6 +854,9 @@ export const PublicClientSchedule = () => {
                         
                         {staffOnHoliday ? (
                           <div className="mt-2 space-y-1">
+                            <div className="text-sm text-amber-800 opacity-80">
+                              {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
+                            </div>
                             <div className="text-sm text-amber-700 capitalize">
                               {holidayInfo?.absence_type?.replace('_', ' ') || 'On holiday'}
                             </div>
@@ -970,6 +973,9 @@ export const PublicClientSchedule = () => {
                           
                           {staffOnHoliday ? (
                             <div className="mt-0.5">
+                              <div className="text-[10px] text-amber-800 opacity-80">
+                                {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
+                              </div>
                               <div className="text-[10px] text-amber-700 capitalize">
                                 {holidayInfo?.absence_type?.replace('_', ' ') || 'On holiday'}
                               </div>
