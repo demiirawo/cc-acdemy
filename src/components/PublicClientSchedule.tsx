@@ -1356,6 +1356,28 @@ const UpcomingHolidaysCard = ({
     enabled: !!clientName,
   });
 
+  // Fetch approved cover requests (overtime or shift_swap that are linked to holidays)
+  const { data: coverRequests = [] } = useQuery({
+    queryKey: ["upcoming-holiday-covers", clientName],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff_requests")
+        .select("id, user_id, request_type, status, start_date, end_date, linked_holiday_id, swap_with_user_id")
+        .eq("status", "approved")
+        .not("linked_holiday_id", "is", null);
+      
+      if (error) throw error;
+      return (data || []) as StaffRequest[];
+    },
+    enabled: !!clientName && upcomingHolidays.length > 0,
+  });
+
+  // Get cover person(s) for a specific holiday
+  const getCoverForHoliday = (holidayId: string): string[] => {
+    const covers = coverRequests.filter(r => r.linked_holiday_id === holidayId);
+    return covers.map(c => getStaffName(c.user_id));
+  };
+
   const getAbsenceLabel = (type: string) => {
     const found = ABSENCE_TYPES.find(t => t.value === type);
     return found?.label || type;
@@ -1427,6 +1449,8 @@ const UpcomingHolidaysCard = ({
             const endDate = parseISO(holiday.end_date);
             const isStartingToday = format(startDate, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd');
             const isOngoing = startDate <= today && endDate >= today;
+            const coverNames = getCoverForHoliday(holiday.id);
+            const hasCover = coverNames.length > 0;
             
             return (
               <div 
@@ -1460,6 +1484,17 @@ const UpcomingHolidaysCard = ({
                       ({holiday.days_taken} {holiday.days_taken === 1 ? 'day' : 'days'})
                     </span>
                   </div>
+                  {/* Cover information */}
+                  {hasCover ? (
+                    <div className="text-sm text-green-700 bg-green-50 rounded px-2 py-1 mt-2 inline-block">
+                      <span className="font-medium">Cover:</span> {coverNames.join(', ')}
+                    </div>
+                  ) : !holiday.no_cover_required && (
+                    <div className="text-sm text-red-600 bg-red-50 rounded px-2 py-1 mt-2 inline-flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3" />
+                      <span>No cover arranged</span>
+                    </div>
+                  )}
                 </div>
                 {holiday.no_cover_required && (
                   <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 flex-shrink-0">
