@@ -13,13 +13,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User } from "lucide-react";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay } from "date-fns";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
-
 interface UserProfile {
   user_id: string;
   display_name: string | null;
   email: string | null;
 }
-
 interface MonthlyPayPreview {
   month: Date;
   monthLabel: string;
@@ -117,7 +115,6 @@ interface RecurringBonus {
   start_date: string;
   end_date: string | null;
 }
-
 interface OnboardingFormData {
   id: string;
   employment_start_date: string | null;
@@ -186,19 +183,42 @@ const RECORD_TYPES: Record<string, {
     positive: false
   }
 };
-const REQUEST_TYPES: Record<string, { label: string; icon: string }> = {
-  'overtime_standard': { label: 'Standard Overtime', icon: 'clock' },
-  'overtime_double_up': { label: 'Double-Up Overtime', icon: 'clock' },
-  'holiday': { label: 'Holiday Request', icon: 'calendar' },
-  'holiday_paid': { label: 'Paid Holiday', icon: 'calendar' },
-  'holiday_unpaid': { label: 'Unpaid Holiday', icon: 'calendar' },
-  'shift_swap': { label: 'Shift Cover', icon: 'refresh' },
+const REQUEST_TYPES: Record<string, {
+  label: string;
+  icon: string;
+}> = {
+  'overtime_standard': {
+    label: 'Standard Overtime',
+    icon: 'clock'
+  },
+  'overtime_double_up': {
+    label: 'Double-Up Overtime',
+    icon: 'clock'
+  },
+  'holiday': {
+    label: 'Holiday Request',
+    icon: 'calendar'
+  },
+  'holiday_paid': {
+    label: 'Paid Holiday',
+    icon: 'calendar'
+  },
+  'holiday_unpaid': {
+    label: 'Unpaid Holiday',
+    icon: 'calendar'
+  },
+  'shift_swap': {
+    label: 'Shift Cover',
+    icon: 'refresh'
+  }
 };
 export function MyHRProfile() {
   const {
     user
   } = useAuth();
-  const { isAdmin } = useUserRole();
+  const {
+    isAdmin
+  } = useUserRole();
   const {
     toast
   } = useToast();
@@ -215,7 +235,7 @@ export function MyHRProfile() {
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [onboardingData, setOnboardingData] = useState<OnboardingFormData | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
-  
+
   // Admin staff selection
   const [allStaff, setAllStaff] = useState<UserProfile[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -224,17 +244,13 @@ export function MyHRProfile() {
   useEffect(() => {
     const fetchAllStaff = async () => {
       if (!isAdmin) return;
-      
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('user_id, display_name, email')
-        .order('display_name');
-      
+      const {
+        data: profiles
+      } = await supabase.from('profiles').select('user_id, display_name, email').order('display_name');
       if (profiles) {
         setAllStaff(profiles);
       }
     };
-    
     fetchAllStaff();
   }, [isAdmin]);
 
@@ -272,22 +288,17 @@ export function MyHRProfile() {
       const now = new Date();
       const currentYear = now.getFullYear();
       const currentMonth = now.getMonth(); // 0-indexed, June = 5
-      
+
       // Holiday year starts June 1st
       // If we're before June, the holiday year started last year
-      const holidayYearStart = currentMonth < 5 
-        ? new Date(currentYear - 1, 5, 1) // June 1st of previous year
-        : new Date(currentYear, 5, 1); // June 1st of current year
-      const holidayYearEnd = currentMonth < 5
-        ? new Date(currentYear, 4, 31) // May 31st of current year
-        : new Date(currentYear + 1, 4, 31); // May 31st of next year
-      
+      const holidayYearStart = currentMonth < 5 ? new Date(currentYear - 1, 5, 1) // June 1st of previous year
+      : new Date(currentYear, 5, 1); // June 1st of current year
+      const holidayYearEnd = currentMonth < 5 ? new Date(currentYear, 4, 31) // May 31st of current year
+      : new Date(currentYear + 1, 4, 31); // May 31st of next year
+
       const holidaysThisYear = (holidayData || []).filter(h => {
         const startDate = new Date(h.start_date);
-        return h.status === 'approved' && 
-               h.absence_type === 'holiday' && 
-               startDate >= holidayYearStart && 
-               startDate <= holidayYearEnd;
+        return h.status === 'approved' && h.absence_type === 'holiday' && startDate >= holidayYearStart && startDate <= holidayYearEnd;
       }).reduce((sum, h) => sum + Number(h.days_taken), 0);
       setTotalHolidaysTaken(holidaysThisYear);
 
@@ -496,7 +507,7 @@ export function MyHRProfile() {
         return payDate >= monthStart && payDate <= monthEnd;
       });
       const oneOffBonuses = monthRecords.filter(r => r.record_type === 'bonus').reduce((sum, r) => sum + r.amount, 0);
-      
+
       // Add recurring bonuses that are active for this month
       const activeRecurringBonuses = recurringBonuses.filter(bonus => {
         const bonusStart = parseISO(bonus.start_date);
@@ -504,17 +515,12 @@ export function MyHRProfile() {
         // Bonus is active if: started before or during this month AND (no end date OR ends after or during this month)
         return bonusStart <= monthEnd && (!bonusEnd || bonusEnd >= monthStart);
       }).reduce((sum, bonus) => sum + bonus.amount, 0);
-      
       const bonuses = oneOffBonuses + activeRecurringBonuses;
       const deductions = monthRecords.filter(r => r.record_type === 'deduction').reduce((sum, r) => sum + r.amount, 0);
-      
+
       // Calculate overtime from approved requests
       let overtimeDays = 0;
-      const approvedOvertimeRequests = staffRequests.filter(req => 
-        req.status === 'approved' && 
-        (req.request_type === 'overtime' || req.request_type === 'overtime_standard' || req.request_type === 'overtime_double_up')
-      );
-      
+      const approvedOvertimeRequests = staffRequests.filter(req => req.status === 'approved' && (req.request_type === 'overtime' || req.request_type === 'overtime_standard' || req.request_type === 'overtime_double_up'));
       approvedOvertimeRequests.forEach(req => {
         const reqStart = parseISO(req.start_date);
         const reqEnd = parseISO(req.end_date);
@@ -526,19 +532,16 @@ export function MyHRProfile() {
           overtimeDays += Math.min(daysInMonth, req.days_requested);
         }
       });
-      
+
       // Also count recurring overtime patterns (each day only once even if multiple shifts)
       const overtimePatterns = recurringPatterns.filter(p => p.is_overtime);
       const countedOvertimeDates = new Set<string>();
-      
       for (const day of monthDays) {
         const dateStr = format(day, 'yyyy-MM-dd');
         const dayOfWeek = getDay(day);
-        
         for (const pattern of overtimePatterns) {
           const patternStart = parseISO(pattern.start_date);
           const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-          
           if (day >= patternStart && (!patternEnd || day <= patternEnd)) {
             if (pattern.days_of_week.includes(dayOfWeek)) {
               const patternExs = exceptionsMap.get(pattern.id);
@@ -550,12 +553,11 @@ export function MyHRProfile() {
           }
         }
       }
-      
       overtimeDays += countedOvertimeDates.size;
-      
+
       // Overtime pay = 1.5 × daily rate × overtime days
       const overtimePay = 1.5 * dailyRate * overtimeDays;
-      
+
       // Calculate unused holiday payout or excess holiday deduction for June (end of holiday year)
       // Holiday year runs June 1 to May 31, so June payroll includes payout for unused days or deduction for excess
       let unusedHolidayPayout = 0;
@@ -563,36 +565,33 @@ export function MyHRProfile() {
       let excessHolidayDeduction = 0;
       let excessHolidayDays = 0;
       const targetMonthNum = targetMonth.getMonth(); // 0-indexed, June = 5
-      
-      if (targetMonthNum === 5) { // June
+
+      if (targetMonthNum === 5) {
+        // June
         // Calculate holidays taken in the holiday year ending May 31 of the same year
         const holidayYearStart = new Date(targetMonth.getFullYear() - 1, 5, 1); // June 1 of previous year
         const holidayYearEnd = new Date(targetMonth.getFullYear(), 4, 31); // May 31 of current year
-        
+
         const holidaysTakenInYear = holidays.filter(h => {
           const startDate = parseISO(h.start_date);
-          return h.status === 'approved' && 
-                 h.absence_type === 'holiday' && 
-                 startDate >= holidayYearStart && 
-                 startDate <= holidayYearEnd;
+          return h.status === 'approved' && h.absence_type === 'holiday' && startDate >= holidayYearStart && startDate <= holidayYearEnd;
         }).reduce((sum, h) => sum + Number(h.days_taken), 0);
-        
+
         // Use the shared calculateHolidayAllowance function for consistency
-        const { accruedAllowance } = calculateHolidayAllowance(hrProfile.start_date);
-        
+        const {
+          accruedAllowance
+        } = calculateHolidayAllowance(hrProfile.start_date);
         const holidayBalance = accruedAllowance - holidaysTakenInYear;
-        
         if (holidayBalance >= 0) {
           // Staff has unused holidays - payout
           unusedHolidayDays = holidayBalance;
-          unusedHolidayPayout = (monthlyBaseSalary / 20) * unusedHolidayDays;
+          unusedHolidayPayout = monthlyBaseSalary / 20 * unusedHolidayDays;
         } else {
           // Staff has used more holidays than accrued - deduction required
           excessHolidayDays = Math.abs(holidayBalance);
-          excessHolidayDeduction = (monthlyBaseSalary / 20) * excessHolidayDays;
+          excessHolidayDeduction = monthlyBaseSalary / 20 * excessHolidayDays;
         }
       }
-      
       const totalPay = monthlyBaseSalary + bonuses + overtimePay + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction;
 
       // Determine payroll status
@@ -662,15 +661,11 @@ export function MyHRProfile() {
       </div>;
   }
   // Get selected user's display name for the header
-  const selectedUserName = allStaff.find(s => s.user_id === selectedUserId)?.display_name || 
-                           allStaff.find(s => s.user_id === selectedUserId)?.email || 
-                           'Staff Member';
-
+  const selectedUserName = allStaff.find(s => s.user_id === selectedUserId)?.display_name || allStaff.find(s => s.user_id === selectedUserId)?.email || 'Staff Member';
   if (!hrProfile) {
     return <div className="space-y-6">
       {/* Admin Staff Selector */}
-      {isAdmin && allStaff.length > 0 && (
-        <Card>
+      {isAdmin && allStaff.length > 0 && <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-primary/10 rounded-lg">
@@ -683,27 +678,22 @@ export function MyHRProfile() {
                     <SelectValue placeholder="Select a staff member" />
                   </SelectTrigger>
                   <SelectContent className="bg-background border z-50">
-                    {allStaff.map((staff) => (
-                      <SelectItem key={staff.user_id} value={staff.user_id}>
+                    {allStaff.map(staff => <SelectItem key={staff.user_id} value={staff.user_id}>
                         {staff.display_name || staff.email || 'Unknown'}
-                      </SelectItem>
-                    ))}
+                      </SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
             </div>
           </CardContent>
-        </Card>
-      )}
+        </Card>}
       
       <Card>
         <CardContent className="p-12 text-center">
           <UserCircle className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
           <h3 className="text-lg font-medium mb-2">No HR Profile Found</h3>
           <p className="text-muted-foreground">
-            {isAdmin && selectedUserId !== user?.id 
-              ? `${selectedUserName}'s HR profile has not been set up yet.`
-              : 'Your HR profile has not been set up yet. Please contact your administrator.'}
+            {isAdmin && selectedUserId !== user?.id ? `${selectedUserName}'s HR profile has not been set up yet.` : 'Your HR profile has not been set up yet. Please contact your administrator.'}
           </p>
         </CardContent>
       </Card>
@@ -712,8 +702,7 @@ export function MyHRProfile() {
   const allowanceInfo = calculateHolidayAllowance(hrProfile.start_date);
   return <div className="space-y-6">
       {/* Admin Staff Selector */}
-      {isAdmin && allStaff.length > 0 && (
-        <Card>
+      {isAdmin && allStaff.length > 0 && <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-primary/10 rounded-lg">
@@ -726,18 +715,15 @@ export function MyHRProfile() {
                     <SelectValue placeholder="Select a staff member" />
                   </SelectTrigger>
                   <SelectContent className="bg-background border z-50">
-                    {allStaff.map((staff) => (
-                      <SelectItem key={staff.user_id} value={staff.user_id}>
+                    {allStaff.map(staff => <SelectItem key={staff.user_id} value={staff.user_id}>
                         {staff.display_name || staff.email || 'Unknown'}
-                      </SelectItem>
-                    ))}
+                      </SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
             </div>
           </CardContent>
-        </Card>
-      )}
+        </Card>}
 
       {/* Profile Overview */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -806,8 +792,7 @@ export function MyHRProfile() {
       </div>
 
       {/* Onboarding Information Section */}
-      {onboardingData && (
-        <Accordion type="single" collapsible className="w-full">
+      {onboardingData && <Accordion type="single" collapsible className="w-full">
           <AccordionItem value="onboarding-info" className="border-2 border-primary/20 rounded-lg">
             <AccordionTrigger className="px-6 py-4 hover:no-underline">
               <div className="flex items-center gap-2">
@@ -834,9 +819,7 @@ export function MyHRProfile() {
                     <div className="space-y-1">
                       <p className="text-sm text-muted-foreground">Date of Birth</p>
                       <p className="font-medium">
-                        {onboardingData.date_of_birth 
-                          ? format(parseISO(onboardingData.date_of_birth), 'dd MMM yyyy') 
-                          : 'Not provided'}
+                        {onboardingData.date_of_birth ? format(parseISO(onboardingData.date_of_birth), 'dd MMM yyyy') : 'Not provided'}
                       </p>
                     </div>
                     <div className="space-y-1">
@@ -854,19 +837,15 @@ export function MyHRProfile() {
                     <div className="space-y-1">
                       <p className="text-sm text-muted-foreground">Employment Start Date</p>
                       <p className="font-medium">
-                        {onboardingData.employment_start_date 
-                          ? format(parseISO(onboardingData.employment_start_date), 'dd MMM yyyy') 
-                          : 'Not provided'}
+                        {onboardingData.employment_start_date ? format(parseISO(onboardingData.employment_start_date), 'dd MMM yyyy') : 'Not provided'}
                       </p>
                     </div>
-                    {onboardingData.submitted_at && (
-                      <div className="space-y-1">
+                    {onboardingData.submitted_at && <div className="space-y-1">
                         <p className="text-sm text-muted-foreground">Form Submitted</p>
                         <p className="font-medium">
                           {format(parseISO(onboardingData.submitted_at), 'dd MMM yyyy HH:mm')}
                         </p>
-                      </div>
-                    )}
+                      </div>}
                   </div>
                 </div>
 
@@ -880,24 +859,16 @@ export function MyHRProfile() {
                     <div className="space-y-1">
                       <p className="text-sm text-muted-foreground">First ID Type</p>
                       <p className="font-medium">{onboardingData.proof_of_id_1_type || 'Not provided'}</p>
-                      {onboardingData.proof_of_id_1_path && (
-                        <Badge variant="outline" className="text-xs bg-success/10 text-success">Document uploaded</Badge>
-                      )}
+                      {onboardingData.proof_of_id_1_path && <Badge variant="outline" className="text-xs bg-success/10 text-success">Document uploaded</Badge>}
                     </div>
                     <div className="space-y-1">
                       <p className="text-sm text-muted-foreground">Second ID Type</p>
                       <p className="font-medium">{onboardingData.proof_of_id_2_type || 'Not provided'}</p>
-                      {onboardingData.proof_of_id_2_path && (
-                        <Badge variant="outline" className="text-xs bg-success/10 text-success">Document uploaded</Badge>
-                      )}
+                      {onboardingData.proof_of_id_2_path && <Badge variant="outline" className="text-xs bg-success/10 text-success">Document uploaded</Badge>}
                     </div>
                     <div className="space-y-1">
                       <p className="text-sm text-muted-foreground">Photograph</p>
-                      {onboardingData.photograph_path ? (
-                        <Badge variant="outline" className="text-xs bg-success/10 text-success">Photo uploaded</Badge>
-                      ) : (
-                        <p className="font-medium">Not provided</p>
-                      )}
+                      {onboardingData.photograph_path ? <Badge variant="outline" className="text-xs bg-success/10 text-success">Photo uploaded</Badge> : <p className="font-medium">Not provided</p>}
                     </div>
                   </div>
                 </div>
@@ -916,9 +887,7 @@ export function MyHRProfile() {
                     <div className="space-y-1">
                       <p className="text-sm text-muted-foreground">Account Number</p>
                       <p className="font-medium">
-                        {onboardingData.account_number 
-                          ? `****${onboardingData.account_number.slice(-4)}` 
-                          : 'Not provided'}
+                        {onboardingData.account_number ? `****${onboardingData.account_number.slice(-4)}` : 'Not provided'}
                       </p>
                     </div>
                   </div>
@@ -952,12 +921,10 @@ export function MyHRProfile() {
               </div>
             </AccordionContent>
           </AccordionItem>
-        </Accordion>
-      )}
+        </Accordion>}
 
       {/* 12-Month Pay Forecast Section */}
-      {monthlyPreviews.length > 0 && (
-        <Accordion type="single" collapsible className="w-full">
+      {monthlyPreviews.length > 0 && <Accordion type="single" collapsible className="w-full">
           <AccordionItem value="pay-forecast" className="border-2 border-primary/20 rounded-lg">
             <AccordionTrigger className="px-6 py-4 hover:no-underline">
               <div className="flex items-center gap-2">
@@ -969,36 +936,34 @@ export function MyHRProfile() {
               <p className="text-sm text-muted-foreground mb-4">Estimated pay for the next 12 months (subject to final processing)</p>
               <div className="space-y-2">
                 {monthlyPreviews.map(preview => {
-                  const monthKey = format(preview.month, 'yyyy-MM');
-                  const isExpanded = expandedMonths.has(monthKey);
-                  const isCurrentMonth = format(new Date(), 'yyyy-MM') === monthKey;
-                  const getStatusBadge = (status: 'pending' | 'ready' | 'paid') => {
-                    if (status === 'paid') {
-                      return <Badge variant="outline" className="bg-success/20 text-success border-success">
+              const monthKey = format(preview.month, 'yyyy-MM');
+              const isExpanded = expandedMonths.has(monthKey);
+              const isCurrentMonth = format(new Date(), 'yyyy-MM') === monthKey;
+              const getStatusBadge = (status: 'pending' | 'ready' | 'paid') => {
+                if (status === 'paid') {
+                  return <Badge variant="outline" className="bg-success/20 text-success border-success">
                               <CheckCircle className="h-3 w-3 mr-1" />
                               Paid
                             </Badge>;
-                    } else if (status === 'ready') {
-                      return;
-                    } else {
-                      return <Badge variant="outline" className="bg-muted text-muted-foreground border-muted-foreground">
+                } else if (status === 'ready') {
+                  return;
+                } else {
+                  return <Badge variant="outline" className="bg-muted text-muted-foreground border-muted-foreground">
                               <AlertCircle className="h-3 w-3 mr-1" />
                               Pending
                             </Badge>;
-                    }
-                  };
-                  return <Collapsible key={monthKey} open={isExpanded} onOpenChange={() => toggleMonth(monthKey)}>
+                }
+              };
+              return <Collapsible key={monthKey} open={isExpanded} onOpenChange={() => toggleMonth(monthKey)}>
                           <CollapsibleTrigger className="w-full">
                             <div className={`flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors ${isCurrentMonth ? 'border-primary bg-primary/5' : ''}`}>
                               <div className="flex items-center gap-3">
                                 {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                                 <span className="font-medium">{preview.monthLabel}</span>
                                 {isCurrentMonth && <Badge variant="outline" className="text-xs">Current</Badge>}
-                                {preview.unusedHolidayPayout > 0 && (
-                                  <Badge variant="outline" className="text-xs bg-success/20 text-success border-success">
+                                {preview.unusedHolidayPayout > 0 && <Badge variant="outline" className="text-xs bg-success/20 text-success border-success">
                                     +{preview.unusedHolidayDays.toFixed(1)} unused holiday days
-                                  </Badge>
-                                )}
+                                  </Badge>}
                               </div>
                               <div className="flex items-center gap-3">
                                 {getStatusBadge(preview.payrollStatus)}
@@ -1073,12 +1038,11 @@ export function MyHRProfile() {
                             </div>
                           </CollapsibleContent>
                         </Collapsible>;
-                })}
+            })}
               </div>
             </AccordionContent>
           </AccordionItem>
-        </Accordion>
-      )}
+        </Accordion>}
 
       {/* My Requests Section */}
       <Accordion type="single" collapsible className="w-full">
@@ -1087,107 +1051,94 @@ export function MyHRProfile() {
             <div className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" />
               <span className="text-lg font-semibold">My Requests</span>
-              {staffRequests.length > 0 && (
-                <Badge variant="secondary" className="ml-2">{staffRequests.length}</Badge>
-              )}
+              {staffRequests.length > 0 && <Badge variant="secondary" className="ml-2">{staffRequests.length}</Badge>}
             </div>
           </AccordionTrigger>
           <AccordionContent className="px-6 pb-4">
             <p className="text-sm text-muted-foreground mb-4">Your holiday, overtime, and shift cover requests</p>
-            {staffRequests.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
+            {staffRequests.length === 0 ? <div className="text-center py-8 text-muted-foreground">
                 <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
                 <p className="text-sm">No requests found</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {staffRequests.map((request) => {
-                  const typeInfo = REQUEST_TYPES[request.request_type] || { label: request.request_type, icon: 'file' };
-                  const getStatusBadge = () => {
-                    if (request.status === 'approved') {
-                      return (
-                        <Badge variant="outline" className="bg-success/20 text-success border-success">
+              </div> : <div className="space-y-3">
+                {staffRequests.map(request => {
+              const typeInfo = REQUEST_TYPES[request.request_type] || {
+                label: request.request_type,
+                icon: 'file'
+              };
+              const getStatusBadge = () => {
+                if (request.status === 'approved') {
+                  return <Badge variant="outline" className="bg-success/20 text-success border-success">
                           <CheckCircle className="h-3 w-3 mr-1" />
                           Approved
-                        </Badge>
-                      );
-                    } else if (request.status === 'rejected') {
-                      return (
-                        <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive">
+                        </Badge>;
+                } else if (request.status === 'rejected') {
+                  return <Badge variant="outline" className="bg-destructive/20 text-destructive border-destructive">
                           <AlertCircle className="h-3 w-3 mr-1" />
                           Rejected
-                        </Badge>
-                      );
-                    } else {
-                      return (
-                        <Badge variant="outline" className="bg-warning/20 text-warning-foreground border-warning">
+                        </Badge>;
+                } else {
+                  return <Badge variant="outline" className="bg-warning/20 text-warning-foreground border-warning">
                           <Clock className="h-3 w-3 mr-1" />
                           Pending
-                        </Badge>
-                      );
-                    }
-                  };
-                  
-                  const getIcon = () => {
-                    if (request.request_type.includes('overtime')) {
-                      return <Clock className="h-4 w-4 text-primary" />;
-                    } else if (request.request_type.includes('shift_swap')) {
-                      return <RefreshCw className="h-4 w-4 text-primary" />;
-                    } else {
-                      return <Calendar className="h-4 w-4 text-primary" />;
-                    }
-                  };
+                        </Badge>;
+                }
+              };
+              const getIcon = () => {
+                if (request.request_type.includes('overtime')) {
+                  return <Clock className="h-4 w-4 text-primary" />;
+                } else if (request.request_type.includes('shift_swap')) {
+                  return <RefreshCw className="h-4 w-4 text-primary" />;
+                } else {
+                  return <Calendar className="h-4 w-4 text-primary" />;
+                }
+              };
 
-                  // Get day-by-day shift breakdown for this request
-                  const getDayByDayBreakdown = (): { date: Date; shiftTime: string }[] => {
-                    if (!['holiday', 'holiday_paid', 'holiday_unpaid', 'shift_swap'].includes(request.request_type)) {
-                      return [];
+              // Get day-by-day shift breakdown for this request
+              const getDayByDayBreakdown = (): {
+                date: Date;
+                shiftTime: string;
+              }[] => {
+                if (!['holiday', 'holiday_paid', 'holiday_unpaid', 'shift_swap'].includes(request.request_type)) {
+                  return [];
+                }
+                const startDate = new Date(request.start_date);
+                const endDate = new Date(request.end_date);
+                const result: {
+                  date: Date;
+                  shiftTime: string;
+                }[] = [];
+                let currentDate = new Date(startDate);
+                while (currentDate <= endDate) {
+                  const dayOfWeek = currentDate.getDay();
+                  recurringPatterns.forEach(pattern => {
+                    const patternStart = new Date(pattern.start_date);
+                    const patternEnd = pattern.end_date ? new Date(pattern.end_date) : null;
+                    if (currentDate >= patternStart && (!patternEnd || currentDate <= patternEnd)) {
+                      if (pattern.days_of_week.includes(dayOfWeek)) {
+                        const startTime = pattern.start_time.substring(0, 5);
+                        const endTime = pattern.end_time.substring(0, 5);
+                        const shiftTime = `${startTime} - ${endTime}`;
+                        result.push({
+                          date: new Date(currentDate),
+                          shiftTime
+                        });
+                      }
                     }
-                    
-                    const startDate = new Date(request.start_date);
-                    const endDate = new Date(request.end_date);
-                    const result: { date: Date; shiftTime: string }[] = [];
-                    
-                    let currentDate = new Date(startDate);
-                    while (currentDate <= endDate) {
-                      const dayOfWeek = currentDate.getDay();
-                      
-                      recurringPatterns.forEach(pattern => {
-                        const patternStart = new Date(pattern.start_date);
-                        const patternEnd = pattern.end_date ? new Date(pattern.end_date) : null;
-                        
-                        if (currentDate >= patternStart && (!patternEnd || currentDate <= patternEnd)) {
-                          if (pattern.days_of_week.includes(dayOfWeek)) {
-                            const startTime = pattern.start_time.substring(0, 5);
-                            const endTime = pattern.end_time.substring(0, 5);
-                            const shiftTime = `${startTime} - ${endTime}`;
-                            result.push({
-                              date: new Date(currentDate),
-                              shiftTime
-                            });
-                          }
-                        }
-                      });
-                      
-                      currentDate.setDate(currentDate.getDate() + 1);
-                    }
-                    
-                    // Sort by date
-                    result.sort((a, b) => a.date.getTime() - b.date.getTime());
-                    
-                    return result;
-                  };
+                  });
+                  currentDate.setDate(currentDate.getDate() + 1);
+                }
 
-                  const dayBreakdown = getDayByDayBreakdown();
-                  const isMultiDay = request.start_date !== request.end_date && dayBreakdown.length > 1;
-                  const summaryShiftTime = dayBreakdown.length > 0 
-                    ? [...new Set(dayBreakdown.map(d => d.shiftTime))].join(', ')
-                    : null;
+                // Sort by date
+                result.sort((a, b) => a.date.getTime() - b.date.getTime());
+                return result;
+              };
+              const dayBreakdown = getDayByDayBreakdown();
+              const isMultiDay = request.start_date !== request.end_date && dayBreakdown.length > 1;
+              const summaryShiftTime = dayBreakdown.length > 0 ? [...new Set(dayBreakdown.map(d => d.shiftTime))].join(', ') : null;
 
-                  // For single day or non-expandable requests
-                  if (!isMultiDay) {
-                    return (
-                      <div key={request.id} className="p-4 rounded-lg border hover:bg-muted/50 transition-colors">
+              // For single day or non-expandable requests
+              if (!isMultiDay) {
+                return <div key={request.id} className="p-4 rounded-lg border hover:bg-muted/50 transition-colors">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             {getIcon()}
@@ -1197,28 +1148,22 @@ export function MyHRProfile() {
                                 {format(parseISO(request.start_date), 'dd MMM yyyy')}
                                 {request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`}
                               </p>
-                              {summaryShiftTime && (
-                                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                              {summaryShiftTime && <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                                   <Clock className="h-3 w-3" />
                                   {summaryShiftTime}
-                                </p>
-                              )}
-                              {request.details && (
-                                <p className="text-xs text-muted-foreground mt-1">{request.details}</p>
-                              )}
+                                </p>}
+                              {request.details && <p className="text-xs text-muted-foreground mt-1">{request.details}</p>}
                             </div>
                           </div>
                           <div className="flex items-center gap-3">
                             {getStatusBadge()}
                           </div>
                         </div>
-                      </div>
-                    );
-                  }
+                      </div>;
+              }
 
-                  // For multi-day requests - make expandable
-                  return (
-                    <Collapsible key={request.id} className="rounded-lg border hover:bg-muted/50 transition-colors">
+              // For multi-day requests - make expandable
+              return <Collapsible key={request.id} className="rounded-lg border hover:bg-muted/50 transition-colors">
                       <CollapsibleTrigger className="w-full p-4 text-left">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
@@ -1229,15 +1174,8 @@ export function MyHRProfile() {
                                 {format(parseISO(request.start_date), 'dd MMM yyyy')} - {format(parseISO(request.end_date), 'dd MMM yyyy')}
                                 {request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`}
                               </p>
-                              {summaryShiftTime && (
-                                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                                  <Clock className="h-3 w-3" />
-                                  {summaryShiftTime}
-                                </p>
-                              )}
-                              {request.details && (
-                                <p className="text-xs text-muted-foreground mt-1">{request.details}</p>
-                              )}
+                              {summaryShiftTime}
+                              {request.details && <p className="text-xs text-muted-foreground mt-1">{request.details}</p>}
                             </div>
                           </div>
                           <div className="flex items-center gap-3">
@@ -1249,8 +1187,7 @@ export function MyHRProfile() {
                       <CollapsibleContent className="px-4 pb-4">
                         <div className="ml-7 mt-2 space-y-1 border-l-2 border-muted pl-4">
                           <p className="text-xs font-medium text-muted-foreground mb-2">Affected Shifts</p>
-                          {dayBreakdown.map((day, idx) => (
-                            <div key={idx} className="flex items-center gap-3 text-sm py-1">
+                          {dayBreakdown.map((day, idx) => <div key={idx} className="flex items-center gap-3 text-sm py-1">
                               <span className="min-w-[120px] font-medium">
                                 {format(day.date, 'EEE, dd MMM yyyy')}
                               </span>
@@ -1258,15 +1195,12 @@ export function MyHRProfile() {
                                 <Clock className="h-3 w-3 mr-1" />
                                 {day.shiftTime}
                               </Badge>
-                            </div>
-                          ))}
+                            </div>)}
                         </div>
                       </CollapsibleContent>
-                    </Collapsible>
-                  );
-                })}
-              </div>
-            )}
+                    </Collapsible>;
+            })}
+              </div>}
           </AccordionContent>
         </AccordionItem>
       </Accordion>
