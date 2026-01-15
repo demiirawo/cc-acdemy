@@ -637,11 +637,14 @@ export function StaffScheduleManager() {
     return [...combinedSchedules, ...benchSchedules];
   }, [schedules, virtualSchedulesFromPatterns, staffMembers, weekDays, holidays, staffRequests]);
 
-  // Get unique clients from schedules (sorted alphabetically)
+  // Get unique clients - combine clients from database AND schedules (sorted alphabetically)
   const uniqueClients = useMemo(() => {
-    const clients = new Set(allSchedules.map(s => s.client_name));
-    return Array.from(clients).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-  }, [allSchedules]);
+    // Start with all clients from the database
+    const clientSet = new Set(clients.map(c => c.name));
+    // Also add any clients from schedules (for backwards compatibility with any data inconsistencies)
+    allSchedules.forEach(s => clientSet.add(s.client_name));
+    return Array.from(clientSet).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  }, [clients, allSchedules]);
 
   // Filter clients for non-admins: only show clients they are assigned to
   const visibleClients = useMemo(() => {
