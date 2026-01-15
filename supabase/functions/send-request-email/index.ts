@@ -108,7 +108,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.log("Sending new request notification to admins:", adminEmails);
 
       emailResult = await resend.emails.send({
-        from: "Care & Cuddle <noreply@care-cuddle.co.uk>",
+        from: "Care & Cuddle <hello@care-cuddle.co.uk>",
         to: adminEmails,
         subject: `New ${requestTypeLabel} Request from ${requesterName}`,
         html: `
@@ -168,7 +168,7 @@ const handler = async (req: Request): Promise<Response> => {
       console.log(`Sending ${statusText.toLowerCase()} notification to:`, requesterEmail);
 
       emailResult = await resend.emails.send({
-        from: "Care & Cuddle <noreply@care-cuddle.co.uk>",
+        from: "Care & Cuddle <hello@care-cuddle.co.uk>",
         to: [requesterEmail],
         subject: `Your ${requestTypeLabel} Request has been ${statusText}`,
         html: `
