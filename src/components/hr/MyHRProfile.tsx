@@ -821,102 +821,129 @@ export function MyHRProfile() {
                     Onboarding Documents
                   </h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <button
-                      type="button"
-                      onClick={() => onboardingData.photograph_path && setDocumentPreview({
-                        open: true,
-                        filePath: onboardingData.photograph_path,
-                        documentType: 'Staff Photograph',
-                        documentLabel: 'Photograph'
-                      })}
-                      disabled={!onboardingData.photograph_path}
-                      className="border rounded-lg p-4 space-y-2 text-left hover:border-primary/50 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <p className="text-xs text-muted-foreground">Photograph</p>
-                      <p className="font-medium text-sm">Staff photograph</p>
-                      <div className="h-20 flex items-center justify-center bg-muted/50 rounded">
-                        {onboardingData.photograph_path ? (
+                    {/* Photograph */}
+                    {onboardingData.photograph_path ? (
+                      <button
+                        type="button"
+                        onClick={() => setDocumentPreview({
+                          open: true,
+                          filePath: onboardingData.photograph_path!,
+                          documentType: 'Staff Photograph',
+                          documentLabel: 'Photograph'
+                        })}
+                        className="border border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800 rounded-lg p-4 space-y-2 text-left hover:border-green-400 hover:bg-green-100 dark:hover:bg-green-950/30 transition-colors cursor-pointer"
+                      >
+                        <p className="text-xs text-muted-foreground">Photograph</p>
+                        <p className="font-medium text-sm">Staff photograph</p>
+                        <div className="h-20 flex items-center justify-center bg-green-100 dark:bg-green-900/30 rounded">
                           <div className="flex flex-col items-center gap-1">
-                            <Eye className="h-6 w-6 text-primary" />
-                            <span className="text-xs text-primary">Click to view</span>
+                            <Eye className="h-6 w-6 text-green-600 dark:text-green-400" />
+                            <span className="text-xs font-medium text-green-600 dark:text-green-400">Click to view</span>
                           </div>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">Not provided</p>
-                        )}
+                        </div>
+                      </button>
+                    ) : (
+                      <div className="border border-dashed border-muted-foreground/30 rounded-lg p-4 space-y-2 opacity-60">
+                        <p className="text-xs text-muted-foreground">Photograph</p>
+                        <p className="font-medium text-sm text-muted-foreground">Staff photograph</p>
+                        <div className="h-20 flex items-center justify-center bg-muted/30 rounded">
+                          <p className="text-xs text-muted-foreground">No document uploaded</p>
+                        </div>
                       </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onboardingData.proof_of_id_1_path && setDocumentPreview({
-                        open: true,
-                        filePath: onboardingData.proof_of_id_1_path,
-                        documentType: onboardingData.proof_of_id_1_type || 'ID Document',
-                        documentLabel: 'ID Document 1'
-                      })}
-                      disabled={!onboardingData.proof_of_id_1_path}
-                      className="border rounded-lg p-4 space-y-2 text-left hover:border-primary/50 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <p className="text-xs text-muted-foreground">ID Document 1</p>
-                      <p className="font-medium text-sm">{onboardingData.proof_of_id_1_type || 'Not provided'}</p>
-                      <div className="h-20 flex items-center justify-center bg-muted/50 rounded">
-                        {onboardingData.proof_of_id_1_path ? (
+                    )}
+
+                    {/* ID Document 1 */}
+                    {onboardingData.proof_of_id_1_path ? (
+                      <button
+                        type="button"
+                        onClick={() => setDocumentPreview({
+                          open: true,
+                          filePath: onboardingData.proof_of_id_1_path!,
+                          documentType: onboardingData.proof_of_id_1_type || 'ID Document',
+                          documentLabel: 'ID Document 1'
+                        })}
+                        className="border border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800 rounded-lg p-4 space-y-2 text-left hover:border-green-400 hover:bg-green-100 dark:hover:bg-green-950/30 transition-colors cursor-pointer"
+                      >
+                        <p className="text-xs text-muted-foreground">ID Document 1</p>
+                        <p className="font-medium text-sm">{onboardingData.proof_of_id_1_type || 'ID Document'}</p>
+                        <div className="h-20 flex items-center justify-center bg-green-100 dark:bg-green-900/30 rounded">
                           <div className="flex flex-col items-center gap-1">
-                            <Eye className="h-6 w-6 text-primary" />
-                            <span className="text-xs text-primary">Click to view</span>
+                            <Eye className="h-6 w-6 text-green-600 dark:text-green-400" />
+                            <span className="text-xs font-medium text-green-600 dark:text-green-400">Click to view</span>
                           </div>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">Not provided</p>
-                        )}
+                        </div>
+                      </button>
+                    ) : (
+                      <div className="border border-dashed border-muted-foreground/30 rounded-lg p-4 space-y-2 opacity-60">
+                        <p className="text-xs text-muted-foreground">ID Document 1</p>
+                        <p className="font-medium text-sm text-muted-foreground">Not provided</p>
+                        <div className="h-20 flex items-center justify-center bg-muted/30 rounded">
+                          <p className="text-xs text-muted-foreground">No document uploaded</p>
+                        </div>
                       </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onboardingData.proof_of_id_2_path && setDocumentPreview({
-                        open: true,
-                        filePath: onboardingData.proof_of_id_2_path,
-                        documentType: onboardingData.proof_of_id_2_type || 'ID Document',
-                        documentLabel: 'ID Document 2'
-                      })}
-                      disabled={!onboardingData.proof_of_id_2_path}
-                      className="border rounded-lg p-4 space-y-2 text-left hover:border-primary/50 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <p className="text-xs text-muted-foreground">ID Document 2</p>
-                      <p className="font-medium text-sm">{onboardingData.proof_of_id_2_type || 'Not provided'}</p>
-                      <div className="h-20 flex items-center justify-center bg-muted/50 rounded">
-                        {onboardingData.proof_of_id_2_path ? (
+                    )}
+
+                    {/* ID Document 2 */}
+                    {onboardingData.proof_of_id_2_path ? (
+                      <button
+                        type="button"
+                        onClick={() => setDocumentPreview({
+                          open: true,
+                          filePath: onboardingData.proof_of_id_2_path!,
+                          documentType: onboardingData.proof_of_id_2_type || 'ID Document',
+                          documentLabel: 'ID Document 2'
+                        })}
+                        className="border border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800 rounded-lg p-4 space-y-2 text-left hover:border-green-400 hover:bg-green-100 dark:hover:bg-green-950/30 transition-colors cursor-pointer"
+                      >
+                        <p className="text-xs text-muted-foreground">ID Document 2</p>
+                        <p className="font-medium text-sm">{onboardingData.proof_of_id_2_type || 'ID Document'}</p>
+                        <div className="h-20 flex items-center justify-center bg-green-100 dark:bg-green-900/30 rounded">
                           <div className="flex flex-col items-center gap-1">
-                            <Eye className="h-6 w-6 text-primary" />
-                            <span className="text-xs text-primary">Click to view</span>
+                            <Eye className="h-6 w-6 text-green-600 dark:text-green-400" />
+                            <span className="text-xs font-medium text-green-600 dark:text-green-400">Click to view</span>
                           </div>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">Not provided</p>
-                        )}
+                        </div>
+                      </button>
+                    ) : (
+                      <div className="border border-dashed border-muted-foreground/30 rounded-lg p-4 space-y-2 opacity-60">
+                        <p className="text-xs text-muted-foreground">ID Document 2</p>
+                        <p className="font-medium text-sm text-muted-foreground">Not provided</p>
+                        <div className="h-20 flex items-center justify-center bg-muted/30 rounded">
+                          <p className="text-xs text-muted-foreground">No document uploaded</p>
+                        </div>
                       </div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onboardingData.proof_of_address_path && setDocumentPreview({
-                        open: true,
-                        filePath: onboardingData.proof_of_address_path,
-                        documentType: onboardingData.proof_of_address_type || 'Address Document',
-                        documentLabel: 'Proof of Address'
-                      })}
-                      disabled={!onboardingData.proof_of_address_path}
-                      className="border rounded-lg p-4 space-y-2 text-left hover:border-primary/50 hover:bg-muted/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <p className="text-xs text-muted-foreground">Proof of Address</p>
-                      <p className="font-medium text-sm">{onboardingData.proof_of_address_type || 'Address document'}</p>
-                      <div className="h-20 flex items-center justify-center bg-muted/50 rounded">
-                        {onboardingData.proof_of_address_path ? (
+                    )}
+
+                    {/* Proof of Address */}
+                    {onboardingData.proof_of_address_path ? (
+                      <button
+                        type="button"
+                        onClick={() => setDocumentPreview({
+                          open: true,
+                          filePath: onboardingData.proof_of_address_path!,
+                          documentType: onboardingData.proof_of_address_type || 'Address Document',
+                          documentLabel: 'Proof of Address'
+                        })}
+                        className="border border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-800 rounded-lg p-4 space-y-2 text-left hover:border-green-400 hover:bg-green-100 dark:hover:bg-green-950/30 transition-colors cursor-pointer"
+                      >
+                        <p className="text-xs text-muted-foreground">Proof of Address</p>
+                        <p className="font-medium text-sm">{onboardingData.proof_of_address_type || 'Address document'}</p>
+                        <div className="h-20 flex items-center justify-center bg-green-100 dark:bg-green-900/30 rounded">
                           <div className="flex flex-col items-center gap-1">
-                            <Eye className="h-6 w-6 text-primary" />
-                            <span className="text-xs text-primary">Click to view</span>
+                            <Eye className="h-6 w-6 text-green-600 dark:text-green-400" />
+                            <span className="text-xs font-medium text-green-600 dark:text-green-400">Click to view</span>
                           </div>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">Not provided</p>
-                        )}
+                        </div>
+                      </button>
+                    ) : (
+                      <div className="border border-dashed border-muted-foreground/30 rounded-lg p-4 space-y-2 opacity-60">
+                        <p className="text-xs text-muted-foreground">Proof of Address</p>
+                        <p className="font-medium text-sm text-muted-foreground">Not provided</p>
+                        <div className="h-20 flex items-center justify-center bg-muted/30 rounded">
+                          <p className="text-xs text-muted-foreground">No document uploaded</p>
+                        </div>
                       </div>
-                    </button>
+                    )}
                   </div>
                 </div>
 
