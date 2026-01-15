@@ -233,13 +233,16 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
 
   // Auto-open dialog when initialUserId is provided
   useEffect(() => {
-    if (initialUserId && userProfiles.length > 0 && !loading) {
+    if (initialUserId && userProfiles.length > 0 && !loading && !dialogOpen) {
       const userProfile = userProfiles.find(p => p.user_id === initialUserId);
       if (userProfile) {
-        handleOpenDialog(userProfile);
+        // Small delay to ensure component is fully mounted
+        setTimeout(() => {
+          handleOpenDialog(userProfile);
+        }, 100);
       }
     }
-  }, [initialUserId, userProfiles, loading]);
+  }, [initialUserId, userProfiles, loading, dialogOpen]);
 
   const fetchData = async () => {
     try {
