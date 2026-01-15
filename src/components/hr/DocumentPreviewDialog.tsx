@@ -123,11 +123,25 @@ export function DocumentPreviewDialog({
                   />
                 </div>
               ) : isPdf(filePath) ? (
-                <iframe
-                  src={fileUrl}
-                  className="w-full h-[60vh] border-0 rounded-lg"
-                  title={documentLabel}
-                />
+                <div className="w-full h-[60vh] relative">
+                  <object
+                    data={fileUrl}
+                    type="application/pdf"
+                    className="w-full h-full border-0 rounded-lg"
+                  >
+                    {/* Fallback for browsers that can't render PDFs inline */}
+                    <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground bg-muted/30 rounded-lg">
+                      <FileText className="h-16 w-16" />
+                      <p className="text-center">
+                        PDF preview not available in this browser.
+                      </p>
+                      <Button onClick={handleDownload}>
+                        <ExternalLink className="h-4 w-4 mr-2" />
+                        Open PDF in New Tab
+                      </Button>
+                    </div>
+                  </object>
+                </div>
               ) : (
                 <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
                   <FileText className="h-16 w-16" />
