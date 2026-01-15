@@ -1138,15 +1138,15 @@ export function MyHRProfile() {
                     }
                   };
 
-                  // Get shift times for this request (for holiday or shift cover requests)
-                  const getShiftTimes = () => {
+                  // Get day-by-day shift breakdown for this request
+                  const getDayByDayBreakdown = (): { date: Date; shiftTime: string }[] => {
                     if (!['holiday', 'holiday_paid', 'holiday_unpaid', 'shift_swap'].includes(request.request_type)) {
-                      return null;
+                      return [];
                     }
                     
                     const startDate = new Date(request.start_date);
                     const endDate = new Date(request.end_date);
-                    const shiftTimes: string[] = [];
+                    const result: { date: Date; shiftTime: string }[] = [];
                     
                     let currentDate = new Date(startDate);
                     while (currentDate <= endDate) {
@@ -1161,9 +1161,10 @@ export function MyHRProfile() {
                             const startTime = pattern.start_time.substring(0, 5);
                             const endTime = pattern.end_time.substring(0, 5);
                             const shiftTime = `${startTime} - ${endTime}`;
-                            if (!shiftTimes.includes(shiftTime)) {
-                              shiftTimes.push(shiftTime);
-                            }
+                            result.push({
+                              date: new Date(currentDate),
+                              shiftTime
+                            });
                           }
                         }
                       });
@@ -1171,37 +1172,97 @@ export function MyHRProfile() {
                       currentDate.setDate(currentDate.getDate() + 1);
                     }
                     
-                    return shiftTimes.length > 0 ? shiftTimes.join(', ') : null;
+                    // Sort by date
+                    result.sort((a, b) => a.date.getTime() - b.date.getTime());
+                    
+                    return result;
                   };
 
-                  const shiftTimesDisplay = getShiftTimes();
+                  const dayBreakdown = getDayByDayBreakdown();
+                  const isMultiDay = request.start_date !== request.end_date && dayBreakdown.length > 1;
+                  const summaryShiftTime = dayBreakdown.length > 0 
+                    ? [...new Set(dayBreakdown.map(d => d.shiftTime))].join(', ')
+                    : null;
 
-                  return (
-                    <div key={request.id} className="flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors">
-                      <div className="flex items-center gap-3">
-                        {getIcon()}
-                        <div>
-                          <p className="font-medium">{typeInfo.label}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {format(parseISO(request.start_date), 'dd MMM yyyy')}
-                            {request.start_date !== request.end_date && ` - ${format(parseISO(request.end_date), 'dd MMM yyyy')}`}
-                            {request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`}
-                          </p>
-                          {shiftTimesDisplay && (
-                            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {shiftTimesDisplay}
-                            </p>
-                          )}
-                          {request.details && (
-                            <p className="text-xs text-muted-foreground mt-1">{request.details}</p>
-                          )}
+                  // For single day or non-expandable requests
+                  if (!isMultiDay) {
+                    return (
+                      <div key={request.id} className="p-4 rounded-lg border hover:bg-muted/50 transition-colors">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            {getIcon()}
+                            <div>
+                              <p className="font-medium">{typeInfo.label}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {format(parseISO(request.start_date), 'dd MMM yyyy')}
+                                {request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`}
+                              </p>
+                              {summaryShiftTime && (
+                                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  {summaryShiftTime}
+                                </p>
+                              )}
+                              {request.details && (
+                                <p className="text-xs text-muted-foreground mt-1">{request.details}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {getStatusBadge()}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        {getStatusBadge()}
-                      </div>
-                    </div>
+                    );
+                  }
+
+                  // For multi-day requests - make expandable
+                  return (
+                    <Collapsible key={request.id} className="rounded-lg border hover:bg-muted/50 transition-colors">
+                      <CollapsibleTrigger className="w-full p-4 text-left">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            {getIcon()}
+                            <div>
+                              <p className="font-medium">{typeInfo.label}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {format(parseISO(request.start_date), 'dd MMM yyyy')} - {format(parseISO(request.end_date), 'dd MMM yyyy')}
+                                {request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`}
+                              </p>
+                              {summaryShiftTime && (
+                                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  {summaryShiftTime}
+                                </p>
+                              )}
+                              {request.details && (
+                                <p className="text-xs text-muted-foreground mt-1">{request.details}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {getStatusBadge()}
+                            <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                          </div>
+                        </div>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="px-4 pb-4">
+                        <div className="ml-7 mt-2 space-y-1 border-l-2 border-muted pl-4">
+                          <p className="text-xs font-medium text-muted-foreground mb-2">Affected Shifts</p>
+                          {dayBreakdown.map((day, idx) => (
+                            <div key={idx} className="flex items-center gap-3 text-sm py-1">
+                              <span className="min-w-[120px] font-medium">
+                                {format(day.date, 'EEE, dd MMM yyyy')}
+                              </span>
+                              <Badge variant="outline" className="bg-muted text-xs">
+                                <Clock className="h-3 w-3 mr-1" />
+                                {day.shiftTime}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
                   );
                 })}
               </div>
