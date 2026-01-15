@@ -119,6 +119,63 @@ export function RequestDetailPage({ requestId, onBack }: RequestDetailPageProps)
     }
   });
 
+  // Fetch shift patterns for the staff member to show affected shift times
+  const { data: shiftPatterns = [] } = useQuery({
+    queryKey: ["shift-patterns-for-request", request?.user_id],
+    enabled: !!request?.user_id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("recurring_shift_patterns")
+        .select("client_name, start_time, end_time, days_of_week")
+        .eq("user_id", request!.user_id);
+      
+      if (error) throw error;
+      return data as { client_name: string; start_time: string; end_time: string; days_of_week: number[] }[];
+    }
+  });
+
+  // Get shift times affected by the request period
+  const getAffectedShiftTimes = (): { clientName: string; shiftTime: string }[] => {
+    if (!request || shiftPatterns.length === 0) return [];
+    
+    const startDate = new Date(request.start_date);
+    const endDate = new Date(request.end_date);
+    
+    // Get all days of the week that fall within the request period
+    const requestDaysOfWeek = new Set<number>();
+    let currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
+      requestDaysOfWeek.add(currentDate.getDay());
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    // Find patterns that match the request days and collect unique shift times per client
+    const shiftsByClient = new Map<string, Set<string>>();
+    shiftPatterns.forEach(pattern => {
+      const patternDays = pattern.days_of_week as number[];
+      const hasOverlap = patternDays.some(day => requestDaysOfWeek.has(day));
+      if (hasOverlap) {
+        const startTime = pattern.start_time.substring(0, 5);
+        const endTime = pattern.end_time.substring(0, 5);
+        const shiftTime = `${startTime} - ${endTime}`;
+        
+        if (!shiftsByClient.has(pattern.client_name)) {
+          shiftsByClient.set(pattern.client_name, new Set());
+        }
+        shiftsByClient.get(pattern.client_name)!.add(shiftTime);
+      }
+    });
+    
+    const result: { clientName: string; shiftTime: string }[] = [];
+    shiftsByClient.forEach((times, clientName) => {
+      times.forEach(shiftTime => {
+        result.push({ clientName, shiftTime });
+      });
+    });
+    
+    return result;
+  };
+
   // Fetch all staff with their client assignments (to identify bench staff)
   const { data: allStaffWithAssignments = [] } = useQuery({
     queryKey: ["all-staff-with-assignments"],
@@ -506,6 +563,24 @@ Care Cuddle Team`;
                   <p className="text-lg font-medium mt-1">{format(new Date(request.created_at), 'dd MMM yyyy HH:mm')}</p>
                 </div>
               </div>
+
+              {/* Affected Shift Times */}
+              {getAffectedShiftTimes().length > 0 && (
+                <>
+                  <Separator />
+                  <div>
+                    <Label className="text-muted-foreground text-sm">Affected Shift Times</Label>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {getAffectedShiftTimes().map((shift, idx) => (
+                        <Badge key={idx} variant="outline" className="bg-muted">
+                          <Clock className="h-3 w-3 mr-1" />
+                          {shift.clientName}: {shift.shiftTime}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
 
               <Separator />
               <div>
