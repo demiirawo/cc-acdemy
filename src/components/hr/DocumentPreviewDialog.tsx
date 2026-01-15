@@ -49,7 +49,13 @@ export function DocumentPreviewDialog({
         return;
       }
       
-      setFileUrl(data.signedUrl);
+      // The signedUrl might be a relative path, so we need to construct the full URL
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://pavwwgfgpykakbqkxsal.supabase.co';
+      const fullUrl = data.signedUrl.startsWith('http') 
+        ? data.signedUrl 
+        : `${supabaseUrl}/storage/v1${data.signedUrl}`;
+      
+      setFileUrl(fullUrl);
     } catch (err) {
       console.error('Error fetching file:', err);
       setError('Unable to load document');
