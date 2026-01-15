@@ -146,7 +146,12 @@ const APP_ROLES = [
   { value: 'admin', label: 'Admin', description: 'Full administrative access' },
 ];
 
-export function HRProfileManager() {
+interface HRProfileManagerProps {
+  initialUserId?: string | null;
+  onProfileClosed?: () => void;
+}
+
+export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileManagerProps = {}) {
   const [hrProfiles, setHRProfiles] = useState<HRProfile[]>([]);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
   const [clientAssignments, setClientAssignments] = useState<ClientAssignment[]>([]);
@@ -225,6 +230,16 @@ export function HRProfileManager() {
       supabase.removeChannel(channel);
     };
   }, []);
+
+  // Auto-open dialog when initialUserId is provided
+  useEffect(() => {
+    if (initialUserId && userProfiles.length > 0 && !loading) {
+      const userProfile = userProfiles.find(p => p.user_id === initialUserId);
+      if (userProfile) {
+        handleOpenDialog(userProfile);
+      }
+    }
+  }, [initialUserId, userProfiles, loading]);
 
   const fetchData = async () => {
     try {
@@ -1051,7 +1066,12 @@ export function HRProfileManager() {
       </Tabs>
 
       {/* Edit Profile Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(open) => {
+        setDialogOpen(open);
+        if (!open && onProfileClosed) {
+          onProfileClosed();
+        }
+      }}>
         <DialogContent className="max-w-5xl w-[90vw] max-h-[90vh] overflow-hidden flex flex-col">
           <DialogHeader>
             <DialogTitle>

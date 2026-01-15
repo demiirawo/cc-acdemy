@@ -473,6 +473,7 @@ export function KnowledgeBaseApp() {
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbData[]>([]);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [selectedHRUserId, setSelectedHRUserId] = useState<string | null>(null);
   const navigate = useNavigate();
   const { pageId, viewName } = useParams();
   const {
@@ -1121,11 +1122,17 @@ export function KnowledgeBaseApp() {
             <RecyclingBin />
           </div>
         )}
-        {currentView === 'hr' && <HRSection />}
+        {currentView === 'hr' && <HRSection initialUserId={selectedHRUserId} onProfileClosed={() => setSelectedHRUserId(null)} />}
         {currentView === 'clients' && <ClientsSection />}
         {currentView === 'schedule' && <SchedulePage 
           initialRequestId={selectedRequestId} 
-          onRequestClosed={() => setSelectedRequestId(null)} 
+          onRequestClosed={() => setSelectedRequestId(null)}
+          onViewProfile={(userId) => {
+            setSelectedHRUserId(userId);
+            setCurrentView('hr');
+            setSelectedItemId('hr');
+            navigate('/view/hr');
+          }}
         />}
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePageSaved} />}

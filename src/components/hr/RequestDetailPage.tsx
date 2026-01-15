@@ -66,9 +66,10 @@ const STATUS_COLORS: Record<string, string> = {
 interface RequestDetailPageProps {
   requestId: string;
   onBack: () => void;
+  onViewProfile?: (userId: string) => void;
 }
 
-export function RequestDetailPage({ requestId, onBack }: RequestDetailPageProps) {
+export function RequestDetailPage({ requestId, onBack, onViewProfile }: RequestDetailPageProps) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [reviewNotes, setReviewNotes] = useState("");
@@ -525,9 +526,18 @@ Care Cuddle Team`;
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-6">
-                <div>
+              <div>
                   <Label className="text-muted-foreground text-sm">Staff Member</Label>
-                  <p className="text-lg font-medium mt-1">{getStaffName(request.user_id)}</p>
+                  {onViewProfile ? (
+                    <button
+                      onClick={() => onViewProfile(request.user_id)}
+                      className="text-lg font-medium mt-1 text-primary hover:underline text-left block"
+                    >
+                      {getStaffName(request.user_id)}
+                    </button>
+                  ) : (
+                    <p className="text-lg font-medium mt-1">{getStaffName(request.user_id)}</p>
+                  )}
                   <p className="text-sm text-muted-foreground">{getStaffEmail(request.user_id)}</p>
                 </div>
                 <div>
