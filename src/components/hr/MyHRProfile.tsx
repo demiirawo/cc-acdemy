@@ -791,115 +791,47 @@ export function MyHRProfile() {
         </Card>
       </div>
 
-      {/* Onboarding Information Section */}
+      {/* Personal Details Section - from onboarding form */}
       {onboardingData && <Accordion type="single" collapsible className="w-full">
-          <AccordionItem value="onboarding-info" className="border-2 border-primary/20 rounded-lg">
+          <AccordionItem value="personal-details" className="border-2 border-primary/20 rounded-lg">
             <AccordionTrigger className="px-6 py-4 hover:no-underline">
               <div className="flex items-center gap-2">
                 <User className="h-5 w-5 text-primary" />
-                <span className="text-lg font-semibold">Onboarding Information</span>
-                <Badge variant={onboardingData.form_status === 'complete' ? 'default' : 'secondary'} className="ml-2">
-                  {onboardingData.form_status === 'complete' ? 'Complete' : 'In Progress'}
-                </Badge>
+                <span className="text-lg font-semibold">Personal Details</span>
               </div>
             </AccordionTrigger>
             <AccordionContent className="px-6 pb-4">
-              <div className="space-y-6">
-                {/* Personal Details */}
-                <div>
-                  <h4 className="font-medium text-sm text-muted-foreground mb-3 flex items-center gap-2">
-                    <UserCircle className="h-4 w-4" />
-                    Personal Details
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Full Name</p>
-                      <p className="font-medium">{onboardingData.full_name || 'Not provided'}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Date of Birth</p>
-                      <p className="font-medium">
-                        {onboardingData.date_of_birth ? format(parseISO(onboardingData.date_of_birth), 'dd MMM yyyy') : 'Not provided'}
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Phone Number</p>
-                      <p className="font-medium">{onboardingData.phone_number || 'Not provided'}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Personal Email</p>
-                      <p className="font-medium">{onboardingData.personal_email || 'Not provided'}</p>
-                    </div>
-                    <div className="space-y-1 md:col-span-2">
-                      <p className="text-sm text-muted-foreground">Address</p>
-                      <p className="font-medium">{onboardingData.address || 'Not provided'}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Employment Start Date</p>
-                      <p className="font-medium">
-                        {onboardingData.employment_start_date ? format(parseISO(onboardingData.employment_start_date), 'dd MMM yyyy') : 'Not provided'}
-                      </p>
-                    </div>
-                    {onboardingData.submitted_at && <div className="space-y-1">
-                        <p className="text-sm text-muted-foreground">Form Submitted</p>
-                        <p className="font-medium">
-                          {format(parseISO(onboardingData.submitted_at), 'dd MMM yyyy HH:mm')}
-                        </p>
-                      </div>}
-                  </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Full Name</p>
+                  <p className="font-medium">{onboardingData.full_name || 'Not provided'}</p>
                 </div>
-
-                {/* Identity Documents */}
-                <div className="border-t pt-4">
-                  <h4 className="font-medium text-sm text-muted-foreground mb-3 flex items-center gap-2">
-                    <FileText className="h-4 w-4" />
-                    Identity Documents
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">First ID Type</p>
-                      <p className="font-medium">{onboardingData.proof_of_id_1_type || 'Not provided'}</p>
-                      {onboardingData.proof_of_id_1_path && <Badge variant="outline" className="text-xs bg-success/10 text-success">Document uploaded</Badge>}
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Second ID Type</p>
-                      <p className="font-medium">{onboardingData.proof_of_id_2_type || 'Not provided'}</p>
-                      {onboardingData.proof_of_id_2_path && <Badge variant="outline" className="text-xs bg-success/10 text-success">Document uploaded</Badge>}
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Photograph</p>
-                      {onboardingData.photograph_path ? <Badge variant="outline" className="text-xs bg-success/10 text-success">Photo uploaded</Badge> : <p className="font-medium">Not provided</p>}
-                    </div>
-                  </div>
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Date of Birth</p>
+                  <p className="font-medium">
+                    {onboardingData.date_of_birth ? format(parseISO(onboardingData.date_of_birth), 'dd MMM yyyy') : 'Not provided'}
+                  </p>
                 </div>
-
-                {/* Payroll Information */}
-                <div className="border-t pt-4">
-                  <h4 className="font-medium text-sm text-muted-foreground mb-3 flex items-center gap-2">
-                    <DollarSign className="h-4 w-4" />
-                    Payroll Information
-                  </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Bank Name</p>
-                      <p className="font-medium">{onboardingData.bank_name || 'Not provided'}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-sm text-muted-foreground">Account Number</p>
-                      <p className="font-medium">
-                        {onboardingData.account_number ? `****${onboardingData.account_number.slice(-4)}` : 'Not provided'}
-                      </p>
-                    </div>
-                  </div>
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Phone Number</p>
+                  <p className="font-medium">{onboardingData.phone_number || 'Not provided'}</p>
                 </div>
-
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">Personal Email</p>
+                  <p className="font-medium">{onboardingData.personal_email || 'Not provided'}</p>
+                </div>
+                <div className="space-y-1 lg:col-span-2">
+                  <p className="text-sm text-muted-foreground">Address</p>
+                  <p className="font-medium">{onboardingData.address || 'Not provided'}</p>
+                </div>
+                
                 {/* Emergency Contact */}
-                <div className="border-t pt-4">
+                <div className="col-span-full border-t pt-4 mt-2">
                   <h4 className="font-medium text-sm text-muted-foreground mb-3 flex items-center gap-2">
                     <AlertCircle className="h-4 w-4" />
                     Emergency Contact
                   </h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <div className="space-y-1">
                       <p className="text-sm text-muted-foreground">Contact Name</p>
                       <p className="font-medium">{onboardingData.emergency_contact_name || 'Not provided'}</p>
