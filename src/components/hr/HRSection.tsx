@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUserRole } from "@/hooks/useUserRole";
 import { StaffPayManager } from "./StaffPayManager";
@@ -15,7 +15,18 @@ interface HRSectionProps {
 
 export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {}) {
   const { isAdmin } = useUserRole();
-  const [activeTab, setActiveTab] = useState(isAdmin ? "profiles" : "my-profile");
+  // If initialUserId is provided and user is admin, force "profiles" tab
+  const [activeTab, setActiveTab] = useState(() => {
+    if (initialUserId && isAdmin) return "profiles";
+    return isAdmin ? "profiles" : "my-profile";
+  });
+
+  // Switch to profiles tab when initialUserId changes
+  useEffect(() => {
+    if (initialUserId && isAdmin) {
+      setActiveTab("profiles");
+    }
+  }, [initialUserId, isAdmin]);
 
   return (
     <div className="flex-1 overflow-auto p-6">
