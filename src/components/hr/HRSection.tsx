@@ -8,7 +8,12 @@ import { OnboardingManager } from "./OnboardingManager";
 import { StaffOnboardingForm } from "./StaffOnboardingForm";
 import { DollarSign, Users, User, GraduationCap, FileText } from "lucide-react";
 
-export function HRSection() {
+interface HRSectionProps {
+  initialUserId?: string | null;
+  onProfileClosed?: () => void;
+}
+
+export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {}) {
   const { isAdmin } = useUserRole();
   const [activeTab, setActiveTab] = useState(isAdmin ? "profiles" : "my-profile");
 
@@ -68,7 +73,7 @@ export function HRSection() {
           {isAdmin && (
             <>
               <TabsContent value="profiles" className="mt-0">
-                <HRProfileManager />
+                <HRProfileManager initialUserId={initialUserId} onProfileClosed={onProfileClosed} />
               </TabsContent>
               <TabsContent value="pay" className="mt-0">
                 <StaffPayManager />

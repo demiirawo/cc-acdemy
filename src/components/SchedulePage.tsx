@@ -10,9 +10,10 @@ import { Calendar, Send, ClipboardList } from "lucide-react";
 interface SchedulePageProps {
   initialRequestId?: string | null;
   onRequestClosed?: () => void;
+  onViewProfile?: (userId: string) => void;
 }
 
-export function SchedulePage({ initialRequestId, onRequestClosed }: SchedulePageProps) {
+export function SchedulePage({ initialRequestId, onRequestClosed, onViewProfile }: SchedulePageProps) {
   const { isAdmin } = useUserRole();
   const [activeTab, setActiveTab] = useState("schedule");
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(initialRequestId || null);
@@ -36,7 +37,8 @@ export function SchedulePage({ initialRequestId, onRequestClosed }: SchedulePage
         <div className="max-w-7xl mx-auto">
           <RequestDetailPage 
             requestId={selectedRequestId} 
-            onBack={handleBack} 
+            onBack={handleBack}
+            onViewProfile={onViewProfile}
           />
         </div>
       </div>
