@@ -1356,7 +1356,7 @@ const UpcomingHolidaysCard = ({
     enabled: !!clientName,
   });
 
-  // Fetch approved cover requests (overtime or shift_swap that are linked to holidays)
+  // Fetch approved cover requests (shift_swap where swap_with_user_id matches a holiday user)
   const { data: coverRequests = [] } = useQuery({
     queryKey: ["upcoming-holiday-covers", clientName],
     queryFn: async () => {
@@ -1364,7 +1364,7 @@ const UpcomingHolidaysCard = ({
         .from("staff_requests")
         .select("id, user_id, request_type, status, start_date, end_date, linked_holiday_id, swap_with_user_id")
         .eq("status", "approved")
-        .not("linked_holiday_id", "is", null);
+        .eq("request_type", "shift_swap");
       
       if (error) throw error;
       return (data || []) as StaffRequest[];
@@ -1372,9 +1372,23 @@ const UpcomingHolidaysCard = ({
     enabled: !!clientName && upcomingHolidays.length > 0,
   });
 
-  // Get cover person(s) for a specific holiday
-  const getCoverForHoliday = (holidayId: string): string[] => {
-    const covers = coverRequests.filter(r => r.linked_holiday_id === holidayId);
+  // Get cover person(s) for a specific holiday by matching swap_with_user_id and date overlap
+  const getCoverForHoliday = (holiday: StaffHoliday): string[] => {
+    const holidayStart = startOfDay(parseISO(holiday.start_date));
+    const holidayEnd = endOfDay(parseISO(holiday.end_date));
+    
+    const covers = coverRequests.filter(r => {
+      // Cover request must be for this holiday user
+      if (r.swap_with_user_id !== holiday.user_id) return false;
+      
+      // Check date overlap
+      const coverStart = startOfDay(parseISO(r.start_date));
+      const coverEnd = endOfDay(parseISO(r.end_date));
+      
+      // Check if there's any overlap between holiday and cover dates
+      return coverStart <= holidayEnd && coverEnd >= holidayStart;
+    });
+    
     return covers.map(c => getStaffName(c.user_id));
   };
 
@@ -1449,7 +1463,7 @@ const UpcomingHolidaysCard = ({
             const endDate = parseISO(holiday.end_date);
             const isStartingToday = format(startDate, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd');
             const isOngoing = startDate <= today && endDate >= today;
-            const coverNames = getCoverForHoliday(holiday.id);
+            const coverNames = getCoverForHoliday(holiday);
             const hasCover = coverNames.length > 0;
             
             return (
