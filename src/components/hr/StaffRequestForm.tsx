@@ -700,7 +700,7 @@ export function StaffRequestForm() {
             Time Off & Overtime Request
           </CardTitle>
           <CardDescription>
-            Submit a request for overtime, holiday, or shift swap
+            Submit a request for overtime, holiday, or shift cover
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -1237,7 +1237,7 @@ export function StaffRequestForm() {
           {/* Shift swap shows selected shifts count - auto-calculated */}
           {requestType === 'shift_swap' && selectedSwapShifts.length > 0 && (
             <div className="space-y-2">
-              <Label>Shifts to swap</Label>
+              <Label>Shifts to cover</Label>
               <div className="px-4 py-2 bg-muted rounded-md font-medium min-w-[80px] w-fit">
                 {selectedSwapShifts.length} shift{selectedSwapShifts.length !== 1 ? 's' : ''} selected
               </div>

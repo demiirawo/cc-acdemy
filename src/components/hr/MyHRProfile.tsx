@@ -192,7 +192,7 @@ const REQUEST_TYPES: Record<string, { label: string; icon: string }> = {
   'holiday': { label: 'Holiday Request', icon: 'calendar' },
   'holiday_paid': { label: 'Paid Holiday', icon: 'calendar' },
   'holiday_unpaid': { label: 'Unpaid Holiday', icon: 'calendar' },
-  'shift_swap': { label: 'Shift Swap', icon: 'refresh' },
+  'shift_swap': { label: 'Shift Cover', icon: 'refresh' },
 };
 export function MyHRProfile() {
   const {
@@ -1093,7 +1093,7 @@ export function MyHRProfile() {
             </div>
           </AccordionTrigger>
           <AccordionContent className="px-6 pb-4">
-            <p className="text-sm text-muted-foreground mb-4">Your holiday, overtime, and shift swap requests</p>
+            <p className="text-sm text-muted-foreground mb-4">Your holiday, overtime, and shift cover requests</p>
             {staffRequests.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -1138,6 +1138,44 @@ export function MyHRProfile() {
                     }
                   };
 
+                  // Get shift times for this request (for holiday or shift cover requests)
+                  const getShiftTimes = () => {
+                    if (!['holiday', 'holiday_paid', 'holiday_unpaid', 'shift_swap'].includes(request.request_type)) {
+                      return null;
+                    }
+                    
+                    const startDate = new Date(request.start_date);
+                    const endDate = new Date(request.end_date);
+                    const shiftTimes: string[] = [];
+                    
+                    let currentDate = new Date(startDate);
+                    while (currentDate <= endDate) {
+                      const dayOfWeek = currentDate.getDay();
+                      
+                      recurringPatterns.forEach(pattern => {
+                        const patternStart = new Date(pattern.start_date);
+                        const patternEnd = pattern.end_date ? new Date(pattern.end_date) : null;
+                        
+                        if (currentDate >= patternStart && (!patternEnd || currentDate <= patternEnd)) {
+                          if (pattern.days_of_week.includes(dayOfWeek)) {
+                            const startTime = pattern.start_time.substring(0, 5);
+                            const endTime = pattern.end_time.substring(0, 5);
+                            const shiftTime = `${startTime} - ${endTime}`;
+                            if (!shiftTimes.includes(shiftTime)) {
+                              shiftTimes.push(shiftTime);
+                            }
+                          }
+                        }
+                      });
+                      
+                      currentDate.setDate(currentDate.getDate() + 1);
+                    }
+                    
+                    return shiftTimes.length > 0 ? shiftTimes.join(', ') : null;
+                  };
+
+                  const shiftTimesDisplay = getShiftTimes();
+
                   return (
                     <div key={request.id} className="flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors">
                       <div className="flex items-center gap-3">
@@ -1149,6 +1187,12 @@ export function MyHRProfile() {
                             {request.start_date !== request.end_date && ` - ${format(parseISO(request.end_date), 'dd MMM yyyy')}`}
                             {request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`}
                           </p>
+                          {shiftTimesDisplay && (
+                            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {shiftTimesDisplay}
+                            </p>
+                          )}
                           {request.details && (
                             <p className="text-xs text-muted-foreground mt-1">{request.details}</p>
                           )}
