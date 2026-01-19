@@ -644,7 +644,25 @@ Care Cuddle Team`;
                 </div>
                 <div>
                   <Label className="text-muted-foreground text-sm">Days Requested</Label>
-                  <p className="text-lg font-medium mt-1">{request.days_requested} day{request.days_requested > 1 ? 's' : ''}</p>
+                  {(() => {
+                    const affectedShifts = getAffectedShiftsByDay();
+                    const uniqueWorkingDays = new Set(affectedShifts.map(s => s.date.toISOString().split('T')[0])).size;
+                    const calendarDays = request.days_requested;
+                    
+                    if (isHolidayRequest && affectedShifts.length > 0 && uniqueWorkingDays !== calendarDays) {
+                      return (
+                        <div className="mt-1">
+                          <p className="text-lg font-medium">
+                            {uniqueWorkingDays} working day{uniqueWorkingDays !== 1 ? 's' : ''}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            ({calendarDays} calendar day{calendarDays > 1 ? 's' : ''})
+                          </p>
+                        </div>
+                      );
+                    }
+                    return <p className="text-lg font-medium mt-1">{calendarDays} day{calendarDays > 1 ? 's' : ''}</p>;
+                  })()}
                 </div>
                 <div>
                   <Label className="text-muted-foreground text-sm">Submitted</Label>
