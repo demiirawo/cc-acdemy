@@ -137,6 +137,22 @@ export function RequestDetailPage({ requestId, onBack, onViewProfile }: RequestD
     }
   });
 
+  // Fetch shift pattern exceptions to exclude dates where patterns don't apply
+  const { data: shiftExceptions = [] } = useQuery({
+    queryKey: ["shift-exceptions-for-request", shiftPatterns.map(p => p.id)],
+    enabled: shiftPatterns.length > 0,
+    queryFn: async () => {
+      const patternIds = shiftPatterns.map(p => p.id);
+      const { data, error } = await supabase
+        .from("shift_pattern_exceptions")
+        .select("pattern_id, exception_date, exception_type")
+        .in("pattern_id", patternIds);
+      
+      if (error) throw error;
+      return data as { pattern_id: string; exception_date: string; exception_type: string }[];
+    }
+  });
+
   // Get day-by-day breakdown of affected shift times
   const getAffectedShiftsByDay = (): { date: Date; clientName: string; shiftTime: string }[] => {
     if (!request || shiftPatterns.length === 0) return [];
@@ -144,6 +160,11 @@ export function RequestDetailPage({ requestId, onBack, onViewProfile }: RequestD
     const startDate = new Date(request.start_date);
     const endDate = new Date(request.end_date);
     const result: { date: Date; clientName: string; shiftTime: string }[] = [];
+    
+    // Create a set of exception keys for quick lookup (pattern_id + date)
+    const exceptionSet = new Set(
+      shiftExceptions.map(exc => `${exc.pattern_id}:${exc.exception_date}`)
+    );
     
     // Iterate through each day of the request period
     let currentDate = new Date(startDate);
@@ -167,6 +188,9 @@ export function RequestDetailPage({ requestId, onBack, onViewProfile }: RequestD
         
         // Skip if pattern has ended before current date
         if (patternEndDate && currentDateStr > patternEndDate) return;
+        
+        // Skip if there's an exception for this pattern on this date
+        if (exceptionSet.has(`${pattern.id}:${currentDateStr}`)) return;
         
         const startTime = pattern.start_time.substring(0, 5);
         const endTime = pattern.end_time.substring(0, 5);
