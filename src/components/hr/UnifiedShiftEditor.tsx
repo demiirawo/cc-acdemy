@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { format, parseISO, getDay, eachDayOfInterval, parse } from "date-fns";
+import { format, parseISO, getDay, eachDayOfInterval, parse, subDays } from "date-fns";
 import { Trash2, Repeat, Calendar } from "lucide-react";
 
 interface StaffMember {
@@ -291,6 +291,33 @@ export function UnifiedShiftEditor({
     }
   });
 
+  // Delete this and all future shifts (set end_date to day before selected shift)
+  const deleteFutureShiftsMutation = useMutation({
+    mutationFn: async () => {
+      if (!shift?.patternId) throw new Error("No pattern ID");
+      const dayBefore = subDays(shift.date, 1);
+      const newEndDate = format(dayBefore, "yyyy-MM-dd");
+      
+      const { error } = await supabase
+        .from("recurring_shift_patterns")
+        .update({ end_date: newEndDate })
+        .eq("id", shift.patternId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["recurring-shift-patterns"] });
+      queryClient.invalidateQueries({ queryKey: ["public-client-patterns"] });
+      setDeleteConfirmOpen(false);
+      onOpenChange(false);
+      onSuccess?.();
+      toast.success("This and all future shifts deleted");
+    },
+    onError: (error) => {
+      toast.error("Failed to delete future shifts: " + error.message);
+    }
+  });
+
   // Delete regular schedule mutation
   const deleteScheduleMutation = useMutation({
     mutationFn: async () => {
@@ -322,10 +349,12 @@ export function UnifiedShiftEditor({
     }
   };
 
-  const handleDeleteConfirm = (deleteEntireSeries: boolean) => {
+  const handleDeleteConfirm = (deleteType: 'single' | 'future' | 'all') => {
     if (shift?.patternId) {
-      if (deleteEntireSeries) {
+      if (deleteType === 'all') {
         deletePatternMutation.mutate();
+      } else if (deleteType === 'future') {
+        deleteFutureShiftsMutation.mutate();
       } else {
         createExceptionMutation.mutate();
       }
@@ -336,7 +365,7 @@ export function UnifiedShiftEditor({
 
   const isPattern = !!shift?.patternId;
   const isPending = updatePatternMutation.isPending || updateScheduleMutation.isPending;
-  const isDeletePending = deletePatternMutation.isPending || createExceptionMutation.isPending || deleteScheduleMutation.isPending;
+  const isDeletePending = deletePatternMutation.isPending || createExceptionMutation.isPending || deleteScheduleMutation.isPending || deleteFutureShiftsMutation.isPending;
   
   // Determine if days selector should show
   const showDaysSelector = isPattern && 
@@ -572,28 +601,35 @@ export function UnifiedShiftEditor({
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogFooter className="flex-col gap-2">
+            <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
             {isPattern ? (
-              <>
+              <div className="flex flex-col sm:flex-row gap-2 w-full">
                 <AlertDialogAction 
-                  onClick={() => handleDeleteConfirm(false)}
+                  onClick={() => handleDeleteConfirm('single')}
                   disabled={isDeletePending}
-                  className="bg-orange-600 hover:bg-orange-700"
+                  className="bg-orange-600 hover:bg-orange-700 flex-1"
                 >
                   Just This Shift
                 </AlertDialogAction>
                 <AlertDialogAction 
-                  onClick={() => handleDeleteConfirm(true)}
+                  onClick={() => handleDeleteConfirm('future')}
                   disabled={isDeletePending}
-                  className="bg-destructive hover:bg-destructive/90"
+                  className="bg-amber-600 hover:bg-amber-700 flex-1"
+                >
+                  This & Future
+                </AlertDialogAction>
+                <AlertDialogAction 
+                  onClick={() => handleDeleteConfirm('all')}
+                  disabled={isDeletePending}
+                  className="bg-destructive hover:bg-destructive/90 flex-1"
                 >
                   Entire Pattern
                 </AlertDialogAction>
-              </>
+              </div>
             ) : (
               <AlertDialogAction 
-                onClick={() => handleDeleteConfirm(false)}
+                onClick={() => handleDeleteConfirm('single')}
                 disabled={isDeletePending}
                 className="bg-destructive hover:bg-destructive/90"
               >
