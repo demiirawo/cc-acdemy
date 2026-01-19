@@ -129,11 +129,11 @@ export function RequestDetailPage({ requestId, onBack, onViewProfile }: RequestD
     queryFn: async () => {
       const { data, error } = await supabase
         .from("recurring_shift_patterns")
-        .select("id, client_name, start_time, end_time, days_of_week, start_date, end_date")
+        .select("id, client_name, start_time, end_time, days_of_week, start_date, end_date, recurrence_interval")
         .eq("user_id", request!.user_id);
       
       if (error) throw error;
-      return data as { id: string; client_name: string; start_time: string; end_time: string; days_of_week: number[]; start_date: string; end_date: string | null }[];
+      return data as { id: string; client_name: string; start_time: string; end_time: string; days_of_week: number[]; start_date: string; end_date: string | null; recurrence_interval: string }[];
     }
   });
 
@@ -152,6 +152,29 @@ export function RequestDetailPage({ requestId, onBack, onViewProfile }: RequestD
       return data as { pattern_id: string; exception_date: string; exception_type: string }[];
     }
   });
+
+  // Helper function to check if a date falls on an active recurrence week
+  const isDateOnRecurrenceSchedule = (currentDate: Date, patternStartDate: string, recurrenceInterval: string): boolean => {
+    if (recurrenceInterval === 'weekly') return true;
+    
+    const patternStart = new Date(patternStartDate);
+    const diffTime = currentDate.getTime() - patternStart.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    const diffWeeks = Math.floor(diffDays / 7);
+    
+    if (recurrenceInterval === 'biweekly') {
+      // Biweekly: pattern runs on even weeks (0, 2, 4, ...)
+      return diffWeeks % 2 === 0;
+    }
+    
+    if (recurrenceInterval === 'monthly') {
+      // Monthly: only on weeks that are 4 weeks apart (0, 4, 8, ...)
+      return diffWeeks % 4 === 0;
+    }
+    
+    // Default to weekly if unknown interval
+    return true;
+  };
 
   // Get day-by-day breakdown of affected shift times
   const getAffectedShiftsByDay = (): { date: Date; clientName: string; shiftTime: string }[] => {
@@ -188,6 +211,9 @@ export function RequestDetailPage({ requestId, onBack, onViewProfile }: RequestD
         
         // Skip if pattern has ended before current date
         if (patternEndDate && currentDateStr > patternEndDate) return;
+        
+        // Skip if this date doesn't fall on the recurrence schedule (biweekly, monthly, etc.)
+        if (!isDateOnRecurrenceSchedule(currentDate, patternStartDate, pattern.recurrence_interval)) return;
         
         // Skip if there's an exception for this pattern on this date
         if (exceptionSet.has(`${pattern.id}:${currentDateStr}`)) return;
