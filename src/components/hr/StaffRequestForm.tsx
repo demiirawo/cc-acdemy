@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification";
+import { useBatchWorkingDays } from "@/hooks/useWorkingDays";
 
 type RequestType = 'overtime' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap' | 'overtime_standard' | 'overtime_double_up';
 
@@ -476,7 +477,21 @@ export function StaffRequestForm() {
     enabled: !!user
   });
 
-  // Submit request mutation
+  // Calculate working days for holiday requests in My Requests
+  const holidayRequestsForWorkingDays = myRequests.filter(r => 
+    r.request_type === 'holiday' || r.request_type === 'holiday_paid' || r.request_type === 'holiday_unpaid'
+  );
+  const workingDaysMap = useBatchWorkingDays(holidayRequestsForWorkingDays);
+
+  const getDisplayDays = (req: StaffRequest): number => {
+    const isHoliday = req.request_type === 'holiday' || 
+                      req.request_type === 'holiday_paid' || 
+                      req.request_type === 'holiday_unpaid';
+    if (!isHoliday) return req.days_requested;
+    const workingDays = workingDaysMap.get(req.id);
+    return workingDays !== null && workingDays !== undefined ? workingDays : req.days_requested;
+  };
+
   const submitRequestMutation = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error("Not authenticated");
@@ -1331,7 +1346,7 @@ export function StaffRequestForm() {
                           {request.start_date !== request.end_date && (
                             <> – {format(new Date(request.end_date), "dd MMM yyyy")}</>
                           )}
-                          {" "}({request.days_requested} day{request.days_requested !== 1 ? 's' : ''})
+                          {" "}({getDisplayDays(request)} day{getDisplayDays(request) !== 1 ? 's' : ''})
                         </p>
                         {request.request_type === 'shift_swap' && request.swap_with_user_id && (
                           <p className="text-sm text-muted-foreground">
