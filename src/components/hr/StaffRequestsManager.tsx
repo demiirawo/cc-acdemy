@@ -15,6 +15,7 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification";
+import { useBatchWorkingDays } from "@/hooks/useWorkingDays";
 
 type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
 
@@ -151,7 +152,23 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
     }
   });
 
-  // Review request mutation
+  // Calculate working days for all requests (for holiday requests only)
+  const holidayRequests = requests.filter(r => 
+    r.request_type === 'holiday' || r.request_type === 'holiday_paid' || r.request_type === 'holiday_unpaid'
+  );
+  const workingDaysMap = useBatchWorkingDays(holidayRequests);
+
+  // Helper to get display days (working days if available, otherwise calendar days)
+  const getDisplayDays = (req: StaffRequest): number => {
+    const isHoliday = req.request_type === 'holiday' || 
+                      req.request_type === 'holiday_paid' || 
+                      req.request_type === 'holiday_unpaid';
+    if (!isHoliday) return req.days_requested;
+    
+    const workingDays = workingDaysMap.get(req.id);
+    return workingDays !== null && workingDays !== undefined ? workingDays : req.days_requested;
+  };
+
   const reviewMutation = useMutation({
     mutationFn: async ({ requestId, status }: { requestId: string; status: 'approved' | 'rejected' }) => {
       if (!user) throw new Error("Not authenticated");
@@ -593,7 +610,7 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                                     <span className="text-xs text-muted-foreground">to {format(new Date(req.end_date), 'dd MMM yyyy')}</span>
                                   </div>
                                 </TableCell>
-                                <TableCell className="py-4">{req.days_requested}</TableCell>
+                                <TableCell className="py-4">{getDisplayDays(req)}</TableCell>
                                 <TableCell className="max-w-[200px] py-4">
                                   {req.request_type === 'overtime' && reqCoveredStaff ? (
                                     <div className="text-xs">
@@ -742,7 +759,7 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Days Requested</Label>
-                  <p className="font-medium">{selectedRequest.days_requested}</p>
+                  <p className="font-medium">{getDisplayDays(selectedRequest)}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Status</Label>

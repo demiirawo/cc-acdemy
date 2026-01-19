@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Clock, Palmtree, RefreshCw, Calendar, Bell, BellOff } from "lucide-react";
 import { format, addDays, parseISO } from "date-fns";
+import { useBatchWorkingDays } from "@/hooks/useWorkingDays";
 
 type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
 
@@ -106,6 +107,23 @@ export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPrevi
       return data as UserProfile[];
     }
   });
+
+  // Calculate working days for all holiday requests
+  const holidayRequests = requests.filter(r => 
+    r.request_type === 'holiday' || r.request_type === 'holiday_paid' || r.request_type === 'holiday_unpaid'
+  );
+  const workingDaysMap = useBatchWorkingDays(holidayRequests);
+
+  // Helper to get display days (working days if available, otherwise calendar days)
+  const getDisplayDays = (req: StaffRequest): number => {
+    const isHoliday = req.request_type === 'holiday' || 
+                      req.request_type === 'holiday_paid' || 
+                      req.request_type === 'holiday_unpaid';
+    if (!isHoliday) return req.days_requested;
+    
+    const workingDays = workingDaysMap.get(req.id);
+    return workingDays !== null && workingDays !== undefined ? workingDays : req.days_requested;
+  };
 
   const getStaffName = (userId: string) => {
     const profile = userProfiles.find(p => p.user_id === userId);
@@ -256,7 +274,7 @@ export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPrevi
                               <span className="text-xs text-muted-foreground">to {format(parseISO(request.end_date), 'dd MMM yyyy')}</span>
                             </div>
                           </TableCell>
-                          <TableCell className="py-4">{request.days_requested}</TableCell>
+                          <TableCell className="py-4">{getDisplayDays(request)}</TableCell>
                           <TableCell className="max-w-[200px] py-4">
                             <span className="block break-words whitespace-normal text-sm line-clamp-2">
                               {request.details || '-'}
@@ -323,9 +341,9 @@ export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPrevi
                                   <span className="text-xs text-muted-foreground">to {format(parseISO(cover.end_date), 'dd MMM yyyy')}</span>
                                 </div>
                               </TableCell>
-                              <TableCell className="py-4">{cover.days_requested}</TableCell>
+                              <TableCell className="py-4">{getDisplayDays(cover)}</TableCell>
                               <TableCell className="max-w-[200px] py-4 text-sm">
-                                Holiday: {format(parseISO(request.start_date), 'dd MMM yyyy')} – {format(parseISO(request.end_date), 'dd MMM yyyy')} ({request.days_requested} days)
+                                Holiday: {format(parseISO(request.start_date), 'dd MMM yyyy')} – {format(parseISO(request.end_date), 'dd MMM yyyy')} ({getDisplayDays(request)} days)
                               </TableCell>
                               <TableCell className="py-4">
                                 <span className="text-muted-foreground text-xs">N/A</span>
