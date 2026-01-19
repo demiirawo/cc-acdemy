@@ -1608,11 +1608,6 @@ const UpcomingHolidaysCard = ({
                         <span className="font-medium text-sm">
                           {getStaffName(holiday.user_id)}
                         </span>
-                        {shiftTimes.map((shiftTime, idx) => (
-                          <span key={idx} className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                            {shiftTime}
-                          </span>
-                        ))}
                         {isOngoing ? (
                           <span className="font-bold text-sm text-amber-700">(Currently Away)</span>
                         ) : isStartingToday ? (
