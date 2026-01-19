@@ -129,11 +129,11 @@ export function RequestDetailPage({ requestId, onBack, onViewProfile }: RequestD
     queryFn: async () => {
       const { data, error } = await supabase
         .from("recurring_shift_patterns")
-        .select("client_name, start_time, end_time, days_of_week")
+        .select("id, client_name, start_time, end_time, days_of_week, start_date, end_date")
         .eq("user_id", request!.user_id);
       
       if (error) throw error;
-      return data as { client_name: string; start_time: string; end_time: string; days_of_week: number[] }[];
+      return data as { id: string; client_name: string; start_time: string; end_time: string; days_of_week: number[]; start_date: string; end_date: string | null }[];
     }
   });
 
@@ -149,21 +149,34 @@ export function RequestDetailPage({ requestId, onBack, onViewProfile }: RequestD
     let currentDate = new Date(startDate);
     while (currentDate <= endDate) {
       const dayOfWeek = currentDate.getDay();
+      const currentDateStr = currentDate.toISOString().split('T')[0];
       
       // Find patterns that apply to this day
       shiftPatterns.forEach(pattern => {
         const patternDays = pattern.days_of_week as number[];
-        if (patternDays.includes(dayOfWeek)) {
-          const startTime = pattern.start_time.substring(0, 5);
-          const endTime = pattern.end_time.substring(0, 5);
-          const shiftTime = `${startTime} - ${endTime}`;
-          
-          result.push({
-            date: new Date(currentDate),
-            clientName: pattern.client_name,
-            shiftTime
-          });
-        }
+        
+        // Check if this day matches the pattern's days of week
+        if (!patternDays.includes(dayOfWeek)) return;
+        
+        // Check if the current date is within the pattern's active period
+        const patternStartDate = pattern.start_date;
+        const patternEndDate = pattern.end_date;
+        
+        // Skip if current date is before the pattern started
+        if (currentDateStr < patternStartDate) return;
+        
+        // Skip if pattern has ended before current date
+        if (patternEndDate && currentDateStr > patternEndDate) return;
+        
+        const startTime = pattern.start_time.substring(0, 5);
+        const endTime = pattern.end_time.substring(0, 5);
+        const shiftTime = `${startTime} - ${endTime}`;
+        
+        result.push({
+          date: new Date(currentDate),
+          clientName: pattern.client_name,
+          shiftTime
+        });
       });
       
       currentDate.setDate(currentDate.getDate() + 1);
