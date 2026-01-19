@@ -1362,13 +1362,30 @@ const UpcomingHolidaysCard = ({
     queryFn: async () => {
       const { data, error } = await supabase
         .from("recurring_shift_patterns")
-        .select("user_id, start_time, end_time, shift_type, days_of_week")
+        .select("id, user_id, start_time, end_time, shift_type, days_of_week, start_date, end_date, recurrence_interval")
         .eq("client_name", clientName);
       
       if (error) throw error;
       return data || [];
     },
     enabled: !!clientName,
+  });
+
+  // Fetch shift pattern exceptions
+  const { data: patternExceptions = [] } = useQuery({
+    queryKey: ["upcoming-holidays-pattern-exceptions", clientPatterns.map(p => p.id)],
+    queryFn: async () => {
+      if (clientPatterns.length === 0) return [];
+      const patternIds = clientPatterns.map(p => p.id);
+      const { data, error } = await supabase
+        .from("shift_pattern_exceptions")
+        .select("pattern_id, exception_date")
+        .in("pattern_id", patternIds);
+      
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: clientPatterns.length > 0,
   });
 
   // Fetch approved cover requests (shift_swap where swap_with_user_id matches a holiday user)
@@ -1416,7 +1433,67 @@ const UpcomingHolidaysCard = ({
     return Array.from(uniqueShiftTimes);
   };
 
-  // Get cover person(s) for a specific holiday by matching swap_with_user_id and date overlap
+  // Helper to check if a date falls on an active recurrence schedule
+  const isDateOnRecurrenceSchedule = (currentDate: Date, patternStartDate: string, recurrenceInterval: string): boolean => {
+    if (recurrenceInterval === 'weekly') return true;
+    const patternStart = new Date(patternStartDate);
+    const diffTime = currentDate.getTime() - patternStart.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    const diffWeeks = Math.floor(diffDays / 7);
+    if (recurrenceInterval === 'biweekly') {
+      return diffWeeks % 2 === 0;
+    }
+    if (recurrenceInterval === 'monthly') {
+      return diffWeeks % 4 === 0;
+    }
+    return true;
+  };
+
+  // Get day-by-day breakdown of affected shifts for a holiday
+  const getDayByDayBreakdown = (userId: string, startDate: Date, endDate: Date): {
+    date: Date;
+    shiftTime: string;
+  }[] => {
+    const userPatterns = clientPatterns.filter(p => p.user_id === userId);
+    if (userPatterns.length === 0) return [];
+    
+    const result: { date: Date; shiftTime: string }[] = [];
+    const exceptionSet = new Set(patternExceptions.map(exc => `${exc.pattern_id}:${exc.exception_date}`));
+    
+    let currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
+      const dayOfWeek = currentDate.getDay();
+      const currentDateStr = currentDate.toISOString().split('T')[0];
+      
+      userPatterns.forEach(pattern => {
+        const patternDays = pattern.days_of_week as number[];
+        if (!patternDays.includes(dayOfWeek)) return;
+        
+        // Check if current date is within pattern's active period
+        if (currentDateStr < pattern.start_date) return;
+        if (pattern.end_date && currentDateStr > pattern.end_date) return;
+        
+        // Check recurrence schedule
+        if (!isDateOnRecurrenceSchedule(currentDate, pattern.start_date, pattern.recurrence_interval || 'weekly')) return;
+        
+        // Check for exceptions
+        if (exceptionSet.has(`${pattern.id}:${currentDateStr}`)) return;
+        
+        const startTime = pattern.start_time.substring(0, 5);
+        const endTime = pattern.end_time.substring(0, 5);
+        result.push({
+          date: new Date(currentDate),
+          shiftTime: `${startTime} - ${endTime}`
+        });
+      });
+      
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    result.sort((a, b) => a.date.getTime() - b.date.getTime());
+    return result;
+  };
+
   const getCoverForHoliday = (holiday: StaffHoliday): string[] => {
     const holidayStart = startOfDay(parseISO(holiday.start_date));
     const holidayEnd = endOfDay(parseISO(holiday.end_date));
@@ -1501,7 +1578,7 @@ const UpcomingHolidaysCard = ({
         </CardTitle>
       </CardHeader>
       <CardContent className="px-3 sm:px-6">
-        <div className="space-y-2 sm:space-y-3">
+        <Accordion type="multiple" className="space-y-2 sm:space-y-3">
           {upcomingHolidays.map((holiday) => {
             const startDate = parseISO(holiday.start_date);
             const endDate = parseISO(holiday.end_date);
@@ -1510,65 +1587,94 @@ const UpcomingHolidaysCard = ({
             const coverNames = getCoverForHoliday(holiday);
             const hasCover = coverNames.length > 0;
             const shiftTimes = getShiftTimesForHoliday(holiday.user_id, startDate, endDate);
+            const dayBreakdown = getDayByDayBreakdown(holiday.user_id, startDate, endDate);
+            const workingDays = new Set(dayBreakdown.map(d => d.date.toISOString().split('T')[0])).size;
             
             return (
-              <div 
+              <AccordionItem 
                 key={holiday.id} 
-                className={`flex items-start gap-3 p-3 rounded-lg border ${
+                value={holiday.id}
+                className={`rounded-lg border ${
                   isOngoing ? 'bg-amber-50 border-amber-200' : 'bg-muted/30 border-border'
                 }`}
               >
-                <div className="flex-shrink-0 mt-0.5">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-sm">
-                      {getStaffName(holiday.user_id)}
-                    </span>
-                    {shiftTimes.map((shiftTime, idx) => (
-                      <span key={idx} className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                        {shiftTime}
-                      </span>
-                    ))}
-                    {isOngoing ? (
-                      <span className="font-bold text-sm text-amber-700">(Currently Away)</span>
-                    ) : isStartingToday ? (
-                      <span className="font-bold text-sm text-green-700">(Starts Today)</span>
-                    ) : (
-                      <span className="font-bold text-sm text-muted-foreground">(Upcoming)</span>
-                    )}
-                  </div>
-                  <div className="text-sm text-muted-foreground mt-1">
-                    {format(startDate, 'EEE, d MMM')}
-                    {holiday.start_date !== holiday.end_date && (
-                      <> — {format(endDate, 'EEE, d MMM')}</>
-                    )}
-                    <span className="ml-2 text-xs">
-                      ({holiday.days_taken} {holiday.days_taken === 1 ? 'day' : 'days'})
-                    </span>
-                  </div>
-                  {/* Cover information */}
-                  {hasCover ? (
-                    <div className="text-sm text-green-700 bg-green-50 rounded px-2 py-1 mt-2 inline-block">
-                      <span className="font-medium">Cover:</span> {coverNames.join(', ')}
+                <AccordionTrigger className="px-3 py-3 hover:no-underline [&[data-state=open]>div>.chevron]:rotate-180">
+                  <div className="flex items-start gap-3 w-full text-left">
+                    <div className="flex-shrink-0 mt-0.5">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
                     </div>
-                  ) : !holiday.no_cover_required && (
-                    <div className="text-sm text-red-600 bg-red-50 rounded px-2 py-1 mt-2 inline-flex items-center gap-1">
-                      <AlertTriangle className="h-3 w-3" />
-                      <span>No cover arranged</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">
+                          {getStaffName(holiday.user_id)}
+                        </span>
+                        {shiftTimes.map((shiftTime, idx) => (
+                          <span key={idx} className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                            {shiftTime}
+                          </span>
+                        ))}
+                        {isOngoing ? (
+                          <span className="font-bold text-sm text-amber-700">(Currently Away)</span>
+                        ) : isStartingToday ? (
+                          <span className="font-bold text-sm text-green-700">(Starts Today)</span>
+                        ) : (
+                          <span className="font-bold text-sm text-muted-foreground">(Upcoming)</span>
+                        )}
+                      </div>
+                      <div className="text-sm text-muted-foreground mt-1">
+                        {format(startDate, 'EEE, d MMM')}
+                        {holiday.start_date !== holiday.end_date && (
+                          <> — {format(endDate, 'EEE, d MMM')}</>
+                        )}
+                        <span className="ml-2 text-xs">
+                          ({workingDays > 0 ? `${workingDays} working day${workingDays !== 1 ? 's' : ''}` : `${holiday.days_taken} day${holiday.days_taken !== 1 ? 's' : ''}`})
+                        </span>
+                      </div>
+                      {/* Cover information */}
+                      {hasCover ? (
+                        <div className="text-sm text-green-700 bg-green-50 rounded px-2 py-1 mt-2 inline-block">
+                          <span className="font-medium">Cover:</span> {coverNames.join(', ')}
+                        </div>
+                      ) : !holiday.no_cover_required && (
+                        <div className="text-sm text-red-600 bg-red-50 rounded px-2 py-1 mt-2 inline-flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3" />
+                          <span>No cover arranged</span>
+                        </div>
+                      )}
+                    </div>
+                    {holiday.no_cover_required && (
+                      <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 flex-shrink-0">
+                        No cover needed
+                      </Badge>
+                    )}
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="px-3 pb-3">
+                  {dayBreakdown.length > 0 ? (
+                    <div className="ml-7 mt-2 space-y-1 border-l-2 border-muted pl-4">
+                      <p className="text-xs font-medium text-muted-foreground mb-2">Affected Shifts</p>
+                      {dayBreakdown.map((day, idx) => (
+                        <div key={idx} className="flex items-center gap-3 text-sm py-1">
+                          <span className="min-w-[120px] font-medium">
+                            {format(day.date, 'EEE, dd MMM yyyy')}
+                          </span>
+                          <Badge variant="outline" className="bg-muted text-xs">
+                            <Clock className="h-3 w-3 mr-1" />
+                            {day.shiftTime}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="ml-7 mt-2 text-sm text-muted-foreground">
+                      No scheduled shifts during this period
                     </div>
                   )}
-                </div>
-                {holiday.no_cover_required && (
-                  <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200 flex-shrink-0">
-                    No cover needed
-                  </Badge>
-                )}
-              </div>
+                </AccordionContent>
+              </AccordionItem>
             );
           })}
-        </div>
+        </Accordion>
       </CardContent>
     </Card>
   );
