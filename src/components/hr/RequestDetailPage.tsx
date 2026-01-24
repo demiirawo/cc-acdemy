@@ -462,14 +462,28 @@ export function RequestDetailPage({
         error
       } = await supabase.from("staff_requests").insert([payload]);
       if (error) throw error;
+
+      // Auto-clear "no cover required" when assigning cover
+      if (linkedHoliday?.no_cover_required) {
+        await supabase
+          .from("staff_holidays")
+          .update({ no_cover_required: false })
+          .eq("id", linkedHoliday.id);
+      }
     },
     onSuccess: () => {
+      refetchLinkedHoliday();
+      refetchCoveringStaff();
       queryClient.invalidateQueries({
         queryKey: ["covering-staff", request?.id]
       });
       queryClient.invalidateQueries({
         queryKey: ["all-staff-requests"]
       });
+      queryClient.invalidateQueries({ queryKey: ["staff-holidays"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-cover-status"] });
+      queryClient.invalidateQueries({ queryKey: ["linked-holidays-for-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["linked-holiday", request?.id] });
       toast.success("Cover assigned successfully");
     },
     onError: error => {
@@ -490,6 +504,10 @@ export function RequestDetailPage({
     onSuccess: () => {
       refetchLinkedHoliday();
       queryClient.invalidateQueries({ queryKey: ["staff-holidays"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-cover-status"] });
+      queryClient.invalidateQueries({ queryKey: ["linked-holidays-for-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["linked-holiday", request?.id] });
+      queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
       toast.success("Cover requirement updated");
     },
     onError: (error) => {
