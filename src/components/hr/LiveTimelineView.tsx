@@ -286,22 +286,53 @@ export function LiveTimelineView({
         
         {/* Client rows */}
         {viewMode === "client" && relevantClients.map(clientName => {
-          const clientSchedules = todaySchedules.filter(s => {
-            if (s.client_name !== clientName) return false;
-            const start = parseISO(s.start_datetime);
-            const end = parseISO(s.end_datetime);
-            return start < timelineEnd && end > timelineStart;
+          // Get all schedules for this client, excluding staff on holiday
+          const clientSchedules = todaySchedules
+            .filter(s => {
+              if (s.client_name !== clientName) return false;
+              if (isStaffOnHoliday(s.user_id, now)) return false;
+              const start = parseISO(s.start_datetime);
+              const end = parseISO(s.end_datetime);
+              return start < timelineEnd && end > timelineStart;
+            })
+            .sort((a, b) => parseISO(a.start_datetime).getTime() - parseISO(b.start_datetime).getTime());
+          
+          // Allocate schedules to rows - pack sequential shifts on same row
+          // Only create new row if shift truly overlaps (not just touches) an existing shift
+          const rows: Schedule[][] = [];
+          
+          clientSchedules.forEach(schedule => {
+            const scheduleStart = parseISO(schedule.start_datetime);
+            
+            // Find a row where this schedule can fit (doesn't overlap)
+            let assignedRow = -1;
+            for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+              const row = rows[rowIdx];
+              // Check if schedule overlaps with any shift in this row
+              const hasOverlap = row.some(existingSchedule => {
+                const existingStart = parseISO(existingSchedule.start_datetime);
+                const existingEnd = parseISO(existingSchedule.end_datetime);
+                // Overlap means: new shift starts before existing ends AND new shift ends after existing starts
+                // NOT overlap if: new starts at same time as existing ends (sequential)
+                const scheduleEnd = parseISO(schedule.end_datetime);
+                return scheduleStart < existingEnd && scheduleEnd > existingStart;
+              });
+              
+              if (!hasOverlap) {
+                assignedRow = rowIdx;
+                break;
+              }
+            }
+            
+            if (assignedRow === -1) {
+              // Create new row
+              rows.push([schedule]);
+            } else {
+              rows[assignedRow].push(schedule);
+            }
           });
           
-          // Group by staff to show multiple bars
-          const schedulesByStaff = new Map<string, Schedule[]>();
-          clientSchedules.forEach(s => {
-            const existing = schedulesByStaff.get(s.user_id) || [];
-            existing.push(s);
-            schedulesByStaff.set(s.user_id, existing);
-          });
-          
-          const rowCount = Math.max(1, schedulesByStaff.size);
+          const rowCount = Math.max(1, rows.length);
           
           return (
             <div key={clientName} className="flex mb-1">
@@ -316,7 +347,7 @@ export function LiveTimelineView({
               {/* Timeline row */}
               <div 
                 className="flex-1 relative bg-muted/30 rounded border"
-                style={{ width: TIMELINE_WIDTH, minHeight: ROW_HEIGHT * Math.min(rowCount, 3) }}
+                style={{ width: TIMELINE_WIDTH, minHeight: ROW_HEIGHT * rowCount }}
               >
                 {/* Hour grid lines */}
                 {hourMarkers.slice(1).map((hour, idx) => (
@@ -337,85 +368,80 @@ export function LiveTimelineView({
                   </div>
                 )}
                 
-                {/* Schedule bars - stacked by staff */}
-                {Array.from(schedulesByStaff.entries()).map(([userId, schedules], rowIdx) => {
-                  const onHoliday = isStaffOnHoliday(userId, now);
-                  if (onHoliday) return null;
-                  
-                  return (
-                    <div
-                      key={userId}
-                      className="absolute left-0 right-0"
-                      style={{ 
-                        top: `${(rowIdx / rowCount) * 100}%`,
-                        height: `${100 / rowCount}%`,
-                      }}
-                    >
-                      {schedules.map(schedule => {
-                        const start = parseISO(schedule.start_datetime);
-                        const end = parseISO(schedule.end_datetime);
-                        const isCurrentlyWorking = now >= start && now < end;
-                        const isPast = end < now;
-                        const isFuture = start > now;
-                        
-                        const clampedStart = start < timelineStart ? timelineStart : start;
-                        const clampedEnd = end > timelineEnd ? timelineEnd : end;
-                        
-                        if (clampedEnd <= timelineStart || clampedStart >= timelineEnd) {
-                          return null;
-                        }
-                        
-                        const leftPercent = getPositionPercent(clampedStart);
-                        const rightPercent = getPositionPercent(clampedEnd);
-                        const widthPercent = rightPercent - leftPercent;
-                        
-                        if (widthPercent < 1) return null;
-                        
-                        const isFromPattern = schedule.id.startsWith('pattern-');
-                        const staffName = getStaffName(schedule.user_id);
-                        
-                        return (
-                          <div
-                            key={schedule.id}
-                            className={`absolute top-0.5 bottom-0.5 rounded-md flex flex-col justify-center px-2 overflow-hidden text-xs ${
-                              isCurrentlyWorking
-                                ? 'ring-2 ring-green-500 shadow-lg z-10'
-                                : isPast
-                                ? 'opacity-60'
-                                : ''
-                            } ${
-                              isFromPattern
-                                ? 'bg-violet-100 border-2 border-violet-400'
-                                : 'bg-primary/20 border-2 border-primary/60'
-                            }`}
-                            style={{
-                              left: `${leftPercent}%`,
-                              width: `${widthPercent}%`,
-                              minWidth: '50px',
-                            }}
-                            title={`${staffName}: ${format(start, "HH:mm")} - ${format(end, "HH:mm")}`}
-                          >
-                            <div className="font-semibold truncate flex items-center gap-1">
-                              {staffName}
-                              {isFromPattern && <Infinity className="h-3 w-3 text-violet-500 flex-shrink-0" />}
-                            </div>
-                            <div className={`text-[10px] ${isCurrentlyWorking ? 'text-green-700 font-semibold' : 'text-muted-foreground'}`}>
-                              {isCurrentlyWorking ? (
-                                <>Working now · Ends {format(end, "HH:mm")}</>
-                              ) : isPast ? (
-                                <>Ended {format(end, "HH:mm")}</>
-                              ) : isFuture ? (
-                                <>Starts {format(start, "HH:mm")}</>
-                              ) : (
-                                <>{format(start, "HH:mm")} - {format(end, "HH:mm")}</>
-                              )}
-                            </div>
+                {/* Schedule bars - packed into minimum rows */}
+                {rows.map((rowSchedules, rowIdx) => (
+                  <div
+                    key={rowIdx}
+                    className="absolute left-0 right-0"
+                    style={{ 
+                      top: `${(rowIdx / rowCount) * 100}%`,
+                      height: `${100 / rowCount}%`,
+                    }}
+                  >
+                    {rowSchedules.map(schedule => {
+                      const start = parseISO(schedule.start_datetime);
+                      const end = parseISO(schedule.end_datetime);
+                      const isCurrentlyWorking = now >= start && now < end;
+                      const isPast = end < now;
+                      const isFuture = start > now;
+                      
+                      const clampedStart = start < timelineStart ? timelineStart : start;
+                      const clampedEnd = end > timelineEnd ? timelineEnd : end;
+                      
+                      if (clampedEnd <= timelineStart || clampedStart >= timelineEnd) {
+                        return null;
+                      }
+                      
+                      const leftPercent = getPositionPercent(clampedStart);
+                      const rightPercent = getPositionPercent(clampedEnd);
+                      const widthPercent = rightPercent - leftPercent;
+                      
+                      if (widthPercent < 1) return null;
+                      
+                      const isFromPattern = schedule.id.startsWith('pattern-');
+                      const staffName = getStaffName(schedule.user_id);
+                      
+                      return (
+                        <div
+                          key={schedule.id}
+                          className={`absolute top-0.5 bottom-0.5 rounded-md flex flex-col justify-center px-2 overflow-hidden text-xs ${
+                            isCurrentlyWorking
+                              ? 'ring-2 ring-green-500 shadow-lg z-10'
+                              : isPast
+                              ? 'opacity-60'
+                              : ''
+                          } ${
+                            isFromPattern
+                              ? 'bg-violet-100 border-2 border-violet-400'
+                              : 'bg-primary/20 border-2 border-primary/60'
+                          }`}
+                          style={{
+                            left: `${leftPercent}%`,
+                            width: `${widthPercent}%`,
+                            minWidth: '50px',
+                          }}
+                          title={`${staffName}: ${format(start, "HH:mm")} - ${format(end, "HH:mm")}`}
+                        >
+                          <div className="font-semibold truncate flex items-center gap-1">
+                            {staffName}
+                            {isFromPattern && <Infinity className="h-3 w-3 text-violet-500 flex-shrink-0" />}
                           </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
+                          <div className={`text-[10px] ${isCurrentlyWorking ? 'text-green-700 font-semibold' : 'text-muted-foreground'}`}>
+                            {isCurrentlyWorking ? (
+                              <>Working now · Ends {format(end, "HH:mm")}</>
+                            ) : isPast ? (
+                              <>Ended {format(end, "HH:mm")}</>
+                            ) : isFuture ? (
+                              <>Starts {format(start, "HH:mm")}</>
+                            ) : (
+                              <>{format(start, "HH:mm")} - {format(end, "HH:mm")}</>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             </div>
           );
