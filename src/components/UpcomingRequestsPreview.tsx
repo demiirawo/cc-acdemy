@@ -7,9 +7,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Clock, Palmtree, RefreshCw, Calendar, Bell, BellOff } from "lucide-react";
 import { format, addDays, parseISO } from "date-fns";
 import { useBatchWorkingDays } from "@/hooks/useWorkingDays";
-
 type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
-
 interface StaffRequest {
   id: string;
   user_id: string;
@@ -23,14 +21,16 @@ interface StaffRequest {
   client_informed: boolean;
   created_at: string;
 }
-
 interface UserProfile {
   user_id: string;
   display_name: string | null;
   email: string | null;
 }
-
-const REQUEST_TYPE_INFO: Record<string, { label: string; icon: typeof Clock; color: string }> = {
+const REQUEST_TYPE_INFO: Record<string, {
+  label: string;
+  icon: typeof Clock;
+  color: string;
+}> = {
   overtime: {
     label: "Overtime",
     icon: Clock,
@@ -67,12 +67,12 @@ const REQUEST_TYPE_INFO: Record<string, { label: string; icon: typeof Clock; col
     color: "text-blue-600"
   }
 };
-
 interface UpcomingRequestsPreviewProps {
   onViewRequest?: (requestId: string) => void;
 }
-
-export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPreviewProps) {
+export function UpcomingRequestsPreview({
+  onViewRequest
+}: UpcomingRequestsPreviewProps) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayISO = today.toISOString().split('T')[0];
@@ -80,52 +80,51 @@ export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPrevi
   const thirtyDaysISO = thirtyDaysFromNow.toISOString().split('T')[0];
 
   // Fetch approved staff requests - filter in database for efficiency
-  const { data: requests = [], isLoading } = useQuery({
+  const {
+    data: requests = [],
+    isLoading
+  } = useQuery({
     queryKey: ["upcoming-approved-requests", todayISO],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("staff_requests")
-        .select("*")
-        .eq("status", "approved")
-        .gte("end_date", todayISO) // End date must be today or later
-        .lte("start_date", thirtyDaysISO) // Start date must be within 30 days
-        .order("start_date", { ascending: false });
-      
+      const {
+        data,
+        error
+      } = await supabase.from("staff_requests").select("*").eq("status", "approved").gte("end_date", todayISO) // End date must be today or later
+      .lte("start_date", thirtyDaysISO) // Start date must be within 30 days
+      .order("start_date", {
+        ascending: false
+      });
       if (error) throw error;
       return data as StaffRequest[];
     }
   });
 
   // Fetch user profiles for display names
-  const { data: userProfiles = [] } = useQuery({
+  const {
+    data: userProfiles = []
+  } = useQuery({
     queryKey: ["user-profiles-for-upcoming-requests"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("user_id, display_name, email");
-      
+      const {
+        data,
+        error
+      } = await supabase.from("profiles").select("user_id, display_name, email");
       if (error) throw error;
       return data as UserProfile[];
     }
   });
 
   // Calculate working days for all holiday requests
-  const holidayRequests = requests.filter(r => 
-    r.request_type === 'holiday' || r.request_type === 'holiday_paid' || r.request_type === 'holiday_unpaid'
-  );
+  const holidayRequests = requests.filter(r => r.request_type === 'holiday' || r.request_type === 'holiday_paid' || r.request_type === 'holiday_unpaid');
   const workingDaysMap = useBatchWorkingDays(holidayRequests);
 
   // Helper to get display days (working days if available, otherwise calendar days)
   const getDisplayDays = (req: StaffRequest): number => {
-    const isHoliday = req.request_type === 'holiday' || 
-                      req.request_type === 'holiday_paid' || 
-                      req.request_type === 'holiday_unpaid';
+    const isHoliday = req.request_type === 'holiday' || req.request_type === 'holiday_paid' || req.request_type === 'holiday_unpaid';
     if (!isHoliday) return req.days_requested;
-    
     const workingDays = workingDaysMap.get(req.id);
     return workingDays !== null && workingDays !== undefined ? workingDays : req.days_requested;
   };
-
   const getStaffName = (userId: string) => {
     const profile = userProfiles.find(p => p.user_id === userId);
     return profile?.display_name || profile?.email || "Unknown";
@@ -136,12 +135,7 @@ export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPrevi
 
   // Helper to find cover requests for a holiday
   const findCoverForHoliday = (holidayRequest: StaffRequest): StaffRequest[] => {
-    return upcomingRequests.filter(r => 
-      r.request_type === 'shift_swap' && 
-      r.swap_with_user_id === holidayRequest.user_id &&
-      new Date(r.start_date) <= new Date(holidayRequest.end_date) &&
-      new Date(r.end_date) >= new Date(holidayRequest.start_date)
-    );
+    return upcomingRequests.filter(r => r.request_type === 'shift_swap' && r.swap_with_user_id === holidayRequest.user_id && new Date(r.start_date) <= new Date(holidayRequest.end_date) && new Date(r.end_date) >= new Date(holidayRequest.start_date));
   };
 
   // Get all cover request IDs that are nested under holidays
@@ -155,13 +149,14 @@ export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPrevi
     });
     return nestedIds;
   };
-
   const nestedCoverIds = getNestedCoverIds();
   const topLevelRequests = upcomingRequests.filter(r => !nestedCoverIds.has(r.id));
 
   // Group requests by month
   const groupRequestsByMonth = (requests: StaffRequest[]) => {
-    const grouped: { [key: string]: StaffRequest[] } = {};
+    const grouped: {
+      [key: string]: StaffRequest[];
+    } = {};
     requests.forEach(request => {
       const monthKey = format(parseISO(request.start_date), 'MMMM yyyy');
       if (!grouped[monthKey]) {
@@ -171,12 +166,9 @@ export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPrevi
     });
     return grouped;
   };
-
   const groupedRequests = groupRequestsByMonth(topLevelRequests);
-
   if (isLoading) {
-    return (
-      <Card className="mb-6">
+    return <Card className="mb-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calendar className="h-5 w-5" />
@@ -189,20 +181,17 @@ export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPrevi
             <div className="h-10 bg-muted rounded"></div>
           </div>
         </CardContent>
-      </Card>
-    );
+      </Card>;
   }
-
-  return (
-    <Card className="mb-6">
+  return <Card className="mb-6">
       <Accordion type="single" collapsible defaultValue="upcoming-requests">
         <AccordionItem value="upcoming-requests" className="border-none">
           <CardHeader className="pb-0">
             <AccordionTrigger className="hover:no-underline py-0">
               <CardTitle className="flex items-center gap-2 text-lg">
-                <Calendar className="h-5 w-5 text-primary" />
+                
                 Upcoming Approved Requests
-                <Badge variant="secondary" className="ml-2">{upcomingRequests.length}</Badge>
+                
               </CardTitle>
             </AccordionTrigger>
             <p className="text-sm text-muted-foreground mt-1">
@@ -211,13 +200,10 @@ export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPrevi
           </CardHeader>
           <AccordionContent>
             <CardContent className="pt-4">
-              {topLevelRequests.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
+              {topLevelRequests.length === 0 ? <div className="text-center py-8 text-muted-foreground">
                   <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   <p>No approved requests in the next 30 days</p>
-                </div>
-              ) : (
-                <Table>
+                </div> : <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Staff Member</TableHead>
@@ -231,8 +217,7 @@ export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPrevi
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {Object.entries(groupedRequests).map(([monthKey, monthRequests]) => (
-                      <>
+                    {Object.entries(groupedRequests).map(([monthKey, monthRequests]) => <>
                         {/* Month Header Row */}
                         <TableRow key={`month-${monthKey}`} className="bg-muted/30 hover:bg-muted/30">
                           <TableCell colSpan={8} className="py-3 font-semibold text-sm">
@@ -244,27 +229,17 @@ export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPrevi
                         </TableRow>
                         
                         {/* Requests for this month */}
-                        {monthRequests.map((request) => {
-                          const typeInfo = REQUEST_TYPE_INFO[request.request_type] || REQUEST_TYPE_INFO.holiday;
-                          const TypeIcon = typeInfo.icon;
-                          const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
-                          const covers = isHolidayRequest ? findCoverForHoliday(request) : [];
-                          const hasCover = covers.length > 0;
-                          
-                          // Match exact styling from StaffRequestsManager
-                          const rowHighlightClass = isHolidayRequest 
-                            ? hasCover 
-                              ? 'bg-green-100 dark:bg-green-950/30 hover:bg-green-200 dark:hover:bg-green-950/50' 
-                              : 'bg-red-100 dark:bg-red-950/30 hover:bg-red-200 dark:hover:bg-red-950/50'
-                            : 'hover:bg-muted/50';
-                          
-                          return (
-                            <>
-                              <TableRow 
-                                key={request.id} 
-                                className={`h-20 cursor-pointer transition-colors ${rowHighlightClass}`}
-                                onClick={() => onViewRequest?.(request.id)}
-                              >
+                        {monthRequests.map(request => {
+                    const typeInfo = REQUEST_TYPE_INFO[request.request_type] || REQUEST_TYPE_INFO.holiday;
+                    const TypeIcon = typeInfo.icon;
+                    const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
+                    const covers = isHolidayRequest ? findCoverForHoliday(request) : [];
+                    const hasCover = covers.length > 0;
+
+                    // Match exact styling from StaffRequestsManager
+                    const rowHighlightClass = isHolidayRequest ? hasCover ? 'bg-green-100 dark:bg-green-950/30 hover:bg-green-200 dark:hover:bg-green-950/50' : 'bg-red-100 dark:bg-red-950/30 hover:bg-red-200 dark:hover:bg-red-950/50' : 'hover:bg-muted/50';
+                    return <>
+                              <TableRow key={request.id} className={`h-20 cursor-pointer transition-colors ${rowHighlightClass}`} onClick={() => onViewRequest?.(request.id)}>
                                 <TableCell className="font-medium py-4">
                                   {getStaffName(request.user_id)}
                                 </TableCell>
@@ -287,21 +262,13 @@ export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPrevi
                                   </span>
                                 </TableCell>
                                 <TableCell className="py-4">
-                                  {isHolidayRequest ? (
-                                    <span className="text-xs">
-                                      {request.client_informed ? (
-                                        <span className="flex items-center gap-1 text-green-600">
+                                  {isHolidayRequest ? <span className="text-xs">
+                                      {request.client_informed ? <span className="flex items-center gap-1 text-green-600">
                                           <Bell className="h-3 w-3" /> Informed
-                                        </span>
-                                      ) : (
-                                        <span className="flex items-center gap-1 text-amber-600">
+                                        </span> : <span className="flex items-center gap-1 text-amber-600">
                                           <BellOff className="h-3 w-3" /> Not yet
-                                        </span>
-                                      )}
-                                    </span>
-                                  ) : (
-                                    <span className="text-muted-foreground text-xs">N/A</span>
-                                  )}
+                                        </span>}
+                                    </span> : <span className="text-muted-foreground text-xs">N/A</span>}
                                 </TableCell>
                                 <TableCell className="py-4">
                                   <Badge className="bg-success/20 text-success border-success">
@@ -314,16 +281,10 @@ export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPrevi
                               </TableRow>
                               
                               {/* Nested cover requests - purple styling like original */}
-                              {covers.map((cover) => {
-                                const coverTypeInfo = REQUEST_TYPE_INFO[cover.request_type];
-                                const CoverIcon = coverTypeInfo.icon;
-                                
-                                return (
-                                  <TableRow 
-                                    key={cover.id} 
-                                    className="h-20 cursor-pointer transition-colors bg-purple-50 dark:bg-purple-950/20 hover:bg-purple-100 dark:hover:bg-purple-950/40 border-l-4 border-purple-400"
-                                    onClick={() => onViewRequest?.(cover.id)}
-                                  >
+                              {covers.map(cover => {
+                        const coverTypeInfo = REQUEST_TYPE_INFO[cover.request_type];
+                        const CoverIcon = coverTypeInfo.icon;
+                        return <TableRow key={cover.id} className="h-20 cursor-pointer transition-colors bg-purple-50 dark:bg-purple-950/20 hover:bg-purple-100 dark:hover:bg-purple-950/40 border-l-4 border-purple-400" onClick={() => onViewRequest?.(cover.id)}>
                                     <TableCell className="font-medium py-4">
                                       <div className="flex flex-col gap-1">
                                         <div className="flex items-center gap-2">
@@ -362,21 +323,16 @@ export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPrevi
                                     <TableCell className="text-sm text-muted-foreground py-4">
                                       {format(parseISO(cover.created_at), 'dd MMM yyyy')}
                                     </TableCell>
-                                  </TableRow>
-                                );
-                              })}
-                            </>
-                          );
-                        })}
-                      </>
-                    ))}
+                                  </TableRow>;
+                      })}
+                            </>;
+                  })}
+                      </>)}
                   </TableBody>
-                </Table>
-              )}
+                </Table>}
             </CardContent>
           </AccordionContent>
         </AccordionItem>
       </Accordion>
-    </Card>
-  );
+    </Card>;
 }
