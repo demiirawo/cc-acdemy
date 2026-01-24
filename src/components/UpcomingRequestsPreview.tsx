@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Clock, Palmtree, RefreshCw, Calendar, Bell, BellOff } from "lucide-react";
 import { format, addDays, parseISO } from "date-fns";
 import { useBatchWorkingDays } from "@/hooks/useWorkingDays";
@@ -194,180 +195,188 @@ export function UpcomingRequestsPreview({ onViewRequest }: UpcomingRequestsPrevi
 
   return (
     <Card className="mb-6">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <Calendar className="h-5 w-5 text-primary" />
-          Upcoming Approved Requests
-          <Badge variant="secondary" className="ml-2">{upcomingRequests.length}</Badge>
-        </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Approved requests in the next 30 days
-        </p>
-      </CardHeader>
-      <CardContent className="pt-0">
-        {topLevelRequests.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p>No approved requests in the next 30 days</p>
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Staff Member</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Dates</TableHead>
-                <TableHead>Days</TableHead>
-                <TableHead>Details</TableHead>
-                <TableHead>Client Notified</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Submitted</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {Object.entries(groupedRequests).map(([monthKey, monthRequests]) => (
-                <>
-                  {/* Month Header Row */}
-                  <TableRow key={`month-${monthKey}`} className="bg-muted/30 hover:bg-muted/30">
-                    <TableCell colSpan={8} className="py-3 font-semibold text-sm">
-                      {monthKey}
-                      <span className="ml-2 text-muted-foreground font-normal">
-                        ({monthRequests.length} request{monthRequests.length !== 1 ? 's' : ''})
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                  
-                  {/* Requests for this month */}
-                  {monthRequests.map((request) => {
-                    const typeInfo = REQUEST_TYPE_INFO[request.request_type] || REQUEST_TYPE_INFO.holiday;
-                    const TypeIcon = typeInfo.icon;
-                    const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
-                    const covers = isHolidayRequest ? findCoverForHoliday(request) : [];
-                    const hasCover = covers.length > 0;
-                    
-                    // Match exact styling from StaffRequestsManager
-                    const rowHighlightClass = isHolidayRequest 
-                      ? hasCover 
-                        ? 'bg-green-100 dark:bg-green-950/30 hover:bg-green-200 dark:hover:bg-green-950/50' 
-                        : 'bg-red-100 dark:bg-red-950/30 hover:bg-red-200 dark:hover:bg-red-950/50'
-                      : 'hover:bg-muted/50';
-                    
-                    return (
+      <Accordion type="single" collapsible defaultValue="upcoming-requests">
+        <AccordionItem value="upcoming-requests" className="border-none">
+          <CardHeader className="pb-0">
+            <AccordionTrigger className="hover:no-underline py-0">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Calendar className="h-5 w-5 text-primary" />
+                Upcoming Approved Requests
+                <Badge variant="secondary" className="ml-2">{upcomingRequests.length}</Badge>
+              </CardTitle>
+            </AccordionTrigger>
+            <p className="text-sm text-muted-foreground mt-1">
+              Approved requests in the next 30 days
+            </p>
+          </CardHeader>
+          <AccordionContent>
+            <CardContent className="pt-4">
+              {topLevelRequests.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>No approved requests in the next 30 days</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Staff Member</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Dates</TableHead>
+                      <TableHead>Days</TableHead>
+                      <TableHead>Details</TableHead>
+                      <TableHead>Client Notified</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Submitted</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {Object.entries(groupedRequests).map(([monthKey, monthRequests]) => (
                       <>
-                        <TableRow 
-                          key={request.id} 
-                          className={`h-20 cursor-pointer transition-colors ${rowHighlightClass}`}
-                          onClick={() => onViewRequest?.(request.id)}
-                        >
-                          <TableCell className="font-medium py-4">
-                            {getStaffName(request.user_id)}
-                          </TableCell>
-                          <TableCell className="py-4">
-                            <div className="flex items-center gap-2">
-                              <TypeIcon className={`h-4 w-4 ${typeInfo.color}`} />
-                              <span className="text-sm">{typeInfo.label}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-4">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-sm">{format(parseISO(request.start_date), 'dd MMM yyyy')}</span>
-                              <span className="text-xs text-muted-foreground">to {format(parseISO(request.end_date), 'dd MMM yyyy')}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-4">{getDisplayDays(request)}</TableCell>
-                          <TableCell className="max-w-[200px] py-4">
-                            <span className="block break-words whitespace-normal text-sm line-clamp-2">
-                              {request.details || '-'}
+                        {/* Month Header Row */}
+                        <TableRow key={`month-${monthKey}`} className="bg-muted/30 hover:bg-muted/30">
+                          <TableCell colSpan={8} className="py-3 font-semibold text-sm">
+                            {monthKey}
+                            <span className="ml-2 text-muted-foreground font-normal">
+                              ({monthRequests.length} request{monthRequests.length !== 1 ? 's' : ''})
                             </span>
-                          </TableCell>
-                          <TableCell className="py-4">
-                            {isHolidayRequest ? (
-                              <span className="text-xs">
-                                {request.client_informed ? (
-                                  <span className="flex items-center gap-1 text-green-600">
-                                    <Bell className="h-3 w-3" /> Informed
-                                  </span>
-                                ) : (
-                                  <span className="flex items-center gap-1 text-amber-600">
-                                    <BellOff className="h-3 w-3" /> Not yet
-                                  </span>
-                                )}
-                              </span>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">N/A</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="py-4">
-                            <Badge className="bg-success/20 text-success border-success">
-                              approved
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm text-muted-foreground py-4">
-                            {format(parseISO(request.created_at), 'dd MMM yyyy')}
                           </TableCell>
                         </TableRow>
                         
-                        {/* Nested cover requests - purple styling like original */}
-                        {covers.map((cover) => {
-                          const coverTypeInfo = REQUEST_TYPE_INFO[cover.request_type];
-                          const CoverIcon = coverTypeInfo.icon;
+                        {/* Requests for this month */}
+                        {monthRequests.map((request) => {
+                          const typeInfo = REQUEST_TYPE_INFO[request.request_type] || REQUEST_TYPE_INFO.holiday;
+                          const TypeIcon = typeInfo.icon;
+                          const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
+                          const covers = isHolidayRequest ? findCoverForHoliday(request) : [];
+                          const hasCover = covers.length > 0;
+                          
+                          // Match exact styling from StaffRequestsManager
+                          const rowHighlightClass = isHolidayRequest 
+                            ? hasCover 
+                              ? 'bg-green-100 dark:bg-green-950/30 hover:bg-green-200 dark:hover:bg-green-950/50' 
+                              : 'bg-red-100 dark:bg-red-950/30 hover:bg-red-200 dark:hover:bg-red-950/50'
+                            : 'hover:bg-muted/50';
                           
                           return (
-                            <TableRow 
-                              key={cover.id} 
-                              className="h-20 cursor-pointer transition-colors bg-purple-50 dark:bg-purple-950/20 hover:bg-purple-100 dark:hover:bg-purple-950/40 border-l-4 border-purple-400"
-                              onClick={() => onViewRequest?.(cover.id)}
-                            >
-                              <TableCell className="font-medium py-4">
-                                <div className="flex flex-col gap-1">
+                            <>
+                              <TableRow 
+                                key={request.id} 
+                                className={`h-20 cursor-pointer transition-colors ${rowHighlightClass}`}
+                                onClick={() => onViewRequest?.(request.id)}
+                              >
+                                <TableCell className="font-medium py-4">
+                                  {getStaffName(request.user_id)}
+                                </TableCell>
+                                <TableCell className="py-4">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-purple-500">↳</span>
-                                    <span>{getStaffName(cover.user_id)}</span>
+                                    <TypeIcon className={`h-4 w-4 ${typeInfo.color}`} />
+                                    <span className="text-sm">{typeInfo.label}</span>
                                   </div>
-                                  <span className="text-xs text-muted-foreground">
-                                    Covering: {getStaffName(request.user_id)}
+                                </TableCell>
+                                <TableCell className="py-4">
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-sm">{format(parseISO(request.start_date), 'dd MMM yyyy')}</span>
+                                    <span className="text-xs text-muted-foreground">to {format(parseISO(request.end_date), 'dd MMM yyyy')}</span>
+                                  </div>
+                                </TableCell>
+                                <TableCell className="py-4">{getDisplayDays(request)}</TableCell>
+                                <TableCell className="max-w-[200px] py-4">
+                                  <span className="block break-words whitespace-normal text-sm line-clamp-2">
+                                    {request.details || '-'}
                                   </span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="py-4">
-                                <div className="flex items-center gap-2">
-                                  <CoverIcon className={`h-4 w-4 ${coverTypeInfo.color}`} />
-                                  <span className="text-sm">{coverTypeInfo.label}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="py-4">
-                                <div className="flex flex-col gap-0.5">
-                                  <span className="text-sm">{format(parseISO(cover.start_date), 'dd MMM yyyy')}</span>
-                                  <span className="text-xs text-muted-foreground">to {format(parseISO(cover.end_date), 'dd MMM yyyy')}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="py-4">{getDisplayDays(cover)}</TableCell>
-                              <TableCell className="max-w-[200px] py-4 text-sm">
-                                Holiday: {format(parseISO(request.start_date), 'dd MMM yyyy')} – {format(parseISO(request.end_date), 'dd MMM yyyy')} ({getDisplayDays(request)} days)
-                              </TableCell>
-                              <TableCell className="py-4">
-                                <span className="text-muted-foreground text-xs">N/A</span>
-                              </TableCell>
-                              <TableCell className="py-4">
-                                <Badge className="bg-success/20 text-success border-success">
-                                  approved
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-sm text-muted-foreground py-4">
-                                {format(parseISO(cover.created_at), 'dd MMM yyyy')}
-                              </TableCell>
-                            </TableRow>
+                                </TableCell>
+                                <TableCell className="py-4">
+                                  {isHolidayRequest ? (
+                                    <span className="text-xs">
+                                      {request.client_informed ? (
+                                        <span className="flex items-center gap-1 text-green-600">
+                                          <Bell className="h-3 w-3" /> Informed
+                                        </span>
+                                      ) : (
+                                        <span className="flex items-center gap-1 text-amber-600">
+                                          <BellOff className="h-3 w-3" /> Not yet
+                                        </span>
+                                      )}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground text-xs">N/A</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="py-4">
+                                  <Badge className="bg-success/20 text-success border-success">
+                                    approved
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-sm text-muted-foreground py-4">
+                                  {format(parseISO(request.created_at), 'dd MMM yyyy')}
+                                </TableCell>
+                              </TableRow>
+                              
+                              {/* Nested cover requests - purple styling like original */}
+                              {covers.map((cover) => {
+                                const coverTypeInfo = REQUEST_TYPE_INFO[cover.request_type];
+                                const CoverIcon = coverTypeInfo.icon;
+                                
+                                return (
+                                  <TableRow 
+                                    key={cover.id} 
+                                    className="h-20 cursor-pointer transition-colors bg-purple-50 dark:bg-purple-950/20 hover:bg-purple-100 dark:hover:bg-purple-950/40 border-l-4 border-purple-400"
+                                    onClick={() => onViewRequest?.(cover.id)}
+                                  >
+                                    <TableCell className="font-medium py-4">
+                                      <div className="flex flex-col gap-1">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-purple-500">↳</span>
+                                          <span>{getStaffName(cover.user_id)}</span>
+                                        </div>
+                                        <span className="text-xs text-muted-foreground">
+                                          Covering: {getStaffName(request.user_id)}
+                                        </span>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="py-4">
+                                      <div className="flex items-center gap-2">
+                                        <CoverIcon className={`h-4 w-4 ${coverTypeInfo.color}`} />
+                                        <span className="text-sm">{coverTypeInfo.label}</span>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="py-4">
+                                      <div className="flex flex-col gap-0.5">
+                                        <span className="text-sm">{format(parseISO(cover.start_date), 'dd MMM yyyy')}</span>
+                                        <span className="text-xs text-muted-foreground">to {format(parseISO(cover.end_date), 'dd MMM yyyy')}</span>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="py-4">{getDisplayDays(cover)}</TableCell>
+                                    <TableCell className="max-w-[200px] py-4 text-sm">
+                                      Holiday: {format(parseISO(request.start_date), 'dd MMM yyyy')} – {format(parseISO(request.end_date), 'dd MMM yyyy')} ({getDisplayDays(request)} days)
+                                    </TableCell>
+                                    <TableCell className="py-4">
+                                      <span className="text-muted-foreground text-xs">N/A</span>
+                                    </TableCell>
+                                    <TableCell className="py-4">
+                                      <Badge className="bg-success/20 text-success border-success">
+                                        approved
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="text-sm text-muted-foreground py-4">
+                                      {format(parseISO(cover.created_at), 'dd MMM yyyy')}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </>
                           );
                         })}
                       </>
-                    );
-                  })}
-                </>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
     </Card>
   );
 }
