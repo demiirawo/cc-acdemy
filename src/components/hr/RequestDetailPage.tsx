@@ -788,12 +788,12 @@ Care Cuddle Team`;
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* No Cover Required Toggle - show for approved holiday requests */}
+              {/* Cover Status Section */}
               {linkedHoliday?.no_cover_required ? (
-                <div className="flex items-center gap-3 p-4 bg-muted border border-muted-foreground/20 rounded-lg">
-                  <UserX className="h-5 w-5 text-muted-foreground" />
+                <div className="flex items-center gap-3 p-4 bg-success/10 border border-success/20 rounded-lg">
+                  <CheckCircle2 className="h-5 w-5 text-success" />
                   <div className="flex-1">
-                    <p className="font-medium">No cover required</p>
+                    <p className="font-medium text-success">No cover required</p>
                     <p className="text-sm text-muted-foreground">This absence has been marked as not requiring cover</p>
                   </div>
                   <Button
@@ -823,7 +823,7 @@ Care Cuddle Team`;
                       <AlertCircle className="h-5 w-5 text-amber-600" />
                       <div className="flex-1">
                         <p className="font-medium">No cover arranged yet</p>
-                        <p className="text-sm text-muted-foreground">Click a staff member below to assign them as cover</p>
+                        <p className="text-sm text-muted-foreground">Click a staff member below to assign them as cover, or mark as not required</p>
                       </div>
                       {linkedHoliday && (
                         <Button
@@ -841,8 +841,8 @@ Care Cuddle Team`;
                 </>
               )}
 
-              {/* Assign Cover Section - only show for holiday requests when cover is required */}
-              {isHolidayRequest && !linkedHoliday?.no_cover_required && <div className="space-y-4">
+              {/* Assign Cover Section - always show for holiday requests */}
+              {isHolidayRequest && <div className="space-y-4">
                   <Separator />
                   
                   {/* Care Cuddle Bench Staff */}
