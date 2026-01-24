@@ -331,15 +331,46 @@ export function DashboardLiveView() {
                   </div>
                 ) : (
                   uniqueClients.map(client => {
-                    const clientSchedules = todaySchedules.filter(s => s.client_name === client);
+                    const clientSchedules = todaySchedules
+                      .filter(s => s.client_name === client)
+                      .sort((a, b) => parseISO(a.start_datetime).getTime() - parseISO(b.start_datetime).getTime());
                     
-                    // Group by staff to handle overlapping shifts
-                    const staffGroups = new Map<string, Schedule[]>();
-                    clientSchedules.forEach(s => {
-                      const existing = staffGroups.get(s.user_id) || [];
-                      existing.push(s);
-                      staffGroups.set(s.user_id, existing);
+                    // Allocate schedules to rows - pack sequential shifts on same row
+                    // Only create new row if shift truly overlaps (not just touches) an existing shift
+                    const rows: Schedule[][] = [];
+                    
+                    clientSchedules.forEach(schedule => {
+                      const scheduleStart = parseISO(schedule.start_datetime);
+                      const scheduleEnd = parseISO(schedule.end_datetime);
+                      
+                      // Find a row where this schedule can fit (doesn't overlap)
+                      let assignedRow = -1;
+                      for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
+                        const row = rows[rowIdx];
+                        // Check if schedule overlaps with any shift in this row
+                        const hasOverlap = row.some(existingSchedule => {
+                          const existingStart = parseISO(existingSchedule.start_datetime);
+                          const existingEnd = parseISO(existingSchedule.end_datetime);
+                          // Overlap means: new shift starts before existing ends AND new shift ends after existing starts
+                          return scheduleStart < existingEnd && scheduleEnd > existingStart;
+                        });
+                        
+                        if (!hasOverlap) {
+                          assignedRow = rowIdx;
+                          break;
+                        }
+                      }
+                      
+                      if (assignedRow === -1) {
+                        // Create new row
+                        rows.push([schedule]);
+                      } else {
+                        rows[assignedRow].push(schedule);
+                      }
                     });
+                    
+                    const rowCount = Math.max(1, rows.length);
+                    const ROW_HEIGHT = 50;
 
                     return (
                       <div key={client} className="flex border-b last:border-b-0">
@@ -352,7 +383,7 @@ export function DashboardLiveView() {
                         </div>
                         <div 
                           className="flex-1 relative"
-                          style={{ width: TIMELINE_WIDTH, minHeight: 50 }}
+                          style={{ width: TIMELINE_WIDTH, minHeight: ROW_HEIGHT * rowCount }}
                         >
                           {/* Hour grid lines */}
                           <div className="absolute inset-0 flex pointer-events-none">
@@ -375,14 +406,17 @@ export function DashboardLiveView() {
                             </div>
                           )}
 
-                          {/* Schedule bars */}
-                          {Array.from(staffGroups.entries()).map(([userId, userSchedules]) => (
-                            <div 
-                              key={userId} 
-                              className="relative"
-                              style={{ height: 50 }}
+                          {/* Schedule bars - packed into minimum rows */}
+                          {rows.map((rowSchedules, rowIdx) => (
+                            <div
+                              key={rowIdx}
+                              className="absolute left-0 right-0"
+                              style={{ 
+                                top: `${(rowIdx / rowCount) * 100}%`,
+                                height: `${100 / rowCount}%`,
+                              }}
                             >
-                              {userSchedules.map(schedule => {
+                              {rowSchedules.map(schedule => {
                                 const start = parseISO(schedule.start_datetime);
                                 const end = parseISO(schedule.end_datetime);
                                 const isCurrentlyWorking = now >= start && now < end;
