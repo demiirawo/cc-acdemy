@@ -522,6 +522,39 @@ export type Database = {
         }
         Relationships: []
       }
+      notification_settings: {
+        Row: {
+          created_at: string
+          days_before: number | null
+          id: string
+          is_enabled: boolean
+          notification_type: string
+          recipient_emails: string[] | null
+          send_time: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          days_before?: number | null
+          id?: string
+          is_enabled?: boolean
+          notification_type: string
+          recipient_emails?: string[] | null
+          send_time?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          days_before?: number | null
+          id?: string
+          is_enabled?: boolean
+          notification_type?: string
+          recipient_emails?: string[] | null
+          send_time?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       onboarding_completions: {
         Row: {
           completed_at: string

@@ -15,6 +15,7 @@ import { User, Mail, Shield, Bell, Palette, Download, Upload, Trash2, Key, Setti
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { AdminNotificationSettings } from "./AdminNotificationSettings";
 interface UserProfile {
   id: string;
   user_id: string;
@@ -375,11 +376,16 @@ export function SettingsPage({
 
           {/* Notifications Tab */}
           <TabsContent value="notifications" className="space-y-6">
+            {/* Admin Email Alerts - Only show for admins */}
+            {profile?.role === 'admin' && (
+              <AdminNotificationSettings />
+            )}
+
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Bell className="h-5 w-5" />
-                  Notification Preferences
+                  Personal Notification Preferences
                 </CardTitle>
                 <CardDescription>
                   Choose how you want to be notified about activity.
