@@ -156,15 +156,20 @@ const handler = async (req: Request): Promise<Response> => {
         }
       }
 
-      if (todayBirthdays.length > 0) {
-        const message = todayBirthdays.length === 1
-          ? `🎂 ${todayBirthdays[0]} has a birthday today!`
-          : `🎂 ${todayBirthdays.join(", ")} have birthdays today!`;
+      if (todayBirthdays.length > 0 || testType === "birthday_today") {
+        const displayItems = todayBirthdays.length > 0 
+          ? todayBirthdays 
+          : ["[TEST] John Smith", "[TEST] Jane Doe"];
+        const message = displayItems.length === 1
+          ? `🎂 ${displayItems[0]} has a birthday today!`
+          : `🎂 ${displayItems.join(", ")} have birthdays today!`;
         
         const result = await sendIndividualAlert(
           resend,
           adminEmails,
-          `🎂 Staff Birthday${todayBirthdays.length > 1 ? "s" : ""} Today!`,
+          testType === "birthday_today" && todayBirthdays.length === 0
+            ? `[TEST] 🎂 Staff Birthdays Today!`
+            : `🎂 Staff Birthday${displayItems.length > 1 ? "s" : ""} Today!`,
           "🎂 Happy Birthday!",
           "#ec4899",
           [message],
@@ -174,16 +179,9 @@ const handler = async (req: Request): Promise<Response> => {
         results.push({
           type: "birthday_today",
           title: "Birthdays",
-          items: todayBirthdays,
+          items: displayItems,
           emailSent: result.success,
           error: result.error
-        });
-      } else if (testType === "birthday_today") {
-        results.push({
-          type: "birthday_today",
-          title: "Birthdays",
-          items: [],
-          emailSent: false
         });
       }
     }
@@ -212,15 +210,20 @@ const handler = async (req: Request): Promise<Response> => {
         }
       }
 
-      if (todayAnniversaries.length > 0) {
-        const items = todayAnniversaries.length === 1
-          ? [`🎉 ${todayAnniversaries[0].name} celebrates ${todayAnniversaries[0].years} year${todayAnniversaries[0].years > 1 ? "s" : ""} today!`]
-          : todayAnniversaries.map(a => `🎉 ${a.name} - ${a.years} year${a.years > 1 ? "s" : ""}`);
+      if (todayAnniversaries.length > 0 || testType === "anniversary_today") {
+        const displayAnniversaries = todayAnniversaries.length > 0
+          ? todayAnniversaries
+          : [{ name: "[TEST] John Smith", years: 3 }, { name: "[TEST] Jane Doe", years: 5 }];
+        const items = displayAnniversaries.length === 1
+          ? [`🎉 ${displayAnniversaries[0].name} celebrates ${displayAnniversaries[0].years} year${displayAnniversaries[0].years > 1 ? "s" : ""} today!`]
+          : displayAnniversaries.map(a => `🎉 ${a.name} - ${a.years} year${a.years > 1 ? "s" : ""}`);
         
         const result = await sendIndividualAlert(
           resend,
           adminEmails,
-          `🎉 Work Anniversary Today!`,
+          testType === "anniversary_today" && todayAnniversaries.length === 0
+            ? `[TEST] 🎉 Work Anniversary Today!`
+            : `🎉 Work Anniversary Today!`,
           "🎉 Work Anniversary",
           "#8b5cf6",
           items,
@@ -230,16 +233,9 @@ const handler = async (req: Request): Promise<Response> => {
         results.push({
           type: "anniversary_today",
           title: "Anniversaries",
-          items: todayAnniversaries.map(a => a.name),
+          items: displayAnniversaries.map(a => a.name),
           emailSent: result.success,
           error: result.error
-        });
-      } else if (testType === "anniversary_today") {
-        results.push({
-          type: "anniversary_today",
-          title: "Anniversaries",
-          items: [],
-          emailSent: false
         });
       }
     }
@@ -260,19 +256,24 @@ const handler = async (req: Request): Promise<Response> => {
         .lte("start_date", futureDateStr)
         .order("start_date");
 
-      if (upcomingHolidays && upcomingHolidays.length > 0) {
-        const holidayItems = upcomingHolidays.map(h => {
-          const name = profileMap.get(h.user_id) || "Unknown";
-          const dateRange = h.start_date === h.end_date 
-            ? formatShortDate(h.start_date)
-            : `${formatShortDate(h.start_date)} - ${formatShortDate(h.end_date)}`;
-          return `📅 ${name}: ${dateRange}`;
-        });
+      const hasHolidays = upcomingHolidays && upcomingHolidays.length > 0;
+      if (hasHolidays || testType === "upcoming_holidays") {
+        const holidayItems = hasHolidays
+          ? upcomingHolidays.map(h => {
+              const name = profileMap.get(h.user_id) || "Unknown";
+              const dateRange = h.start_date === h.end_date 
+                ? formatShortDate(h.start_date)
+                : `${formatShortDate(h.start_date)} - ${formatShortDate(h.end_date)}`;
+              return `📅 ${name}: ${dateRange}`;
+            })
+          : [`📅 [TEST] John Smith: 25 Jan - 28 Jan`, `📅 [TEST] Jane Doe: 30 Jan`];
 
         const result = await sendIndividualAlert(
           resend,
           adminEmails,
-          `📅 ${upcomingHolidays.length} Upcoming Holiday${upcomingHolidays.length > 1 ? "s" : ""} (Next ${holidayDays} Days)`,
+          testType === "upcoming_holidays" && !hasHolidays
+            ? `[TEST] 📅 Upcoming Holidays (Next ${holidayDays} Days)`
+            : `📅 ${upcomingHolidays?.length || 2} Upcoming Holiday${(upcomingHolidays?.length || 2) > 1 ? "s" : ""} (Next ${holidayDays} Days)`,
           "📅 Upcoming Holidays",
           "#3b82f6",
           holidayItems,
@@ -285,13 +286,6 @@ const handler = async (req: Request): Promise<Response> => {
           items: holidayItems,
           emailSent: result.success,
           error: result.error
-        });
-      } else if (testType === "upcoming_holidays") {
-        results.push({
-          type: "upcoming_holidays",
-          title: "Upcoming Holidays",
-          items: [],
-          emailSent: false
         });
       }
     }
@@ -362,17 +356,22 @@ const handler = async (req: Request): Promise<Response> => {
         .lte("start_date", clientNotifFutureDateStr)
         .order("start_date");
 
-      if (pendingClientNotification && pendingClientNotification.length > 0) {
-        const notificationItems = pendingClientNotification.map(r => {
-          const name = profileMap.get(r.user_id) || "Unknown";
-          const daysUntil = Math.ceil((new Date(r.start_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-          return `🚨 ${name} - holiday starts in ${daysUntil} day${daysUntil !== 1 ? "s" : ""} (${formatShortDate(r.start_date)}) - CLIENT NOT NOTIFIED`;
-        });
+      const hasPendingNotifications = pendingClientNotification && pendingClientNotification.length > 0;
+      if (hasPendingNotifications || testType === "holiday_no_client_notification") {
+        const notificationItems = hasPendingNotifications
+          ? pendingClientNotification.map(r => {
+              const name = profileMap.get(r.user_id) || "Unknown";
+              const daysUntil = Math.ceil((new Date(r.start_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+              return `🚨 ${name} - holiday starts in ${daysUntil} day${daysUntil !== 1 ? "s" : ""} (${formatShortDate(r.start_date)}) - CLIENT NOT NOTIFIED`;
+            })
+          : [`🚨 [TEST] John Smith - holiday starts in 3 days (27 Jan) - CLIENT NOT NOTIFIED`, `🚨 [TEST] Jane Doe - holiday starts in 5 days (29 Jan) - CLIENT NOT NOTIFIED`];
 
         const result = await sendIndividualAlert(
           resend,
           adminEmails,
-          `🚨 ${pendingClientNotification.length} Holiday${pendingClientNotification.length > 1 ? "s" : ""} Without Client Notification`,
+          testType === "holiday_no_client_notification" && !hasPendingNotifications
+            ? `[TEST] 🚨 Holidays Without Client Notification`
+            : `🚨 ${pendingClientNotification?.length || 2} Holiday${(pendingClientNotification?.length || 2) > 1 ? "s" : ""} Without Client Notification`,
           "🚨 Action Required: Client Notification Missing",
           "#ef4444",
           notificationItems,
@@ -385,13 +384,6 @@ const handler = async (req: Request): Promise<Response> => {
           items: notificationItems,
           emailSent: result.success,
           error: result.error
-        });
-      } else if (testType === "holiday_no_client_notification") {
-        results.push({
-          type: "holiday_no_client_notification",
-          title: "Missing Client Notifications",
-          items: [],
-          emailSent: false
         });
       }
     }
