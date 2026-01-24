@@ -10,6 +10,7 @@ import ProjectView from "./components/ProjectView";
 
 import { PublicPageView } from "./components/PublicPageView";
 import { PublicClientSchedule } from "./components/PublicClientSchedule";
+import { PublicLiveView } from "./components/PublicLiveView";
 
 const queryClient = new QueryClient();
 
@@ -25,6 +26,7 @@ const App = () => (
           <Route path="/view/:viewName" element={<Index />} />
           
           <Route path="/public/schedule/:clientName" element={<PublicClientSchedule />} />
+          <Route path="/embed/live-view" element={<PublicLiveView />} />
           <Route path="/public/:token" element={<PublicPageView />} />
           <Route path="/project/:projectId" element={<ProjectView />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
