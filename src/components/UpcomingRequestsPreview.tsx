@@ -79,17 +79,17 @@ export function UpcomingRequestsPreview({
   const thirtyDaysFromNow = addDays(today, 30);
   const thirtyDaysISO = thirtyDaysFromNow.toISOString().split('T')[0];
 
-  // Fetch approved staff requests - filter in database for efficiency
+  // Fetch approved and pending staff requests - filter in database for efficiency
   const {
     data: requests = [],
     isLoading
   } = useQuery({
-    queryKey: ["upcoming-approved-requests", todayISO],
+    queryKey: ["upcoming-requests", todayISO],
     queryFn: async () => {
       const {
         data,
         error
-      } = await supabase.from("staff_requests").select("*").eq("status", "approved").gte("end_date", todayISO) // End date must be today or later
+      } = await supabase.from("staff_requests").select("*").in("status", ["approved", "pending"]).gte("end_date", todayISO) // End date must be today or later
       .lte("start_date", thirtyDaysISO) // Start date must be within 30 days
       .order("start_date", {
         ascending: false
@@ -172,7 +172,7 @@ export function UpcomingRequestsPreview({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Calendar className="h-5 w-5" />
-            Upcoming Approved Requests
+            Upcoming Requests
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -190,19 +190,19 @@ export function UpcomingRequestsPreview({
             <AccordionTrigger className="hover:no-underline py-0">
               <CardTitle className="flex items-center gap-2 text-lg">
                 
-                Upcoming Approved Requests
+                Upcoming Requests
                 
               </CardTitle>
             </AccordionTrigger>
             <p className="text-sm text-muted-foreground mt-1">
-              Approved requests in the next 30 days
+              Approved and pending requests in the next 30 days
             </p>
           </CardHeader>
           <AccordionContent>
             <CardContent className="pt-4">
               {topLevelRequests.length === 0 ? <div className="text-center py-8 text-muted-foreground">
                   <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  <p>No approved requests in the next 30 days</p>
+                  <p>No upcoming requests in the next 30 days</p>
                 </div> : <Table>
                   <TableHeader>
                     <TableRow>
@@ -271,9 +271,15 @@ export function UpcomingRequestsPreview({
                                     </span> : <span className="text-muted-foreground text-xs">N/A</span>}
                                 </TableCell>
                                 <TableCell className="py-4">
-                                  <Badge className="bg-success/20 text-success border-success">
-                                    approved
-                                  </Badge>
+                                  {request.status === 'approved' ? (
+                                    <Badge className="bg-success/20 text-success border-success">
+                                      approved
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="bg-warning/20 text-warning border-warning">
+                                      pending
+                                    </Badge>
+                                  )}
                                 </TableCell>
                                 <TableCell className="text-sm text-muted-foreground py-4">
                                   {format(parseISO(request.created_at), 'dd MMM yyyy')}
@@ -316,9 +322,15 @@ export function UpcomingRequestsPreview({
                                       <span className="text-muted-foreground text-xs">N/A</span>
                                     </TableCell>
                                     <TableCell className="py-4">
-                                      <Badge className="bg-success/20 text-success border-success">
-                                        approved
-                                      </Badge>
+                                      {cover.status === 'approved' ? (
+                                        <Badge className="bg-success/20 text-success border-success">
+                                          approved
+                                        </Badge>
+                                      ) : (
+                                        <Badge className="bg-warning/20 text-warning border-warning">
+                                          pending
+                                        </Badge>
+                                      )}
                                     </TableCell>
                                     <TableCell className="text-sm text-muted-foreground py-4">
                                       {format(parseISO(cover.created_at), 'dd MMM yyyy')}
