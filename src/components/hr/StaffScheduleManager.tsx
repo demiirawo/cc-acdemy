@@ -18,7 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar, Link2, Check, X, Code, Copy } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar, Link2, Check, X } from "lucide-react";
 import { UnifiedShiftEditor, ShiftToEdit } from "./UnifiedShiftEditor";
 import { LiveTimelineView } from "./LiveTimelineView";
 
@@ -213,8 +213,6 @@ export function StaffScheduleManager() {
     : "View only";
   const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   const [showLiveView, setShowLiveView] = useState(false);
-  const [isIframeDialogOpen, setIsIframeDialogOpen] = useState(false);
-  const [iframeCopied, setIframeCopied] = useState(false);
   const [isRecurringDialogOpen, setIsRecurringDialogOpen] = useState(false);
   const [isEditPatternDialogOpen, setIsEditPatternDialogOpen] = useState(false);
   const [editingPattern, setEditingPattern] = useState<RecurringPattern | null>(null);
@@ -301,19 +299,6 @@ export function StaffScheduleManager() {
     recurrence_interval: "weekly" as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off',
     shift_type: ""
   });
-
-  // Generate iframe embed code for Live View
-  const liveViewIframeCode = useMemo(() => {
-    const baseUrl = window.location.origin;
-    return `<iframe src="${baseUrl}/embed/live-view" width="100%" height="600" frameborder="0" style="border: none; border-radius: 8px;"></iframe>`;
-  }, []);
-
-  const handleCopyIframeCode = () => {
-    navigator.clipboard.writeText(liveViewIframeCode);
-    setIframeCopied(true);
-    toast.success("Iframe code copied to clipboard!");
-    setTimeout(() => setIframeCopied(false), 2000);
-  };
 
   const weekDays = useMemo(() => {
     return eachDayOfInterval({
@@ -2163,17 +2148,6 @@ export function StaffScheduleManager() {
                 : (viewMode === "staff" ? "Staff Schedule Timeline" : "Client Schedule Timeline")
               }
             </div>
-            {showLiveView && isAdmin && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsIframeDialogOpen(true)}
-                className="gap-2"
-              >
-                <Code className="h-4 w-4" />
-                <span className="hidden sm:inline">Embed</span>
-              </Button>
-            )}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -2974,52 +2948,6 @@ export function StaffScheduleManager() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Iframe Embed Dialog */}
-      <Dialog open={isIframeDialogOpen} onOpenChange={setIsIframeDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Code className="h-5 w-5" />
-              Embed Live View
-            </DialogTitle>
-            <DialogDescription>
-              Copy the iframe code below to embed the Live View on another website or dashboard.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="relative">
-              <Textarea
-                readOnly
-                value={liveViewIframeCode}
-                className="font-mono text-sm min-h-[100px] pr-12"
-              />
-              <Button
-                size="icon"
-                variant="ghost"
-                className="absolute top-2 right-2"
-                onClick={handleCopyIframeCode}
-              >
-                {iframeCopied ? (
-                  <Check className="h-4 w-4 text-green-600" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-            <div className="text-sm text-muted-foreground">
-              <p><strong>Tip:</strong> Adjust the <code>width</code> and <code>height</code> attributes to fit your layout.</p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsIframeDialogOpen(false)}>
-              Close
-            </Button>
-            <Button onClick={handleCopyIframeCode}>
-              {iframeCopied ? "Copied!" : "Copy Code"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
