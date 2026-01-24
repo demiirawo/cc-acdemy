@@ -2614,9 +2614,33 @@ export function StaffScheduleManager() {
         </CardContent>
       </Card>
 
-      {/* Legend - Dynamic based on view mode */}
+      {/* Legend - Dynamic based on view mode and live view */}
       <div className="flex flex-wrap gap-4 text-sm">
-        {viewMode === "staff" && (
+        {showLiveView ? (
+          // Live View Legend - simpler, focused on what's visible in live timeline
+          <>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-primary/20 border-2 border-primary/60" />
+              <span>Scheduled Shift</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-violet-100 border-2 border-violet-400" />
+              <span className="flex items-center gap-1">Recurring Shift <Infinity className="h-3 w-3 text-violet-500" /></span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-cyan-100 border-2 border-cyan-500" />
+              <span className="flex items-center gap-1">Providing Cover <Users className="h-3 w-3 text-cyan-600" /></span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded ring-2 ring-green-500 bg-green-50" />
+              <span>Currently Working</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded bg-amber-50 border border-amber-200" />
+              <span className="flex items-center gap-1">On Holiday <Palmtree className="h-3 w-3 text-amber-600" /></span>
+            </div>
+          </>
+        ) : viewMode === "staff" ? (
           <>
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 rounded bg-primary/10 border border-primary/30" />
@@ -2647,8 +2671,7 @@ export function StaffScheduleManager() {
               <span>Covering for Someone</span>
             </div>
           </>
-        )}
-        {viewMode === "client" && (
+        ) : (
           <>
             {/* Shift type colors - show a sample of the color-coded shift types */}
             <div className="flex items-center gap-2">
