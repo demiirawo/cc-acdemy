@@ -2635,10 +2635,6 @@ export function StaffScheduleManager() {
               <div className="w-4 h-4 rounded ring-2 ring-green-500 bg-green-50" />
               <span>Currently Working</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded bg-amber-50 border border-amber-200" />
-              <span className="flex items-center gap-1">On Holiday <Palmtree className="h-3 w-3 text-amber-600" /></span>
-            </div>
           </>
         ) : viewMode === "staff" ? (
           <>

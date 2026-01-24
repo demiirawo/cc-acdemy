@@ -1,5 +1,5 @@
 import { format, parseISO, differenceInMinutes, startOfDay, endOfDay, isSameDay, isWithinInterval, getDay, differenceInWeeks, startOfWeek, isBefore, isAfter } from "date-fns";
-import { Clock, Infinity, Palmtree, UserCheck } from "lucide-react";
+import { Infinity, UserCheck } from "lucide-react";
 import { useMemo } from "react";
 
 interface Schedule {
@@ -309,9 +309,11 @@ export function LiveTimelineView({
     );
   };
   
-  // Get all staff with shifts today (not just currently working)
+  // Get all staff with shifts today (excluding those on holiday)
   const getRelevantStaff = () => {
     return filteredStaff.filter(staff => {
+      // Exclude staff on holiday
+      if (isStaffOnHoliday(staff.user_id, now)) return false;
       return todaySchedules.some(s => s.user_id === staff.user_id);
     });
   };
@@ -384,19 +386,14 @@ export function LiveTimelineView({
             return start < timelineEnd && end > timelineStart;
           });
           
-          const onHoliday = isStaffOnHoliday(staff.user_id, now);
-          
           return (
             <div key={staff.user_id} className="flex mb-1">
               {/* Name column */}
               <div 
-                className={`flex-shrink-0 p-2 text-sm font-medium truncate border-r flex items-center gap-1 ${
-                  onHoliday ? 'text-amber-700' : ''
-                }`}
+                className="flex-shrink-0 p-2 text-sm font-medium truncate border-r flex items-center gap-1"
                 style={{ width: NAME_COLUMN_WIDTH }}
               >
                 {staff.display_name || staff.email}
-                {onHoliday && <Palmtree className="h-3 w-3 text-amber-600" />}
               </div>
               
               {/* Timeline row */}
@@ -424,18 +421,12 @@ export function LiveTimelineView({
                 )}
                 
                 {/* Schedule bars */}
-                {!onHoliday && staffSchedules.map(schedule => {
+                {staffSchedules.map(schedule => {
                   const start = parseISO(schedule.start_datetime);
                   const end = parseISO(schedule.end_datetime);
                   const isCurrentlyWorking = now >= start && now < end;
                   return renderScheduleBar(schedule, isCurrentlyWorking, true);
                 })}
-                
-                {onHoliday && (
-                  <div className="absolute inset-0 flex items-center justify-center text-amber-700 text-sm bg-amber-50/80 rounded">
-                    <Palmtree className="h-4 w-4 mr-1" /> On holiday
-                  </div>
-                )}
               </div>
             </div>
           );
