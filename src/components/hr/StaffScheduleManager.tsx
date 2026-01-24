@@ -305,7 +305,7 @@ export function StaffScheduleManager() {
   // Generate iframe embed code for Live View
   const liveViewIframeCode = useMemo(() => {
     const baseUrl = window.location.origin;
-    return `<iframe src="${baseUrl}/view/schedule?embed=live" width="100%" height="600" frameborder="0" style="border: none; border-radius: 8px;"></iframe>`;
+    return `<iframe src="${baseUrl}/embed/live-view" width="100%" height="600" frameborder="0" style="border: none; border-radius: 8px;"></iframe>`;
   }, []);
 
   const handleCopyIframeCode = () => {
