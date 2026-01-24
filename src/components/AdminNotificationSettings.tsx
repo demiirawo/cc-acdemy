@@ -64,6 +64,13 @@ const NOTIFICATION_CONFIG: Record<string, {
     color: "text-red-500",
     showDaysBefore: true,
   },
+  shift_change: {
+    title: "Shift Changes",
+    description: "Real-time alert when shifts or recurring patterns are created, modified, or deleted",
+    icon: <Bell className="h-5 w-5" />,
+    color: "text-indigo-500",
+    showDaysBefore: false,
+  },
 };
 
 export function AdminNotificationSettings() {
