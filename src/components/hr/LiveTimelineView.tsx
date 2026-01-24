@@ -87,11 +87,11 @@ export function LiveTimelineView({
   const NAME_COLUMN_WIDTH = 160;
   const ROW_HEIGHT = 50;
   
-  // Calculate timeline start and end for today
-  const timelineStart = new Date(today);
+  // Calculate timeline start and end for today - use 'now' as base to ensure same date context
+  const timelineStart = new Date(now);
   timelineStart.setHours(TIMELINE_START_HOUR, 0, 0, 0);
   
-  const timelineEnd = new Date(today);
+  const timelineEnd = new Date(now);
   timelineEnd.setHours(TIMELINE_END_HOUR, 0, 0, 0);
   
   // Generate hour markers

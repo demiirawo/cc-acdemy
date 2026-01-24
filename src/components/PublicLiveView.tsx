@@ -67,10 +67,11 @@ export function PublicLiveView() {
   const TIMELINE_WIDTH = TIMELINE_HOURS * HOUR_WIDTH;
   const NAME_COLUMN_WIDTH = 160;
 
-  const timelineStart = new Date(today);
+  // Use 'now' as base to ensure same date context for timeline positioning
+  const timelineStart = new Date(now);
   timelineStart.setHours(TIMELINE_START_HOUR, 0, 0, 0);
 
-  const timelineEnd = new Date(today);
+  const timelineEnd = new Date(now);
   timelineEnd.setHours(TIMELINE_END_HOUR, 0, 0, 0);
 
   // Fetch all data needed for the live view
