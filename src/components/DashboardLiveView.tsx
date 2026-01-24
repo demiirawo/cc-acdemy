@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,9 +50,19 @@ interface StaffRequest {
   linked_holiday_id: string | null;
 }
 export function DashboardLiveView() {
-  const now = new Date();
-  const today = startOfDay(now);
-  const todayEnd = endOfDay(now);
+  // Use state for current time to enable updates
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+  
+  // Update current time every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60000); // Update every minute
+    return () => clearInterval(interval);
+  }, []);
+
+  const today = startOfDay(currentTime);
+  const todayEnd = endOfDay(currentTime);
 
   // Timeline configuration
   const TIMELINE_START_HOUR = 6;
@@ -273,12 +283,12 @@ export function DashboardLiveView() {
   const isLoading = schedulesLoading || patternsLoading || staffLoading;
 
   // Calculate now indicator position
-  const nowPosition = now >= timelineStart && now <= timelineEnd ? differenceInMinutes(now, timelineStart) / (TIMELINE_HOURS * 60) * 100 : null;
+  const nowPosition = currentTime >= timelineStart && currentTime <= timelineEnd ? differenceInMinutes(currentTime, timelineStart) / (TIMELINE_HOURS * 60) * 100 : null;
   return <Card className="mb-6 border-primary/30">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-lg">
           
-          Live View - {format(now, "EEEE, MMMM d")} (Now: {format(now, "HH:mm")})
+          Live View - {format(currentTime, "EEEE, MMMM d")} (Now: {format(currentTime, "HH:mm")})
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -301,7 +311,7 @@ export function DashboardLiveView() {
               }}>
                     <div className="flex">
                       {hourMarkers.map((hour, i) => {
-                    const isNow = now.getHours() === hour.getHours();
+                    const isNow = currentTime.getHours() === hour.getHours();
                     return <div key={i} className={`text-xs text-center border-r ${isNow ? 'bg-primary/20 font-bold text-primary' : ''}`} style={{
                       width: HOUR_WIDTH
                     }}>
@@ -385,8 +395,8 @@ export function DashboardLiveView() {
                               {rowSchedules.map(schedule => {
                       const start = parseISO(schedule.start_datetime);
                       const end = parseISO(schedule.end_datetime);
-                      const isCurrentlyWorking = now >= start && now < end;
-                      const isPast = now >= end;
+                      const isCurrentlyWorking = currentTime >= start && currentTime < end;
+                      const isPast = currentTime >= end;
                       const isFromPattern = schedule.id.startsWith("pattern-");
                       const isCover = schedule.is_cover_shift;
                       const leftPercent = Math.max(0, differenceInMinutes(start, timelineStart) / (TIMELINE_HOURS * 60) * 100);
