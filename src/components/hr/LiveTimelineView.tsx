@@ -1,5 +1,6 @@
-import { format, parseISO, differenceInMinutes, startOfDay, endOfDay, isSameDay } from "date-fns";
-import { Clock, Infinity, Palmtree } from "lucide-react";
+import { format, parseISO, differenceInMinutes, startOfDay, endOfDay, isSameDay, isWithinInterval, getDay, differenceInWeeks, startOfWeek, isBefore, isAfter } from "date-fns";
+import { Clock, Infinity, Palmtree, UserCheck } from "lucide-react";
+import { useMemo } from "react";
 
 interface Schedule {
   id: string;
@@ -8,12 +9,46 @@ interface Schedule {
   start_datetime: string;
   end_datetime: string;
   shift_type?: string | null;
+  is_cover_shift?: boolean;
+  covering_for_name?: string;
 }
 
 interface StaffMember {
   user_id: string;
   display_name: string | null;
   email: string | null;
+}
+
+interface Holiday {
+  id: string;
+  user_id: string;
+  start_date: string;
+  end_date: string;
+  status: string;
+}
+
+interface StaffRequest {
+  id: string;
+  user_id: string;
+  request_type: string;
+  swap_with_user_id: string | null;
+  start_date: string;
+  end_date: string;
+  status: string;
+  linked_holiday_id: string | null;
+}
+
+interface RecurringPattern {
+  id: string;
+  user_id: string;
+  client_name: string;
+  days_of_week: number[];
+  start_time: string;
+  end_time: string;
+  start_date: string;
+  end_date: string | null;
+  recurrence_interval: string;
+  shift_type: string | null;
 }
 
 interface LiveTimelineViewProps {
@@ -23,6 +58,9 @@ interface LiveTimelineViewProps {
   allSchedules: Schedule[];
   isStaffOnHoliday: (userId: string, date: Date) => boolean;
   getStaffName: (userId: string) => string;
+  holidays: Holiday[];
+  staffRequests: StaffRequest[];
+  recurringPatterns: RecurringPattern[];
 }
 
 export function LiveTimelineView({
@@ -32,6 +70,9 @@ export function LiveTimelineView({
   allSchedules,
   isStaffOnHoliday,
   getStaffName,
+  holidays,
+  staffRequests,
+  recurringPatterns,
 }: LiveTimelineViewProps) {
   const now = new Date();
   const today = startOfDay(now);
@@ -74,13 +115,113 @@ export function LiveTimelineView({
   // Get current hour for highlighting
   const currentHour = now.getHours();
   
-  // Filter schedules to only include those for today
-  const todaySchedules = allSchedules.filter(s => {
-    const start = parseISO(s.start_datetime);
-    const end = parseISO(s.end_datetime);
-    // Include if shift overlaps with today
-    return start < todayEnd && end > today;
-  });
+  // Generate cover shifts for staff who are providing holiday cover today
+  const coverShifts = useMemo(() => {
+    const covers: Schedule[] = [];
+    const dateStr = format(today, "yyyy-MM-dd");
+    const dayOfWeek = getDay(today);
+    
+    // Find all approved cover requests for today
+    staffRequests.forEach(req => {
+      if (req.status !== 'approved') return;
+      
+      const reqStart = startOfDay(parseISO(req.start_date));
+      const reqEnd = endOfDay(parseISO(req.end_date));
+      if (!isWithinInterval(today, { start: reqStart, end: reqEnd })) return;
+      
+      let coveredUserId: string | null = null;
+      
+      // Overtime covering a holiday
+      if (['overtime', 'overtime_standard', 'overtime_double_up'].includes(req.request_type) && req.linked_holiday_id) {
+        const linkedHoliday = holidays.find(h => h.id === req.linked_holiday_id);
+        if (linkedHoliday) {
+          coveredUserId = linkedHoliday.user_id;
+        }
+      }
+      
+      // Shift swap covering someone
+      if (req.request_type === 'shift_swap' && req.swap_with_user_id) {
+        coveredUserId = req.swap_with_user_id;
+      }
+      
+      if (!coveredUserId) return;
+      
+      // Find what shifts the covered person would have had today
+      // First check allSchedules for their regular shifts
+      let coveredSchedules = allSchedules.filter(s => {
+        if (s.user_id !== coveredUserId) return false;
+        const scheduleDate = format(parseISO(s.start_datetime), "yyyy-MM-dd");
+        return scheduleDate === dateStr;
+      });
+      
+      // If no schedules found, check recurring patterns
+      if (coveredSchedules.length === 0) {
+        const matchingPatterns = recurringPatterns.filter(pattern => {
+          if (pattern.user_id !== coveredUserId) return false;
+          const patternStartDate = parseISO(pattern.start_date);
+          const patternEndDate = pattern.end_date ? parseISO(pattern.end_date) : null;
+          
+          if (isBefore(today, patternStartDate)) return false;
+          if (patternEndDate && isAfter(today, patternEndDate)) return false;
+          
+          if (pattern.recurrence_interval === 'daily') return true;
+          if (pattern.recurrence_interval === 'weekly') return pattern.days_of_week.includes(dayOfWeek);
+          if (pattern.recurrence_interval === 'biweekly') {
+            if (!pattern.days_of_week.includes(dayOfWeek)) return false;
+            const weeksDiff = differenceInWeeks(startOfWeek(today, { weekStartsOn: 1 }), startOfWeek(patternStartDate, { weekStartsOn: 1 }));
+            return weeksDiff % 2 === 0;
+          }
+          return false;
+        });
+        
+        coveredSchedules = matchingPatterns.map(pattern => ({
+          id: `pattern-cover-${pattern.id}-${dateStr}`,
+          user_id: pattern.user_id,
+          client_name: pattern.client_name,
+          start_datetime: `${dateStr}T${pattern.start_time}`,
+          end_datetime: `${dateStr}T${pattern.end_time}`,
+          shift_type: pattern.shift_type
+        }));
+      }
+      
+      // Create cover shifts for the covering staff member
+      coveredSchedules.forEach(coveredSchedule => {
+        covers.push({
+          id: `cover-${req.id}-${coveredSchedule.id}`,
+          user_id: req.user_id, // The person doing the covering
+          client_name: coveredSchedule.client_name,
+          start_datetime: coveredSchedule.start_datetime,
+          end_datetime: coveredSchedule.end_datetime,
+          shift_type: coveredSchedule.shift_type,
+          is_cover_shift: true,
+          covering_for_name: getStaffName(coveredUserId!)
+        });
+      });
+    });
+    
+    return covers;
+  }, [staffRequests, holidays, allSchedules, recurringPatterns, today, getStaffName]);
+  
+  // Combine regular schedules with cover shifts for today
+  const todaySchedules = useMemo(() => {
+    const regularSchedules = allSchedules.filter(s => {
+      const start = parseISO(s.start_datetime);
+      const end = parseISO(s.end_datetime);
+      return start < todayEnd && end > today;
+    });
+    
+    // Filter out duplicate cover shifts (if the cover shift matches an existing schedule)
+    const existingKeys = new Set(
+      regularSchedules.map(s => `${s.user_id}-${format(parseISO(s.start_datetime), "yyyy-MM-dd-HH:mm")}`)
+    );
+    
+    const uniqueCoverShifts = coverShifts.filter(cs => {
+      const key = `${cs.user_id}-${format(parseISO(cs.start_datetime), "yyyy-MM-dd-HH:mm")}`;
+      return !existingKeys.has(key);
+    });
+    
+    return [...regularSchedules, ...uniqueCoverShifts];
+  }, [allSchedules, coverShifts, today, todayEnd]);
   
   // Helper to render a schedule bar
   const renderScheduleBar = (
@@ -91,6 +232,7 @@ export function LiveTimelineView({
     const start = parseISO(schedule.start_datetime);
     const end = parseISO(schedule.end_datetime);
     const isFromPattern = schedule.id.startsWith('pattern-');
+    const isCoverShift = schedule.is_cover_shift;
     
     // Clamp to timeline bounds
     const clampedStart = start < timelineStart ? timelineStart : start;
@@ -112,6 +254,16 @@ export function LiveTimelineView({
     const isPast = end < now;
     const isFuture = start > now;
     
+    // Determine bar styling
+    let barClasses = '';
+    if (isCoverShift) {
+      barClasses = 'bg-cyan-100 border-2 border-cyan-500';
+    } else if (isFromPattern) {
+      barClasses = 'bg-violet-100 border-2 border-violet-400';
+    } else {
+      barClasses = 'bg-primary/20 border-2 border-primary/60';
+    }
+    
     return (
       <div
         key={schedule.id}
@@ -121,24 +273,29 @@ export function LiveTimelineView({
             : isPast
             ? 'opacity-60'
             : ''
-        } ${
-          isFromPattern
-            ? 'bg-violet-100 border-2 border-violet-400'
-            : 'bg-primary/20 border-2 border-primary/60'
-        }`}
+        } ${barClasses}`}
         style={{
           left: `${leftPercent}%`,
           width: `${widthPercent}%`,
           minWidth: '50px',
         }}
-        title={`${displayName}: ${format(start, "HH:mm")} - ${format(end, "HH:mm")}`}
+        title={`${displayName}: ${format(start, "HH:mm")} - ${format(end, "HH:mm")}${isCoverShift ? ` (Covering for ${schedule.covering_for_name})` : ''}`}
       >
         <div className="font-semibold truncate flex items-center gap-1">
           {displayName}
-          {isFromPattern && <Infinity className="h-3 w-3 text-violet-500 flex-shrink-0" />}
+          {isFromPattern && !isCoverShift && <Infinity className="h-3 w-3 text-violet-500 flex-shrink-0" />}
+          {isCoverShift && <UserCheck className="h-3 w-3 text-cyan-600 flex-shrink-0" />}
         </div>
-        <div className={`text-[10px] ${isCurrentlyWorking ? 'text-green-700 font-semibold' : 'text-muted-foreground'}`}>
-          {isCurrentlyWorking ? (
+        <div className={`text-[10px] ${isCurrentlyWorking ? 'text-green-700 font-semibold' : isCoverShift ? 'text-cyan-700' : 'text-muted-foreground'}`}>
+          {isCoverShift ? (
+            isCurrentlyWorking ? (
+              <>Covering · Ends {format(end, "HH:mm")}</>
+            ) : isPast ? (
+              <>Covered · Ended {format(end, "HH:mm")}</>
+            ) : (
+              <>Cover · {format(start, "HH:mm")} - {format(end, "HH:mm")}</>
+            )
+          ) : isCurrentlyWorking ? (
             <>Working now · Ends {format(end, "HH:mm")}</>
           ) : isPast ? (
             <>Ended {format(end, "HH:mm")}</>

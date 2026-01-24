@@ -2158,6 +2158,9 @@ export function StaffScheduleManager() {
               allSchedules={allSchedules}
               isStaffOnHoliday={isStaffOnHoliday}
               getStaffName={getStaffName}
+              holidays={holidays}
+              staffRequests={staffRequests}
+              recurringPatterns={recurringPatterns}
             />
           ) : (
             /* Regular Weekly Gantt View */
