@@ -491,6 +491,37 @@ export function RequestDetailPage({
     }
   });
 
+  // Unassign cover mutation
+  const unassignCoverMutation = useMutation({
+    mutationFn: async (coverUserId: string) => {
+      if (!request) throw new Error("No request");
+      
+      // Find and delete the cover request for this user
+      const { error } = await supabase
+        .from("staff_requests")
+        .delete()
+        .eq("request_type", "shift_swap")
+        .eq("user_id", coverUserId)
+        .eq("swap_with_user_id", request.user_id)
+        .eq("start_date", request.start_date)
+        .eq("end_date", request.end_date);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      refetchCoveringStaff();
+      queryClient.invalidateQueries({ queryKey: ["covering-staff", request?.id] });
+      queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-holidays"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-cover-status"] });
+      queryClient.invalidateQueries({ queryKey: ["linked-holidays-for-requests"] });
+      toast.success("Cover unassigned");
+    },
+    onError: (error) => {
+      toast.error("Failed to unassign cover: " + error.message);
+    }
+  });
+
   // Toggle no cover required mutation
   const toggleNoCoverMutation = useMutation({
     mutationFn: async (noCoverRequired: boolean) => {
@@ -877,7 +908,18 @@ Care Cuddle Team`;
                             <div className="flex flex-wrap gap-2 mt-2">
                               {benchStaff.map(staff => {
                         const isAssigned = coveredUserIds.includes(staff.user_id);
-                        return <Button key={staff.user_id} variant={isAssigned ? "secondary" : "outline"} size="sm" disabled={isAssigned || assignCoverMutation.isPending} onClick={() => assignCoverMutation.mutate(staff.user_id)} className={isAssigned ? "bg-success/20 text-success border-success" : "hover:bg-purple-50 hover:border-purple-300"}>
+                        const isPending = assignCoverMutation.isPending || unassignCoverMutation.isPending;
+                        return <Button 
+                          key={staff.user_id} 
+                          variant={isAssigned ? "secondary" : "outline"} 
+                          size="sm" 
+                          disabled={isPending} 
+                          onClick={() => isAssigned 
+                            ? unassignCoverMutation.mutate(staff.user_id) 
+                            : assignCoverMutation.mutate(staff.user_id)
+                          } 
+                          className={isAssigned ? "bg-success/20 text-success border-success hover:bg-destructive/20 hover:text-destructive hover:border-destructive" : "hover:bg-purple-50 hover:border-purple-300"}
+                        >
                                     {isAssigned && <CheckCircle2 className="h-3 w-3 mr-1" />}
                                     {staff.display_name || staff.email}
                                   </Button>;
@@ -893,7 +935,18 @@ Care Cuddle Team`;
                             <div className="flex flex-wrap gap-2 mt-2">
                               {otherStaff.map(staff => {
                         const isAssigned = coveredUserIds.includes(staff.user_id);
-                        return <Button key={staff.user_id} variant={isAssigned ? "secondary" : "outline"} size="sm" disabled={isAssigned || assignCoverMutation.isPending} onClick={() => assignCoverMutation.mutate(staff.user_id)} className={isAssigned ? "bg-success/20 text-success border-success" : "hover:bg-blue-50 hover:border-blue-300"}>
+                        const isPending = assignCoverMutation.isPending || unassignCoverMutation.isPending;
+                        return <Button 
+                          key={staff.user_id} 
+                          variant={isAssigned ? "secondary" : "outline"} 
+                          size="sm" 
+                          disabled={isPending} 
+                          onClick={() => isAssigned 
+                            ? unassignCoverMutation.mutate(staff.user_id) 
+                            : assignCoverMutation.mutate(staff.user_id)
+                          } 
+                          className={isAssigned ? "bg-success/20 text-success border-success hover:bg-destructive/20 hover:text-destructive hover:border-destructive" : "hover:bg-blue-50 hover:border-blue-300"}
+                        >
                                     {isAssigned && <CheckCircle2 className="h-3 w-3 mr-1" />}
                                     {staff.display_name || staff.email}
                                   </Button>;
