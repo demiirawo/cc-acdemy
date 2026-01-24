@@ -51,3 +51,6 @@ verify_jwt = false
 
 [functions.send-request-email]
 verify_jwt = true
+
+[functions.daily-admin-alerts]
+verify_jwt = false
