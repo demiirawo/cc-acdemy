@@ -164,12 +164,18 @@ const handler = async (req: Request): Promise<Response> => {
           ? `🎂 ${displayItems[0]} has a birthday today!`
           : `🎂 ${displayItems.join(", ")} have birthdays today!`;
         
+        // Build subject with names
+        const namesForSubject = displayItems.length <= 3 
+          ? displayItems.join(", ")
+          : `${displayItems.slice(0, 2).join(", ")} + ${displayItems.length - 2} more`;
+        const isTest = testType === "birthday_today" && todayBirthdays.length === 0;
+        
         const result = await sendIndividualAlert(
           resend,
           adminEmails,
-          testType === "birthday_today" && todayBirthdays.length === 0
-            ? `[TEST] 🎂 Staff Birthdays Today!`
-            : `🎂 Staff Birthday${displayItems.length > 1 ? "s" : ""} Today!`,
+          isTest
+            ? `[TEST] 🎂 Birthday: John Smith, Jane Doe`
+            : `🎂 Birthday: ${namesForSubject}`,
           "🎂 Happy Birthday!",
           "#ec4899",
           [message],
@@ -218,12 +224,18 @@ const handler = async (req: Request): Promise<Response> => {
           ? [`🎉 ${displayAnniversaries[0].name} celebrates ${displayAnniversaries[0].years} year${displayAnniversaries[0].years > 1 ? "s" : ""} today!`]
           : displayAnniversaries.map(a => `🎉 ${a.name} - ${a.years} year${a.years > 1 ? "s" : ""}`);
         
+        // Build subject with names and years
+        const isTest = testType === "anniversary_today" && todayAnniversaries.length === 0;
+        const subjectNames = displayAnniversaries.length <= 2
+          ? displayAnniversaries.map(a => `${a.name} (${a.years}yr)`).join(", ")
+          : `${displayAnniversaries[0].name} (${displayAnniversaries[0].years}yr) + ${displayAnniversaries.length - 1} more`;
+        
         const result = await sendIndividualAlert(
           resend,
           adminEmails,
-          testType === "anniversary_today" && todayAnniversaries.length === 0
-            ? `[TEST] 🎉 Work Anniversary Today!`
-            : `🎉 Work Anniversary Today!`,
+          isTest
+            ? `[TEST] 🎉 Anniversary: John Smith (3yr), Jane Doe (5yr)`
+            : `🎉 Anniversary: ${subjectNames}`,
           "🎉 Work Anniversary",
           "#8b5cf6",
           items,
@@ -258,22 +270,31 @@ const handler = async (req: Request): Promise<Response> => {
 
       const hasHolidays = upcomingHolidays && upcomingHolidays.length > 0;
       if (hasHolidays || testType === "upcoming_holidays") {
-        const holidayItems = hasHolidays
-          ? upcomingHolidays.map(h => {
-              const name = profileMap.get(h.user_id) || "Unknown";
-              const dateRange = h.start_date === h.end_date 
+        // Build holiday data with names
+        const holidayData = hasHolidays
+          ? upcomingHolidays.map(h => ({
+              name: profileMap.get(h.user_id) || "Unknown",
+              dateRange: h.start_date === h.end_date 
                 ? formatShortDate(h.start_date)
-                : `${formatShortDate(h.start_date)} - ${formatShortDate(h.end_date)}`;
-              return `📅 ${name}: ${dateRange}`;
-            })
-          : [`📅 [TEST] John Smith: 25 Jan - 28 Jan`, `📅 [TEST] Jane Doe: 30 Jan`];
+                : `${formatShortDate(h.start_date)} - ${formatShortDate(h.end_date)}`
+            }))
+          : [{ name: "[TEST] John Smith", dateRange: "25 Jan - 28 Jan" }, { name: "[TEST] Jane Doe", dateRange: "30 Jan" }];
+
+        const holidayItems = holidayData.map(h => `📅 ${h.name}: ${h.dateRange}`);
+
+        // Build subject with names
+        const isTest = testType === "upcoming_holidays" && !hasHolidays;
+        const uniqueNames = [...new Set(holidayData.map(h => h.name))];
+        const subjectNames = uniqueNames.length <= 3
+          ? uniqueNames.join(", ")
+          : `${uniqueNames.slice(0, 2).join(", ")} + ${uniqueNames.length - 2} more`;
 
         const result = await sendIndividualAlert(
           resend,
           adminEmails,
-          testType === "upcoming_holidays" && !hasHolidays
-            ? `[TEST] 📅 Upcoming Holidays (Next ${holidayDays} Days)`
-            : `📅 ${upcomingHolidays?.length || 2} Upcoming Holiday${(upcomingHolidays?.length || 2) > 1 ? "s" : ""} (Next ${holidayDays} Days)`,
+          isTest
+            ? `[TEST] 📅 Upcoming Holiday: John Smith, Jane Doe`
+            : `📅 Upcoming Holiday: ${subjectNames}`,
           "📅 Upcoming Holidays",
           "#3b82f6",
           holidayItems,
@@ -358,20 +379,32 @@ const handler = async (req: Request): Promise<Response> => {
 
       const hasPendingNotifications = pendingClientNotification && pendingClientNotification.length > 0;
       if (hasPendingNotifications || testType === "holiday_no_client_notification") {
-        const notificationItems = hasPendingNotifications
+        // Build notification data with names
+        const notifData = hasPendingNotifications
           ? pendingClientNotification.map(r => {
               const name = profileMap.get(r.user_id) || "Unknown";
               const daysUntil = Math.ceil((new Date(r.start_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-              return `🚨 ${name} - holiday starts in ${daysUntil} day${daysUntil !== 1 ? "s" : ""} (${formatShortDate(r.start_date)}) - CLIENT NOT NOTIFIED`;
+              return { name, daysUntil, date: formatShortDate(r.start_date) };
             })
-          : [`🚨 [TEST] John Smith - holiday starts in 3 days (27 Jan) - CLIENT NOT NOTIFIED`, `🚨 [TEST] Jane Doe - holiday starts in 5 days (29 Jan) - CLIENT NOT NOTIFIED`];
+          : [{ name: "[TEST] John Smith", daysUntil: 3, date: "27 Jan" }, { name: "[TEST] Jane Doe", daysUntil: 5, date: "29 Jan" }];
+
+        const notificationItems = notifData.map(r => 
+          `🚨 ${r.name} - holiday starts in ${r.daysUntil} day${r.daysUntil !== 1 ? "s" : ""} (${r.date}) - CLIENT NOT NOTIFIED`
+        );
+
+        // Build subject with names
+        const isTest = testType === "holiday_no_client_notification" && !hasPendingNotifications;
+        const uniqueNames = [...new Set(notifData.map(n => n.name))];
+        const subjectNames = uniqueNames.length <= 2
+          ? uniqueNames.join(", ")
+          : `${uniqueNames[0]} + ${uniqueNames.length - 1} more`;
 
         const result = await sendIndividualAlert(
           resend,
           adminEmails,
-          testType === "holiday_no_client_notification" && !hasPendingNotifications
-            ? `[TEST] 🚨 Holidays Without Client Notification`
-            : `🚨 ${pendingClientNotification?.length || 2} Holiday${(pendingClientNotification?.length || 2) > 1 ? "s" : ""} Without Client Notification`,
+          isTest
+            ? `[TEST] 🚨 Missing Client Notification: John Smith, Jane Doe`
+            : `🚨 Missing Client Notification: ${subjectNames}`,
           "🚨 Action Required: Client Notification Missing",
           "#ef4444",
           notificationItems,
