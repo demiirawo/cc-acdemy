@@ -114,6 +114,21 @@ export function UpcomingRequestsPreview({
     }
   });
 
+  // Fetch staff holidays to check no_cover_required status
+  const {
+    data: staffHolidays = []
+  } = useQuery({
+    queryKey: ["staff-holidays-for-cover-status", todayISO],
+    queryFn: async () => {
+      const {
+        data,
+        error
+      } = await supabase.from("staff_holidays").select("id, user_id, start_date, end_date, no_cover_required, status").eq("status", "approved").gte("end_date", todayISO).lte("start_date", thirtyDaysISO);
+      if (error) throw error;
+      return data || [];
+    }
+  });
+
   // Calculate working days for all holiday requests
   const holidayRequests = requests.filter(r => r.request_type === 'holiday' || r.request_type === 'holiday_paid' || r.request_type === 'holiday_unpaid');
   const workingDaysMap = useBatchWorkingDays(holidayRequests);
@@ -128,6 +143,17 @@ export function UpcomingRequestsPreview({
   const getStaffName = (userId: string) => {
     const profile = userProfiles.find(p => p.user_id === userId);
     return profile?.display_name || profile?.email || "Unknown";
+  };
+
+  // Helper to check if holiday has no_cover_required set
+  const isNoCoverRequired = (request: StaffRequest): boolean => {
+    if (!['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type)) return false;
+    const linkedHoliday = staffHolidays.find(h => 
+      h.user_id === request.user_id && 
+      h.start_date === request.start_date && 
+      h.end_date === request.end_date
+    );
+    return linkedHoliday?.no_cover_required || false;
   };
 
   // Use the already-filtered requests directly
@@ -235,9 +261,14 @@ export function UpcomingRequestsPreview({
                     const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
                     const covers = isHolidayRequest ? findCoverForHoliday(request) : [];
                     const hasCover = covers.length > 0;
+                    const noCoverRequired = isNoCoverRequired(request);
 
-                    // Match exact styling from StaffRequestsManager
-                    const rowHighlightClass = isHolidayRequest ? hasCover ? 'bg-green-100 dark:bg-green-950/30 hover:bg-green-200 dark:hover:bg-green-950/50' : 'bg-red-100 dark:bg-red-950/30 hover:bg-red-200 dark:hover:bg-red-950/50' : 'hover:bg-muted/50';
+                    // Green if has cover OR no cover required, red otherwise for holidays
+                    const rowHighlightClass = isHolidayRequest 
+                      ? (hasCover || noCoverRequired) 
+                        ? 'bg-green-100 dark:bg-green-950/30 hover:bg-green-200 dark:hover:bg-green-950/50' 
+                        : 'bg-red-100 dark:bg-red-950/30 hover:bg-red-200 dark:hover:bg-red-950/50' 
+                      : 'hover:bg-muted/50';
                     return <>
                               <TableRow key={request.id} className={`h-20 cursor-pointer transition-colors ${rowHighlightClass}`} onClick={() => onViewRequest?.(request.id)}>
                                 <TableCell className="font-medium py-4">

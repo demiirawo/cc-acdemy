@@ -139,16 +139,16 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
     }
   });
 
-  // Fetch linked holidays for overtime requests
+  // Fetch linked holidays for overtime requests (including no_cover_required)
   const { data: linkedHolidays = [] } = useQuery({
     queryKey: ["linked-holidays-for-requests"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("staff_holidays")
-        .select("id, user_id, start_date, end_date, days_taken, absence_type");
+        .select("id, user_id, start_date, end_date, days_taken, absence_type, no_cover_required");
       
       if (error) throw error;
-      return data as LinkedHoliday[];
+      return data as (LinkedHoliday & { no_cover_required?: boolean })[];
     }
   });
 
@@ -167,6 +167,17 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
     
     const workingDays = workingDaysMap.get(req.id);
     return workingDays !== null && workingDays !== undefined ? workingDays : req.days_requested;
+  };
+
+  // Helper to check if holiday has no_cover_required set
+  const isNoCoverRequired = (request: StaffRequest): boolean => {
+    if (!['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type)) return false;
+    const linkedHoliday = linkedHolidays.find(h => 
+      h.user_id === request.user_id && 
+      h.start_date === request.start_date && 
+      h.end_date === request.end_date
+    );
+    return linkedHoliday?.no_cover_required || false;
   };
 
   const reviewMutation = useMutation({
@@ -548,10 +559,11 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                           // Find covers for this holiday
                           const nestedCovers = isHolidayRequest ? findCoverForHoliday(request) : [];
                           
-                          // Determine row highlighting for holiday requests: green if covered, red if not covered
+                          // Determine row highlighting for holiday requests: green if covered or no cover required, red if not covered
                           const hasCover = nestedCovers.length > 0;
+                          const noCoverRequired = isNoCoverRequired(request);
                           const rowHighlightClass = isHolidayRequest 
-                            ? hasCover 
+                            ? (hasCover || noCoverRequired)
                               ? 'bg-green-100 dark:bg-green-950/30 hover:bg-green-200 dark:hover:bg-green-950/50' 
                               : 'bg-red-100 dark:bg-red-950/30 hover:bg-red-200 dark:hover:bg-red-950/50'
                             : 'hover:bg-muted/50';
