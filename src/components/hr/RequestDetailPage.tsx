@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Check, X, Clock, Palmtree, RefreshCw, Bell, BellOff, Copy, Calendar, User, FileText, CheckCircle2, AlertCircle, Trash2, Pencil } from "lucide-react";
+import { ArrowLeft, Check, X, Clock, Palmtree, RefreshCw, Bell, BellOff, Copy, Calendar, User, FileText, CheckCircle2, AlertCircle, Trash2, Pencil, UserX } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -333,6 +333,31 @@ export function RequestDetailPage({
       return null;
     }
   });
+
+  // Fetch the linked holiday record (for approved holiday requests)
+  const {
+    data: linkedHoliday,
+    refetch: refetchLinkedHoliday
+  } = useQuery({
+    queryKey: ["linked-holiday", request?.id],
+    enabled: !!request && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type) && request.status === 'approved',
+    queryFn: async () => {
+      // Find the staff_holidays record that matches this request
+      const {
+        data,
+        error
+      } = await supabase
+        .from("staff_holidays")
+        .select("*")
+        .eq("user_id", request!.user_id)
+        .eq("start_date", request!.start_date)
+        .eq("end_date", request!.end_date)
+        .eq("status", "approved")
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    }
+  });
   useEffect(() => {
     if (request) {
       setReviewNotes(request.review_notes || "");
@@ -452,7 +477,26 @@ export function RequestDetailPage({
     }
   });
 
-  // Review mutation
+  // Toggle no cover required mutation
+  const toggleNoCoverMutation = useMutation({
+    mutationFn: async (noCoverRequired: boolean) => {
+      if (!linkedHoliday) throw new Error("No linked holiday found");
+      const { error } = await supabase
+        .from("staff_holidays")
+        .update({ no_cover_required: noCoverRequired })
+        .eq("id", linkedHoliday.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      refetchLinkedHoliday();
+      queryClient.invalidateQueries({ queryKey: ["staff-holidays"] });
+      toast.success("Cover requirement updated");
+    },
+    onError: (error) => {
+      toast.error("Failed to update: " + error.message);
+    }
+  });
+
   const reviewMutation = useMutation({
     mutationFn: async (status: 'approved' | 'rejected') => {
       if (!user) throw new Error("Not authenticated");
@@ -744,28 +788,61 @@ Care Cuddle Team`;
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Current Cover */}
-              {coveringStaff && coveringStaff.length > 0 ? <div className="space-y-3">
-                  <Label className="text-muted-foreground text-sm">Assigned Cover</Label>
-                  {coveringStaff.map((cover, idx) => <div key={idx} className="flex items-center gap-3 p-3 bg-success/10 border border-success/20 rounded-lg">
-                      <CheckCircle2 className="h-5 w-5 text-success" />
-                      <div>
-                        <p className="font-medium">{cover.staffName}</p>
-                        <p className="text-sm text-muted-foreground">
-                          Covering from {format(new Date(cover.start_date), 'dd MMM')} to {format(new Date(cover.end_date), 'dd MMM')}
-                        </p>
-                      </div>
-                    </div>)}
-                </div> : <div className="flex items-center gap-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
-                  <AlertCircle className="h-5 w-5 text-amber-600" />
-                  <div>
-                    <p className="font-medium">No cover arranged yet</p>
-                    <p className="text-sm text-muted-foreground">Click a staff member below to assign them as cover</p>
+              {/* No Cover Required Toggle - show for approved holiday requests */}
+              {linkedHoliday?.no_cover_required ? (
+                <div className="flex items-center gap-3 p-4 bg-muted border border-muted-foreground/20 rounded-lg">
+                  <UserX className="h-5 w-5 text-muted-foreground" />
+                  <div className="flex-1">
+                    <p className="font-medium">No cover required</p>
+                    <p className="text-sm text-muted-foreground">This absence has been marked as not requiring cover</p>
                   </div>
-                </div>}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => toggleNoCoverMutation.mutate(false)}
+                    disabled={toggleNoCoverMutation.isPending}
+                  >
+                    Require Cover
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {/* Current Cover */}
+                  {coveringStaff && coveringStaff.length > 0 ? <div className="space-y-3">
+                      <Label className="text-muted-foreground text-sm">Assigned Cover</Label>
+                      {coveringStaff.map((cover, idx) => <div key={idx} className="flex items-center gap-3 p-3 bg-success/10 border border-success/20 rounded-lg">
+                          <CheckCircle2 className="h-5 w-5 text-success" />
+                          <div>
+                            <p className="font-medium">{cover.staffName}</p>
+                            <p className="text-sm text-muted-foreground">
+                              Covering from {format(new Date(cover.start_date), 'dd MMM')} to {format(new Date(cover.end_date), 'dd MMM')}
+                            </p>
+                          </div>
+                        </div>)}
+                    </div> : <div className="flex items-center gap-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                      <AlertCircle className="h-5 w-5 text-amber-600" />
+                      <div className="flex-1">
+                        <p className="font-medium">No cover arranged yet</p>
+                        <p className="text-sm text-muted-foreground">Click a staff member below to assign them as cover</p>
+                      </div>
+                      {linkedHoliday && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => toggleNoCoverMutation.mutate(true)}
+                          disabled={toggleNoCoverMutation.isPending}
+                          className="whitespace-nowrap"
+                        >
+                          <UserX className="h-4 w-4 mr-1" />
+                          Cover Not Required
+                        </Button>
+                      )}
+                    </div>}
+                </>
+              )}
 
-              {/* Assign Cover Section - only show for holiday requests */}
-              {isHolidayRequest && <div className="space-y-4">
+              {/* Assign Cover Section - only show for holiday requests when cover is required */}
+              {isHolidayRequest && !linkedHoliday?.no_cover_required && <div className="space-y-4">
                   <Separator />
                   
                   {/* Care Cuddle Bench Staff */}
