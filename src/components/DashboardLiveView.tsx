@@ -145,6 +145,16 @@ export function DashboardLiveView() {
     return staff?.display_name || staff?.email?.split("@")[0] || "Unknown";
   };
 
+  // Check if staff member is on approved holiday today
+  const isStaffOnHoliday = (userId: string): boolean => {
+    return holidays.some(h => {
+      if (h.user_id !== userId || h.status !== "approved") return false;
+      const start = parseISO(h.start_date);
+      const end = parseISO(h.end_date);
+      return isWithinInterval(today, { start, end });
+    });
+  };
+
   // Generate virtual schedules from recurring patterns
   const virtualSchedules = useMemo(() => {
     const virtual: Schedule[] = [];
@@ -236,8 +246,12 @@ export function DashboardLiveView() {
     return covers;
   }, [staffRequests, holidays, schedules, virtualSchedules, today, getStaffName]);
 
-  const allSchedules = useMemo(() => {
-    const combined = [...schedules, ...virtualSchedules, ...coverShifts];
+  const allSchedules: Schedule[] = useMemo(() => {
+    const combined: Schedule[] = [
+      ...schedules.map(s => ({ ...s, is_cover_shift: false })),
+      ...virtualSchedules.map(s => ({ ...s, is_cover_shift: false })),
+      ...coverShifts
+    ];
     const seen = new Set<string>();
     return combined.filter(s => {
       const key = `${s.user_id}-${s.client_name}-${s.start_datetime}`;
@@ -247,14 +261,18 @@ export function DashboardLiveView() {
     });
   }, [schedules, virtualSchedules, coverShifts]);
 
-  // Filter to today's schedules only
+  // Filter to today's schedules only, excluding staff on holiday
   const todaySchedules = useMemo(() => {
     return allSchedules.filter(schedule => {
+      // Exclude staff on holiday (unless it's a cover shift)
+      if (!schedule.is_cover_shift && isStaffOnHoliday(schedule.user_id)) {
+        return false;
+      }
       const start = parseISO(schedule.start_datetime);
       const end = parseISO(schedule.end_datetime);
       return start < timelineEnd && end > timelineStart;
     });
-  }, [allSchedules, timelineStart, timelineEnd]);
+  }, [allSchedules, timelineStart, timelineEnd, holidays]);
 
   // Get unique clients with shifts today
   const uniqueClients = useMemo(() => {
