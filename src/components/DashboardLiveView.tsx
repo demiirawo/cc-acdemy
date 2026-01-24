@@ -307,11 +307,11 @@ export function DashboardLiveView() {
               }}>
                     Client
                   </div>
-                  <div className="flex-1 relative" style={{
+                  <div className="flex-shrink-0 relative" style={{
                 width: TIMELINE_WIDTH
               }}>
                     <div className="flex">
-                      {hourMarkers.map((hour, i) => {
+                      {hourMarkers.slice(0, -1).map((hour, i) => {
                     const isNow = currentTime.getHours() === hour.getHours();
                     return <div key={i} className={`text-xs text-center border-r ${isNow ? 'bg-primary/20 font-bold text-primary' : ''}`} style={{
                       width: HOUR_WIDTH
@@ -370,7 +370,7 @@ export function DashboardLiveView() {
                 }} title={client}>
                           {client}
                         </div>
-                        <div className="flex-1 relative" style={{
+                        <div className="flex-shrink-0 relative" style={{
                   width: TIMELINE_WIDTH,
                   minHeight: ROW_HEIGHT * rowCount
                 }}>

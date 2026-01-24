@@ -316,9 +316,9 @@ export function PublicLiveView() {
               >
                 Client
               </div>
-              <div className="flex-1 relative" style={{ width: TIMELINE_WIDTH }}>
+              <div className="flex-shrink-0 relative" style={{ width: TIMELINE_WIDTH }}>
                 <div className="flex">
-                  {hourMarkers.map((hour, i) => {
+                  {hourMarkers.slice(0, -1).map((hour, i) => {
                     const isNow = now.getHours() === hour.getHours();
                     return (
                       <div
@@ -366,7 +366,7 @@ export function PublicLiveView() {
                       {client}
                     </div>
                     <div 
-                      className="flex-1 relative"
+                      className="flex-shrink-0 relative"
                       style={{ width: TIMELINE_WIDTH, minHeight: 50 }}
                     >
                       {/* Hour grid lines */}
