@@ -2158,9 +2158,6 @@ export function StaffScheduleManager() {
               allSchedules={allSchedules}
               isStaffOnHoliday={isStaffOnHoliday}
               getStaffName={getStaffName}
-              canEditSchedule={canEditSchedule}
-              scheduleEditHint={scheduleEditHint}
-              onScheduleClick={handleScheduleClick}
             />
           ) : (
             /* Regular Weekly Gantt View */

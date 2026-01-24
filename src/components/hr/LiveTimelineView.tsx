@@ -1,4 +1,4 @@
-import { format, parseISO, differenceInMinutes } from "date-fns";
+import { format, parseISO, differenceInMinutes, startOfDay, endOfDay, isSameDay } from "date-fns";
 import { Clock, Infinity, Palmtree } from "lucide-react";
 
 interface Schedule {
@@ -23,9 +23,6 @@ interface LiveTimelineViewProps {
   allSchedules: Schedule[];
   isStaffOnHoliday: (userId: string, date: Date) => boolean;
   getStaffName: (userId: string) => string;
-  canEditSchedule: boolean;
-  scheduleEditHint: string;
-  onScheduleClick: (schedule: Schedule) => void;
 }
 
 export function LiveTimelineView({
@@ -35,28 +32,26 @@ export function LiveTimelineView({
   allSchedules,
   isStaffOnHoliday,
   getStaffName,
-  canEditSchedule,
-  scheduleEditHint,
-  onScheduleClick,
 }: LiveTimelineViewProps) {
   const now = new Date();
-  const currentHour = now.getHours();
-  const currentMinute = now.getMinutes();
+  const today = startOfDay(now);
+  const todayEnd = endOfDay(now);
   
-  // Timeline spans 9 hours starting from current hour
-  const TIMELINE_HOURS = 9;
-  const HOUR_WIDTH = 100; // pixels per hour
+  // Timeline spans full day: 06:00 to 23:00 (17 hours for typical working hours)
+  const TIMELINE_START_HOUR = 6;
+  const TIMELINE_END_HOUR = 23;
+  const TIMELINE_HOURS = TIMELINE_END_HOUR - TIMELINE_START_HOUR;
+  const HOUR_WIDTH = 60; // pixels per hour
   const TIMELINE_WIDTH = TIMELINE_HOURS * HOUR_WIDTH;
   const NAME_COLUMN_WIDTH = 160;
   const ROW_HEIGHT = 50;
   
-  // Calculate timeline start (beginning of current hour)
-  const timelineStart = new Date(now);
-  timelineStart.setMinutes(0, 0, 0);
+  // Calculate timeline start and end for today
+  const timelineStart = new Date(today);
+  timelineStart.setHours(TIMELINE_START_HOUR, 0, 0, 0);
   
-  // Timeline end
-  const timelineEnd = new Date(timelineStart);
-  timelineEnd.setHours(timelineEnd.getHours() + TIMELINE_HOURS);
+  const timelineEnd = new Date(today);
+  timelineEnd.setHours(TIMELINE_END_HOUR, 0, 0, 0);
   
   // Generate hour markers
   const hourMarkers = Array.from({ length: TIMELINE_HOURS + 1 }, (_, i) => {
@@ -74,6 +69,18 @@ export function LiveTimelineView({
   
   // Get "now" indicator position
   const nowPositionPercent = getPositionPercent(now);
+  const showNowIndicator = now >= timelineStart && now <= timelineEnd;
+  
+  // Get current hour for highlighting
+  const currentHour = now.getHours();
+  
+  // Filter schedules to only include those for today
+  const todaySchedules = allSchedules.filter(s => {
+    const start = parseISO(s.start_datetime);
+    const end = parseISO(s.end_datetime);
+    // Include if shift overlaps with today
+    return start < todayEnd && end > today;
+  });
   
   // Helper to render a schedule bar
   const renderScheduleBar = (
@@ -102,17 +109,17 @@ export function LiveTimelineView({
     if (widthPercent < 1) return null;
     
     const displayName = showClientName ? schedule.client_name : getStaffName(schedule.user_id);
-    const endsThisTimeline = end <= timelineEnd;
-    const startsBeforeTimeline = start < timelineStart;
+    const isPast = end < now;
+    const isFuture = start > now;
     
     return (
       <div
         key={schedule.id}
         className={`absolute top-1 bottom-1 rounded-md flex flex-col justify-center px-2 overflow-hidden text-xs ${
-          canEditSchedule ? 'cursor-pointer hover:ring-2 hover:ring-primary/50' : ''
-        } ${
           isCurrentlyWorking
             ? 'ring-2 ring-green-500 shadow-lg z-10'
+            : isPast
+            ? 'opacity-60'
             : ''
         } ${
           isFromPattern
@@ -122,10 +129,9 @@ export function LiveTimelineView({
         style={{
           left: `${leftPercent}%`,
           width: `${widthPercent}%`,
-          minWidth: '60px',
+          minWidth: '50px',
         }}
-        onClick={() => onScheduleClick(schedule)}
-        title={`${displayName}: ${format(start, "HH:mm")} - ${format(end, "HH:mm")}${scheduleEditHint ? `\n${scheduleEditHint}` : ''}`}
+        title={`${displayName}: ${format(start, "HH:mm")} - ${format(end, "HH:mm")}`}
       >
         <div className="font-semibold truncate flex items-center gap-1">
           {displayName}
@@ -134,41 +140,29 @@ export function LiveTimelineView({
         <div className={`text-[10px] ${isCurrentlyWorking ? 'text-green-700 font-semibold' : 'text-muted-foreground'}`}>
           {isCurrentlyWorking ? (
             <>Working now · Ends {format(end, "HH:mm")}</>
-          ) : endsThisTimeline ? (
-            <>Ends {format(end, "HH:mm")}</>
-          ) : startsBeforeTimeline ? (
-            <>Until {format(end, "HH:mm")}+</>
-          ) : null}
+          ) : isPast ? (
+            <>Ended {format(end, "HH:mm")}</>
+          ) : isFuture ? (
+            <>Starts {format(start, "HH:mm")}</>
+          ) : (
+            <>{format(start, "HH:mm")} - {format(end, "HH:mm")}</>
+          )}
         </div>
       </div>
     );
   };
   
-  // Get staff currently working or with shifts in timeline
+  // Get all staff with shifts today (not just currently working)
   const getRelevantStaff = () => {
     return filteredStaff.filter(staff => {
-      if (isStaffOnHoliday(staff.user_id, now)) return false;
-      
-      return allSchedules.some(s => {
-        if (s.user_id !== staff.user_id) return false;
-        const start = parseISO(s.start_datetime);
-        const end = parseISO(s.end_datetime);
-        // Check if shift overlaps with current moment (working now)
-        return now >= start && now < end;
-      });
+      return todaySchedules.some(s => s.user_id === staff.user_id);
     });
   };
   
-  // Get clients with staff currently working
+  // Get all clients with shifts today
   const getRelevantClients = () => {
     return filteredClients.filter(clientName => {
-      return allSchedules.some(s => {
-        if (s.client_name !== clientName) return false;
-        if (isStaffOnHoliday(s.user_id, now)) return false;
-        const start = parseISO(s.start_datetime);
-        const end = parseISO(s.end_datetime);
-        return now >= start && now < end;
-      });
+      return todaySchedules.some(s => s.client_name === clientName);
     });
   };
   
@@ -180,7 +174,7 @@ export function LiveTimelineView({
   if (isEmpty) {
     return (
       <div className="text-center py-8 text-muted-foreground">
-        {viewMode === "staff" ? "No staff working right now" : "No clients with staff working right now"}
+        {viewMode === "staff" ? "No staff shifts scheduled for today" : "No clients with shifts scheduled for today"}
       </div>
     );
   }
@@ -202,25 +196,30 @@ export function LiveTimelineView({
           <div className="flex-1 relative" style={{ width: TIMELINE_WIDTH }}>
             {/* Hour grid lines and labels */}
             <div className="flex h-full">
-              {hourMarkers.slice(0, -1).map((hour, idx) => (
-                <div 
-                  key={hour.toISOString()}
-                  className={`flex-1 text-center p-2 text-sm font-medium border-l ${
-                    idx === 0 ? 'bg-primary text-primary-foreground rounded-l' : 'bg-muted'
-                  }`}
-                  style={{ width: HOUR_WIDTH }}
-                >
-                  <div>{format(hour, "HH:mm")}</div>
-                  {idx === 0 && <div className="text-xs opacity-80">NOW</div>}
-                </div>
-              ))}
+              {hourMarkers.slice(0, -1).map((hour, idx) => {
+                const hourValue = hour.getHours();
+                const isCurrentHour = hourValue === currentHour;
+                
+                return (
+                  <div 
+                    key={hour.toISOString()}
+                    className={`flex-1 text-center p-2 text-sm font-medium border-l ${
+                      isCurrentHour ? 'bg-primary text-primary-foreground rounded-t' : 'bg-muted'
+                    }`}
+                    style={{ width: HOUR_WIDTH }}
+                  >
+                    <div>{format(hour, "HH:mm")}</div>
+                    {isCurrentHour && <div className="text-xs opacity-80">NOW</div>}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
         
         {/* Staff rows */}
         {viewMode === "staff" && relevantStaff.map(staff => {
-          const staffSchedules = allSchedules.filter(s => {
+          const staffSchedules = todaySchedules.filter(s => {
             if (s.user_id !== staff.user_id) return false;
             const start = parseISO(s.start_datetime);
             const end = parseISO(s.end_datetime);
@@ -258,12 +257,14 @@ export function LiveTimelineView({
                 ))}
                 
                 {/* "Now" indicator line */}
-                <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20"
-                  style={{ left: `${nowPositionPercent}%` }}
-                >
-                  <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-red-500 rounded-full" />
-                </div>
+                {showNowIndicator && (
+                  <div
+                    className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20"
+                    style={{ left: `${nowPositionPercent}%` }}
+                  >
+                    <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-red-500 rounded-full" />
+                  </div>
+                )}
                 
                 {/* Schedule bars */}
                 {!onHoliday && staffSchedules.map(schedule => {
@@ -285,9 +286,8 @@ export function LiveTimelineView({
         
         {/* Client rows */}
         {viewMode === "client" && relevantClients.map(clientName => {
-          const clientSchedules = allSchedules.filter(s => {
+          const clientSchedules = todaySchedules.filter(s => {
             if (s.client_name !== clientName) return false;
-            if (isStaffOnHoliday(s.user_id, now)) return false;
             const start = parseISO(s.start_datetime);
             const end = parseISO(s.end_datetime);
             return start < timelineEnd && end > timelineStart;
@@ -328,89 +328,98 @@ export function LiveTimelineView({
                 ))}
                 
                 {/* "Now" indicator line */}
-                <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20"
-                  style={{ left: `${nowPositionPercent}%` }}
-                >
-                  <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-red-500 rounded-full" />
-                </div>
+                {showNowIndicator && (
+                  <div
+                    className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20"
+                    style={{ left: `${nowPositionPercent}%` }}
+                  >
+                    <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-red-500 rounded-full" />
+                  </div>
+                )}
                 
                 {/* Schedule bars - stacked by staff */}
-                {Array.from(schedulesByStaff.entries()).map(([userId, schedules], rowIdx) => (
-                  <div
-                    key={userId}
-                    className="absolute left-0 right-0"
-                    style={{ 
-                      top: `${(rowIdx / rowCount) * 100}%`,
-                      height: `${100 / rowCount}%`,
-                    }}
-                  >
-                    {schedules.map(schedule => {
-                      const start = parseISO(schedule.start_datetime);
-                      const end = parseISO(schedule.end_datetime);
-                      const isCurrentlyWorking = now >= start && now < end;
-                      
-                      const clampedStart = start < timelineStart ? timelineStart : start;
-                      const clampedEnd = end > timelineEnd ? timelineEnd : end;
-                      
-                      if (clampedEnd <= timelineStart || clampedStart >= timelineEnd) {
-                        return null;
-                      }
-                      
-                      const leftPercent = getPositionPercent(clampedStart);
-                      const rightPercent = getPositionPercent(clampedEnd);
-                      const widthPercent = rightPercent - leftPercent;
-                      
-                      if (widthPercent < 1) return null;
-                      
-                      const isFromPattern = schedule.id.startsWith('pattern-');
-                      const staffName = getStaffName(schedule.user_id);
-                      
-                      return (
-                        <div
-                          key={schedule.id}
-                          className={`absolute top-0.5 bottom-0.5 rounded-md flex flex-col justify-center px-2 overflow-hidden text-xs ${
-                            canEditSchedule ? 'cursor-pointer hover:ring-2 hover:ring-primary/50' : ''
-                          } ${
-                            isCurrentlyWorking
-                              ? 'ring-2 ring-green-500 shadow-lg z-10'
-                              : ''
-                          } ${
-                            isFromPattern
-                              ? 'bg-violet-100 border-2 border-violet-400'
-                              : 'bg-primary/20 border-2 border-primary/60'
-                          }`}
-                          style={{
-                            left: `${leftPercent}%`,
-                            width: `${widthPercent}%`,
-                            minWidth: '60px',
-                          }}
-                          onClick={() => onScheduleClick(schedule)}
-                          title={`${staffName}: ${format(start, "HH:mm")} - ${format(end, "HH:mm")}`}
-                        >
-                          <div className="font-semibold truncate flex items-center gap-1">
-                            {staffName}
-                            {isFromPattern && <Infinity className="h-3 w-3 text-violet-500 flex-shrink-0" />}
+                {Array.from(schedulesByStaff.entries()).map(([userId, schedules], rowIdx) => {
+                  const onHoliday = isStaffOnHoliday(userId, now);
+                  if (onHoliday) return null;
+                  
+                  return (
+                    <div
+                      key={userId}
+                      className="absolute left-0 right-0"
+                      style={{ 
+                        top: `${(rowIdx / rowCount) * 100}%`,
+                        height: `${100 / rowCount}%`,
+                      }}
+                    >
+                      {schedules.map(schedule => {
+                        const start = parseISO(schedule.start_datetime);
+                        const end = parseISO(schedule.end_datetime);
+                        const isCurrentlyWorking = now >= start && now < end;
+                        const isPast = end < now;
+                        const isFuture = start > now;
+                        
+                        const clampedStart = start < timelineStart ? timelineStart : start;
+                        const clampedEnd = end > timelineEnd ? timelineEnd : end;
+                        
+                        if (clampedEnd <= timelineStart || clampedStart >= timelineEnd) {
+                          return null;
+                        }
+                        
+                        const leftPercent = getPositionPercent(clampedStart);
+                        const rightPercent = getPositionPercent(clampedEnd);
+                        const widthPercent = rightPercent - leftPercent;
+                        
+                        if (widthPercent < 1) return null;
+                        
+                        const isFromPattern = schedule.id.startsWith('pattern-');
+                        const staffName = getStaffName(schedule.user_id);
+                        
+                        return (
+                          <div
+                            key={schedule.id}
+                            className={`absolute top-0.5 bottom-0.5 rounded-md flex flex-col justify-center px-2 overflow-hidden text-xs ${
+                              isCurrentlyWorking
+                                ? 'ring-2 ring-green-500 shadow-lg z-10'
+                                : isPast
+                                ? 'opacity-60'
+                                : ''
+                            } ${
+                              isFromPattern
+                                ? 'bg-violet-100 border-2 border-violet-400'
+                                : 'bg-primary/20 border-2 border-primary/60'
+                            }`}
+                            style={{
+                              left: `${leftPercent}%`,
+                              width: `${widthPercent}%`,
+                              minWidth: '50px',
+                            }}
+                            title={`${staffName}: ${format(start, "HH:mm")} - ${format(end, "HH:mm")}`}
+                          >
+                            <div className="font-semibold truncate flex items-center gap-1">
+                              {staffName}
+                              {isFromPattern && <Infinity className="h-3 w-3 text-violet-500 flex-shrink-0" />}
+                            </div>
+                            <div className={`text-[10px] ${isCurrentlyWorking ? 'text-green-700 font-semibold' : 'text-muted-foreground'}`}>
+                              {isCurrentlyWorking ? (
+                                <>Working now · Ends {format(end, "HH:mm")}</>
+                              ) : isPast ? (
+                                <>Ended {format(end, "HH:mm")}</>
+                              ) : isFuture ? (
+                                <>Starts {format(start, "HH:mm")}</>
+                              ) : (
+                                <>{format(start, "HH:mm")} - {format(end, "HH:mm")}</>
+                              )}
+                            </div>
                           </div>
-                          <div className={`text-[10px] ${isCurrentlyWorking ? 'text-green-700 font-semibold' : 'text-muted-foreground'}`}>
-                            {isCurrentlyWorking ? (
-                              <>Working now · Ends {format(end, "HH:mm")}</>
-                            ) : (
-                              <>Ends {format(end, "HH:mm")}</>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
+                        );
+                      })}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
         })}
-        
-        {/* Scrollbar indicator */}
-        <div className="h-2 bg-muted rounded-full mt-2" style={{ marginLeft: NAME_COLUMN_WIDTH }} />
       </div>
     </div>
   );
