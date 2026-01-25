@@ -152,21 +152,43 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
     }
   });
 
-  // Calculate working days for all requests (for holiday requests only)
+  // Calculate working days for all holiday requests
   const holidayRequests = requests.filter(r => 
     r.request_type === 'holiday' || r.request_type === 'holiday_paid' || r.request_type === 'holiday_unpaid'
   );
   const workingDaysMap = useBatchWorkingDays(holidayRequests);
+
+  // For shift cover requests, compute working days based on the COVERED person's patterns
+  const coverRequests = requests.filter(r => 
+    r.request_type === 'shift_swap' && r.swap_with_user_id
+  );
+  // Transform cover requests to use the covered user's ID for pattern lookup
+  const coverRequestsForPatternLookup = coverRequests.map(r => ({
+    id: r.id,
+    user_id: r.swap_with_user_id!, // The person being covered
+    start_date: r.start_date,
+    end_date: r.end_date
+  }));
+  const coverWorkingDaysMap = useBatchWorkingDays(coverRequestsForPatternLookup);
 
   // Helper to get display days (working days if available, otherwise calendar days)
   const getDisplayDays = (req: StaffRequest): number => {
     const isHoliday = req.request_type === 'holiday' || 
                       req.request_type === 'holiday_paid' || 
                       req.request_type === 'holiday_unpaid';
-    if (!isHoliday) return req.days_requested;
     
-    const workingDays = workingDaysMap.get(req.id);
-    return workingDays !== null && workingDays !== undefined ? workingDays : req.days_requested;
+    if (isHoliday) {
+      const workingDays = workingDaysMap.get(req.id);
+      return workingDays !== null && workingDays !== undefined ? workingDays : req.days_requested;
+    }
+    
+    // For shift cover, use the covered person's working days
+    if (req.request_type === 'shift_swap' && req.swap_with_user_id) {
+      const coverWorkingDays = coverWorkingDaysMap.get(req.id);
+      return coverWorkingDays !== null && coverWorkingDays !== undefined ? coverWorkingDays : req.days_requested;
+    }
+    
+    return req.days_requested;
   };
 
   // Helper to check if holiday has no_cover_required set
