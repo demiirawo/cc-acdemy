@@ -13,7 +13,7 @@ import { CompanyNoticeboard } from "./CompanyNoticeboard";
 import { UpcomingRequestsPreview } from "./UpcomingRequestsPreview";
 import { UpcomingBirthdaysCard } from "./UpcomingBirthdaysCard";
 import { UpcomingAnniversariesCard } from "./UpcomingAnniversariesCard";
-import { DashboardLiveView } from "./DashboardLiveView";
+import { DashboardLiveViewWrapper } from "./DashboardLiveViewWrapper";
 interface Page {
   id: string;
   title: string;
@@ -329,7 +329,7 @@ export function RealDashboard({
         <CompanyNoticeboard />
 
         {/* Live View - Admin only */}
-        {isAdmin && <DashboardLiveView />}
+        {isAdmin && <DashboardLiveViewWrapper />}
 
         {/* Upcoming Approved Requests - Admin only */}
         {isAdmin && <UpcomingRequestsPreview onViewRequest={onViewRequest} />}
