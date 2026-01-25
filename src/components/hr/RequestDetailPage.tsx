@@ -427,8 +427,8 @@ export function RequestDetailPage({
     mutationFn: async (coverUserId: string) => {
       if (!user || !request) throw new Error("Not authenticated or no request");
 
-      // The holiday request already stores the correct working-day count in days_requested
-      const daysRequested = request.days_requested;
+      // Use the linked holiday's days_taken to ensure consistency with the holiday record
+      const daysRequested = linkedHoliday?.days_taken ?? request.days_requested;
       const payload = {
         user_id: coverUserId,
         request_type: 'shift_swap' as const,
