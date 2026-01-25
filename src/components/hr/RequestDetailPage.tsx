@@ -427,8 +427,16 @@ export function RequestDetailPage({
     mutationFn: async (coverUserId: string) => {
       if (!user || !request) throw new Error("Not authenticated or no request");
 
-      // Use the linked holiday's days_taken to ensure consistency with the holiday record
-      const daysRequested = linkedHoliday?.days_taken ?? request.days_requested;
+      // Compute working days from the covered person's shift patterns (same logic as display)
+      const affectedShifts = getAffectedShiftsByDay();
+      const uniqueWorkingDates = new Set(affectedShifts.map(s => s.date.toISOString().split('T')[0]));
+      const computedWorkingDays = uniqueWorkingDates.size;
+      
+      // Use computed working days if available, otherwise fall back to linked holiday or request
+      const daysRequested = computedWorkingDays > 0 
+        ? computedWorkingDays 
+        : (linkedHoliday?.days_taken ?? request.days_requested);
+      
       const payload = {
         user_id: coverUserId,
         request_type: 'shift_swap' as const,
