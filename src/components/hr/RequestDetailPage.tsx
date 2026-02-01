@@ -641,8 +641,8 @@ export function RequestDetailPage({
           .eq("end_date", request.end_date);
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["staff-request", requestId] });
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: ["staff-request", requestId] });
       queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
       queryClient.invalidateQueries({ queryKey: ["staff-holidays"] });
       queryClient.invalidateQueries({ queryKey: ["linked-holiday", request?.id] });
