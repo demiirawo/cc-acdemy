@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Check, X, Clock, Palmtree, RefreshCw, Bell, BellOff, Copy, Calendar, User, FileText, CheckCircle2, AlertCircle, Trash2, Pencil, UserX } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -617,6 +618,41 @@ export function RequestDetailPage({
     }
   });
 
+  // Change request type mutation
+  const changeRequestTypeMutation = useMutation({
+    mutationFn: async (newType: RequestType) => {
+      if (!user || !request) throw new Error("Not authenticated or no request");
+      
+      // Update the request type
+      const { error } = await supabase
+        .from("staff_requests")
+        .update({ request_type: newType })
+        .eq("id", requestId);
+      if (error) throw error;
+
+      // If the request is approved and it's a holiday type, also update the linked staff_holidays record
+      if (request.status === 'approved' && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type)) {
+        const newAbsenceType = newType === 'holiday_unpaid' ? 'unpaid' : 'holiday';
+        await supabase
+          .from("staff_holidays")
+          .update({ absence_type: newAbsenceType })
+          .eq("user_id", request.user_id)
+          .eq("start_date", request.start_date)
+          .eq("end_date", request.end_date);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["staff-request", requestId] });
+      queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-holidays"] });
+      queryClient.invalidateQueries({ queryKey: ["linked-holiday", request?.id] });
+      toast.success("Request type updated successfully");
+    },
+    onError: (error) => {
+      toast.error("Failed to update request type: " + error.message);
+    }
+  });
+
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: async () => {
@@ -735,10 +771,58 @@ Care Cuddle Team`;
                 </div>
                 <div>
                   <Label className="text-muted-foreground text-sm">Request Type</Label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <Icon className={`h-5 w-5 ${typeInfo?.color || ''}`} />
-                    <span className="text-lg font-medium">{typeInfo?.label}</span>
-                  </div>
+                  <Select
+                    value={request.request_type}
+                    onValueChange={(value) => changeRequestTypeMutation.mutate(value as RequestType)}
+                    disabled={changeRequestTypeMutation.isPending}
+                  >
+                    <SelectTrigger className="w-full mt-1">
+                      <SelectValue>
+                        <div className="flex items-center gap-2">
+                          <Icon className={`h-4 w-4 ${typeInfo?.color || ''}`} />
+                          <span>{typeInfo?.label}</span>
+                        </div>
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="holiday_paid">
+                        <div className="flex items-center gap-2">
+                          <Palmtree className="h-4 w-4 text-green-600" />
+                          Paid Holiday
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="holiday_unpaid">
+                        <div className="flex items-center gap-2">
+                          <Palmtree className="h-4 w-4 text-yellow-600" />
+                          Unpaid Holiday
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="holiday">
+                        <div className="flex items-center gap-2">
+                          <Palmtree className="h-4 w-4 text-green-600" />
+                          Holiday / Time Off
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="overtime_standard">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-orange-600" />
+                          Overtime – Standard Hours
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="overtime_double_up">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-amber-600" />
+                          Overtime – Outside Hours
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="shift_swap">
+                        <div className="flex items-center gap-2">
+                          <RefreshCw className="h-4 w-4 text-blue-600" />
+                          Shift Cover
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                   {request.overtime_type && <Badge variant="outline" className="mt-1">
                       {request.overtime_type === 'standard_hours' ? 'Standard Hours' : 'Outside Hours'}
                     </Badge>}
