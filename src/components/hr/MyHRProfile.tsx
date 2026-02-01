@@ -38,6 +38,8 @@ interface MonthlyPayPreview {
   unusedHolidayDays: number;
   excessHolidayDeduction: number;
   excessHolidayDays: number;
+  unpaidHolidayDeduction: number;
+  unpaidHolidayDays: number;
   totalPay: number;
   payrollStatus: 'pending' | 'ready' | 'paid';
   currency: string;
@@ -601,7 +603,26 @@ export function MyHRProfile() {
           excessHolidayDeduction = monthlyBaseSalary / 20 * excessHolidayDays;
         }
       }
-      const totalPay = monthlyBaseSalary + bonuses + overtimePay + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction;
+
+      // Calculate unpaid holiday deductions for this month
+      let unpaidHolidayDays = 0;
+      const approvedUnpaidHolidays = staffRequests.filter(req => 
+        req.status === 'approved' && req.request_type === 'holiday_unpaid'
+      );
+      approvedUnpaidHolidays.forEach(req => {
+        const reqStart = parseISO(req.start_date);
+        const reqEnd = parseISO(req.end_date);
+        // Count days that fall within this month
+        if (reqStart <= monthEnd && reqEnd >= monthStart) {
+          const overlapStart = reqStart > monthStart ? reqStart : monthStart;
+          const overlapEnd = reqEnd < monthEnd ? reqEnd : monthEnd;
+          const daysInMonth = Math.ceil((overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+          unpaidHolidayDays += Math.min(daysInMonth, req.days_requested);
+        }
+      });
+      const unpaidHolidayDeduction = (monthlyBaseSalary / 20) * unpaidHolidayDays;
+
+      const totalPay = monthlyBaseSalary + bonuses + overtimePay + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction - unpaidHolidayDeduction;
 
       // Determine payroll status
       let payrollStatus: 'pending' | 'ready' | 'paid' = 'pending';
@@ -632,6 +653,8 @@ export function MyHRProfile() {
         unusedHolidayDays,
         excessHolidayDeduction,
         excessHolidayDays,
+        unpaidHolidayDeduction,
+        unpaidHolidayDays,
         totalPay,
         payrollStatus,
         currency: hrProfile.base_currency
@@ -1125,6 +1148,11 @@ export function MyHRProfile() {
                                   {preview.excessHolidayDeduction > 0 && <div className="flex justify-between items-center py-2 border-b">
                                       <span className="text-muted-foreground">Excess Holiday Deduction ({preview.excessHolidayDays.toFixed(1)} days over allowance)</span>
                                       <span className="font-medium text-destructive">-{formatCurrency(preview.excessHolidayDeduction, preview.currency)}</span>
+                                    </div>}
+                                  
+                                  {preview.unpaidHolidayDeduction > 0 && <div className="flex justify-between items-center py-2 border-b">
+                                      <span className="text-muted-foreground">Unpaid Holiday ({preview.unpaidHolidayDays} days)</span>
+                                      <span className="font-medium text-destructive">-{formatCurrency(preview.unpaidHolidayDeduction, preview.currency)}</span>
                                     </div>}
                                   
                                   {preview.deductions > 0 && <div className="flex justify-between items-center py-2 border-b">
