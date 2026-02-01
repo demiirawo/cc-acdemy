@@ -172,6 +172,7 @@ export function StaffPayManager() {
   const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; status: string; absence_type: string }[]>([]);
   const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null }[]>([]);
   const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null }[]>([]);
+  const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string }[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -392,6 +393,19 @@ export function StaffPayManager() {
         console.error('Error fetching overtime requests:', overtimeRequestsError);
       } else {
         setApprovedOvertimeRequests(overtimeRequestsData || []);
+      }
+
+      // Fetch approved unpaid holiday requests for deduction calculation
+      const { data: unpaidHolidayData, error: unpaidHolidayError } = await supabase
+        .from('staff_requests')
+        .select('user_id, days_requested, start_date, end_date')
+        .eq('status', 'approved')
+        .eq('request_type', 'holiday_unpaid');
+      
+      if (unpaidHolidayError) {
+        console.error('Error fetching unpaid holiday requests:', unpaidHolidayError);
+      } else {
+        setUnpaidHolidayRequests(unpaidHolidayData || []);
       }
     } catch (error) {
       console.error('Error fetching pay records:', error);
@@ -731,8 +745,45 @@ export function StaffPayManager() {
         }
       }
       
-      // Total pay now includes holiday overtime bonus, calculated overtime pay, unused holiday payout, and excess holiday deduction
-      const totalPay = monthlyBaseSalary + bonuses + overtime + expenses + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction;
+      // Calculate unpaid holiday deduction for this month
+      // Formula: (monthly pay / 20) * number of unpaid holiday days
+      let unpaidHolidayDeduction = 0;
+      let unpaidHolidayDays = 0;
+      
+      const userUnpaidHolidays = unpaidHolidayRequests.filter(r => {
+        if (r.user_id !== hr.user_id) return false;
+        const startDate = parseISO(r.start_date);
+        const endDate = parseISO(r.end_date);
+        // Check if the request overlaps with the selected month
+        return startDate <= monthEnd && endDate >= monthStart;
+      });
+      
+      userUnpaidHolidays.forEach(req => {
+        const startDate = parseISO(req.start_date);
+        const endDate = parseISO(req.end_date);
+        
+        // Calculate days that fall within this month
+        const effectiveStart = startDate < monthStart ? monthStart : startDate;
+        const effectiveEnd = endDate > monthEnd ? monthEnd : endDate;
+        
+        // Count days in this month
+        let daysInMonth = req.days_requested;
+        
+        // If the request spans multiple months, calculate proportion for this month
+        if (startDate < monthStart || endDate > monthEnd) {
+          const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+          const daysInThisMonth = Math.ceil((effectiveEnd.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+          daysInMonth = Math.round((daysInThisMonth / totalDays) * req.days_requested);
+        }
+        
+        unpaidHolidayDays += daysInMonth;
+      });
+      
+      // Unpaid holiday deduction = (monthly salary / 20) * unpaid holiday days
+      unpaidHolidayDeduction = (monthlyBaseSalary / 20) * unpaidHolidayDays;
+      
+      // Total pay now includes holiday overtime bonus, calculated overtime pay, unused holiday payout, excess holiday deduction, and unpaid holiday deduction
+      const totalPay = monthlyBaseSalary + bonuses + overtime + expenses + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction - unpaidHolidayDeduction;
       const hasSalaryRecord = salaryRecords.length > 0;
       
       // Check if excess holiday deduction already exists for this month
@@ -764,6 +815,8 @@ export function StaffPayManager() {
         unusedHolidayDays,
         excessHolidayDeduction,
         excessHolidayDays,
+        unpaidHolidayDeduction,
+        unpaidHolidayDays,
         hasExcessHolidayDeduction,
         totalPay,
         totalPayInGBP,
@@ -771,7 +824,7 @@ export function StaffPayManager() {
         records: userRecords
       };
     });
-  }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses, staffHolidays, hrProfilesFull, selectedMonth, approvedOvertimeRequests]);
+  }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses, staffHolidays, hrProfilesFull, selectedMonth, approvedOvertimeRequests, unpaidHolidayRequests]);
 
   // Total payroll for the month (converted to GBP)
   const totalPayroll = useMemo(() => {
@@ -1549,6 +1602,7 @@ export function StaffPayManager() {
                 <TableHead className="text-right">Overtime</TableHead>
                 <TableHead className="text-right">Holiday OT</TableHead>
                 <TableHead className="text-right">Unused Holiday</TableHead>
+                <TableHead className="text-right">Unpaid Hol</TableHead>
                 <TableHead className="text-right">Deductions</TableHead>
                 <TableHead className="text-right">Total Pay</TableHead>
                 <TableHead className="text-right">GBP Equiv.</TableHead>
@@ -1558,7 +1612,7 @@ export function StaffPayManager() {
             <TableBody>
               {payrollSummary.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
                     No staff with salary configured. Set up HR profiles first.
                   </TableCell>
                 </TableRow>
@@ -1654,6 +1708,18 @@ export function StaffPayManager() {
                             </span>
                             <span className="text-[10px] text-muted-foreground">
                               {staff.excessHolidayDays.toFixed(1)} day{staff.excessHolidayDays !== 1 ? 's' : ''} over allowance
+                            </span>
+                          </div>
+                        ) : '-'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {staff.unpaidHolidayDeduction > 0 ? (
+                          <div className="flex flex-col items-end">
+                            <span className="text-destructive">
+                              -{formatCurrency(staff.unpaidHolidayDeduction, staff.currency)}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {staff.unpaidHolidayDays} day{staff.unpaidHolidayDays !== 1 ? 's' : ''} unpaid
                             </span>
                           </div>
                         ) : '-'}
