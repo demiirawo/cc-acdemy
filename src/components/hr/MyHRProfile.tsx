@@ -1096,12 +1096,16 @@ export function MyHRProfile() {
                             </Badge>;
                 }
               };
+              // Calculate payment date (2 months after the work month, on the 1st)
+              const paymentDate = addMonths(preview.month, 2);
+              const paymentDateLabel = format(paymentDate, 'MMMM do');
+              
               return <Collapsible key={monthKey} open={isExpanded} onOpenChange={() => toggleMonth(monthKey)}>
                           <CollapsibleTrigger className="w-full">
                             <div className={`flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors ${isCurrentMonth ? 'border-primary bg-primary/5' : ''}`}>
                               <div className="flex items-center gap-3">
                                 {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                                <span className="font-medium">{preview.monthLabel}</span>
+                                <span className="font-medium">{preview.monthLabel} <span className="text-muted-foreground font-normal">(Paid {paymentDateLabel})</span></span>
                                 {isCurrentMonth && <Badge variant="outline" className="text-xs">Current</Badge>}
                                 {preview.unusedHolidayPayout > 0 && <Badge variant="outline" className="text-xs bg-success/20 text-success border-success">
                                     +{preview.unusedHolidayDays.toFixed(1)} unused holiday days
