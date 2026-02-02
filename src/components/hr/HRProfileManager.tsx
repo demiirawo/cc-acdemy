@@ -10,13 +10,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Edit, UserCircle, CheckCircle2, X, Users, Trash2, Mail, Eye, BookOpen, Clock, CheckCircle, Shield, FileCheck, FileText, User, Phone, Home, CreditCard, Image as ImageIcon } from "lucide-react";
+import { Plus, Edit, UserCircle, CheckCircle2, X, Users, Trash2, Mail, Eye, BookOpen, Clock, CheckCircle, Shield, FileCheck, FileText, User, Phone, Home, CreditCard, Image as ImageIcon, Infinity } from "lucide-react";
 import { StaffDocumentationMatrix } from "./StaffDocumentationMatrix";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 
 type EmploymentStatus = 'onboarding_probation' | 'onboarding_passed' | 'active' | 'inactive_left' | 'inactive_fired';
@@ -32,6 +33,7 @@ interface HRProfile {
   base_salary: number | null;
   pay_frequency: string | null;
   annual_holiday_allowance: number | null;
+  unlimited_holiday: boolean;
   notes: string | null;
   scheduling_role: string;
   employment_status: EmploymentStatus;
@@ -189,6 +191,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
     base_salary: 0,
     pay_frequency: 'monthly',
     annual_holiday_allowance: 28,
+    unlimited_holiday: false,
     notes: '',
     scheduling_role: 'viewer',
     employment_status: 'onboarding_probation' as EmploymentStatus,
@@ -418,6 +421,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
         base_salary: existingHR.base_salary || 0,
         pay_frequency: existingHR.pay_frequency || 'monthly',
         annual_holiday_allowance: existingHR.annual_holiday_allowance || 28,
+        unlimited_holiday: existingHR.unlimited_holiday || false,
         notes: existingHR.notes || '',
         scheduling_role: existingHR.scheduling_role || 'viewer',
         employment_status: existingHR.employment_status || 'onboarding_probation',
@@ -435,6 +439,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
         base_salary: 0,
         pay_frequency: 'monthly',
         annual_holiday_allowance: 28,
+        unlimited_holiday: false,
         notes: '',
         scheduling_role: 'viewer',
         employment_status: 'onboarding_probation',
@@ -531,6 +536,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
         base_salary: formData.base_salary || null,
         pay_frequency: formData.pay_frequency || 'monthly',
         annual_holiday_allowance: formData.annual_holiday_allowance,
+        unlimited_holiday: formData.unlimited_holiday,
         notes: formData.notes || null,
         scheduling_role: formData.scheduling_role,
         employment_status: formData.employment_status
@@ -1146,7 +1152,24 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
                   </div>
                 </div>
 
-                {formData.start_date && (
+                {/* Unlimited Holiday Toggle */}
+                <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
+                  <div className="flex items-center gap-3">
+                    <Infinity className="h-5 w-5 text-primary" />
+                    <div>
+                      <Label className="text-base font-medium">Unlimited Holiday</Label>
+                      <p className="text-sm text-muted-foreground">
+                        No accrual, no balance tracking, no June refund/deduction
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={formData.unlimited_holiday}
+                    onCheckedChange={(checked) => setFormData({ ...formData, unlimited_holiday: checked })}
+                  />
+                </div>
+
+                {formData.start_date && !formData.unlimited_holiday && (
                   <Card className="bg-muted/50">
                     <CardContent className="p-3">
                       <div className="text-sm space-y-1">

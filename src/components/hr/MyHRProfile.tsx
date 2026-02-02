@@ -54,6 +54,7 @@ interface HRProfile {
   base_salary: number | null;
   pay_frequency: string | null;
   annual_holiday_allowance: number | null;
+  unlimited_holiday: boolean;
   notes: string | null;
 }
 interface Holiday {
@@ -571,14 +572,15 @@ export function MyHRProfile() {
 
       // Calculate unused holiday payout or excess holiday deduction for June (end of holiday year)
       // Holiday year runs June 1 to May 31, so June payroll includes payout for unused days or deduction for excess
+      // Skip this calculation if staff has unlimited holiday
       let unusedHolidayPayout = 0;
       let unusedHolidayDays = 0;
       let excessHolidayDeduction = 0;
       let excessHolidayDays = 0;
       const targetMonthNum = targetMonth.getMonth(); // 0-indexed, June = 5
 
-      if (targetMonthNum === 5) {
-        // June
+      if (targetMonthNum === 5 && !hrProfile.unlimited_holiday) {
+        // June - only calculate for staff with limited holiday
         // Calculate holidays taken in the holiday year ending May 31 of the same year
         const holidayYearStart = new Date(targetMonth.getFullYear() - 1, 5, 1); // June 1 of previous year
         const holidayYearEnd = new Date(targetMonth.getFullYear(), 4, 31); // May 31 of current year
@@ -797,10 +799,14 @@ export function MyHRProfile() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Holiday Allowance (Jun-May)</p>
-                <p className="font-medium">
-                  {totalHolidaysTaken} / {allowanceInfo.annualAllowance} days used
-                  <span className="text-muted-foreground text-sm ml-1">({allowanceInfo.accruedAllowance.toFixed(1)} accrued)</span>
-                </p>
+                {hrProfile.unlimited_holiday ? (
+                  <p className="font-medium text-primary">Unlimited</p>
+                ) : (
+                  <p className="font-medium">
+                    {totalHolidaysTaken} / {allowanceInfo.annualAllowance} days used
+                    <span className="text-muted-foreground text-sm ml-1">({allowanceInfo.accruedAllowance.toFixed(1)} accrued)</span>
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>
