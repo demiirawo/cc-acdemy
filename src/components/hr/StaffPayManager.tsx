@@ -170,7 +170,7 @@ export function StaffPayManager() {
   const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; status: string; absence_type: string }[]>([]);
-  const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null }[]>([]);
+  const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; unlimited_holiday: boolean }[]>([]);
   const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null }[]>([]);
   const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string }[]>([]);
   const { toast } = useToast();
@@ -378,7 +378,7 @@ export function StaffPayManager() {
       // Fetch full HR profiles for holiday allowance
       const { data: hrFullData } = await supabase
         .from('hr_profiles')
-        .select('user_id, annual_holiday_allowance, start_date');
+        .select('user_id, annual_holiday_allowance, start_date, unlimited_holiday');
       
       setHRProfilesFull(hrFullData || []);
 
@@ -711,7 +711,12 @@ export function StaffPayManager() {
       let excessHolidayDays = 0;
       const selectedMonthNum = selectedMonth.getMonth(); // 0-indexed, June = 5
       
-      if (selectedMonthNum === 5) { // June
+      // Get user's HR profile to check for unlimited holiday
+      const userHRFull = hrProfilesFull.find(p => p.user_id === hr.user_id);
+      const hasUnlimitedHoliday = userHRFull?.unlimited_holiday === true;
+      
+      // Only calculate holiday payout/deduction for staff who don't have unlimited holiday
+      if (selectedMonthNum === 5 && !hasUnlimitedHoliday) { // June
         // Holiday year runs June 1 to May 31
         // For June payroll, calculate holidays taken from June 1 of previous year to May 31 of current year
         const holidayYearStart = new Date(selectedMonth.getFullYear() - 1, 5, 1); // June 1 of previous year
@@ -725,8 +730,6 @@ export function StaffPayManager() {
           return startDate >= holidayYearStart && startDate <= holidayYearEnd;
         }).reduce((sum, h) => sum + Number(h.days_taken), 0);
         
-        // Get user's HR profile for start date and use calculateHolidayAllowance for consistency
-        const userHRFull = hrProfilesFull.find(p => p.user_id === hr.user_id);
         const employeeStartDateStr = userHRFull?.start_date || null;
         
         // Calculate accrued allowance using the same logic as StaffHolidaysManager
