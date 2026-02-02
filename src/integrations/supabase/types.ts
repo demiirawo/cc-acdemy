@@ -483,6 +483,7 @@ export type Database = {
           pay_frequency: string | null
           scheduling_role: string
           start_date: string | null
+          unlimited_holiday: boolean
           updated_at: string
           user_id: string
         }
@@ -500,6 +501,7 @@ export type Database = {
           pay_frequency?: string | null
           scheduling_role?: string
           start_date?: string | null
+          unlimited_holiday?: boolean
           updated_at?: string
           user_id: string
         }
@@ -517,6 +519,7 @@ export type Database = {
           pay_frequency?: string | null
           scheduling_role?: string
           start_date?: string | null
+          unlimited_holiday?: boolean
           updated_at?: string
           user_id?: string
         }
