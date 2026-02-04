@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2, Palmtree, AlertTriangle, Clock, GripVertical, Code } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2, Palmtree, AlertTriangle, Clock, GripVertical } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -163,10 +163,6 @@ export const PublicClientSchedule = () => {
   
   const [weekOffset, setWeekOffset] = useState(0);
   
-  // Iframe embed dialog state
-  const [iframeDialogOpen, setIframeDialogOpen] = useState(false);
-  const [iframeCopied, setIframeCopied] = useState(false);
-  
   // Holiday management state
   const [selectedHoliday, setSelectedHoliday] = useState<StaffHoliday | null>(null);
   const [holidayDialogOpen, setHolidayDialogOpen] = useState(false);
@@ -184,19 +180,6 @@ export const PublicClientSchedule = () => {
   // Unified shift editor state
   const [isUnifiedEditorOpen, setIsUnifiedEditorOpen] = useState(false);
   const [shiftToEdit, setShiftToEdit] = useState<ShiftToEdit | null>(null);
-  
-  // Generate iframe embed code
-  const iframeEmbedCode = useMemo(() => {
-    const currentUrl = window.location.href;
-    return `<iframe src="${currentUrl}" width="100%" height="800" frameborder="0" style="border: none; border-radius: 8px;"></iframe>`;
-  }, []);
-  
-  const handleCopyIframeCode = () => {
-    navigator.clipboard.writeText(iframeEmbedCode);
-    setIframeCopied(true);
-    toast.success("Iframe code copied to clipboard!");
-    setTimeout(() => setIframeCopied(false), 2000);
-  };
   
   const currentWeekStart = useMemo(() => {
     return startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
@@ -1114,64 +1097,6 @@ export const PublicClientSchedule = () => {
         </div>
       </div>
 
-      {/* Admin Floating Iframe Button */}
-      {isAdmin && (
-        <Button
-          onClick={() => setIframeDialogOpen(true)}
-          className="fixed bottom-6 right-6 h-12 w-12 rounded-full shadow-lg z-50"
-          size="icon"
-          title="Get Embed Code"
-        >
-          <Code className="h-5 w-5" />
-        </Button>
-      )}
-
-      {/* Iframe Embed Dialog */}
-      <Dialog open={iframeDialogOpen} onOpenChange={setIframeDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Code className="h-5 w-5" />
-              Embed This Schedule
-            </DialogTitle>
-            <DialogDescription>
-              Copy the iframe code below to embed this client schedule on another website.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="relative">
-              <Textarea
-                readOnly
-                value={iframeEmbedCode}
-                className="font-mono text-sm min-h-[100px] pr-12"
-              />
-              <Button
-                size="icon"
-                variant="ghost"
-                className="absolute top-2 right-2"
-                onClick={handleCopyIframeCode}
-              >
-                {iframeCopied ? (
-                  <Check className="h-4 w-4 text-green-600" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-            <div className="text-sm text-muted-foreground">
-              <p><strong>Tip:</strong> Adjust the <code>width</code> and <code>height</code> attributes to fit your layout.</p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIframeDialogOpen(false)}>
-              Close
-            </Button>
-            <Button onClick={handleCopyIframeCode}>
-              {iframeCopied ? "Copied!" : "Copy Code"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Holiday View/Edit Dialog */}
       <Dialog open={holidayDialogOpen} onOpenChange={setHolidayDialogOpen}>
