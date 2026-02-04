@@ -834,14 +834,16 @@ export const PublicClientSchedule = () => {
                     return (
                       <div 
                         key={schedule.id}
-                        onClick={(e) => {
+                        onClick={isAdmin ? (e) => {
                           if (staffOnHoliday && holidayInfo) {
                             handleHolidayClick(holidayInfo, e);
                           } else if (!schedule.id.startsWith('bench-')) {
                             handleShiftClick(schedule, day, e);
                           }
-                        }}
-                        className={`p-3 rounded-lg border cursor-pointer hover:shadow-md transition-shadow ${
+                        } : undefined}
+                        className={`p-3 rounded-lg border transition-shadow ${
+                          isAdmin ? 'cursor-pointer hover:shadow-md' : ''
+                        } ${
                           staffOnHoliday 
                             ? 'bg-amber-50 border-amber-200' 
                             : isOvertime
@@ -960,16 +962,18 @@ export const PublicClientSchedule = () => {
                       return (
                         <div 
                           key={schedule.id} 
-                          onClick={(e) => {
+                          onClick={isAdmin ? (e) => {
                             if (staffOnHoliday && holidayInfo) {
                               handleHolidayClick(holidayInfo, e);
                             } else if (!schedule.id.startsWith('bench-')) {
                               handleShiftClick(schedule, day, e);
                             }
-                          }}
-                          className={`rounded p-1.5 mb-1 text-xs border cursor-pointer hover:shadow-md transition-shadow ${
+                          } : undefined}
+                          className={`rounded p-1.5 mb-1 text-xs border transition-shadow ${
+                            isAdmin ? 'cursor-pointer hover:shadow-md' : ''
+                          } ${
                             staffOnHoliday 
-                              ? 'bg-amber-100 border-amber-300 hover:bg-amber-200' 
+                              ? 'bg-amber-100 border-amber-300' + (isAdmin ? ' hover:bg-amber-200' : '')
                               : isOvertime
                                 ? 'bg-orange-100 border-orange-300'
                                 : `${colors.bg} ${colors.border}`
