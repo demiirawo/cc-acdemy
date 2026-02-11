@@ -17,7 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
-import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay } from "date-fns";
+import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay, subDays } from "date-fns";
 import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar, Link2, Check, X } from "lucide-react";
 import { UnifiedShiftEditor, ShiftToEdit } from "./UnifiedShiftEditor";
 import { LiveTimelineView } from "./LiveTimelineView";
@@ -849,6 +849,26 @@ export function StaffScheduleManager() {
     }
   });
 
+  // Delete this and all future shifts from a pattern (set end_date to day before)
+  const deleteFutureShiftsMutation = useMutation({
+    mutationFn: async ({ patternId, exceptionDate }: { patternId: string; exceptionDate: string }) => {
+      const dayBefore = format(subDays(parseISO(exceptionDate), 1), "yyyy-MM-dd");
+      const { error } = await supabase
+        .from("recurring_shift_patterns")
+        .update({ end_date: dayBefore })
+        .eq("id", patternId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["recurring-shift-patterns"] });
+      queryClient.invalidateQueries({ queryKey: ["public-client-patterns"] });
+      toast.success("This and all future shifts deleted");
+    },
+    onError: (error) => {
+      toast.error("Failed to delete future shifts: " + error.message);
+    }
+  });
+
   // Delete schedule mutation
   const deleteScheduleMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -1021,13 +1041,19 @@ export function StaffScheduleManager() {
     }
   };
 
-  const handleDeleteConfirm = (deleteEntireSeries: boolean) => {
+  const handleDeleteConfirm = (deleteType: 'single' | 'future' | 'all') => {
     if (!deleteTarget) return;
     
-    if (deleteEntireSeries && deleteTarget.patternId) {
+    if (deleteType === 'all' && deleteTarget.patternId) {
       // Delete the entire pattern
       deletePatternMutation.mutate(deleteTarget.patternId);
-    } else if (!deleteEntireSeries && deleteTarget.patternId && deleteTarget.exceptionDate) {
+    } else if (deleteType === 'future' && deleteTarget.patternId && deleteTarget.exceptionDate) {
+      // Set end_date to day before this occurrence
+      deleteFutureShiftsMutation.mutate({
+        patternId: deleteTarget.patternId,
+        exceptionDate: deleteTarget.exceptionDate
+      });
+    } else if (deleteType === 'single' && deleteTarget.patternId && deleteTarget.exceptionDate) {
       // Create an exception for just this shift
       createExceptionMutation.mutate({
         patternId: deleteTarget.patternId,
@@ -2709,20 +2735,28 @@ export function StaffScheduleManager() {
               This shift is part of a recurring pattern. Would you like to delete just this shift or the entire series?
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+          <AlertDialogFooter className="flex-col gap-2">
             <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
-            <Button 
-              variant="outline"
-              onClick={() => handleDeleteConfirm(false)}
-            >
-              Delete Just This Shift
-            </Button>
-            <AlertDialogAction 
-              onClick={() => handleDeleteConfirm(true)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete Entire Series
-            </AlertDialogAction>
+            <div className="flex flex-col sm:flex-row gap-2 w-full">
+              <AlertDialogAction 
+                onClick={() => handleDeleteConfirm('single')}
+                className="bg-orange-600 hover:bg-orange-700 flex-1"
+              >
+                Just This Shift
+              </AlertDialogAction>
+              <AlertDialogAction 
+                onClick={() => handleDeleteConfirm('future')}
+                className="bg-amber-600 hover:bg-amber-700 flex-1"
+              >
+                This & Future
+              </AlertDialogAction>
+              <AlertDialogAction 
+                onClick={() => handleDeleteConfirm('all')}
+                className="bg-destructive hover:bg-destructive/90 flex-1"
+              >
+                Entire Pattern
+              </AlertDialogAction>
+            </div>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
