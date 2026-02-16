@@ -138,6 +138,7 @@ export function StaffRequestForm() {
   const [selectedSwapShifts, setSelectedSwapShifts] = useState<string[]>([]);
   const [shiftCoverType, setShiftCoverType] = useState<'shifts' | 'holidays'>('shifts');
   const [selectedCoverHolidayId, setSelectedCoverHolidayId] = useState("");
+  const [selectedCoverDays, setSelectedCoverDays] = useState<string[]>([]);
   const [isShiftCoverOvertime, setIsShiftCoverOvertime] = useState(true); // Default to overtime
   // Fetch staff members for swap selection
   const { data: staffMembers = [] } = useQuery({
@@ -261,13 +262,12 @@ export function StaffRequestForm() {
     enabled: !!swapWithUserId
   });
 
-  // Helper function to calculate actual working days for a user in a date range
-  const calculateActualWorkingDays = (userId: string, startDate: Date, endDate: Date): number => {
+  // Helper function to enumerate actual working day dates for a user in a date range
+  const enumerateWorkingDays = (userId: string, rangeStart: Date, rangeEnd: Date): string[] => {
     const patterns = swapPartnerPatterns.filter(p => p.user_id === userId);
     const schedules = swapPartnerAllSchedules.filter(s => s.user_id === userId);
-    const daysInRange = eachDayOfInterval({ start: startDate, end: endDate });
-    
-    let workingDays = 0;
+    const daysInRange = eachDayOfInterval({ start: rangeStart, end: rangeEnd });
+    const workingDates: string[] = [];
     
     daysInRange.forEach(day => {
       const dayOfWeek = getDay(day);
@@ -275,7 +275,7 @@ export function StaffRequestForm() {
       
       // Check non-overtime patterns (standard working days)
       const hasRecurringShift = patterns.some(pattern => {
-        if (pattern.is_overtime) return false; // Exclude overtime patterns
+        if (pattern.is_overtime) return false;
         const patternStart = parseISO(pattern.start_date);
         const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
         const inDateRange = day >= patternStart && (!patternEnd || day <= patternEnd);
@@ -290,11 +290,16 @@ export function StaffRequestForm() {
       });
       
       if (hasRecurringShift || hasIndividualShift) {
-        workingDays++;
+        workingDates.push(dateStr);
       }
     });
     
-    return workingDays;
+    return workingDates;
+  };
+
+  // Backwards-compatible wrapper that returns count
+  const calculateActualWorkingDays = (userId: string, rangeStart: Date, rangeEnd: Date): number => {
+    return enumerateWorkingDays(userId, rangeStart, rangeEnd).length;
   };
 
   // Fetch swap partner's approved holidays for holiday cover
@@ -318,6 +323,17 @@ export function StaffRequestForm() {
     },
     enabled: !!swapWithUserId && shiftCoverType === 'holidays'
   });
+
+  // Auto-populate selectedCoverDays when a holiday is selected
+  useEffect(() => {
+    if (shiftCoverType === 'holidays' && selectedCoverHolidayId && swapWithUserId) {
+      const holiday = swapPartnerHolidays.find(h => h.id === selectedCoverHolidayId);
+      if (holiday) {
+        const days = enumerateWorkingDays(swapWithUserId, parseISO(holiday.start_date), parseISO(holiday.end_date));
+        setSelectedCoverDays(days);
+      }
+    }
+  }, [selectedCoverHolidayId, swapWithUserId, swapPartnerHolidays, swapPartnerPatterns, swapPartnerAllSchedules, shiftCoverType]);
 
   // Get staff members who have approved holidays (for the covering dropdown)
   const staffWithHolidays = staffMembers.filter(s => s.user_id !== user?.id);
@@ -543,13 +559,14 @@ export function StaffRequestForm() {
           requestDays = selectedSwapShifts.length;
         } else if (shiftCoverType === 'holidays' && selectedCoverHolidayId) {
           const holiday = swapPartnerHolidays.find(h => h.id === selectedCoverHolidayId);
-          if (holiday) {
-            requestStartDate = parseISO(holiday.start_date);
-            requestEndDate = parseISO(holiday.end_date);
-            // Calculate actual working days based on the person being covered's schedule
-            const actualWorkingDays = calculateActualWorkingDays(swapWithUserId, requestStartDate, requestEndDate);
-            requestDays = actualWorkingDays > 0 ? actualWorkingDays : holiday.days_taken;
-            const holidayDetails = `Covering for ${staffMembers.find(s => s.user_id === swapWithUserId)?.display_name || 'staff member'} during their holiday`;
+          if (holiday && selectedCoverDays.length > 0) {
+            const sortedDays = [...selectedCoverDays].sort();
+            requestStartDate = parseISO(sortedDays[0]);
+            requestEndDate = parseISO(sortedDays[sortedDays.length - 1]);
+            requestDays = selectedCoverDays.length;
+            const staffName = staffMembers.find(s => s.user_id === swapWithUserId)?.display_name || 'staff member';
+            const daysListStr = sortedDays.map(d => format(parseISO(d), "dd MMM yyyy")).join(", ");
+            const holidayDetails = `Covering for ${staffName} during their holiday\nCovered days: ${daysListStr}`;
             requestDetails = details ? `${details}\n\n${holidayDetails}` : holidayDetails;
           }
         }
@@ -717,6 +734,7 @@ export function StaffRequestForm() {
     setSelectedSwapShifts([]);
     setShiftCoverType('shifts');
     setSelectedCoverHolidayId("");
+    setSelectedCoverDays([]);
     setIsShiftCoverOvertime(true);
   };
 
@@ -914,10 +932,11 @@ export function StaffRequestForm() {
                 <Label>Whose shifts/holidays are you covering? <span className="text-destructive">*</span></Label>
                 <Select 
                   value={swapWithUserId} 
-                  onValueChange={(val) => {
+                   onValueChange={(val) => {
                     setSwapWithUserId(val);
                     setSelectedSwapShifts([]);
                     setSelectedCoverHolidayId("");
+                    setSelectedCoverDays([]);
                   }}
                 >
                   <SelectTrigger>
@@ -945,6 +964,7 @@ export function StaffRequestForm() {
                       setShiftCoverType(val);
                       setSelectedSwapShifts([]);
                       setSelectedCoverHolidayId("");
+                      setSelectedCoverDays([]);
                       setSwapStartDate(undefined);
                       setSwapEndDate(undefined);
                     }}
@@ -1134,7 +1154,10 @@ export function StaffRequestForm() {
                       No approved holidays found for {getStaffName(swapWithUserId)}
                     </div>
                   ) : (
-                    <Select value={selectedCoverHolidayId} onValueChange={setSelectedCoverHolidayId}>
+                    <Select value={selectedCoverHolidayId} onValueChange={(val) => {
+                      setSelectedCoverHolidayId(val);
+                      setSelectedCoverDays([]); // Reset, useEffect will repopulate
+                    }}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select an approved holiday..." />
                       </SelectTrigger>
@@ -1152,25 +1175,93 @@ export function StaffRequestForm() {
                       </SelectContent>
                     </Select>
                   )}
-                  
+
+                  {/* Day selection checkboxes for selected holiday */}
                   {selectedCoverHolidayId && (() => {
                     const holiday = swapPartnerHolidays.find(h => h.id === selectedCoverHolidayId);
-                    return holiday ? (
-                      <div className="p-3 bg-muted rounded-md text-sm space-y-2">
-                        <div>
-                          <p className="font-medium">Covering Period</p>
-                          <p className="text-muted-foreground">
-                            {format(parseISO(holiday.start_date), 'dd MMM yyyy')} – {format(parseISO(holiday.end_date), 'dd MMM yyyy')} ({holiday.days_taken} day{holiday.days_taken !== 1 ? 's' : ''})
-                          </p>
-                        </div>
-                        {holiday.notes && (
-                          <div>
-                            <p className="font-medium">Notes</p>
-                            <p className="text-muted-foreground text-xs">{holiday.notes}</p>
+                    if (!holiday) return null;
+                    const allWorkingDays = enumerateWorkingDays(swapWithUserId, parseISO(holiday.start_date), parseISO(holiday.end_date));
+                    
+                    return (
+                      <div className="space-y-3">
+                        {allWorkingDays.length > 0 ? (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <Label>Select days to cover</Label>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs h-7"
+                                onClick={() => {
+                                  if (selectedCoverDays.length === allWorkingDays.length) {
+                                    setSelectedCoverDays([]);
+                                  } else {
+                                    setSelectedCoverDays([...allWorkingDays]);
+                                  }
+                                }}
+                              >
+                                {selectedCoverDays.length === allWorkingDays.length ? 'Deselect All' : 'Select All'}
+                              </Button>
+                            </div>
+                            <div className="space-y-2 max-h-[200px] overflow-y-auto border rounded-md p-3">
+                              {allWorkingDays.map(dateStr => (
+                                <div 
+                                  key={dateStr} 
+                                  className="flex items-center space-x-3 p-2 rounded hover:bg-muted/50"
+                                >
+                                  <Checkbox
+                                    id={`cover-day-${dateStr}`}
+                                    checked={selectedCoverDays.includes(dateStr)}
+                                    onCheckedChange={(checked) => {
+                                      if (checked) {
+                                        setSelectedCoverDays(prev => [...prev, dateStr]);
+                                      } else {
+                                        setSelectedCoverDays(prev => prev.filter(d => d !== dateStr));
+                                      }
+                                    }}
+                                  />
+                                  <label 
+                                    htmlFor={`cover-day-${dateStr}`} 
+                                    className="flex-1 text-sm cursor-pointer"
+                                  >
+                                    <span className="font-medium">{format(parseISO(dateStr), "EEE, dd MMM yyyy")}</span>
+                                  </label>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              {selectedCoverDays.length} of {allWorkingDays.length} working day{allWorkingDays.length !== 1 ? 's' : ''} selected
+                            </p>
+                          </>
+                        ) : (
+                          <div className="p-4 bg-muted rounded-md text-sm text-muted-foreground text-center">
+                            No working days found for {getStaffName(swapWithUserId)} during this holiday period
+                          </div>
+                        )}
+
+                        {/* Covering period summary */}
+                        {selectedCoverDays.length > 0 && (
+                          <div className="p-3 bg-muted rounded-md text-sm space-y-2">
+                            <div>
+                              <p className="font-medium">Covering Period</p>
+                              <p className="text-muted-foreground">
+                                {selectedCoverDays.length} day{selectedCoverDays.length !== 1 ? 's' : ''} selected
+                                {selectedCoverDays.length < allWorkingDays.length && (
+                                  <span className="text-primary ml-1">(partial cover)</span>
+                                )}
+                              </p>
+                            </div>
+                            {holiday.notes && (
+                              <div>
+                                <p className="font-medium">Notes</p>
+                                <p className="text-muted-foreground text-xs">{holiday.notes}</p>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
-                    ) : null;
+                    );
                   })()}
                 </div>
               )}
