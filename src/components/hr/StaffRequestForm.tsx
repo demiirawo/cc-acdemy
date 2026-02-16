@@ -1123,8 +1123,17 @@ export function StaffRequestForm() {
                                 htmlFor={shift.id} 
                                 className="flex-1 text-sm cursor-pointer"
                               >
-                                <div className="font-medium">
+                                <div className="font-medium flex items-center gap-2">
                                   {format(shift.date, "EEE, dd MMM yyyy")}
+                                  {swapPartnerHolidays.some(h => {
+                                    const shiftDate = format(shift.date, "yyyy-MM-dd");
+                                    return shiftDate >= h.start_date && shiftDate <= h.end_date;
+                                  }) && (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-orange-300 text-orange-600 bg-orange-50 dark:bg-orange-950/30">
+                                      <Palmtree className="h-3 w-3 mr-0.5" />
+                                      Holiday
+                                    </Badge>
+                                  )}
                                 </div>
                                 <div className="text-muted-foreground text-xs">
                                   {shift.startTime} - {shift.endTime} • {shift.clientName}
