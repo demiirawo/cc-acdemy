@@ -1303,9 +1303,11 @@ export function MyHRProfile() {
                               <p className="font-medium">{typeInfo.label}</p>
                               <p className="text-sm text-muted-foreground">
                                 {format(parseISO(request.start_date), 'dd MMM yyyy')}
-                                {dayBreakdown.length > 0 
-                                  ? ` (${dayBreakdown.length} working day${dayBreakdown.length !== 1 ? 's' : ''})`
-                                  : request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`
+                                {request.details?.includes('Imported from historical records')
+                                  ? request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`
+                                  : dayBreakdown.length > 0 
+                                    ? ` (${dayBreakdown.length} working day${dayBreakdown.length !== 1 ? 's' : ''})`
+                                    : request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`
                                 }
                               </p>
                               {summaryShiftTime && <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
@@ -1332,9 +1334,11 @@ export function MyHRProfile() {
                               <p className="font-medium">{typeInfo.label}</p>
                               <p className="text-sm text-muted-foreground">
                                 {format(parseISO(request.start_date), 'dd MMM yyyy')} - {format(parseISO(request.end_date), 'dd MMM yyyy')}
-                                {dayBreakdown.length > 0 
-                                  ? ` (${dayBreakdown.length} working day${dayBreakdown.length !== 1 ? 's' : ''})`
-                                  : request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`
+                                {request.details?.includes('Imported from historical records')
+                                  ? request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`
+                                  : dayBreakdown.length > 0 
+                                    ? ` (${dayBreakdown.length} working day${dayBreakdown.length !== 1 ? 's' : ''})`
+                                    : request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`
                                 }
                               </p>
                               {summaryShiftTime}
