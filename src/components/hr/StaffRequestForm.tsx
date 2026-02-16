@@ -321,7 +321,7 @@ export function StaffRequestForm() {
       if (error) throw error;
       return data as ApprovedHoliday[];
     },
-    enabled: !!swapWithUserId && shiftCoverType === 'holidays'
+    enabled: !!swapWithUserId && requestType === 'shift_swap'
   });
 
   // Auto-populate selectedCoverDays when a holiday is selected
