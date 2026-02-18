@@ -1102,9 +1102,9 @@ export function MyHRProfile() {
                             </Badge>;
                 }
               };
-              // Calculate payment date (2 months after the work month, on the 1st)
-              const paymentDate = addMonths(preview.month, 2);
-              const paymentDateLabel = format(paymentDate, 'MMMM do');
+              // Calculate payment date (1 month after the work month, on the 1st)
+              const paymentDate = addMonths(preview.month, 1);
+              const paymentDateLabel = `${format(paymentDate, 'MMMM')} 1st`;
               
               return <Collapsible key={monthKey} open={isExpanded} onOpenChange={() => toggleMonth(monthKey)}>
                           <CollapsibleTrigger className="w-full">
