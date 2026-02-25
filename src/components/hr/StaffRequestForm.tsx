@@ -1006,13 +1006,13 @@ export function StaffRequestForm() {
                       <SelectItem value="standard">
                         <div className="flex items-center gap-2">
                           <Clock className="h-4 w-4 text-orange-600" />
-                          Standard Overtime (outside normal hours — 1.5× rate)
+                          Overtime (Outside Normal Hours) — 1.5× rate
                         </div>
                       </SelectItem>
                       <SelectItem value="double_up">
                         <div className="flex items-center gap-2">
                           <Clock className="h-4 w-4 text-red-600" />
-                          Double Up Overtime (during normal hours — 0.5× premium)
+                          Overtime (Inside Normal Hours) — 0.5× premium
                         </div>
                       </SelectItem>
                     </SelectContent>

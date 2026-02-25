@@ -1531,13 +1531,13 @@ export function StaffScheduleManager() {
     switch (type) {
       case 'overtime_standard':
         return { 
-          label: 'OT - Standard', 
+          label: 'OT (Outside)', 
           color: isPending ? 'bg-orange-50 border-orange-200 border-dashed text-orange-600' : 'bg-orange-100 border-orange-300 text-orange-700', 
           icon: Clock 
         };
       case 'overtime_double_up':
         return { 
-          label: 'OT - Double Up', 
+          label: 'OT (Inside)', 
           color: isPending ? 'bg-amber-50 border-amber-200 border-dashed text-amber-600' : 'bg-amber-100 border-amber-300 text-amber-700', 
           icon: Clock 
         };
@@ -2130,8 +2130,8 @@ export function StaffScheduleManager() {
                         </SelectTrigger>
                         <SelectContent className="bg-background z-50">
                           <SelectItem value="none">Not Overtime</SelectItem>
-                          <SelectItem value="standard">Standard Overtime</SelectItem>
-                          <SelectItem value="double_up">Double Up Overtime</SelectItem>
+                          <SelectItem value="standard">Overtime (Outside Normal Hours)</SelectItem>
+                          <SelectItem value="double_up">Overtime (Inside Normal Hours)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -2391,7 +2391,7 @@ export function StaffScheduleManager() {
                                 )}
                                 {isPatternOvertime && (
                                   <span className={`text-[9px] font-bold px-1 rounded ${schedule.overtime_subtype === 'double_up' ? 'bg-red-200 text-red-800' : 'bg-orange-200 text-orange-800'}`}>
-                                    {schedule.overtime_subtype === 'double_up' ? 'OT×2' : 'OT'}
+                                    {schedule.overtime_subtype === 'double_up' ? 'OT (In)' : 'OT (Out)'}
                                   </span>
                                 )}
                               </div>
@@ -2597,7 +2597,7 @@ export function StaffScheduleManager() {
                                           )}
                                           {isPatternOvertime && !staffOnHoliday && (
                                             <span className={`text-[9px] font-bold px-1 rounded ${schedule.overtime_subtype === 'double_up' ? 'bg-red-200 text-red-800' : 'bg-orange-200 text-orange-800'}`}>
-                                              {schedule.overtime_subtype === 'double_up' ? 'OT×2' : 'OT'}
+                                              {schedule.overtime_subtype === 'double_up' ? 'OT (In)' : 'OT (Out)'}
                                             </span>
                                           )}
                                           <span>{getStaffName(schedule.user_id)}</span>
