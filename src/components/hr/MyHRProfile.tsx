@@ -96,6 +96,7 @@ interface ShiftPatternException {
   id: string;
   pattern_id: string;
   exception_date: string;
+  exception_type: string;
 }
 interface PublicHoliday {
   date: string;
@@ -339,7 +340,7 @@ export function MyHRProfile() {
         const patternIds = patterns.map(p => p.id);
         const {
           data: exceptions
-        } = await supabase.from('shift_pattern_exceptions').select('id, pattern_id, exception_date').in('pattern_id', patternIds);
+        } = await supabase.from('shift_pattern_exceptions').select('id, pattern_id, exception_date, exception_type').in('pattern_id', patternIds);
         setPatternExceptions(exceptions || []);
       } else {
         setPatternExceptions([]);
@@ -435,13 +436,21 @@ export function MyHRProfile() {
     const dailyRate = monthlyBaseSalary / 20;
     const holidayDatesMap = new Map(publicHolidays.map(h => [h.date, h.name]));
 
-    // Create exceptions map
-    const exceptionsMap = new Map<string, Set<string>>();
+    // Create exceptions maps - separate deleted from overtime overrides
+    const deletedExceptionsMap = new Map<string, Set<string>>();
+    const overtimeExceptionsMap = new Map<string, Map<string, string>>(); // pattern_id -> date -> exception_type
     patternExceptions.forEach(ex => {
-      if (!exceptionsMap.has(ex.pattern_id)) {
-        exceptionsMap.set(ex.pattern_id, new Set());
+      if (ex.exception_type === 'deleted') {
+        if (!deletedExceptionsMap.has(ex.pattern_id)) {
+          deletedExceptionsMap.set(ex.pattern_id, new Set());
+        }
+        deletedExceptionsMap.get(ex.pattern_id)!.add(ex.exception_date);
+      } else if (ex.exception_type === 'overtime' || ex.exception_type === 'not_overtime') {
+        if (!overtimeExceptionsMap.has(ex.pattern_id)) {
+          overtimeExceptionsMap.set(ex.pattern_id, new Map());
+        }
+        overtimeExceptionsMap.get(ex.pattern_id)!.set(ex.exception_date, ex.exception_type);
       }
-      exceptionsMap.get(ex.pattern_id)!.add(ex.exception_date);
     });
     for (let i = 0; i < 12; i++) {
       const targetMonth = addMonths(now, i);
@@ -463,8 +472,9 @@ export function MyHRProfile() {
           const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
           if (day >= patternStart && (!patternEnd || day <= patternEnd)) {
             if (pattern.days_of_week.includes(dayOfWeek)) {
-              const patternExs = exceptionsMap.get(pattern.id);
-              if (!patternExs || !patternExs.has(dateStr)) {
+              // Only skip if there's a 'deleted' exception
+              const deletedExs = deletedExceptionsMap.get(pattern.id);
+              if (!deletedExs || !deletedExs.has(dateStr)) {
                 virtualScheduleDates.push(dateStr);
                 break; // Only add date once even if multiple patterns match
               }
@@ -545,19 +555,29 @@ export function MyHRProfile() {
         }
       });
 
-      // Also count recurring overtime patterns (each day only once even if multiple shifts)
-      const overtimePatterns = recurringPatterns.filter(p => p.is_overtime);
+      // Also count recurring overtime patterns AND per-day overtime exceptions
       const countedOvertimeDates = new Set<string>();
       for (const day of monthDays) {
         const dateStr = format(day, 'yyyy-MM-dd');
         const dayOfWeek = getDay(day);
-        for (const pattern of overtimePatterns) {
+        for (const pattern of recurringPatterns) {
           const patternStart = parseISO(pattern.start_date);
           const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
           if (day >= patternStart && (!patternEnd || day <= patternEnd)) {
             if (pattern.days_of_week.includes(dayOfWeek)) {
-              const patternExs = exceptionsMap.get(pattern.id);
-              if (!patternExs || !patternExs.has(dateStr)) {
+              // Skip deleted exceptions
+              const deletedExs = deletedExceptionsMap.get(pattern.id);
+              if (deletedExs && deletedExs.has(dateStr)) continue;
+              
+              // Check for per-day overtime override
+              const overtimeExs = overtimeExceptionsMap.get(pattern.id);
+              const dayOverride = overtimeExs?.get(dateStr);
+              
+              const isOvertimeForDay = dayOverride === 'overtime' ? true
+                : dayOverride === 'not_overtime' ? false
+                : pattern.is_overtime;
+              
+              if (isOvertimeForDay) {
                 countedOvertimeDates.add(dateStr);
                 break; // Only count once per day
               }
