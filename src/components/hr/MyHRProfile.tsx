@@ -600,10 +600,10 @@ export function MyHRProfile() {
 
       // Overtime pay:
       // Request-based overtime (legacy) = 1.5 × dailyRate × days
-      // Standard OT from patterns = 0.5 × dailyRate × days
-      // Double Up OT from patterns = 1.5 × dailyRate × days
+      // Standard OT from patterns = 1.5 × dailyRate × days (outside normal hours, full pay)
+      // Double Up OT from patterns = 0.5 × dailyRate × days (during normal hours, premium only)
       const requestOTDays = overtimeDays - standardOTDays - doubleUpOTDays;
-      const overtimePay = (1.5 * dailyRate * requestOTDays) + (0.5 * dailyRate * standardOTDays) + (1.5 * dailyRate * doubleUpOTDays);
+      const overtimePay = (1.5 * dailyRate * requestOTDays) + (1.5 * dailyRate * standardOTDays) + (0.5 * dailyRate * doubleUpOTDays);
 
       // Calculate unused holiday payout or excess holiday deduction for June (end of holiday year)
       // Holiday year runs June 1 to May 31, so June payroll includes payout for unused days or deduction for excess

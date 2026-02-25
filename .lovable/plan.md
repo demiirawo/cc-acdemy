@@ -6,8 +6,8 @@
 
 Currently, overtime in the schedule (both series-level and per-day overrides) is a simple on/off toggle. There's no distinction between:
 
-- **Standard Overtime** - working during normal hours (e.g. a public holiday that falls on a regular shift day). Pay = **1.5x their usual hourly pay for that day** (the base day pay is already in salary, so the overtime portion is 0.5x extra).
-- **Double Up Overtime** - working outside normal hours (additional shifts). Pay = **additional hourly pay at 1.5x their usual hourly rate** (full 1.5x on top, since they wouldn't normally be paid for these hours).
+- **Standard Overtime** - working outside normal hours (additional shifts). Pay = **additional hourly pay at 1.5x their usual hourly rate** (full 1.5x on top, since they wouldn't normally be paid for these hours).
+- **Double Up Overtime** - working during normal hours (e.g. a public holiday that falls on a regular shift day). Pay = **1.5x their usual hourly pay for that day** (the base day pay is already in salary, so the overtime portion is 0.5x extra).
 
 The staff request form already has a concept of `overtime_type` (`standard_hours` / `outside_hours`), but the schedule patterns and per-day exceptions don't carry this distinction.
 
@@ -38,8 +38,8 @@ When marking overtime (either for the whole series or per-day):
 Currently all overtime uses: `1.5 × (Base Salary / 20) × Overtime Days`
 
 Updated logic:
-- **Standard Overtime**: `0.5 × dailyRate × days` (the base pay is already in salary; only the 0.5x premium is added)
-- **Double Up Overtime**: `1.5 × dailyRate × days` (full additional pay at 1.5x since these are extra hours outside normal schedule)
+- **Standard Overtime**: `1.5 × dailyRate × days` (full additional pay at 1.5x since these are extra hours outside normal schedule)
+- **Double Up Overtime**: `0.5 × dailyRate × days` (the base pay is already in salary; only the 0.5x premium is added)
 
 The payroll loop that counts overtime days from patterns will need to track two separate counters: `standardOvertimeDays` and `doubleUpOvertimeDays`, reading the subtype from the pattern default or per-day exception override.
 
@@ -59,8 +59,8 @@ shift_pattern_exceptions
 └── overtime_subtype: 'standard' | 'double_up' | null (new)
 
 Payroll calculation:
-  Standard OT:  0.5 × (monthly_salary / 20) × standard_days
-  Double Up OT: 1.5 × (monthly_salary / 20) × double_up_days
+  Standard OT:  1.5 × (monthly_salary / 20) × standard_days
+  Double Up OT: 0.5 × (monthly_salary / 20) × double_up_days
 ```
 
 ### Files to Change

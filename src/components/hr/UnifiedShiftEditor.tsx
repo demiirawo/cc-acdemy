@@ -687,22 +687,22 @@ export function UnifiedShiftEditor({
                   ) : (
                     <>
                       <SelectItem value="none">Not Overtime</SelectItem>
-                      <SelectItem value="standard">Standard Overtime (working normal hours)</SelectItem>
-                      <SelectItem value="double_up">Double Up Overtime (additional hours)</SelectItem>
+                      <SelectItem value="standard">Standard Overtime (outside normal hours)</SelectItem>
+                      <SelectItem value="double_up">Double Up Overtime (during normal hours)</SelectItem>
                     </>
                   )}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground mt-1">
                 {!isPattern && !form.is_overtime && 'Regular shift — no overtime premium'}
-                {!isPattern && form.overtime_subtype === 'standard' && form.is_overtime && 'Standard OT — 0.5× daily rate premium (base already in salary)'}
-                {!isPattern && form.overtime_subtype === 'double_up' && form.is_overtime && 'Double Up — 1.5× daily rate (full additional pay)'}
+                {!isPattern && form.overtime_subtype === 'standard' && form.is_overtime && 'Standard OT — 1.5× daily rate (outside normal hours, full additional pay)'}
+                {!isPattern && form.overtime_subtype === 'double_up' && form.is_overtime && 'Double Up — 0.5× daily rate premium (during normal hours, base already in salary)'}
                 {isPattern && dayOvertimeValue !== 'inherit' && dayOvertimeValue === 'none' && `${format(shift!.date, "dd MMM")} overridden to Not Overtime`}
                 {isPattern && dayOvertimeValue !== 'inherit' && dayOvertimeValue === 'standard' && `${format(shift!.date, "dd MMM")} overridden to Standard OT`}
                 {isPattern && dayOvertimeValue !== 'inherit' && dayOvertimeValue === 'double_up' && `${format(shift!.date, "dd MMM")} overridden to Double Up OT`}
                 {isPattern && dayOvertimeValue === 'inherit' && !form.is_overtime && 'Series: Not Overtime'}
-                {isPattern && dayOvertimeValue === 'inherit' && form.is_overtime && form.overtime_subtype === 'standard' && 'Series: Standard OT — 0.5× daily rate premium'}
-                {isPattern && dayOvertimeValue === 'inherit' && form.is_overtime && form.overtime_subtype === 'double_up' && 'Series: Double Up — 1.5× daily rate'}
+                {isPattern && dayOvertimeValue === 'inherit' && form.is_overtime && form.overtime_subtype === 'standard' && 'Series: Standard OT — 1.5× daily rate (outside normal hours)'}
+                {isPattern && dayOvertimeValue === 'inherit' && form.is_overtime && form.overtime_subtype === 'double_up' && 'Series: Double Up — 0.5× daily rate premium (during normal hours)'}
               </p>
             </div>
 
