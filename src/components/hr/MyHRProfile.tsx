@@ -197,11 +197,11 @@ const REQUEST_TYPES: Record<string, {
   icon: string;
 }> = {
   'overtime_standard': {
-    label: 'Standard Overtime',
+    label: 'Overtime (Outside Normal Hours)',
     icon: 'clock'
   },
   'overtime_double_up': {
-    label: 'Double-Up Overtime',
+    label: 'Overtime (Inside Normal Hours)',
     icon: 'clock'
   },
   'holiday': {

@@ -52,12 +52,12 @@ const REQUEST_TYPE_INFO: Record<string, {
     color: "text-orange-600"
   },
   overtime_standard: {
-    label: "Overtime – Standard Hours",
+    label: "Overtime (Outside Normal Hours)",
     icon: Clock,
     color: "text-orange-600"
   },
   overtime_double_up: {
-    label: "Overtime – Outside Hours",
+    label: "Overtime (Inside Normal Hours)",
     icon: Clock,
     color: "text-amber-600"
   },
@@ -806,13 +806,13 @@ Care Cuddle Team`;
                       <SelectItem value="overtime_standard">
                         <div className="flex items-center gap-2">
                           <Clock className="h-4 w-4 text-orange-600" />
-                          Overtime – Standard Hours
+                          Overtime (Outside Normal Hours)
                         </div>
                       </SelectItem>
                       <SelectItem value="overtime_double_up">
                         <div className="flex items-center gap-2">
                           <Clock className="h-4 w-4 text-amber-600" />
-                          Overtime – Outside Hours
+                          Overtime (Inside Normal Hours)
                         </div>
                       </SelectItem>
                       <SelectItem value="shift_swap">

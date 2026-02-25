@@ -756,8 +756,8 @@ export function StaffPayManager() {
       overtimeDays += standardOvertimeDays + doubleUpOvertimeDays;
       
       // Overtime pay calculation:
-      // Standard OT: 1.5 × dailyRate × days (working outside normal hours, full additional pay)
-      // Double Up OT: 0.5 × dailyRate × days (working during normal hours, base already in salary, only premium added)
+      // OT (Outside Normal Hours): 1.5 × dailyRate × days (working outside normal hours, full additional pay)
+      // OT (Inside Normal Hours): 0.5 × dailyRate × days (working during normal hours, base already in salary, only premium added)
       // Request-based overtime still uses 1.5x (legacy/requests)
       const overtimeDailyRate = monthlyBaseSalary / 20;
       const requestOvertimePay = 1.5 * overtimeDailyRate * (overtimeDays - standardOvertimeDays - doubleUpOvertimeDays);
