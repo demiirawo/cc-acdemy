@@ -1,46 +1,81 @@
 
 
-## Allow Partial Holiday Cover (Individual Day Selection)
+## Overtime Type Distinction: Standard vs Double Up
 
 ### The Problem
-When submitting a Shift Cover request and choosing "Holiday Days", the current flow forces you to cover the **entire holiday period**. There is no way to select specific days within that holiday -- for example, covering just 2 out of 6 holiday days.
 
-The "Individual Shifts" option does allow granular selection (with checkboxes), but "Holiday Days" only has a dropdown that selects the whole range.
+Currently, overtime in the schedule (both series-level and per-day overrides) is a simple on/off toggle. There's no distinction between:
 
-### The Solution
-After selecting an approved holiday to cover, show a list of the **working days within that holiday period** (based on the person's shift patterns), each with a checkbox. The user can then select which specific days they want to cover. By default, all days are pre-selected so the existing behaviour of "cover the whole holiday" still works with a single click.
+- **Standard Overtime** - working during normal hours (e.g. a public holiday that falls on a regular shift day). Pay = **1.5x their usual hourly pay for that day** (the base day pay is already in salary, so the overtime portion is 0.5x extra).
+- **Double Up Overtime** - working outside normal hours (additional shifts). Pay = **additional hourly pay at 1.5x their usual hourly rate** (full 1.5x on top, since they wouldn't normally be paid for these hours).
 
-### How It Will Work (User Flow)
-1. Select "Shift Cover" as request type
-2. Pick the staff member
-3. Choose "Holiday Days"
-4. Select the approved holiday from the dropdown
-5. **NEW**: A checklist of working days within that holiday appears (pre-selected)
-6. Uncheck any days you do not want to cover
-7. The covering period summary and days count update to reflect only the selected days
-8. Submit as normal
+The staff request form already has a concept of `overtime_type` (`standard_hours` / `outside_hours`), but the schedule patterns and per-day exceptions don't carry this distinction.
+
+### What Changes
+
+**1. Database Migration**
+
+Add an `overtime_subtype` column to `shift_pattern_exceptions` and `recurring_shift_patterns`:
+
+- `recurring_shift_patterns`: add `overtime_subtype TEXT DEFAULT NULL` — when `is_overtime = true`, this stores `'standard'` or `'double_up'`
+- `shift_pattern_exceptions`: add `overtime_subtype TEXT DEFAULT NULL` — for per-day overtime overrides, stores the type
+
+**2. Schedule Editor (UnifiedShiftEditor.tsx)**
+
+When marking overtime (either for the whole series or per-day):
+
+- Replace the simple "Mark as overtime" checkbox with a dropdown/radio that offers three states: **Not Overtime**, **Standard Overtime**, **Double Up Overtime**
+- For the per-day button, similarly ask which type of overtime
+- The series-level overtime stores in `recurring_shift_patterns.is_overtime` + `overtime_subtype`
+- The per-day override stores in `shift_pattern_exceptions.exception_type` (overtime/not_overtime) + `overtime_subtype`
+
+**3. Schedule Display (StaffScheduleManager.tsx)**
+
+- When rendering shifts marked as overtime, show a visual indicator of the type (e.g. badge saying "OT" vs "OT x2" or "Standard OT" vs "Double Up")
+
+**4. Payroll Calculation (StaffPayManager.tsx)**
+
+Currently all overtime uses: `1.5 × (Base Salary / 20) × Overtime Days`
+
+Updated logic:
+- **Standard Overtime**: `0.5 × dailyRate × days` (the base pay is already in salary; only the 0.5x premium is added)
+- **Double Up Overtime**: `1.5 × dailyRate × days` (full additional pay at 1.5x since these are extra hours outside normal schedule)
+
+The payroll loop that counts overtime days from patterns will need to track two separate counters: `standardOvertimeDays` and `doubleUpOvertimeDays`, reading the subtype from the pattern default or per-day exception override.
+
+**5. Pay Forecast (MyHRProfile.tsx)**
+
+Same calculation update as StaffPayManager — split overtime into standard vs double up with the correct multipliers.
 
 ### Technical Details
 
-**File: `src/components/hr/StaffRequestForm.tsx`**
+```text
+recurring_shift_patterns
+├── is_overtime: boolean (existing)
+└── overtime_subtype: 'standard' | 'double_up' | null (new)
 
-**1. Add state for selected cover days**
-- New state: `selectedCoverDays` -- an array of date strings (yyyy-MM-dd) the user has checked
-- Reset this when the holiday selection changes
+shift_pattern_exceptions
+├── exception_type: 'deleted' | 'overtime' | 'not_overtime' (existing)
+└── overtime_subtype: 'standard' | 'double_up' | null (new)
 
-**2. Generate working days for the selected holiday**
-- Reuse the existing `calculateActualWorkingDays` pattern logic to enumerate which dates within the holiday are actual working days for the person being covered
-- Present these as checkboxes (same UI pattern as the shift selection checkboxes)
+Payroll calculation:
+  Standard OT:  0.5 × (monthly_salary / 20) × standard_days
+  Double Up OT: 1.5 × (monthly_salary / 20) × double_up_days
+```
 
-**3. Auto-select all days by default**
-- When a holiday is selected, pre-populate `selectedCoverDays` with all working days so existing behaviour is preserved
+### Files to Change
 
-**4. Update the submission logic**
-- Instead of using the full holiday date range, use the min/max of selected days as `start_date`/`end_date`
-- Set `days_requested` to the count of selected days
-- Include the specific covered dates in the `details` field
+| File | Change |
+|------|--------|
+| DB migration | Add `overtime_subtype` to `recurring_shift_patterns` and `shift_pattern_exceptions` |
+| `UnifiedShiftEditor.tsx` | Replace overtime checkbox with type selector (None / Standard / Double Up); update per-day button to also ask type |
+| `StaffScheduleManager.tsx` | Pass overtime subtype through virtual schedule generation; show type badge on schedule |
+| `StaffPayManager.tsx` | Split overtime counting into standard vs double up; apply different multipliers |
+| `MyHRProfile.tsx` | Same payroll formula update for pay forecast |
+| `DashboardLiveViewWrapper.tsx` | Pass through overtime subtype if displayed in live view |
 
-**5. Update the covering period summary**
-- The info box below the holiday dropdown should reflect the selected days count rather than the full holiday range
+### No Changes To
 
-No database schema changes required. No changes to any other components.
+- Rich text editor (preserved per guardrail)
+- Existing request form overtime_type logic (already has standard_hours/outside_hours distinction for requests)
+
