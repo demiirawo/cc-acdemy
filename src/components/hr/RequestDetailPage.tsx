@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -108,6 +109,8 @@ export function RequestDetailPage({
   const [emailCopied, setEmailCopied] = useState(false);
   const [editingDetails, setEditingDetails] = useState(false);
   const [detailsValue, setDetailsValue] = useState("");
+  const [coverAssignDialog, setCoverAssignDialog] = useState<{ userId: string; displayName: string } | null>(null);
+  const [coverOvertimeType, setCoverOvertimeType] = useState<'none' | 'outside_hours' | 'inside_hours'>('none');
 
   // Fetch the specific request
   const {
@@ -425,7 +428,7 @@ export function RequestDetailPage({
 
   // Assign cover mutation
   const assignCoverMutation = useMutation({
-    mutationFn: async (coverUserId: string) => {
+    mutationFn: async ({ coverUserId, overtimeType }: { coverUserId: string; overtimeType: 'none' | 'outside_hours' | 'inside_hours' }) => {
       if (!user || !request) throw new Error("Not authenticated or no request");
 
       // Compute working days from the covered person's shift patterns (same logic as display)
@@ -437,6 +440,11 @@ export function RequestDetailPage({
       const daysRequested = computedWorkingDays > 0 
         ? computedWorkingDays 
         : (linkedHoliday?.days_taken ?? request.days_requested);
+
+      // Map overtime selection to the overtime_type field
+      const mappedOvertimeType = overtimeType === 'outside_hours' ? 'outside_hours' 
+        : overtimeType === 'inside_hours' ? 'standard_hours' 
+        : null;
       
       const payload = {
         user_id: coverUserId,
@@ -449,7 +457,8 @@ export function RequestDetailPage({
         status: 'approved',
         reviewed_by: user.id,
         reviewed_at: new Date().toISOString(),
-        client_informed: false
+        client_informed: false,
+        overtime_type: mappedOvertimeType
       };
 
       // If a cover request already exists for this exact period, update it instead of inserting a duplicate
@@ -1006,10 +1015,14 @@ Care Cuddle Team`;
                           variant={isAssigned ? "secondary" : "outline"} 
                           size="sm" 
                           disabled={isPending} 
-                          onClick={() => isAssigned 
-                            ? unassignCoverMutation.mutate(staff.user_id) 
-                            : assignCoverMutation.mutate(staff.user_id)
-                          } 
+                          onClick={() => {
+                            if (isAssigned) {
+                              unassignCoverMutation.mutate(staff.user_id);
+                            } else {
+                              setCoverAssignDialog({ userId: staff.user_id, displayName: staff.display_name || staff.email || 'Staff' });
+                              setCoverOvertimeType('none');
+                            }
+                          }}
                           className={isAssigned ? "bg-success/20 text-success border-success hover:bg-destructive/20 hover:text-destructive hover:border-destructive" : "hover:bg-purple-50 hover:border-purple-300"}
                         >
                                     {isAssigned && <CheckCircle2 className="h-3 w-3 mr-1" />}
@@ -1033,10 +1046,14 @@ Care Cuddle Team`;
                           variant={isAssigned ? "secondary" : "outline"} 
                           size="sm" 
                           disabled={isPending} 
-                          onClick={() => isAssigned 
-                            ? unassignCoverMutation.mutate(staff.user_id) 
-                            : assignCoverMutation.mutate(staff.user_id)
-                          } 
+                          onClick={() => {
+                            if (isAssigned) {
+                              unassignCoverMutation.mutate(staff.user_id);
+                            } else {
+                              setCoverAssignDialog({ userId: staff.user_id, displayName: staff.display_name || staff.email || 'Staff' });
+                              setCoverOvertimeType('none');
+                            }
+                          }}
                           className={isAssigned ? "bg-success/20 text-success border-success hover:bg-destructive/20 hover:text-destructive hover:border-destructive" : "hover:bg-blue-50 hover:border-blue-300"}
                         >
                                     {isAssigned && <CheckCircle2 className="h-3 w-3 mr-1" />}
@@ -1139,5 +1156,50 @@ Care Cuddle Team`;
           </Card>
         </div>
       </div>
+      {/* Cover Assignment Overtime Type Dialog */}
+      <Dialog open={!!coverAssignDialog} onOpenChange={(open) => { if (!open) setCoverAssignDialog(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign Cover: {coverAssignDialog?.displayName}</DialogTitle>
+            <DialogDescription>
+              Choose whether this cover shift should be classified as overtime.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Label>Cover Type</Label>
+            <Select value={coverOvertimeType} onValueChange={(v) => setCoverOvertimeType(v as 'none' | 'outside_hours' | 'inside_hours')}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Not Overtime</SelectItem>
+                <SelectItem value="outside_hours">Overtime (Outside Normal Hours)</SelectItem>
+                <SelectItem value="inside_hours">Overtime (Inside Normal Hours)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {coverOvertimeType === 'outside_hours' 
+                ? 'Paid at 1.5× the daily rate — work outside their normal scheduled hours.' 
+                : coverOvertimeType === 'inside_hours' 
+                  ? 'Paid at 0.5× premium on top of base — work during their normal scheduled hours (e.g. public holiday).'
+                  : 'Standard cover, no overtime pay applied.'}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCoverAssignDialog(null)}>Cancel</Button>
+            <Button 
+              onClick={() => {
+                if (coverAssignDialog) {
+                  assignCoverMutation.mutate({ coverUserId: coverAssignDialog.userId, overtimeType: coverOvertimeType });
+                  setCoverAssignDialog(null);
+                }
+              }}
+              disabled={assignCoverMutation.isPending}
+            >
+              Assign Cover
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>;
 }
