@@ -622,62 +622,89 @@ export function UnifiedShiftEditor({
               </div>
             )}
 
-            {/* Overtime Status (entire series) */}
+            {/* Overtime Status */}
             <div>
-              <Label>Overtime Status {isPattern ? "(entire series)" : ""}</Label>
+              <Label>Overtime Status</Label>
               <Select 
-                value={form.is_overtime ? (form.overtime_subtype || 'standard') : 'none'} 
+                value={(() => {
+                  // Build a combined value: scope_type
+                  if (!isPattern) {
+                    // Non-pattern shifts: just the type
+                    return form.is_overtime ? (form.overtime_subtype || 'standard') : 'none';
+                  }
+                  // Pattern shifts: check if there's a per-day override
+                  if (dayOvertimeValue !== 'inherit') {
+                    // Per-day override active
+                    return `day_${dayOvertimeValue}`;
+                  }
+                  // Series default
+                  return form.is_overtime ? `series_${form.overtime_subtype || 'standard'}` : 'series_none';
+                })()}
                 onValueChange={v => {
-                  if (v === 'none') {
-                    setForm(p => ({ ...p, is_overtime: false, overtime_subtype: '' }));
-                  } else {
-                    setForm(p => ({ ...p, is_overtime: true, overtime_subtype: v }));
+                  if (!isPattern) {
+                    // Simple: just set the type
+                    if (v === 'none') {
+                      setForm(p => ({ ...p, is_overtime: false, overtime_subtype: '' }));
+                    } else {
+                      setForm(p => ({ ...p, is_overtime: true, overtime_subtype: v }));
+                    }
+                    return;
+                  }
+                  // Pattern: parse scope and type
+                  if (v.startsWith('series_')) {
+                    const type = v.replace('series_', '');
+                    // Clear any per-day override first
+                    if (dayOvertimeValue !== 'inherit') {
+                      setDayOvertimeValue('inherit');
+                      toggleOvertimeDayMutation.mutate({ value: 'inherit' });
+                    }
+                    if (type === 'none') {
+                      setForm(p => ({ ...p, is_overtime: false, overtime_subtype: '' }));
+                    } else {
+                      setForm(p => ({ ...p, is_overtime: true, overtime_subtype: type }));
+                    }
+                  } else if (v.startsWith('day_')) {
+                    const type = v.replace('day_', '');
+                    setDayOvertimeValue(type);
+                    handleDayOvertimeChange(type);
                   }
                 }}
+                disabled={toggleOvertimeDayMutation.isPending}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select overtime status" />
                 </SelectTrigger>
                 <SelectContent className="bg-background z-50">
-                  <SelectItem value="none">Not Overtime</SelectItem>
-                  <SelectItem value="standard">Standard Overtime (working normal hours)</SelectItem>
-                  <SelectItem value="double_up">Double Up Overtime (additional hours)</SelectItem>
+                  {isPattern ? (
+                    <>
+                      <SelectItem value="series_none" className="font-medium">Entire Series — Not Overtime</SelectItem>
+                      <SelectItem value="series_standard">Entire Series — Standard Overtime</SelectItem>
+                      <SelectItem value="series_double_up">Entire Series — Double Up Overtime</SelectItem>
+                      <SelectItem value="day_none" className="font-medium border-t mt-1 pt-1">Just {shift ? format(shift.date, "dd MMM") : "This Day"} — Not Overtime</SelectItem>
+                      <SelectItem value="day_standard">Just {shift ? format(shift.date, "dd MMM") : "This Day"} — Standard Overtime</SelectItem>
+                      <SelectItem value="day_double_up">Just {shift ? format(shift.date, "dd MMM") : "This Day"} — Double Up Overtime</SelectItem>
+                    </>
+                  ) : (
+                    <>
+                      <SelectItem value="none">Not Overtime</SelectItem>
+                      <SelectItem value="standard">Standard Overtime (working normal hours)</SelectItem>
+                      <SelectItem value="double_up">Double Up Overtime (additional hours)</SelectItem>
+                    </>
+                  )}
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground mt-1">
-                {!form.is_overtime && 'Regular shift — no overtime premium'}
-                {form.overtime_subtype === 'standard' && form.is_overtime && 'Standard OT — 0.5× daily rate premium (base already in salary)'}
-                {form.overtime_subtype === 'double_up' && form.is_overtime && 'Double Up — 1.5× daily rate (full additional pay)'}
+                {!isPattern && !form.is_overtime && 'Regular shift — no overtime premium'}
+                {!isPattern && form.overtime_subtype === 'standard' && form.is_overtime && 'Standard OT — 0.5× daily rate premium (base already in salary)'}
+                {!isPattern && form.overtime_subtype === 'double_up' && form.is_overtime && 'Double Up — 1.5× daily rate (full additional pay)'}
+                {isPattern && dayOvertimeValue !== 'inherit' && dayOvertimeValue === 'none' && `${format(shift!.date, "dd MMM")} overridden to Not Overtime`}
+                {isPattern && dayOvertimeValue !== 'inherit' && dayOvertimeValue === 'standard' && `${format(shift!.date, "dd MMM")} overridden to Standard OT`}
+                {isPattern && dayOvertimeValue !== 'inherit' && dayOvertimeValue === 'double_up' && `${format(shift!.date, "dd MMM")} overridden to Double Up OT`}
+                {isPattern && dayOvertimeValue === 'inherit' && !form.is_overtime && 'Series: Not Overtime'}
+                {isPattern && dayOvertimeValue === 'inherit' && form.is_overtime && form.overtime_subtype === 'standard' && 'Series: Standard OT — 0.5× daily rate premium'}
+                {isPattern && dayOvertimeValue === 'inherit' && form.is_overtime && form.overtime_subtype === 'double_up' && 'Series: Double Up — 1.5× daily rate'}
               </p>
             </div>
-
-            {/* Per-day overtime override — only for pattern-based shifts */}
-            {isPattern && (
-              <div>
-                <Label>Overtime Status (just this day — {shift ? format(shift.date, "dd MMM") : ""})</Label>
-                <Select
-                  value={dayOvertimeValue}
-                  onValueChange={handleDayOvertimeChange}
-                  disabled={toggleOvertimeDayMutation.isPending}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select day overtime" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-background z-50">
-                    <SelectItem value="inherit">Use series default</SelectItem>
-                    <SelectItem value="none">Not Overtime</SelectItem>
-                    <SelectItem value="standard">Standard Overtime</SelectItem>
-                    <SelectItem value="double_up">Double Up Overtime</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {dayOvertimeValue === 'inherit' && 'This day follows the series overtime setting above'}
-                  {dayOvertimeValue === 'none' && 'This day is explicitly not overtime (overrides series)'}
-                  {dayOvertimeValue === 'standard' && 'This day is Standard OT (overrides series)'}
-                  {dayOvertimeValue === 'double_up' && 'This day is Double Up OT (overrides series)'}
-                </p>
-              </div>
-            )}
 
             {/* Shift Type */}
             <div>
