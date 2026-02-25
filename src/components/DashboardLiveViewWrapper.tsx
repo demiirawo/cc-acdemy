@@ -177,29 +177,29 @@ export function DashboardLiveViewWrapper() {
   // Generate virtual schedules from recurring patterns
   const virtualSchedulesFromPatterns = useMemo(() => {
     const virtualSchedules: Schedule[] = [];
-    const exceptionsByPattern = new Map<string, Set<string>>();
+    const deletedExceptions = new Map<string, Set<string>>();
 
     patternExceptions.forEach(exc => {
-      if (!exceptionsByPattern.has(exc.pattern_id)) {
-        exceptionsByPattern.set(exc.pattern_id, new Set());
+      if (exc.exception_type !== 'deleted') return;
+      if (!deletedExceptions.has(exc.pattern_id)) {
+        deletedExceptions.set(exc.pattern_id, new Set());
       }
-      exceptionsByPattern.get(exc.pattern_id)!.add(exc.exception_date);
+      deletedExceptions.get(exc.pattern_id)!.add(exc.exception_date);
     });
 
     for (const pattern of recurringPatterns) {
       const patternStart = parseISO(pattern.start_date);
       const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-      const exceptions = exceptionsByPattern.get(pattern.id) || new Set();
+      const exceptions = deletedExceptions.get(pattern.id) || new Set();
 
       for (const day of weekDays) {
         const dayOfWeek = getDay(day);
         const dateStr = format(day, "yyyy-MM-dd");
 
-        // Skip if day is before pattern start or after pattern end
         if (isBefore(day, patternStart)) continue;
         if (patternEnd && isAfter(day, patternEnd)) continue;
 
-        // Skip if there's an exception for this date
+        // Skip if there's a deletion exception for this date
         if (exceptions.has(dateStr)) continue;
 
         // Check if pattern applies to this day of week
