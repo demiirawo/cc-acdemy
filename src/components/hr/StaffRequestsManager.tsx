@@ -60,12 +60,12 @@ const REQUEST_TYPE_INFO: Record<string, { label: string; icon: typeof Clock; col
     color: "text-orange-600"
   },
   overtime_standard: {
-    label: "Overtime – Standard Hours (Legacy)",
+    label: "Overtime (Outside Normal Hours)",
     icon: Clock,
     color: "text-orange-600"
   },
   overtime_double_up: {
-    label: "Overtime – Outside Hours (Legacy)",
+    label: "Overtime (Inside Normal Hours)",
     icon: Clock,
     color: "text-amber-600"
   },
@@ -633,7 +633,7 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                                     </div>
                                     {req.request_type === 'overtime' && req.overtime_type && (
                                       <Badge variant="outline" className="w-fit text-xs">
-                                        {req.overtime_type === 'standard_hours' ? 'Standard Hours' : 'Outside Hours'}
+                                        {req.overtime_type === 'outside_hours' ? 'Outside Normal Hours' : 'Inside Normal Hours'}
                                       </Badge>
                                     )}
                                   </div>
