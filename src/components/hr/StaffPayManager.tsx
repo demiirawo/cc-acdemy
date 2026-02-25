@@ -187,9 +187,22 @@ export function StaffPayManager() {
     pay_date: new Date().toISOString().split('T')[0]
   });
 
+  // Load persisted manual currency rates from DB
+  const fetchManualRates = async () => {
+    const { data } = await supabase
+      .from('manual_currency_rates')
+      .select('currency_code, rate_to_gbp');
+    if (data && data.length > 0) {
+      const rates: ExchangeRates = {};
+      data.forEach((r: any) => { rates[r.currency_code] = Number(r.rate_to_gbp); });
+      setManualRates(rates);
+    }
+  };
+
   useEffect(() => {
     fetchData();
     fetchExchangeRates();
+    fetchManualRates();
     fetchPublicHolidays(holidaysYear);
   }, []);
 
@@ -273,17 +286,33 @@ export function StaffPayManager() {
     return Array.from(currencies);
   }, [hrProfiles]);
 
-  const handleManualRateChange = (currency: string, value: string) => {
+  const handleManualRateChange = async (currency: string, value: string) => {
     const numValue = parseFloat(value);
     if (!isNaN(numValue) && numValue > 0) {
       setManualRates(prev => ({ ...prev, [currency]: numValue }));
+      // Upsert to DB
+      const { data: userData } = await supabase.auth.getUser();
+      if (userData.user) {
+        await supabase
+          .from('manual_currency_rates')
+          .upsert({
+            currency_code: currency,
+            rate_to_gbp: numValue,
+            updated_by: userData.user.id,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'currency_code' });
+      }
     } else if (value === '') {
-      // Clear manual rate to use API rate
+      // Clear manual rate - delete from DB
       setManualRates(prev => {
         const newRates = { ...prev };
         delete newRates[currency];
         return newRates;
       });
+      await supabase
+        .from('manual_currency_rates')
+        .delete()
+        .eq('currency_code', currency);
     }
   };
 

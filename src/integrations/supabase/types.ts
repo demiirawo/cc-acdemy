@@ -525,6 +525,33 @@ export type Database = {
         }
         Relationships: []
       }
+      manual_currency_rates: {
+        Row: {
+          created_at: string
+          currency_code: string
+          id: string
+          rate_to_gbp: number
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          created_at?: string
+          currency_code: string
+          id?: string
+          rate_to_gbp: number
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          created_at?: string
+          currency_code?: string
+          id?: string
+          rate_to_gbp?: number
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: []
+      }
       notification_settings: {
         Row: {
           created_at: string
