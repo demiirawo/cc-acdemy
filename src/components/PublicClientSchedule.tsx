@@ -1395,7 +1395,7 @@ const UpcomingHolidaysCard = ({
     enabled: clientPatterns.length > 0,
   });
 
-  // Fetch approved cover requests (shift_swap where swap_with_user_id matches a holiday user)
+  // Fetch approved cover requests (shift_swap and overtime linked to holidays)
   const { data: coverRequests = [] } = useQuery({
     queryKey: ["upcoming-holiday-covers", clientName],
     queryFn: async () => {
@@ -1403,7 +1403,7 @@ const UpcomingHolidaysCard = ({
         .from("staff_requests")
         .select("id, user_id, request_type, status, start_date, end_date, linked_holiday_id, swap_with_user_id")
         .eq("status", "approved")
-        .eq("request_type", "shift_swap");
+        .in("request_type", ["shift_swap", "overtime", "overtime_standard", "overtime_double_up"]);
       
       if (error) throw error;
       return (data || []) as StaffRequest[];
@@ -1506,18 +1506,35 @@ const UpcomingHolidaysCard = ({
     const holidayEnd = endOfDay(parseISO(holiday.end_date));
     
     const covers = coverRequests.filter(r => {
-      // Cover request must be for this holiday user
-      if (r.swap_with_user_id !== holiday.user_id) return false;
+      // Cover via swap_with_user_id or linked_holiday_id
+      const isLinked = r.linked_holiday_id === holiday.id || r.swap_with_user_id === holiday.user_id;
+      if (!isLinked) return false;
       
       // Check date overlap
       const coverStart = startOfDay(parseISO(r.start_date));
       const coverEnd = endOfDay(parseISO(r.end_date));
       
-      // Check if there's any overlap between holiday and cover dates
       return coverStart <= holidayEnd && coverEnd >= holidayStart;
     });
     
-    return covers.map(c => getStaffName(c.user_id));
+    // Deduplicate cover names
+    const uniqueNames = [...new Set(covers.map(c => getStaffName(c.user_id)))];
+    return uniqueNames;
+  };
+
+  // Get cover person(s) for a specific day of a holiday
+  const getCoverForDay = (holiday: StaffHoliday, day: Date): string[] => {
+    const covers = coverRequests.filter(r => {
+      const isLinked = r.linked_holiday_id === holiday.id || r.swap_with_user_id === holiday.user_id;
+      if (!isLinked) return false;
+      
+      const coverStart = startOfDay(parseISO(r.start_date));
+      const coverEnd = endOfDay(parseISO(r.end_date));
+      
+      return isWithinInterval(day, { start: coverStart, end: coverEnd });
+    });
+    
+    return [...new Set(covers.map(c => getStaffName(c.user_id)))];
   };
 
   const getAbsenceLabel = (type: string) => {
@@ -1655,17 +1672,30 @@ const UpcomingHolidaysCard = ({
                   {dayBreakdown.length > 0 ? (
                     <div className="ml-7 mt-2 space-y-1 border-l-2 border-muted pl-4">
                       <p className="text-xs font-medium text-muted-foreground mb-2">Affected Shifts</p>
-                      {dayBreakdown.map((day, idx) => (
-                        <div key={idx} className="flex items-center gap-3 text-sm py-1">
-                          <span className="min-w-[120px] font-medium">
-                            {format(day.date, 'EEE, dd MMM yyyy')}
-                          </span>
-                          <Badge variant="outline" className="bg-muted text-xs">
-                            <Clock className="h-3 w-3 mr-1" />
-                            {day.shiftTime}
-                          </Badge>
-                        </div>
-                      ))}
+                      {dayBreakdown.map((day, idx) => {
+                        const dayCover = getCoverForDay(holiday, day.date);
+                        return (
+                          <div key={idx} className="flex items-center gap-3 text-sm py-1 flex-wrap">
+                            <span className="min-w-[120px] font-medium">
+                              {format(day.date, 'EEE, dd MMM yyyy')}
+                            </span>
+                            <Badge variant="outline" className="bg-muted text-xs">
+                              <Clock className="h-3 w-3 mr-1" />
+                              {day.shiftTime}
+                            </Badge>
+                            {dayCover.length > 0 ? (
+                              <span className="text-xs text-green-700 bg-green-50 rounded px-2 py-0.5">
+                                Cover: {dayCover.join(', ')}
+                              </span>
+                            ) : !holiday.no_cover_required && (
+                              <span className="text-xs text-red-600 bg-red-50 rounded px-2 py-0.5 flex items-center gap-1">
+                                <AlertTriangle className="h-3 w-3" />
+                                No cover
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : (
                     <div className="ml-7 mt-2 text-sm text-muted-foreground">
