@@ -318,6 +318,72 @@ export function UnifiedShiftEditor({
     }
   });
 
+  // Toggle overtime for a single day in a pattern (create/update exception)
+  const toggleOvertimeDayMutation = useMutation({
+    mutationFn: async () => {
+      if (!shift?.patternId) throw new Error("No pattern ID");
+      const { data: userData } = await supabase.auth.getUser();
+      const dateStr = format(shift.date, "yyyy-MM-dd");
+      
+      // Determine the new exception type
+      // If the pattern is overtime and we want to remove it for this day: 'not_overtime'
+      // If the pattern is not overtime and we want to add it for this day: 'overtime'
+      const newType = shift.isOvertime ? 'not_overtime' : 'overtime';
+      
+      // Check if there's already an overtime/not_overtime exception for this day
+      const { data: existing } = await supabase
+        .from("shift_pattern_exceptions")
+        .select("id, exception_type")
+        .eq("pattern_id", shift.patternId)
+        .eq("exception_date", dateStr)
+        .in("exception_type", ["overtime", "not_overtime"])
+        .maybeSingle();
+      
+      if (existing) {
+        // If the override would match the pattern default, just delete the exception
+        const patternDefault = pattern?.is_overtime ?? false;
+        const wouldMatch = (newType === 'overtime') === patternDefault;
+        
+        if (wouldMatch) {
+          const { error } = await supabase
+            .from("shift_pattern_exceptions")
+            .delete()
+            .eq("id", existing.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from("shift_pattern_exceptions")
+            .update({ exception_type: newType })
+            .eq("id", existing.id);
+          if (error) throw error;
+        }
+      } else {
+        const { error } = await supabase
+          .from("shift_pattern_exceptions")
+          .insert({
+            pattern_id: shift.patternId,
+            exception_date: dateStr,
+            exception_type: newType,
+            created_by: userData.user?.id
+          });
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["shift-pattern-exceptions"] });
+      onOpenChange(false);
+      onSuccess?.();
+      toast.success(shift?.isOvertime ? "Overtime removed for this day" : "Overtime added for this day");
+    },
+    onError: (error) => {
+      toast.error("Failed to update overtime: " + error.message);
+    }
+  });
+
+  const handleToggleOvertimeThisDay = () => {
+    toggleOvertimeDayMutation.mutate();
+  };
+
   // Delete regular schedule mutation
   const deleteScheduleMutation = useMutation({
     mutationFn: async () => {
@@ -525,15 +591,33 @@ export function UnifiedShiftEditor({
             )}
 
             {/* Overtime checkbox */}
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="is_overtime"
-                checked={form.is_overtime}
-                onCheckedChange={(checked) => setForm(p => ({ ...p, is_overtime: checked === true }))}
-              />
-              <Label htmlFor="is_overtime" className="text-sm font-normal cursor-pointer">
-                Mark as overtime
-              </Label>
+            <div className="space-y-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="is_overtime"
+                  checked={form.is_overtime}
+                  onCheckedChange={(checked) => setForm(p => ({ ...p, is_overtime: checked === true }))}
+                />
+                <Label htmlFor="is_overtime" className="text-sm font-normal cursor-pointer">
+                  Mark as overtime {isPattern ? "(entire series)" : ""}
+                </Label>
+              </div>
+              {isPattern && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs"
+                  onClick={() => handleToggleOvertimeThisDay()}
+                  disabled={toggleOvertimeDayMutation.isPending}
+                >
+                  {toggleOvertimeDayMutation.isPending ? "Saving..." : (
+                    shift?.isOvertime 
+                      ? "Remove overtime for just this day" 
+                      : "Mark as overtime for just this day"
+                  )}
+                </Button>
+              )}
             </div>
 
             {/* Shift Type */}

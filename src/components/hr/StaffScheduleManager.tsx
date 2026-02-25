@@ -475,10 +475,16 @@ export function StaffScheduleManager() {
   const virtualSchedulesFromPatterns = useMemo(() => {
     const virtualSchedules: Schedule[] = [];
     
-    // Create a set of exception keys for fast lookup
-    const exceptionKeys = new Set(
-      shiftExceptions.map(e => `${e.pattern_id}-${e.exception_date}`)
+    // Create maps of exception keys for fast lookup
+    const deletedExceptionKeys = new Set(
+      shiftExceptions.filter(e => e.exception_type === 'deleted').map(e => `${e.pattern_id}-${e.exception_date}`)
     );
+    const overtimeExceptions = new Map<string, string>();
+    shiftExceptions.forEach(e => {
+      if (e.exception_type === 'overtime' || e.exception_type === 'not_overtime') {
+        overtimeExceptions.set(`${e.pattern_id}-${e.exception_date}`, e.exception_type);
+      }
+    });
     
     for (const pattern of recurringPatterns) {
       const patternStartDate = parseISO(pattern.start_date);
@@ -525,8 +531,14 @@ export function StaffScheduleManager() {
         
         if (!shouldInclude) continue;
         
-        // Check if there's an exception for this date
-        if (exceptionKeys.has(`${pattern.id}-${dateStr}`)) continue;
+        // Check if there's a deletion exception for this date
+        if (deletedExceptionKeys.has(`${pattern.id}-${dateStr}`)) continue;
+        
+        // Check for overtime override on this specific day
+        const overtimeOverride = overtimeExceptions.get(`${pattern.id}-${dateStr}`);
+        const isOvertimeForDay = overtimeOverride === 'overtime' ? true 
+          : overtimeOverride === 'not_overtime' ? false 
+          : pattern.is_overtime;
         
         // Create virtual schedule entry
         const startDatetime = `${dateStr}T${pattern.start_time}`;
@@ -542,7 +554,7 @@ export function StaffScheduleManager() {
           hourly_rate: pattern.hourly_rate,
           currency: pattern.currency,
           shift_type: pattern.shift_type,
-          is_pattern_overtime: pattern.is_overtime
+          is_pattern_overtime: isOvertimeForDay
         });
       }
     }
