@@ -32,7 +32,8 @@ interface Schedule {
   hourly_rate: number | null;
   currency: string;
   shift_type: string | null;
-  is_pattern_overtime?: boolean; // For virtual schedules from overtime patterns
+  is_pattern_overtime?: boolean;
+  overtime_subtype?: string | null;
 }
 
 interface Overtime {
@@ -80,9 +81,10 @@ interface RecurringPattern {
   hourly_rate: number | null;
   currency: string;
   is_overtime: boolean;
+  overtime_subtype: string | null;
   notes: string | null;
   start_date: string;
-  end_date: string | null; // null = indefinite
+  end_date: string | null;
   recurrence_interval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off';
   shift_type: string | null;
 }
@@ -272,6 +274,7 @@ export function StaffScheduleManager() {
     end_time: "17:00",
     selected_days: [] as number[],
     is_overtime: false,
+    overtime_subtype: "" as string,
     notes: "",
     hourly_rate: "",
     currency: "GBP",
@@ -291,6 +294,7 @@ export function StaffScheduleManager() {
     weeks_to_create: 4,
     is_indefinite: false,
     is_overtime: false,
+    overtime_subtype: "" as string,
     notes: "",
     hourly_rate: "",
     currency: "GBP",
@@ -467,7 +471,7 @@ export function StaffScheduleManager() {
         .select("*");
       
       if (error) throw error;
-      return data as { id: string; pattern_id: string; exception_date: string; exception_type: string }[];
+      return data as { id: string; pattern_id: string; exception_date: string; exception_type: string; overtime_subtype: string | null }[];
     }
   });
 
@@ -479,10 +483,10 @@ export function StaffScheduleManager() {
     const deletedExceptionKeys = new Set(
       shiftExceptions.filter(e => e.exception_type === 'deleted').map(e => `${e.pattern_id}-${e.exception_date}`)
     );
-    const overtimeExceptions = new Map<string, string>();
+    const overtimeExceptions = new Map<string, { type: string; subtype: string | null }>();
     shiftExceptions.forEach(e => {
       if (e.exception_type === 'overtime' || e.exception_type === 'not_overtime') {
-        overtimeExceptions.set(`${e.pattern_id}-${e.exception_date}`, e.exception_type);
+        overtimeExceptions.set(`${e.pattern_id}-${e.exception_date}`, { type: e.exception_type, subtype: e.overtime_subtype });
       }
     });
     
@@ -536,9 +540,16 @@ export function StaffScheduleManager() {
         
         // Check for overtime override on this specific day
         const overtimeOverride = overtimeExceptions.get(`${pattern.id}-${dateStr}`);
-        const isOvertimeForDay = overtimeOverride === 'overtime' ? true 
-          : overtimeOverride === 'not_overtime' ? false 
+        const isOvertimeForDay = overtimeOverride?.type === 'overtime' ? true 
+          : overtimeOverride?.type === 'not_overtime' ? false 
           : pattern.is_overtime;
+        
+        // Determine overtime subtype for this day
+        const overtimeSubtypeForDay = overtimeOverride?.type === 'overtime' 
+          ? (overtimeOverride.subtype || 'standard')
+          : overtimeOverride?.type === 'not_overtime'
+          ? null
+          : (pattern.is_overtime ? (pattern.overtime_subtype || 'standard') : null);
         
         // Create virtual schedule entry
         const startDatetime = `${dateStr}T${pattern.start_time}`;
@@ -554,7 +565,8 @@ export function StaffScheduleManager() {
           hourly_rate: pattern.hourly_rate,
           currency: pattern.currency,
           shift_type: pattern.shift_type,
-          is_pattern_overtime: isOvertimeForDay
+          is_pattern_overtime: isOvertimeForDay,
+          overtime_subtype: overtimeSubtypeForDay
         });
       }
     }
@@ -737,6 +749,7 @@ export function StaffScheduleManager() {
         hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
         currency: data.currency,
         is_overtime: data.is_overtime,
+        overtime_subtype: data.is_overtime ? (data.overtime_subtype || 'standard') : null,
         notes: data.notes || null,
         start_date: data.start_date,
         end_date: endDate,
@@ -819,6 +832,7 @@ export function StaffScheduleManager() {
           hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
           currency: data.currency,
           is_overtime: data.is_overtime,
+          overtime_subtype: data.is_overtime ? (data.overtime_subtype || 'standard') : null,
           notes: data.notes || null,
           start_date: data.start_date,
           end_date: data.end_date || null,
@@ -1087,6 +1101,7 @@ export function StaffScheduleManager() {
       weeks_to_create: 4,
       is_indefinite: false,
       is_overtime: false,
+      overtime_subtype: "",
       notes: "",
       hourly_rate: "",
       currency: "GBP",
@@ -1127,6 +1142,7 @@ export function StaffScheduleManager() {
       end_time: pattern.end_time,
       selected_days: pattern.days_of_week || [],
       is_overtime: pattern.is_overtime,
+      overtime_subtype: pattern.overtime_subtype || "",
       notes: pattern.notes || "",
       hourly_rate: pattern.hourly_rate?.toString() || "",
       currency: pattern.currency,
@@ -2096,16 +2112,28 @@ export function StaffScheduleManager() {
                       </div>
                     )}
 
-                    {/* Overtime Toggle */}
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="is_overtime"
-                        checked={recurringForm.is_overtime}
-                        onCheckedChange={(checked) => setRecurringForm(p => ({ ...p, is_overtime: checked === true }))}
-                      />
-                      <Label htmlFor="is_overtime" className="text-sm font-normal cursor-pointer">
-                        Mark as overtime
-                      </Label>
+                    {/* Overtime Type Selector */}
+                    <div>
+                      <Label>Overtime Status</Label>
+                      <Select 
+                        value={recurringForm.is_overtime ? (recurringForm.overtime_subtype || 'standard') : 'none'} 
+                        onValueChange={v => {
+                          if (v === 'none') {
+                            setRecurringForm(p => ({ ...p, is_overtime: false, overtime_subtype: '' }));
+                          } else {
+                            setRecurringForm(p => ({ ...p, is_overtime: true, overtime_subtype: v }));
+                          }
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select overtime status" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-background z-50">
+                          <SelectItem value="none">Not Overtime</SelectItem>
+                          <SelectItem value="standard">Standard Overtime</SelectItem>
+                          <SelectItem value="double_up">Double Up Overtime</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
 
                     <div>
@@ -2362,7 +2390,9 @@ export function StaffScheduleManager() {
                                   <Infinity className={`h-3 w-3 ${isPatternOvertime ? 'text-orange-500' : 'text-violet-500'}`} />
                                 )}
                                 {isPatternOvertime && (
-                                  <Clock className="h-3 w-3 text-orange-500" />
+                                  <span className={`text-[9px] font-bold px-1 rounded ${schedule.overtime_subtype === 'double_up' ? 'bg-red-200 text-red-800' : 'bg-orange-200 text-orange-800'}`}>
+                                    {schedule.overtime_subtype === 'double_up' ? 'OT×2' : 'OT'}
+                                  </span>
                                 )}
                               </div>
                               {schedule.shift_type && (
@@ -2565,7 +2595,11 @@ export function StaffScheduleManager() {
                                           {isFromPattern && !staffOnHoliday && (
                                             <Infinity className="h-3 w-3 opacity-60" />
                                           )}
-                                          {isPatternOvertime && !staffOnHoliday && <Clock className="h-3 w-3 opacity-60" />}
+                                          {isPatternOvertime && !staffOnHoliday && (
+                                            <span className={`text-[9px] font-bold px-1 rounded ${schedule.overtime_subtype === 'double_up' ? 'bg-red-200 text-red-800' : 'bg-orange-200 text-orange-800'}`}>
+                                              {schedule.overtime_subtype === 'double_up' ? 'OT×2' : 'OT'}
+                                            </span>
+                                          )}
                                           <span>{getStaffName(schedule.user_id)}</span>
                                         </div>
                                         

@@ -91,12 +91,14 @@ interface RecurringShiftPattern {
   start_date: string;
   end_date: string | null;
   is_overtime: boolean;
+  overtime_subtype: string | null;
 }
 interface ShiftPatternException {
   id: string;
   pattern_id: string;
   exception_date: string;
   exception_type: string;
+  overtime_subtype: string | null;
 }
 interface PublicHoliday {
   date: string;
@@ -332,7 +334,7 @@ export function MyHRProfile() {
       // Fetch recurring patterns for this user
       const {
         data: patterns
-      } = await supabase.from('recurring_shift_patterns').select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, is_overtime').eq('user_id', targetUserId);
+      } = await supabase.from('recurring_shift_patterns').select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, is_overtime, overtime_subtype').eq('user_id', targetUserId);
       setRecurringPatterns(patterns || []);
 
       // Fetch pattern exceptions
@@ -340,7 +342,7 @@ export function MyHRProfile() {
         const patternIds = patterns.map(p => p.id);
         const {
           data: exceptions
-        } = await supabase.from('shift_pattern_exceptions').select('id, pattern_id, exception_date, exception_type').in('pattern_id', patternIds);
+        } = await supabase.from('shift_pattern_exceptions').select('id, pattern_id, exception_date, exception_type, overtime_subtype').in('pattern_id', patternIds);
         setPatternExceptions(exceptions || []);
       } else {
         setPatternExceptions([]);
@@ -438,7 +440,7 @@ export function MyHRProfile() {
 
     // Create exceptions maps - separate deleted from overtime overrides
     const deletedExceptionsMap = new Map<string, Set<string>>();
-    const overtimeExceptionsMap = new Map<string, Map<string, string>>(); // pattern_id -> date -> exception_type
+    const overtimeExceptionsMap = new Map<string, Map<string, { type: string; subtype: string | null }>>();
     patternExceptions.forEach(ex => {
       if (ex.exception_type === 'deleted') {
         if (!deletedExceptionsMap.has(ex.pattern_id)) {
@@ -449,7 +451,7 @@ export function MyHRProfile() {
         if (!overtimeExceptionsMap.has(ex.pattern_id)) {
           overtimeExceptionsMap.set(ex.pattern_id, new Map());
         }
-        overtimeExceptionsMap.get(ex.pattern_id)!.set(ex.exception_date, ex.exception_type);
+        overtimeExceptionsMap.get(ex.pattern_id)!.set(ex.exception_date, { type: ex.exception_type, subtype: ex.overtime_subtype });
       }
     });
     for (let i = 0; i < 12; i++) {
@@ -556,7 +558,9 @@ export function MyHRProfile() {
       });
 
       // Also count recurring overtime patterns AND per-day overtime exceptions
-      const countedOvertimeDates = new Set<string>();
+      // Split into standard vs double_up
+      const countedStandardOTDates = new Set<string>();
+      const countedDoubleUpOTDates = new Set<string>();
       for (const day of monthDays) {
         const dateStr = format(day, 'yyyy-MM-dd');
         const dayOfWeek = getDay(day);
@@ -565,30 +569,41 @@ export function MyHRProfile() {
           const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
           if (day >= patternStart && (!patternEnd || day <= patternEnd)) {
             if (pattern.days_of_week.includes(dayOfWeek)) {
-              // Skip deleted exceptions
               const deletedExs = deletedExceptionsMap.get(pattern.id);
               if (deletedExs && deletedExs.has(dateStr)) continue;
               
-              // Check for per-day overtime override
               const overtimeExs = overtimeExceptionsMap.get(pattern.id);
               const dayOverride = overtimeExs?.get(dateStr);
               
-              const isOvertimeForDay = dayOverride === 'overtime' ? true
-                : dayOverride === 'not_overtime' ? false
+              const isOvertimeForDay = dayOverride?.type === 'overtime' ? true
+                : dayOverride?.type === 'not_overtime' ? false
                 : pattern.is_overtime;
               
               if (isOvertimeForDay) {
-                countedOvertimeDates.add(dateStr);
-                break; // Only count once per day
+                const subtype = dayOverride?.type === 'overtime'
+                  ? (dayOverride.subtype || 'standard')
+                  : (pattern.overtime_subtype || 'standard');
+                if (subtype === 'double_up') {
+                  countedDoubleUpOTDates.add(dateStr);
+                } else {
+                  countedStandardOTDates.add(dateStr);
+                }
+                break;
               }
             }
           }
         }
       }
-      overtimeDays += countedOvertimeDates.size;
+      const standardOTDays = countedStandardOTDates.size;
+      const doubleUpOTDays = countedDoubleUpOTDates.size;
+      overtimeDays += standardOTDays + doubleUpOTDays;
 
-      // Overtime pay = 1.5 × daily rate × overtime days
-      const overtimePay = 1.5 * dailyRate * overtimeDays;
+      // Overtime pay:
+      // Request-based overtime (legacy) = 1.5 × dailyRate × days
+      // Standard OT from patterns = 0.5 × dailyRate × days
+      // Double Up OT from patterns = 1.5 × dailyRate × days
+      const requestOTDays = overtimeDays - standardOTDays - doubleUpOTDays;
+      const overtimePay = (1.5 * dailyRate * requestOTDays) + (0.5 * dailyRate * standardOTDays) + (1.5 * dailyRate * doubleUpOTDays);
 
       // Calculate unused holiday payout or excess holiday deduction for June (end of holiday year)
       // Holiday year runs June 1 to May 31, so June payroll includes payout for unused days or deduction for excess

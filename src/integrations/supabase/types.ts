@@ -1265,6 +1265,7 @@ export type Database = {
           id: string
           is_overtime: boolean
           notes: string | null
+          overtime_subtype: string | null
           recurrence_interval: string
           shift_type: string | null
           start_date: string
@@ -1284,6 +1285,7 @@ export type Database = {
           id?: string
           is_overtime?: boolean
           notes?: string | null
+          overtime_subtype?: string | null
           recurrence_interval?: string
           shift_type?: string | null
           start_date: string
@@ -1303,6 +1305,7 @@ export type Database = {
           id?: string
           is_overtime?: boolean
           notes?: string | null
+          overtime_subtype?: string | null
           recurrence_interval?: string
           shift_type?: string | null
           start_date?: string
@@ -1382,6 +1385,7 @@ export type Database = {
           exception_date: string
           exception_type: string
           id: string
+          overtime_subtype: string | null
           pattern_id: string
         }
         Insert: {
@@ -1390,6 +1394,7 @@ export type Database = {
           exception_date: string
           exception_type?: string
           id?: string
+          overtime_subtype?: string | null
           pattern_id: string
         }
         Update: {
@@ -1398,6 +1403,7 @@ export type Database = {
           exception_date?: string
           exception_type?: string
           id?: string
+          overtime_subtype?: string | null
           pattern_id?: string
         }
         Relationships: [

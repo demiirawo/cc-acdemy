@@ -34,6 +34,7 @@ interface RecurringPattern {
   hourly_rate: number | null;
   currency: string;
   is_overtime: boolean;
+  overtime_subtype: string | null;
   notes: string | null;
   start_date: string;
   end_date: string | null;
@@ -123,6 +124,7 @@ export function UnifiedShiftEditor({
     end_time: "17:00",
     selected_days: [] as number[],
     is_overtime: false,
+    overtime_subtype: "" as string, // 'standard' | 'double_up' | ''
     notes: "",
     start_date: "",
     end_date: "",
@@ -140,6 +142,7 @@ export function UnifiedShiftEditor({
         end_time: pattern?.end_time || shift.endTime,
         selected_days: pattern?.days_of_week || shift.daysOfWeek || [],
         is_overtime: pattern?.is_overtime ?? shift.isOvertime,
+        overtime_subtype: pattern?.overtime_subtype || "",
         notes: pattern?.notes || shift.notes || "",
         start_date: pattern?.start_date || shift.startDate || format(shift.date, "yyyy-MM-dd"),
         end_date: pattern?.end_date || shift.endDate || "",
@@ -190,6 +193,7 @@ export function UnifiedShiftEditor({
           start_time: form.start_time,
           end_time: form.end_time,
           is_overtime: form.is_overtime,
+          overtime_subtype: form.is_overtime ? (form.overtime_subtype || 'standard') : null,
           notes: form.notes || null,
           start_date: form.start_date,
           end_date: form.end_date || null,
@@ -318,17 +322,15 @@ export function UnifiedShiftEditor({
     }
   });
 
+  // State for per-day overtime type selection dialog
+  const [showDayOvertimeDialog, setShowDayOvertimeDialog] = useState(false);
+
   // Toggle overtime for a single day in a pattern (create/update exception)
   const toggleOvertimeDayMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({ newType, subtypeOverride }: { newType: string; subtypeOverride?: string | null }) => {
       if (!shift?.patternId) throw new Error("No pattern ID");
       const { data: userData } = await supabase.auth.getUser();
       const dateStr = format(shift.date, "yyyy-MM-dd");
-      
-      // Determine the new exception type
-      // If the pattern is overtime and we want to remove it for this day: 'not_overtime'
-      // If the pattern is not overtime and we want to add it for this day: 'overtime'
-      const newType = shift.isOvertime ? 'not_overtime' : 'overtime';
       
       // Check if there's already an overtime/not_overtime exception for this day
       const { data: existing } = await supabase
@@ -353,7 +355,10 @@ export function UnifiedShiftEditor({
         } else {
           const { error } = await supabase
             .from("shift_pattern_exceptions")
-            .update({ exception_type: newType })
+            .update({ 
+              exception_type: newType,
+              overtime_subtype: newType === 'overtime' ? (subtypeOverride || 'standard') : null
+            })
             .eq("id", existing.id);
           if (error) throw error;
         }
@@ -364,16 +369,18 @@ export function UnifiedShiftEditor({
             pattern_id: shift.patternId,
             exception_date: dateStr,
             exception_type: newType,
+            overtime_subtype: newType === 'overtime' ? (subtypeOverride || 'standard') : null,
             created_by: userData.user?.id
           });
         if (error) throw error;
       }
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["shift-pattern-exceptions"] });
+      setShowDayOvertimeDialog(false);
       onOpenChange(false);
       onSuccess?.();
-      toast.success(shift?.isOvertime ? "Overtime removed for this day" : "Overtime added for this day");
+      toast.success(variables.newType === 'not_overtime' ? "Overtime removed for this day" : "Overtime added for this day");
     },
     onError: (error) => {
       toast.error("Failed to update overtime: " + error.message);
@@ -381,7 +388,13 @@ export function UnifiedShiftEditor({
   });
 
   const handleToggleOvertimeThisDay = () => {
-    toggleOvertimeDayMutation.mutate();
+    if (shift?.isOvertime) {
+      // Removing overtime - no need to ask type
+      toggleOvertimeDayMutation.mutate({ newType: 'not_overtime' });
+    } else {
+      // Adding overtime - show type selection
+      setShowDayOvertimeDialog(true);
+    }
   };
 
   // Delete regular schedule mutation
@@ -590,17 +603,34 @@ export function UnifiedShiftEditor({
               </div>
             )}
 
-            {/* Overtime checkbox */}
+            {/* Overtime Type Selector */}
             <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="is_overtime"
-                  checked={form.is_overtime}
-                  onCheckedChange={(checked) => setForm(p => ({ ...p, is_overtime: checked === true }))}
-                />
-                <Label htmlFor="is_overtime" className="text-sm font-normal cursor-pointer">
-                  Mark as overtime {isPattern ? "(entire series)" : ""}
-                </Label>
+              <div>
+                <Label>Overtime Status {isPattern ? "(entire series)" : ""}</Label>
+                <Select 
+                  value={form.is_overtime ? (form.overtime_subtype || 'standard') : 'none'} 
+                  onValueChange={v => {
+                    if (v === 'none') {
+                      setForm(p => ({ ...p, is_overtime: false, overtime_subtype: '' }));
+                    } else {
+                      setForm(p => ({ ...p, is_overtime: true, overtime_subtype: v }));
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select overtime status" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-background z-50">
+                    <SelectItem value="none">Not Overtime</SelectItem>
+                    <SelectItem value="standard">Standard Overtime (working normal hours)</SelectItem>
+                    <SelectItem value="double_up">Double Up Overtime (additional hours)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {!form.is_overtime && 'Regular shift — no overtime premium'}
+                  {form.overtime_subtype === 'standard' && form.is_overtime && 'Standard OT — 0.5× daily rate premium (base already in salary)'}
+                  {form.overtime_subtype === 'double_up' && form.is_overtime && 'Double Up — 1.5× daily rate (full additional pay)'}
+                </p>
               </div>
               {isPattern && (
                 <Button
@@ -720,6 +750,37 @@ export function UnifiedShiftEditor({
                 Delete
               </AlertDialogAction>
             )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Per-Day Overtime Type Selection Dialog */}
+      <AlertDialog open={showDayOvertimeDialog} onOpenChange={setShowDayOvertimeDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Select Overtime Type</AlertDialogTitle>
+            <AlertDialogDescription>
+              Choose the type of overtime for {shift ? format(shift.date, "EEE dd MMM yyyy") : "this day"}.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2">
+            <AlertDialogCancel className="w-full sm:w-auto">Cancel</AlertDialogCancel>
+            <div className="flex flex-col sm:flex-row gap-2 w-full">
+              <AlertDialogAction
+                onClick={() => toggleOvertimeDayMutation.mutate({ newType: 'overtime', subtypeOverride: 'standard' })}
+                disabled={toggleOvertimeDayMutation.isPending}
+                className="flex-1"
+              >
+                Standard OT
+              </AlertDialogAction>
+              <AlertDialogAction
+                onClick={() => toggleOvertimeDayMutation.mutate({ newType: 'overtime', subtypeOverride: 'double_up' })}
+                disabled={toggleOvertimeDayMutation.isPending}
+                className="bg-orange-600 hover:bg-orange-700 flex-1"
+              >
+                Double Up OT
+              </AlertDialogAction>
+            </div>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
