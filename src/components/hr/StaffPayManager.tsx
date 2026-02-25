@@ -60,6 +60,7 @@ interface RecurringShiftPattern {
   currency: string;
   client_name: string;
   is_overtime: boolean;
+  overtime_subtype: string | null;
 }
 
 interface ShiftPatternException {
@@ -67,6 +68,7 @@ interface ShiftPatternException {
   pattern_id: string;
   exception_date: string;
   exception_type: string;
+  overtime_subtype: string | null;
 }
 
 interface UserProfile {
@@ -334,7 +336,7 @@ export function StaffPayManager() {
       // Fetch recurring shift patterns
       const { data: patterns, error: patternsError } = await supabase
         .from('recurring_shift_patterns')
-        .select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, hourly_rate, currency, client_name, is_overtime');
+        .select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, hourly_rate, currency, client_name, is_overtime, overtime_subtype');
       
       if (patternsError) {
         console.error('Error fetching recurring patterns:', patternsError);
@@ -345,7 +347,7 @@ export function StaffPayManager() {
       // Fetch pattern exceptions
       const { data: exceptions, error: exceptionsError } = await supabase
         .from('shift_pattern_exceptions')
-        .select('id, pattern_id, exception_date, exception_type');
+        .select('id, pattern_id, exception_date, exception_type, overtime_subtype');
       
       if (exceptionsError) {
         console.error('Error fetching pattern exceptions:', exceptionsError);
@@ -460,7 +462,7 @@ export function StaffPayManager() {
     
     // Create separate maps for deleted vs overtime exceptions
     const deletedExceptionsMap = new Map<string, Set<string>>();
-    const overtimeExceptionsMap = new Map<string, Map<string, string>>();
+    const overtimeExceptionsMap = new Map<string, Map<string, { type: string; subtype: string | null }>>();
     patternExceptions.forEach(ex => {
       if (ex.exception_type === 'deleted') {
         if (!deletedExceptionsMap.has(ex.pattern_id)) {
@@ -471,7 +473,7 @@ export function StaffPayManager() {
         if (!overtimeExceptionsMap.has(ex.pattern_id)) {
           overtimeExceptionsMap.set(ex.pattern_id, new Map());
         }
-        overtimeExceptionsMap.get(ex.pattern_id)!.set(ex.exception_date, ex.exception_type);
+        overtimeExceptionsMap.get(ex.pattern_id)!.set(ex.exception_date, { type: ex.exception_type, subtype: ex.overtime_subtype });
       }
     });
     
@@ -666,7 +668,9 @@ export function StaffPayManager() {
       });
       
       // Also calculate overtime days from recurring shift patterns (including per-day overrides)
-      const countedOvertimeDates = new Set<string>(); // Track dates already counted to avoid double-counting
+      // Track standard vs double_up separately
+      const countedStandardOTDates = new Set<string>();
+      const countedDoubleUpOTDates = new Set<string>();
       
       // Iterate through each day of the month and count overtime pattern days (including per-day overrides)
       const userPatterns = recurringPatterns.filter(p => p.user_id === hr.user_id);
@@ -675,7 +679,7 @@ export function StaffPayManager() {
         const dateStr = format(currentDate, 'yyyy-MM-dd');
         const dayOfWeek = currentDate.getDay();
         
-        let dayHasOvertime = false;
+        let dayOTSubtype: string | null = null;
         userPatterns.forEach(pattern => {
           const patternStart = parseISO(pattern.start_date);
           const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
@@ -690,32 +694,47 @@ export function StaffPayManager() {
               const overtimeExs = overtimeExceptionsMap.get(pattern.id);
               const dayOverride = overtimeExs?.get(dateStr);
               
-              const isOvertimeForDay = dayOverride === 'overtime' ? true
-                : dayOverride === 'not_overtime' ? false
+              const isOvertimeForDay = dayOverride?.type === 'overtime' ? true
+                : dayOverride?.type === 'not_overtime' ? false
                 : pattern.is_overtime;
               
               if (isOvertimeForDay) {
-                dayHasOvertime = true;
+                // Determine subtype: per-day override takes priority, then pattern default
+                const subtype = dayOverride?.type === 'overtime' 
+                  ? (dayOverride.subtype || 'standard')
+                  : (pattern.overtime_subtype || 'standard');
+                dayOTSubtype = subtype;
               }
             }
           }
         });
         
-        if (dayHasOvertime && !countedOvertimeDates.has(dateStr)) {
-          countedOvertimeDates.add(dateStr);
+        if (dayOTSubtype && !countedStandardOTDates.has(dateStr) && !countedDoubleUpOTDates.has(dateStr)) {
+          if (dayOTSubtype === 'double_up') {
+            countedDoubleUpOTDates.add(dateStr);
+          } else {
+            countedStandardOTDates.add(dateStr);
+          }
         }
         
         currentDate.setDate(currentDate.getDate() + 1);
       }
       
-      const recurringOvertimeDays = countedOvertimeDates.size;
+      const standardOvertimeDays = countedStandardOTDates.size;
+      const doubleUpOvertimeDays = countedDoubleUpOTDates.size;
       
-      // Add recurring overtime days to total
-      overtimeDays += recurringOvertimeDays;
+      // Add recurring overtime days to total (for display purposes, total = both types)
+      overtimeDays += standardOvertimeDays + doubleUpOvertimeDays;
       
-      // Overtime pay = 1.5 × (Base Salary / 20) × Overtime Days
+      // Overtime pay calculation:
+      // Standard OT: 0.5 × dailyRate × days (base already in salary, only premium added)
+      // Double Up OT: 1.5 × dailyRate × days (full additional pay)
+      // Request-based overtime still uses 1.5x (legacy/requests)
       const overtimeDailyRate = monthlyBaseSalary / 20;
-      const calculatedOvertimePay = 1.5 * overtimeDailyRate * overtimeDays;
+      const requestOvertimePay = 1.5 * overtimeDailyRate * (overtimeDays - standardOvertimeDays - doubleUpOvertimeDays);
+      const standardOvertimePay = 0.5 * overtimeDailyRate * standardOvertimeDays;
+      const doubleUpOvertimePay = 1.5 * overtimeDailyRate * doubleUpOvertimeDays;
+      const calculatedOvertimePay = requestOvertimePay + standardOvertimePay + doubleUpOvertimePay;
       
       // Total overtime = manual records + calculated from requests
       const overtime = overtimeManualRecords + calculatedOvertimePay;
