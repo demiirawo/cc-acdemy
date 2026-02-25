@@ -139,7 +139,7 @@ export function StaffRequestForm() {
   const [shiftCoverType, setShiftCoverType] = useState<'shifts' | 'holidays'>('shifts');
   const [selectedCoverHolidayId, setSelectedCoverHolidayId] = useState("");
   const [selectedCoverDays, setSelectedCoverDays] = useState<string[]>([]);
-  const [isShiftCoverOvertime, setIsShiftCoverOvertime] = useState(true); // Default to overtime
+  const [shiftCoverOvertimeType, setShiftCoverOvertimeType] = useState<'none' | 'standard' | 'double_up'>('standard'); // Default to standard overtime
   // Fetch staff members for swap selection
   const { data: staffMembers = [] } = useQuery({
     queryKey: ["staff-members-for-requests"],
@@ -527,7 +527,13 @@ export function StaffRequestForm() {
       }
       // For shift cover, set overtime type based on user selection
       if (requestType === 'shift_swap') {
-        overtimeType = isShiftCoverOvertime ? 'standard_hours' : null;
+        if (shiftCoverOvertimeType === 'standard') {
+          overtimeType = 'outside_hours';
+        } else if (shiftCoverOvertimeType === 'double_up') {
+          overtimeType = 'standard_hours';
+        } else {
+          overtimeType = null;
+        }
       }
 
       // Build details for shift swap including selected shifts or holiday
@@ -724,7 +730,7 @@ export function StaffRequestForm() {
     setShiftCoverType('shifts');
     setSelectedCoverHolidayId("");
     setSelectedCoverDays([]);
-    setIsShiftCoverOvertime(true);
+    setShiftCoverOvertimeType('standard');
   };
 
   const getStaffName = (userId: string) => {
@@ -979,35 +985,43 @@ export function StaffRequestForm() {
                 </div>
               )}
 
-              {/* Overtime toggle for shift cover */}
+              {/* Overtime type for shift cover */}
               {swapWithUserId && (
                 <div className="space-y-2">
-                  <Label>Is this an overtime cover? <span className="text-destructive">*</span></Label>
+                  <Label>Overtime Status <span className="text-destructive">*</span></Label>
                   <Select 
-                    value={isShiftCoverOvertime ? 'overtime' : 'non_overtime'} 
-                    onValueChange={(val) => setIsShiftCoverOvertime(val === 'overtime')}
+                    value={shiftCoverOvertimeType} 
+                    onValueChange={(val) => setShiftCoverOvertimeType(val as 'none' | 'standard' | 'double_up')}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select cover type..." />
+                      <SelectValue placeholder="Select overtime status..." />
                     </SelectTrigger>
                     <SelectContent className="bg-background">
-                      <SelectItem value="overtime">
-                        <div className="flex items-center gap-2">
-                          <Clock className="h-4 w-4 text-orange-600" />
-                          Overtime (paid at 1.5x rate)
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="non_overtime">
+                      <SelectItem value="none">
                         <div className="flex items-center gap-2">
                           <RefreshCw className="h-4 w-4 text-muted-foreground" />
-                          Non-overtime (standard cover)
+                          Not Overtime (standard cover)
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="standard">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-orange-600" />
+                          Standard Overtime (outside normal hours — 1.5× rate)
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="double_up">
+                        <div className="flex items-center gap-2">
+                          <Clock className="h-4 w-4 text-red-600" />
+                          Double Up Overtime (during normal hours — 0.5× premium)
                         </div>
                       </SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
-                    {isShiftCoverOvertime 
-                      ? "This will be counted as overtime and paid at 1.5x your daily rate."
+                    {shiftCoverOvertimeType === 'standard'
+                      ? "Working outside normal hours. Paid at 1.5× your daily rate (full additional pay)."
+                      : shiftCoverOvertimeType === 'double_up'
+                      ? "Working during normal hours (e.g. public holiday). Paid at 0.5× daily rate premium on top of base salary."
                       : "This is a standard shift cover and will not count towards overtime pay."}
                   </p>
                 </div>
