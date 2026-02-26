@@ -521,6 +521,34 @@ export function MyHRProfile() {
           });
         }
       }
+
+      // Check approved cover requests (shift_swap, overtime) for public holiday days
+      // When covering someone's holiday, the staff member may work on a public holiday
+      // but won't have a recurring pattern or actual schedule for that client
+      const coverRequests = staffRequests.filter(req => 
+        req.status === 'approved' && 
+        (req.request_type === 'shift_swap' || req.request_type === 'overtime' || req.request_type === 'overtime_standard' || req.request_type === 'overtime_double_up')
+      );
+      coverRequests.forEach(req => {
+        const reqStart = parseISO(req.start_date);
+        const reqEnd = parseISO(req.end_date);
+        if (reqStart <= monthEnd && reqEnd >= monthStart) {
+          let coverDate = new Date(Math.max(reqStart.getTime(), monthStart.getTime()));
+          const coverEndDate = new Date(Math.min(reqEnd.getTime(), monthEnd.getTime()));
+          while (coverDate <= coverEndDate) {
+            const coverDateStr = format(coverDate, 'yyyy-MM-dd');
+            if (holidayDatesMap.has(coverDateStr) && !countedHolidayDates.has(coverDateStr)) {
+              countedHolidayDates.add(coverDateStr);
+              holidayShifts.push({
+                date: coverDateStr,
+                holidayName: holidayDatesMap.get(coverDateStr) || 'Public Holiday'
+              });
+            }
+            coverDate.setDate(coverDate.getDate() + 1);
+          }
+        }
+      });
+
       const holidayOvertimeDays = countedHolidayDates.size;
       // Base day pay is already in salary, so we only add the 0.5x overtime bonus
       const holidayOvertimeBonus = holidayOvertimeDays * dailyRate * 0.5;
