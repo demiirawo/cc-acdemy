@@ -1,5 +1,5 @@
 import { format, parseISO, differenceInMinutes, startOfDay, endOfDay, isSameDay, isWithinInterval, getDay, differenceInWeeks, startOfWeek, isBefore, isAfter } from "date-fns";
-import { Infinity, UserCheck } from "lucide-react";
+import { Infinity, UserCheck, Palmtree } from "lucide-react";
 import { useMemo } from "react";
 
 interface Schedule {
@@ -25,6 +25,7 @@ interface Holiday {
   start_date: string;
   end_date: string;
   status: string;
+  absence_type?: string;
 }
 
 interface StaffRequest {
@@ -325,10 +326,55 @@ export function LiveTimelineView({
     });
   };
   
+  // Get holidays for today with staff-to-client mapping
+  const todayHolidaysByClient = useMemo(() => {
+    const map = new Map<string, { userId: string; staffName: string; absenceType: string }[]>();
+    
+    const todayHolidays = holidays.filter(h => {
+      if (!["approved", "pending"].includes(h.status)) return false;
+      const start = startOfDay(parseISO(h.start_date));
+      const end = endOfDay(parseISO(h.end_date));
+      return isWithinInterval(today, { start, end });
+    });
+    
+    todayHolidays.forEach(h => {
+      // Find which clients this staff member works for via recurring patterns
+      const staffClients = new Set<string>();
+      recurringPatterns.forEach(p => {
+        if (p.user_id === h.user_id) staffClients.add(p.client_name);
+      });
+      // Also check today's schedules (in case of one-off shifts)
+      allSchedules.forEach(s => {
+        if (s.user_id === h.user_id) staffClients.add(s.client_name);
+      });
+      
+      staffClients.forEach(clientName => {
+        if (!map.has(clientName)) map.set(clientName, []);
+        map.get(clientName)!.push({
+          userId: h.user_id,
+          staffName: getStaffName(h.user_id),
+          absenceType: h.absence_type || 'holiday',
+        });
+      });
+    });
+    
+    return map;
+  }, [holidays, recurringPatterns, allSchedules, today, getStaffName]);
+
   const relevantStaff = viewMode === "staff" ? getRelevantStaff() : [];
   const relevantClients = viewMode === "client" ? getRelevantClients() : [];
   
-  const isEmpty = viewMode === "staff" ? relevantStaff.length === 0 : relevantClients.length === 0;
+  // For client view, also include clients that have staff on holiday even if no shifts today
+  const allRelevantClients = useMemo(() => {
+    if (viewMode !== "client") return relevantClients;
+    const clientSet = new Set(relevantClients);
+    todayHolidaysByClient.forEach((_, clientName) => {
+      if (filteredClients.includes(clientName)) clientSet.add(clientName);
+    });
+    return Array.from(clientSet).sort();
+  }, [viewMode, relevantClients, todayHolidaysByClient, filteredClients]);
+
+  const isEmpty = viewMode === "staff" ? relevantStaff.length === 0 : allRelevantClients.length === 0;
   
   if (isEmpty) {
     return (
@@ -433,7 +479,7 @@ export function LiveTimelineView({
         })}
         
         {/* Client rows */}
-        {viewMode === "client" && relevantClients.map(clientName => {
+        {viewMode === "client" && allRelevantClients.map(clientName => {
           // Get all schedules for this client, excluding staff on holiday
           const clientSchedules = todaySchedules
             .filter(s => {
@@ -480,7 +526,10 @@ export function LiveTimelineView({
             }
           });
           
-          const rowCount = Math.max(1, rows.length);
+          // Get holidays for this client
+          const clientHolidays = todayHolidaysByClient.get(clientName) || [];
+          
+          const rowCount = Math.max(1, rows.length + clientHolidays.length);
           
           return (
             <div key={clientName} className="flex mb-1">
@@ -590,6 +639,39 @@ export function LiveTimelineView({
                     })}
                   </div>
                 ))}
+                
+                {/* Holiday bars */}
+                {clientHolidays.map((holiday, hIdx) => {
+                  const rowIdx = rows.length + hIdx;
+                  const absenceLabel = holiday.absenceType === 'sick' ? 'Sick' 
+                    : holiday.absenceType === 'personal' ? 'Personal'
+                    : holiday.absenceType === 'maternity' ? 'Maternity'
+                    : holiday.absenceType === 'paternity' ? 'Paternity'
+                    : holiday.absenceType === 'unpaid' ? 'Unpaid'
+                    : 'Holiday';
+                  
+                  return (
+                    <div
+                      key={`holiday-${holiday.userId}-${hIdx}`}
+                      className="absolute left-0 right-0"
+                      style={{
+                        top: `${(rowIdx / rowCount) * 100}%`,
+                        height: `${100 / rowCount}%`,
+                      }}
+                    >
+                      <div
+                        className="absolute top-0.5 bottom-0.5 left-0 right-0 rounded-md flex items-center px-2 overflow-hidden text-xs bg-amber-100 border-2 border-amber-400 border-dashed opacity-70"
+                        title={`${holiday.staffName} - ${absenceLabel}`}
+                      >
+                        <div className="font-semibold truncate flex items-center gap-1">
+                          <Palmtree className="h-3 w-3 text-amber-600 flex-shrink-0" />
+                          {holiday.staffName}
+                        </div>
+                        <span className="text-[10px] text-amber-700 ml-2">{absenceLabel}</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );
