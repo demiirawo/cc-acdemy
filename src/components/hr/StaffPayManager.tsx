@@ -691,9 +691,11 @@ export function StaffPayManager() {
         return startDate <= monthEnd && endDate >= monthStart;
       });
       
-      // Calculate total overtime days for this month
+      // Calculate total overtime days for this month, split by type
       let overtimeDays = 0;
-      const overtimeRequestDetails: Array<{ type: string; startDate: string; endDate: string; days: number }> = [];
+      let requestStandardOTDays = 0; // Outside Normal Hours - 1.5x
+      let requestDoubleUpOTDays = 0; // Inside Normal Hours - 0.5x
+      const overtimeRequestDetails: Array<{ type: string; overtimeType: string | null; startDate: string; endDate: string; days: number }> = [];
       
       userOvertimeRequests.forEach(req => {
         const startDate = parseISO(req.start_date);
@@ -713,9 +715,23 @@ export function StaffPayManager() {
           daysInMonth = Math.round((daysInThisMonth / totalDays) * req.days_requested);
         }
         
+        // Determine if this is standard (outside, 1.5x) or double_up (inside, 0.5x)
+        // request_type: overtime_standard → outside (1.5x), overtime_double_up → inside (0.5x)
+        // shift_swap overtime_type: outside_hours → outside (1.5x), standard_hours → inside (0.5x)
+        const isInsideHours = 
+          req.request_type === 'overtime_double_up' ||
+          (req.overtime_type === 'standard_hours');
+        
+        if (isInsideHours) {
+          requestDoubleUpOTDays += daysInMonth;
+        } else {
+          requestStandardOTDays += daysInMonth;
+        }
+        
         overtimeDays += daysInMonth;
         overtimeRequestDetails.push({
           type: req.request_type,
+          overtimeType: req.overtime_type,
           startDate: req.start_date,
           endDate: req.end_date,
           days: daysInMonth
@@ -775,21 +791,23 @@ export function StaffPayManager() {
         currentDate.setDate(currentDate.getDate() + 1);
       }
       
-      const standardOvertimeDays = countedStandardOTDates.size;
-      const doubleUpOvertimeDays = countedDoubleUpOTDates.size;
+      const patternStandardOTDays = countedStandardOTDates.size;
+      const patternDoubleUpOTDays = countedDoubleUpOTDates.size;
       
-      // Add recurring overtime days to total (for display purposes, total = both types)
-      overtimeDays += standardOvertimeDays + doubleUpOvertimeDays;
+      // Combine pattern-based and request-based overtime by type
+      const totalStandardOTDays = patternStandardOTDays + requestStandardOTDays; // Outside Normal Hours - 1.5x
+      const totalDoubleUpOTDays = patternDoubleUpOTDays + requestDoubleUpOTDays; // Inside Normal Hours - 0.5x
+      
+      // Add recurring overtime days to total
+      overtimeDays += patternStandardOTDays + patternDoubleUpOTDays;
       
       // Overtime pay calculation:
-      // OT (Outside Normal Hours): 1.5 × dailyRate × days (working outside normal hours, full additional pay)
-      // OT (Inside Normal Hours): 0.5 × dailyRate × days (working during normal hours, base already in salary, only premium added)
-      // Request-based overtime still uses 1.5x (legacy/requests)
+      // OT (Outside Normal Hours): 1.5 × dailyRate × days
+      // OT (Inside Normal Hours): 0.5 × dailyRate × days (base already in salary, only premium added)
       const overtimeDailyRate = monthlyBaseSalary / 20;
-      const requestOvertimePay = 1.5 * overtimeDailyRate * (overtimeDays - standardOvertimeDays - doubleUpOvertimeDays);
-      const standardOvertimePay = 1.5 * overtimeDailyRate * standardOvertimeDays;
-      const doubleUpOvertimePay = 0.5 * overtimeDailyRate * doubleUpOvertimeDays;
-      const calculatedOvertimePay = requestOvertimePay + standardOvertimePay + doubleUpOvertimePay;
+      const standardOvertimePay = 1.5 * overtimeDailyRate * totalStandardOTDays;
+      const doubleUpOvertimePay = 0.5 * overtimeDailyRate * totalDoubleUpOTDays;
+      const calculatedOvertimePay = standardOvertimePay + doubleUpOvertimePay;
       
       // Total overtime = manual records + calculated from requests
       const overtime = overtimeManualRecords + calculatedOvertimePay;
@@ -897,6 +915,8 @@ export function StaffPayManager() {
         bonuses,
         overtime,
         overtimeDays,
+        standardOvertimeDays: totalStandardOTDays,
+        doubleUpOvertimeDays: totalDoubleUpOTDays,
         overtimeRequestDetails,
         calculatedOvertimePay,
         expenses,
@@ -1764,9 +1784,14 @@ export function StaffPayManager() {
                             <span className="text-success">
                               +{formatCurrency(staff.overtime, staff.currency)}
                             </span>
-                            {staff.overtimeDays > 0 && (
+                            {staff.standardOvertimeDays > 0 && (
                               <span className="text-[10px] text-muted-foreground">
-                                {staff.overtimeDays} day{staff.overtimeDays !== 1 ? 's' : ''} @ 1.5x
+                                {staff.standardOvertimeDays} day{staff.standardOvertimeDays !== 1 ? 's' : ''} @ 1.5x (Outside)
+                              </span>
+                            )}
+                            {staff.doubleUpOvertimeDays > 0 && (
+                              <span className="text-[10px] text-muted-foreground">
+                                {staff.doubleUpOvertimeDays} day{staff.doubleUpOvertimeDays !== 1 ? 's' : ''} @ 0.5x (Inside)
                               </span>
                             )}
                           </div>
