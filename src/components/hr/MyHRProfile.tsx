@@ -28,6 +28,11 @@ interface MonthlyPayPreview {
   deductions: number;
   overtimeDays: number;
   overtimePay: number;
+  overtimeShifts: Array<{
+    date: string;
+    subtype: 'standard' | 'double_up';
+    source: 'pattern' | 'request';
+  }>;
   holidayOvertimeDays: number;
   holidayOvertimeBonus: number;
   holidayShifts: Array<{
@@ -574,29 +579,33 @@ export function MyHRProfile() {
       // Include shift_swap requests that have an overtime_type set (these are cover shifts with OT)
       let requestStandardOTDays = 0;
       let requestDoubleUpOTDays = 0;
+      const overtimeShifts: Array<{ date: string; subtype: 'standard' | 'double_up'; source: 'pattern' | 'request' }> = [];
       const approvedOvertimeRequests = staffRequests.filter(req => {
         if (req.status !== 'approved') return false;
         if (req.request_type === 'overtime' || req.request_type === 'overtime_standard' || req.request_type === 'overtime_double_up') return true;
-        // shift_swap with overtime_type means cover shift with overtime pay
         if (req.request_type === 'shift_swap' && (req as any).overtime_type) return true;
         return false;
       });
       approvedOvertimeRequests.forEach(req => {
         const reqStart = parseISO(req.start_date);
         const reqEnd = parseISO(req.end_date);
-        // Count days that fall within this month
         if (reqStart <= monthEnd && reqEnd >= monthStart) {
           const overlapStart = reqStart > monthStart ? reqStart : monthStart;
           const overlapEnd = reqEnd < monthEnd ? reqEnd : monthEnd;
-          const daysInMonth = Math.ceil((overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-          const days = Math.min(daysInMonth, req.days_requested);
-          
-          // Determine if inside or outside hours
           const isInsideHours = req.request_type === 'overtime_double_up' || (req as any).overtime_type === 'standard_hours';
-          if (isInsideHours) {
-            requestDoubleUpOTDays += days;
-          } else {
-            requestStandardOTDays += days;
+          const subtype: 'standard' | 'double_up' = isInsideHours ? 'double_up' : 'standard';
+          // Iterate each day for detail tracking
+          let d = new Date(overlapStart);
+          let counted = 0;
+          while (d <= overlapEnd && counted < req.days_requested) {
+            overtimeShifts.push({ date: format(d, 'yyyy-MM-dd'), subtype, source: 'request' });
+            if (isInsideHours) {
+              requestDoubleUpOTDays++;
+            } else {
+              requestStandardOTDays++;
+            }
+            counted++;
+            d.setDate(d.getDate() + 1);
           }
         }
       });
@@ -629,8 +638,10 @@ export function MyHRProfile() {
                   : (pattern.overtime_subtype || 'standard');
                 if (subtype === 'double_up') {
                   countedDoubleUpOTDates.add(dateStr);
+                  overtimeShifts.push({ date: dateStr, subtype: 'double_up', source: 'pattern' });
                 } else {
                   countedStandardOTDates.add(dateStr);
+                  overtimeShifts.push({ date: dateStr, subtype: 'standard', source: 'pattern' });
                 }
                 break;
               }
@@ -728,6 +739,7 @@ export function MyHRProfile() {
         deductions,
         overtimeDays,
         overtimePay,
+        overtimeShifts: overtimeShifts.sort((a, b) => a.date.localeCompare(b.date)),
         holidayOvertimeDays,
         holidayOvertimeBonus,
         holidayShifts,
@@ -1220,9 +1232,24 @@ export function MyHRProfile() {
                                       <span className="font-medium text-success">+{formatCurrency(preview.bonuses, preview.currency)}</span>
                                     </div>}
                                   
-                                  {preview.overtimePay > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Overtime Pay ({preview.overtimeDays} days)</span>
-                                      <span className="font-medium text-success">+{formatCurrency(preview.overtimePay, preview.currency)}</span>
+                                  {preview.overtimePay > 0 && <div className="py-2 border-b">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground">Overtime Pay ({preview.overtimeDays} days)</span>
+                                        <span className="font-medium text-success">+{formatCurrency(preview.overtimePay, preview.currency)}</span>
+                                      </div>
+                                      {preview.overtimeShifts.length > 0 && (
+                                        <div className="mt-2 ml-4 space-y-1">
+                                          {preview.overtimeShifts.map((shift, idx) => (
+                                            <div key={idx} className="flex items-center gap-2 text-xs text-muted-foreground">
+                                              <span>{format(parseISO(shift.date), 'EEE d MMM')}</span>
+                                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                                {shift.subtype === 'standard' ? 'Outside (1.5×)' : 'Inside (0.5×)'}
+                                              </Badge>
+                                              <span className="text-muted-foreground/60">{shift.source === 'request' ? 'Cover' : 'Pattern'}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>}
                                   
                                   {preview.holidayOvertimeBonus > 0 && <div className="flex justify-between items-center py-2 border-b">
