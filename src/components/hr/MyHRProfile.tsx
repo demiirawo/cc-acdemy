@@ -571,9 +571,16 @@ export function MyHRProfile() {
       const deductions = monthRecords.filter(r => r.record_type === 'deduction').reduce((sum, r) => sum + r.amount, 0);
 
       // Calculate overtime from approved requests - split by type
+      // Include shift_swap requests that have an overtime_type set (these are cover shifts with OT)
       let requestStandardOTDays = 0;
       let requestDoubleUpOTDays = 0;
-      const approvedOvertimeRequests = staffRequests.filter(req => req.status === 'approved' && (req.request_type === 'overtime' || req.request_type === 'overtime_standard' || req.request_type === 'overtime_double_up'));
+      const approvedOvertimeRequests = staffRequests.filter(req => {
+        if (req.status !== 'approved') return false;
+        if (req.request_type === 'overtime' || req.request_type === 'overtime_standard' || req.request_type === 'overtime_double_up') return true;
+        // shift_swap with overtime_type means cover shift with overtime pay
+        if (req.request_type === 'shift_swap' && (req as any).overtime_type) return true;
+        return false;
+      });
       approvedOvertimeRequests.forEach(req => {
         const reqStart = parseISO(req.start_date);
         const reqEnd = parseISO(req.end_date);
