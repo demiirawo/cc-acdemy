@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat } from "lucide-react";
+import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat } from "lucide-react";
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO } from "date-fns";
 
 interface PublicHoliday {
@@ -164,6 +164,7 @@ export function StaffPayManager() {
   const [adjustmentDialogOpen, setAdjustmentDialogOpen] = useState(false);
   const [savingAdjustment, setSavingAdjustment] = useState(false);
   const [readyStaff, setReadyStaff] = useState<Set<string>>(new Set());
+  const [expandedOvertimeStaff, setExpandedOvertimeStaff] = useState<Set<string>>(new Set());
   const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
   const [loadingHolidays, setLoadingHolidays] = useState(false);
   const [holidaysYear, setHolidaysYear] = useState(new Date().getFullYear());
@@ -742,6 +743,32 @@ export function StaffPayManager() {
       // Track standard vs double_up separately
       const countedStandardOTDates = new Set<string>();
       const countedDoubleUpOTDates = new Set<string>();
+      const overtimeDayDetails: Array<{ date: string; client: string; subtype: 'standard' | 'double_up'; source: 'pattern' | 'request'; requestType?: string }> = [];
+      
+      // Add request-based overtime day details
+      userOvertimeRequests.forEach(req => {
+        const startDate = parseISO(req.start_date);
+        const endDate = parseISO(req.end_date);
+        const effectiveStart = startDate < monthStart ? monthStart : startDate;
+        const effectiveEnd = endDate > monthEnd ? monthEnd : endDate;
+        const isInsideHours = req.request_type === 'overtime_double_up' || (req.overtime_type === 'standard_hours');
+        
+        let d = new Date(effectiveStart);
+        while (d <= effectiveEnd) {
+          const dStr = format(d, 'yyyy-MM-dd');
+          // Only add weekdays as a rough guide (Mon-Fri)
+          if (d.getDay() !== 0 && d.getDay() !== 6) {
+            overtimeDayDetails.push({
+              date: dStr,
+              client: 'Cover',
+              subtype: isInsideHours ? 'double_up' : 'standard',
+              source: 'request',
+              requestType: req.request_type
+            });
+          }
+          d.setDate(d.getDate() + 1);
+        }
+      });
       
       // Iterate through each day of the month and count overtime pattern days (including per-day overrides)
       const userPatterns = recurringPatterns.filter(p => p.user_id === hr.user_id);
@@ -751,6 +778,7 @@ export function StaffPayManager() {
         const dayOfWeek = currentDate.getDay();
         
         let dayOTSubtype: string | null = null;
+        let dayOTClient: string = '';
         userPatterns.forEach(pattern => {
           const patternStart = parseISO(pattern.start_date);
           const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
@@ -775,6 +803,7 @@ export function StaffPayManager() {
                   ? (dayOverride.subtype || 'standard')
                   : (pattern.overtime_subtype || 'standard');
                 dayOTSubtype = subtype;
+                dayOTClient = pattern.client_name;
               }
             }
           }
@@ -786,6 +815,12 @@ export function StaffPayManager() {
           } else {
             countedStandardOTDates.add(dateStr);
           }
+          overtimeDayDetails.push({
+            date: dateStr,
+            client: dayOTClient,
+            subtype: dayOTSubtype === 'double_up' ? 'double_up' : 'standard',
+            source: 'pattern'
+          });
         }
         
         currentDate.setDate(currentDate.getDate() + 1);
@@ -918,6 +953,7 @@ export function StaffPayManager() {
         standardOvertimeDays: totalStandardOTDays,
         doubleUpOvertimeDays: totalDoubleUpOTDays,
         overtimeRequestDetails,
+        overtimeDayDetails: overtimeDayDetails.sort((a, b) => a.date.localeCompare(b.date)),
         calculatedOvertimePay,
         expenses,
         deductions,
@@ -1732,9 +1768,12 @@ export function StaffPayManager() {
               ) : (
                 payrollSummary.map(staff => {
                   const isReady = readyStaff.has(staff.userId);
+                  const isOTExpanded = expandedOvertimeStaff.has(staff.userId);
+                  const hasOTDetails = staff.overtimeDayDetails.length > 0 || staff.holidayShifts.length > 0;
                   
                   return (
-                    <TableRow key={staff.userId} className="hover:bg-muted/30">
+                    <React.Fragment key={staff.userId}>
+                    <TableRow className="hover:bg-muted/30">
                       <TableCell className="font-medium">
                         <div>
                           <div>{staff.displayName}</div>
@@ -1780,9 +1819,23 @@ export function StaffPayManager() {
                       </TableCell>
                       <TableCell className="text-right">
                         {staff.overtime > 0 ? (
-                          <div className="flex flex-col items-end">
-                            <span className="text-success">
+                          <div 
+                            className={`flex flex-col items-end ${hasOTDetails ? 'cursor-pointer hover:opacity-80' : ''}`}
+                            onClick={() => {
+                              if (!hasOTDetails) return;
+                              setExpandedOvertimeStaff(prev => {
+                                const next = new Set(prev);
+                                if (next.has(staff.userId)) next.delete(staff.userId);
+                                else next.add(staff.userId);
+                                return next;
+                              });
+                            }}
+                          >
+                            <span className="text-success flex items-center gap-1">
                               +{formatCurrency(staff.overtime, staff.currency)}
+                              {hasOTDetails && (
+                                isOTExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+                              )}
                             </span>
                             {staff.standardOvertimeDays > 0 && (
                               <span className="text-[10px] text-muted-foreground">
@@ -1799,7 +1852,18 @@ export function StaffPayManager() {
                       </TableCell>
                       <TableCell className="text-right">
                         {staff.holidayOvertimeBonus > 0 ? (
-                          <div className="flex flex-col items-end">
+                          <div 
+                            className={`flex flex-col items-end ${hasOTDetails ? 'cursor-pointer hover:opacity-80' : ''}`}
+                            onClick={() => {
+                              if (!hasOTDetails) return;
+                              setExpandedOvertimeStaff(prev => {
+                                const next = new Set(prev);
+                                if (next.has(staff.userId)) next.delete(staff.userId);
+                                else next.add(staff.userId);
+                                return next;
+                              });
+                            }}
+                          >
                             <span className="text-amber-600 dark:text-amber-400">
                               +{formatCurrency(staff.holidayOvertimeBonus, staff.currency)}
                             </span>
@@ -1883,6 +1947,64 @@ export function StaffPayManager() {
                         </div>
                       </TableCell>
                     </TableRow>
+                    {isOTExpanded && hasOTDetails && (
+                      <TableRow className="bg-muted/20">
+                        <TableCell colSpan={13} className="p-0">
+                          <div className="px-6 py-3 space-y-3">
+                            {/* Overtime Day Details */}
+                            {staff.overtimeDayDetails.length > 0 && (
+                              <div>
+                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                                  Overtime Days Breakdown
+                                </h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1">
+                                  {staff.overtimeDayDetails.map((day, idx) => (
+                                    <div key={idx} className="flex items-center gap-2 text-xs py-1 px-2 rounded bg-background border">
+                                      <span className="font-mono text-muted-foreground min-w-[80px]">
+                                        {format(parseISO(day.date), 'EEE dd MMM')}
+                                      </span>
+                                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                        day.subtype === 'standard' 
+                                          ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' 
+                                          : 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                                      }`}>
+                                        {day.subtype === 'standard' ? '1.5x Outside' : '0.5x Inside'}
+                                      </span>
+                                      <span className="text-muted-foreground truncate">{day.client}</span>
+                                      <span className="text-[10px] text-muted-foreground/60 ml-auto">
+                                        {day.source === 'pattern' ? 'Pattern' : 'Request'}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {/* Holiday OT Details */}
+                            {staff.holidayShifts.length > 0 && (
+                              <div>
+                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                                  Public Holiday Days (+0.5x)
+                                </h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1">
+                                  {staff.holidayShifts.map((hs, idx) => (
+                                    <div key={idx} className="flex items-center gap-2 text-xs py-1 px-2 rounded bg-background border">
+                                      <span className="font-mono text-muted-foreground min-w-[80px]">
+                                        {format(parseISO(hs.date), 'EEE dd MMM')}
+                                      </span>
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                        +0.5x Holiday
+                                      </span>
+                                      <span className="text-muted-foreground truncate">{hs.holidayName}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    </React.Fragment>
                   );
                 })
               )}
