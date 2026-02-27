@@ -570,8 +570,9 @@ export function MyHRProfile() {
       const bonuses = oneOffBonuses + activeRecurringBonuses;
       const deductions = monthRecords.filter(r => r.record_type === 'deduction').reduce((sum, r) => sum + r.amount, 0);
 
-      // Calculate overtime from approved requests
-      let overtimeDays = 0;
+      // Calculate overtime from approved requests - split by type
+      let requestStandardOTDays = 0;
+      let requestDoubleUpOTDays = 0;
       const approvedOvertimeRequests = staffRequests.filter(req => req.status === 'approved' && (req.request_type === 'overtime' || req.request_type === 'overtime_standard' || req.request_type === 'overtime_double_up'));
       approvedOvertimeRequests.forEach(req => {
         const reqStart = parseISO(req.start_date);
@@ -581,7 +582,15 @@ export function MyHRProfile() {
           const overlapStart = reqStart > monthStart ? reqStart : monthStart;
           const overlapEnd = reqEnd < monthEnd ? reqEnd : monthEnd;
           const daysInMonth = Math.ceil((overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-          overtimeDays += Math.min(daysInMonth, req.days_requested);
+          const days = Math.min(daysInMonth, req.days_requested);
+          
+          // Determine if inside or outside hours
+          const isInsideHours = req.request_type === 'overtime_double_up' || (req as any).overtime_type === 'standard_hours';
+          if (isInsideHours) {
+            requestDoubleUpOTDays += days;
+          } else {
+            requestStandardOTDays += days;
+          }
         }
       });
 
@@ -622,16 +631,17 @@ export function MyHRProfile() {
           }
         }
       }
-      const standardOTDays = countedStandardOTDates.size;
-      const doubleUpOTDays = countedDoubleUpOTDates.size;
-      overtimeDays += standardOTDays + doubleUpOTDays;
+      const patternStandardOTDays = countedStandardOTDates.size;
+      const patternDoubleUpOTDays = countedDoubleUpOTDates.size;
+      
+      const totalStandardOTDays = requestStandardOTDays + patternStandardOTDays;
+      const totalDoubleUpOTDays = requestDoubleUpOTDays + patternDoubleUpOTDays;
+      const overtimeDays = totalStandardOTDays + totalDoubleUpOTDays;
 
       // Overtime pay:
-      // Request-based overtime (legacy) = 1.5 × dailyRate × days
-      // Standard OT from patterns = 1.5 × dailyRate × days (outside normal hours, full pay)
-      // Double Up OT from patterns = 0.5 × dailyRate × days (during normal hours, premium only)
-      const requestOTDays = overtimeDays - standardOTDays - doubleUpOTDays;
-      const overtimePay = (1.5 * dailyRate * requestOTDays) + (1.5 * dailyRate * standardOTDays) + (0.5 * dailyRate * doubleUpOTDays);
+      // Standard/Outside OT = 1.5 × dailyRate × days (outside normal hours, full pay)
+      // Double Up/Inside OT = 0.5 × dailyRate × days (during normal hours, premium only)
+      const overtimePay = (1.5 * dailyRate * totalStandardOTDays) + (0.5 * dailyRate * totalDoubleUpOTDays);
 
       // Calculate unused holiday payout or excess holiday deduction for June (end of holiday year)
       // Holiday year runs June 1 to May 31, so June payroll includes payout for unused days or deduction for excess
