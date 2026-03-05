@@ -575,88 +575,120 @@ export function MyHRProfile() {
       const bonuses = oneOffBonuses + activeRecurringBonuses;
       const deductions = monthRecords.filter(r => r.record_type === 'deduction').reduce((sum, r) => sum + r.amount, 0);
 
-      // Calculate overtime from approved requests - split by type
-      // Include shift_swap requests that have an overtime_type set (these are cover shifts with OT)
-      let requestStandardOTDays = 0;
-      let requestDoubleUpOTDays = 0;
-      const overtimeShifts: Array<{ date: string; subtype: 'standard' | 'double_up'; source: 'pattern' | 'request' }> = [];
+      // Calculate overtime from approved requests and recurring patterns
+      // Count by unique date (one overtime day per calendar day)
+      const overtimeShiftsByDate = new Map<string, {
+        subtype: 'standard' | 'double_up';
+        source: 'pattern' | 'request';
+      }>();
+
+      const upsertOvertimeShift = (
+        dateStr: string,
+        subtype: 'standard' | 'double_up',
+        source: 'pattern' | 'request'
+      ) => {
+        const existing = overtimeShiftsByDate.get(dateStr);
+
+        if (!existing) {
+          overtimeShiftsByDate.set(dateStr, { subtype, source });
+          return;
+        }
+
+        // Prefer request source when both exist for the same date
+        const preferredSource: 'pattern' | 'request' =
+          existing.source === 'request' || source === 'request' ? 'request' : 'pattern';
+
+        // If mixed subtypes exist on same day, prefer standard (higher multiplier)
+        const preferredSubtype: 'standard' | 'double_up' =
+          existing.subtype === 'standard' || subtype === 'standard' ? 'standard' : 'double_up';
+
+        overtimeShiftsByDate.set(dateStr, {
+          subtype: preferredSubtype,
+          source: preferredSource
+        });
+      };
+
+      // Include shift_swap requests that have an overtime_type set (cover shifts with OT)
       const approvedOvertimeRequests = staffRequests.filter(req => {
         if (req.status !== 'approved') return false;
         if (req.request_type === 'overtime' || req.request_type === 'overtime_standard' || req.request_type === 'overtime_double_up') return true;
         if (req.request_type === 'shift_swap' && (req as any).overtime_type) return true;
         return false;
       });
+
       approvedOvertimeRequests.forEach(req => {
         const reqStart = parseISO(req.start_date);
         const reqEnd = parseISO(req.end_date);
+
         if (reqStart <= monthEnd && reqEnd >= monthStart) {
           const overlapStart = reqStart > monthStart ? reqStart : monthStart;
           const overlapEnd = reqEnd < monthEnd ? reqEnd : monthEnd;
           const isInsideHours = req.request_type === 'overtime_double_up' || (req as any).overtime_type === 'standard_hours';
           const subtype: 'standard' | 'double_up' = isInsideHours ? 'double_up' : 'standard';
-          // Iterate each day for detail tracking
-          let d = new Date(overlapStart);
-          let counted = 0;
-          while (d <= overlapEnd && counted < req.days_requested) {
-            overtimeShifts.push({ date: format(d, 'yyyy-MM-dd'), subtype, source: 'request' });
-            if (isInsideHours) {
-              requestDoubleUpOTDays++;
-            } else {
-              requestStandardOTDays++;
-            }
-            counted++;
-            d.setDate(d.getDate() + 1);
+
+          const daysInRange = eachDayOfInterval({ start: overlapStart, end: overlapEnd });
+          const maxDaysToCount = Math.min(req.days_requested || daysInRange.length, daysInRange.length);
+
+          for (let i = 0; i < maxDaysToCount; i++) {
+            const dateStr = format(daysInRange[i], 'yyyy-MM-dd');
+            upsertOvertimeShift(dateStr, subtype, 'request');
           }
         }
       });
 
-      // Also count recurring overtime patterns AND per-day overtime exceptions
-      // Split into standard vs double_up
-      // Build a set of dates already counted from requests to avoid double-counting
-      const requestOTDates = new Set<string>(overtimeShifts.map(s => s.date));
-      const countedStandardOTDates = new Set<string>();
-      const countedDoubleUpOTDates = new Set<string>();
+      // Request dates take precedence over patterns for the same day
+      const requestOTDates = new Set(
+        Array.from(overtimeShiftsByDate.entries())
+          .filter(([, value]) => value.source === 'request')
+          .map(([date]) => date)
+      );
+
+      // Also count recurring overtime patterns and per-day overtime exceptions
       for (const day of monthDays) {
         const dateStr = format(day, 'yyyy-MM-dd');
         const dayOfWeek = getDay(day);
+
+        // Skip if already covered by a request entry for this date
+        if (requestOTDates.has(dateStr)) continue;
+
         for (const pattern of recurringPatterns) {
           const patternStart = parseISO(pattern.start_date);
           const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+
           if (day >= patternStart && (!patternEnd || day <= patternEnd)) {
             if (pattern.days_of_week.includes(dayOfWeek)) {
               const deletedExs = deletedExceptionsMap.get(pattern.id);
               if (deletedExs && deletedExs.has(dateStr)) continue;
-              
+
               const overtimeExs = overtimeExceptionsMap.get(pattern.id);
               const dayOverride = overtimeExs?.get(dateStr);
-              
+
               const isOvertimeForDay = dayOverride?.type === 'overtime' ? true
                 : dayOverride?.type === 'not_overtime' ? false
                 : pattern.is_overtime;
-              
-              if (isOvertimeForDay && !requestOTDates.has(dateStr)) {
-                const subtype = dayOverride?.type === 'overtime'
-                  ? (dayOverride.subtype || 'standard')
-                  : (pattern.overtime_subtype || 'standard');
-                if (subtype === 'double_up') {
-                  countedDoubleUpOTDates.add(dateStr);
-                  overtimeShifts.push({ date: dateStr, subtype: 'double_up', source: 'pattern' });
-                } else {
-                  countedStandardOTDates.add(dateStr);
-                  overtimeShifts.push({ date: dateStr, subtype: 'standard', source: 'pattern' });
-                }
+
+              if (isOvertimeForDay) {
+                const subtype: 'standard' | 'double_up' = dayOverride?.type === 'overtime'
+                  ? ((dayOverride.subtype || 'standard') as 'standard' | 'double_up')
+                  : ((pattern.overtime_subtype || 'standard') as 'standard' | 'double_up');
+
+                upsertOvertimeShift(dateStr, subtype, 'pattern');
                 break;
               }
             }
           }
         }
       }
-      const patternStandardOTDays = countedStandardOTDates.size;
-      const patternDoubleUpOTDays = countedDoubleUpOTDates.size;
-      
-      const totalStandardOTDays = requestStandardOTDays + patternStandardOTDays;
-      const totalDoubleUpOTDays = requestDoubleUpOTDays + patternDoubleUpOTDays;
-      const overtimeDays = totalStandardOTDays + totalDoubleUpOTDays;
+
+      const overtimeShifts = Array.from(overtimeShiftsByDate.entries()).map(([date, value]) => ({
+        date,
+        subtype: value.subtype,
+        source: value.source
+      }));
+
+      const totalStandardOTDays = overtimeShifts.filter(shift => shift.subtype === 'standard').length;
+      const totalDoubleUpOTDays = overtimeShifts.filter(shift => shift.subtype === 'double_up').length;
+      const overtimeDays = overtimeShifts.length;
 
       // Overtime pay:
       // Standard/Outside OT = 1.5 × dailyRate × days (outside normal hours, full pay)
