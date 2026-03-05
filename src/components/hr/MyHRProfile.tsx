@@ -627,10 +627,10 @@ export function MyHRProfile() {
           const subtype: 'standard' | 'double_up' = isInsideHours ? 'double_up' : 'standard';
 
           const daysInRange = eachDayOfInterval({ start: overlapStart, end: overlapEnd });
-          const maxDaysToCount = Math.min(req.days_requested || daysInRange.length, daysInRange.length);
 
-          for (let i = 0; i < maxDaysToCount; i++) {
-            const dateStr = format(daysInRange[i], 'yyyy-MM-dd');
+          // Iterate all unique calendar days (not shifts) to avoid double-counting
+          for (const day of daysInRange) {
+            const dateStr = format(day, 'yyyy-MM-dd');
             upsertOvertimeShift(dateStr, subtype, 'request');
           }
         }
