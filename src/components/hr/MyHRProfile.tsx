@@ -497,6 +497,20 @@ export function MyHRProfile() {
       });
       const actualScheduleDates = new Set(userSchedulesInMonth.map(s => format(new Date(s.start_datetime), 'yyyy-MM-dd')));
 
+      // Build set of dates the user is on approved leave (paid or unpaid)
+      // Staff on leave should NOT receive public holiday overtime
+      const userLeaveDates = new Set<string>();
+      const userLeaveReqs = staffRequests.filter(req => 
+        req.status === 'approved' && 
+        (req.request_type === 'holiday_paid' || req.request_type === 'holiday_unpaid')
+      );
+      userLeaveReqs.forEach(req => {
+        const leaveStart = parseISO(req.start_date);
+        const leaveEnd = parseISO(req.end_date);
+        const leaveDays = eachDayOfInterval({ start: leaveStart, end: leaveEnd });
+        leaveDays.forEach(d => userLeaveDates.add(format(d, 'yyyy-MM-dd')));
+      });
+
       // Count holiday days
       const countedHolidayDates = new Set<string>();
       const holidayShifts: Array<{
@@ -507,7 +521,7 @@ export function MyHRProfile() {
       // Check actual schedules
       for (const schedule of userSchedulesInMonth) {
         const scheduleDate = format(new Date(schedule.start_datetime), 'yyyy-MM-dd');
-        if (holidayDatesMap.has(scheduleDate) && !countedHolidayDates.has(scheduleDate)) {
+        if (holidayDatesMap.has(scheduleDate) && !countedHolidayDates.has(scheduleDate) && !userLeaveDates.has(scheduleDate)) {
           countedHolidayDates.add(scheduleDate);
           holidayShifts.push({
             date: scheduleDate,
@@ -518,7 +532,7 @@ export function MyHRProfile() {
 
       // Check virtual schedules
       for (const dateStr of virtualScheduleDates) {
-        if (holidayDatesMap.has(dateStr) && !actualScheduleDates.has(dateStr) && !countedHolidayDates.has(dateStr)) {
+        if (holidayDatesMap.has(dateStr) && !actualScheduleDates.has(dateStr) && !countedHolidayDates.has(dateStr) && !userLeaveDates.has(dateStr)) {
           countedHolidayDates.add(dateStr);
           holidayShifts.push({
             date: dateStr,
@@ -542,7 +556,7 @@ export function MyHRProfile() {
           const coverEndDate = new Date(Math.min(reqEnd.getTime(), monthEnd.getTime()));
           while (coverDate <= coverEndDate) {
             const coverDateStr = format(coverDate, 'yyyy-MM-dd');
-            if (holidayDatesMap.has(coverDateStr) && !countedHolidayDates.has(coverDateStr)) {
+            if (holidayDatesMap.has(coverDateStr) && !countedHolidayDates.has(coverDateStr) && !userLeaveDates.has(coverDateStr)) {
               countedHolidayDates.add(coverDateStr);
               holidayShifts.push({
                 date: coverDateStr,

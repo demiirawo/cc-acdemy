@@ -176,6 +176,7 @@ export function StaffPayManager() {
   const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; unlimited_holiday: boolean }[]>([]);
   const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null }[]>([]);
   const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string }[]>([]);
+  const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<{ user_id: string; start_date: string; end_date: string }[]>([]);
   const { toast } = useToast();
   const { user } = useAuth();
 
@@ -439,6 +440,19 @@ export function StaffPayManager() {
       } else {
         setUnpaidHolidayRequests(unpaidHolidayData || []);
       }
+
+      // Fetch approved leave requests (paid + unpaid) to exclude from public holiday overtime
+      const { data: leaveData, error: leaveError } = await supabase
+        .from('staff_requests')
+        .select('user_id, start_date, end_date')
+        .eq('status', 'approved')
+        .in('request_type', ['holiday_paid', 'holiday_unpaid']);
+      
+      if (leaveError) {
+        console.error('Error fetching leave requests:', leaveError);
+      } else {
+        setApprovedLeaveRequests(leaveData || []);
+      }
     } catch (error) {
       console.error('Error fetching pay records:', error);
       toast({
@@ -593,10 +607,21 @@ export function StaffPayManager() {
       const holidayShifts: Array<{ date: string; holidayName: string }> = [];
       const countedHolidayDates = new Set<string>(); // Track which dates we've already counted
       
+      // Build set of dates the user is on approved leave (paid or unpaid)
+      // Staff on leave should NOT receive public holiday overtime
+      const userLeaveDates = new Set<string>();
+      const userLeaveReqs = approvedLeaveRequests.filter(r => r.user_id === hr.user_id);
+      userLeaveReqs.forEach(req => {
+        const leaveStart = parseISO(req.start_date);
+        const leaveEnd = parseISO(req.end_date);
+        const leaveDays = eachDayOfInterval({ start: leaveStart, end: leaveEnd });
+        leaveDays.forEach(d => userLeaveDates.add(format(d, 'yyyy-MM-dd')));
+      });
+      
       // Check actual schedules
       userSchedules.forEach(schedule => {
         const scheduleDate = getScheduleDate(schedule.start_datetime);
-        if (holidayDatesSet.has(scheduleDate) && !countedHolidayDates.has(scheduleDate)) {
+        if (holidayDatesSet.has(scheduleDate) && !countedHolidayDates.has(scheduleDate) && !userLeaveDates.has(scheduleDate)) {
           holidayOvertimeDays += 1;
           countedHolidayDates.add(scheduleDate);
           const holiday = publicHolidays.find(h => h.date === scheduleDate);
@@ -610,7 +635,7 @@ export function StaffPayManager() {
       
       // Check virtual schedules from recurring patterns (only if no actual schedule exists for that date)
       virtualSchedules.forEach(virtual => {
-        if (holidayDatesSet.has(virtual.date) && !actualScheduleDates.has(virtual.date) && !countedHolidayDates.has(virtual.date)) {
+        if (holidayDatesSet.has(virtual.date) && !actualScheduleDates.has(virtual.date) && !countedHolidayDates.has(virtual.date) && !userLeaveDates.has(virtual.date)) {
           holidayOvertimeDays += 1;
           countedHolidayDates.add(virtual.date);
           const holiday = publicHolidays.find(h => h.date === virtual.date);
@@ -634,7 +659,7 @@ export function StaffPayManager() {
         const coverEndDate = new Date(Math.min(reqEnd.getTime(), monthEnd.getTime()));
         while (coverDate <= coverEndDate) {
           const coverDateStr = format(coverDate, 'yyyy-MM-dd');
-          if (holidayDatesSet.has(coverDateStr) && !countedHolidayDates.has(coverDateStr)) {
+          if (holidayDatesSet.has(coverDateStr) && !countedHolidayDates.has(coverDateStr) && !userLeaveDates.has(coverDateStr)) {
             holidayOvertimeDays += 1;
             countedHolidayDates.add(coverDateStr);
             const holiday = publicHolidays.find(h => h.date === coverDateStr);
@@ -968,7 +993,7 @@ export function StaffPayManager() {
         records: userRecords
       };
     });
-  }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses, staffHolidays, hrProfilesFull, selectedMonth, approvedOvertimeRequests, unpaidHolidayRequests]);
+  }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses, staffHolidays, hrProfilesFull, selectedMonth, approvedOvertimeRequests, unpaidHolidayRequests, approvedLeaveRequests]);
 
   // Total payroll for the month (converted to GBP)
   const totalPayroll = useMemo(() => {
