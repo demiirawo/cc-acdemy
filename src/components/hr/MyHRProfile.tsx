@@ -612,6 +612,8 @@ export function MyHRProfile() {
 
       // Also count recurring overtime patterns AND per-day overtime exceptions
       // Split into standard vs double_up
+      // Build a set of dates already counted from requests to avoid double-counting
+      const requestOTDates = new Set<string>(overtimeShifts.map(s => s.date));
       const countedStandardOTDates = new Set<string>();
       const countedDoubleUpOTDates = new Set<string>();
       for (const day of monthDays) {
@@ -632,7 +634,7 @@ export function MyHRProfile() {
                 : dayOverride?.type === 'not_overtime' ? false
                 : pattern.is_overtime;
               
-              if (isOvertimeForDay) {
+              if (isOvertimeForDay && !requestOTDates.has(dateStr)) {
                 const subtype = dayOverride?.type === 'overtime'
                   ? (dayOverride.subtype || 'standard')
                   : (pattern.overtime_subtype || 'standard');
