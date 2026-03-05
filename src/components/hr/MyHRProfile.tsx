@@ -789,7 +789,7 @@ export function MyHRProfile() {
       });
     }
     return previews;
-  }, [hrProfile, staffSchedules, recurringPatterns, patternExceptions, publicHolidays, payRecords, recurringBonuses, holidays]);
+  }, [hrProfile, staffSchedules, recurringPatterns, patternExceptions, publicHolidays, payRecords, recurringBonuses, holidays, staffRequests]);
   const toggleMonth = (monthKey: string) => {
     setExpandedMonths(prev => {
       const next = new Set(prev);
