@@ -634,7 +634,7 @@ export function MyHRProfile() {
                 : dayOverride?.type === 'not_overtime' ? false
                 : pattern.is_overtime;
               
-              if (isOvertimeForDay) {
+              if (isOvertimeForDay && !requestOTDates.has(dateStr)) {
                 const subtype = dayOverride?.type === 'overtime'
                   ? (dayOverride.subtype || 'standard')
                   : (pattern.overtime_subtype || 'standard');
