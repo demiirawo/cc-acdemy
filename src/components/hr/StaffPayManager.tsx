@@ -706,15 +706,10 @@ export function StaffPayManager() {
         const effectiveStart = startDate < monthStart ? monthStart : startDate;
         const effectiveEnd = endDate > monthEnd ? monthEnd : endDate;
         
-        // Count business days (rough estimate - using days_requested for full range, proportioned if partial)
-        let daysInMonth = req.days_requested;
-        
-        // If the request spans multiple months, calculate proportion for this month
-        if (startDate < monthStart || endDate > monthEnd) {
-          const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-          const daysInThisMonth = Math.ceil((effectiveEnd.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-          daysInMonth = Math.round((daysInThisMonth / totalDays) * req.days_requested);
-        }
+        // Count unique calendar days in the overlap (not shifts), to avoid double-counting
+        // when multiple shifts fall on the same day
+        const effectiveDaysInRange = eachDayOfInterval({ start: effectiveStart, end: effectiveEnd });
+        const daysInMonth = effectiveDaysInRange.length;
         
         // Determine if this is standard (outside, 1.5x) or double_up (inside, 0.5x)
         // request_type: overtime_standard → outside (1.5x), overtime_double_up → inside (0.5x)
