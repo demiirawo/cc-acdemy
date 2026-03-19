@@ -15,11 +15,11 @@ const ISLAMIC_HOLIDAYS: Record<number, Array<{ date: string; name: string }>> = 
     { date: "2025-09-05", name: "Eid-el-Maulud (Estimated)" },
   ],
   2026: [
-    { date: "2026-03-20", name: "Eid-el-Fitr (Estimated)" },
-    { date: "2026-03-21", name: "Eid-el-Fitr Holiday (Estimated)" },
-    { date: "2026-05-27", name: "Eid-el-Kabir (Estimated)" },
-    { date: "2026-05-28", name: "Eid-el-Kabir Holiday (Estimated)" },
-    { date: "2026-08-25", name: "Eid-el-Maulud (Estimated)" },
+    { date: "2026-03-19", name: "Eid El-Fitr Holiday" },
+    { date: "2026-03-20", name: "Eid El-Fitr" },
+    { date: "2026-05-27", name: "Id el Kabir (Tentative Date)" },
+    { date: "2026-05-28", name: "Id el Kabir additional holiday (Tentative Date)" },
+    { date: "2026-08-26", name: "Id el Maulud (Tentative Date)" },
   ],
   2027: [
     { date: "2027-03-09", name: "Eid-el-Fitr (Estimated)" },
