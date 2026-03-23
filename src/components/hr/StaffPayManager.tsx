@@ -837,6 +837,22 @@ export function StaffPayManager() {
       // Total overtime = manual records + calculated from requests
       const overtime = overtimeManualRecords + calculatedOvertimePay;
       
+      // Build overtimeRequestDetails for backward compatibility
+      const overtimeRequestDetails = userOvertimeRequests.map(req => {
+        const startDate = parseISO(req.start_date);
+        const endDate = parseISO(req.end_date);
+        const effectiveStart = startDate < monthStart ? monthStart : startDate;
+        const effectiveEnd = endDate > monthEnd ? monthEnd : endDate;
+        const daysInMonth = eachDayOfInterval({ start: effectiveStart, end: effectiveEnd }).length;
+        return {
+          type: req.request_type,
+          overtimeType: req.overtime_type,
+          startDate: req.start_date,
+          endDate: req.end_date,
+          days: daysInMonth
+        };
+      });
+      
       // Calculate unused holiday payout or excess holiday deduction for June (end of holiday year: June 1 - May 31)
       let unusedHolidayPayout = 0;
       let unusedHolidayDays = 0;
