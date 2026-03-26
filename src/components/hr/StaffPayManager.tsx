@@ -174,7 +174,7 @@ export function StaffPayManager() {
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; status: string; absence_type: string }[]>([]);
   const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; unlimited_holiday: boolean }[]>([]);
-  const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null }[]>([]);
+  const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null; swap_with_user_id: string | null }[]>([]);
   const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string }[]>([]);
   const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<{ user_id: string; start_date: string; end_date: string }[]>([]);
   const { toast } = useToast();
@@ -418,7 +418,7 @@ export function StaffPayManager() {
       // Fetch approved overtime and shift_swap requests for overtime pay calculation
       const { data: overtimeRequestsData, error: overtimeRequestsError } = await supabase
         .from('staff_requests')
-        .select('user_id, days_requested, start_date, end_date, request_type, overtime_type')
+        .select('user_id, days_requested, start_date, end_date, request_type, overtime_type, swap_with_user_id')
         .eq('status', 'approved')
         .in('request_type', ['overtime', 'overtime_standard', 'overtime_double_up', 'shift_swap']);
       
@@ -750,6 +750,7 @@ export function StaffPayManager() {
       });
       
       // Add request-based overtime to the map
+      // Only count days where the covered user (or requesting user) actually has a shift pattern
       userOvertimeRequests.forEach(req => {
         const startDate = parseISO(req.start_date);
         const endDate = parseISO(req.end_date);
@@ -758,10 +759,32 @@ export function StaffPayManager() {
         const isInsideHours = req.request_type === 'overtime_double_up' || (req.overtime_type === 'standard_hours');
         const subtype: 'standard' | 'double_up' = isInsideHours ? 'double_up' : 'standard';
         
+        // Determine whose patterns to check: covered user's patterns if shift_swap, else requesting user's
+        const targetUserId = (req.request_type === 'shift_swap' && req.swap_with_user_id) 
+          ? req.swap_with_user_id 
+          : hr.user_id;
+        const targetPatterns = recurringPatterns.filter(p => p.user_id === targetUserId && !p.is_overtime);
+        
         const daysInRange = eachDayOfInterval({ start: effectiveStart, end: effectiveEnd });
         daysInRange.forEach(day => {
           const dStr = format(day, 'yyyy-MM-dd');
-          upsertOvertimeShift(dStr, subtype, 'request', 'Cover', req.request_type);
+          const dayOfWeek = day.getDay();
+          
+          // Only count this day if it's a working day for the target user
+          const isWorkingDay = targetPatterns.some(pattern => {
+            const patternStart = parseISO(pattern.start_date);
+            const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+            if (day < patternStart || (patternEnd && day > patternEnd)) return false;
+            if (!pattern.days_of_week.includes(dayOfWeek)) return false;
+            // Check for deleted exceptions
+            const deletedExs = deletedExceptionsMap.get(pattern.id);
+            if (deletedExs && deletedExs.has(dStr)) return false;
+            return true;
+          });
+          
+          if (isWorkingDay) {
+            upsertOvertimeShift(dStr, subtype, 'request', 'Cover', req.request_type);
+          }
         });
       });
       

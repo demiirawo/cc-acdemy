@@ -640,12 +640,30 @@ export function MyHRProfile() {
           const isInsideHours = req.request_type === 'overtime_double_up' || (req as any).overtime_type === 'standard_hours';
           const subtype: 'standard' | 'double_up' = isInsideHours ? 'double_up' : 'standard';
 
+          // For shift swaps, ideally check covered user's patterns, but we only have current user's data
+          // Use non-overtime patterns to determine working days
+          const targetPatterns = recurringPatterns.filter(p => !p.is_overtime);
+
           const daysInRange = eachDayOfInterval({ start: overlapStart, end: overlapEnd });
 
-          // Iterate all unique calendar days (not shifts) to avoid double-counting
+          // Only count days where the target user actually has a working shift pattern
           for (const day of daysInRange) {
             const dateStr = format(day, 'yyyy-MM-dd');
-            upsertOvertimeShift(dateStr, subtype, 'request');
+            const dayOfWeek = getDay(day);
+            
+            const isWorkingDay = targetPatterns.some(pattern => {
+              const patternStart = parseISO(pattern.start_date);
+              const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+              if (day < patternStart || (patternEnd && day > patternEnd)) return false;
+              if (!pattern.days_of_week.includes(dayOfWeek)) return false;
+              const deletedExs = deletedExceptionsMap.get(pattern.id);
+              if (deletedExs && deletedExs.has(dateStr)) return false;
+              return true;
+            });
+            
+            if (isWorkingDay) {
+              upsertOvertimeShift(dateStr, subtype, 'request');
+            }
           }
         }
       });
