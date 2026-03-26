@@ -174,7 +174,7 @@ export function StaffPayManager() {
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; status: string; absence_type: string }[]>([]);
   const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; unlimited_holiday: boolean }[]>([]);
-  const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null }[]>([]);
+  const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null; swap_with_user_id: string | null }[]>([]);
   const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string }[]>([]);
   const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<{ user_id: string; start_date: string; end_date: string }[]>([]);
   const { toast } = useToast();
