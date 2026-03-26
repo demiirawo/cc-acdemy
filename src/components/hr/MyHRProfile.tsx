@@ -1498,6 +1498,8 @@ export function MyHRProfile() {
                 return result;
               };
               const dayBreakdown = getDayByDayBreakdown();
+              // Count unique calendar days (multiple shifts on same day = 1 working day)
+              const uniqueWorkingDays = new Set(dayBreakdown.map(d => format(d.date, 'yyyy-MM-dd'))).size;
               const isMultiDay = request.start_date !== request.end_date && dayBreakdown.length > 1;
               const summaryShiftTime = dayBreakdown.length > 0 ? [...new Set(dayBreakdown.map(d => d.shiftTime))].join(', ') : null;
 
