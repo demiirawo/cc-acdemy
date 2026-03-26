@@ -494,6 +494,17 @@ export function StaffRequestForm() {
   });
 
   const getDisplayDays = (req: StaffRequest): number => {
+    // For shift cover with individual shifts, count unique calendar days from details
+    if (req.request_type === 'shift_swap' && req.details) {
+      const shiftsMatch = req.details.match(/Shifts:\s*(.+)/s);
+      if (shiftsMatch) {
+        const dateMatches = shiftsMatch[1].match(/\d{2} \w{3} \d{4}/g);
+        if (dateMatches && dateMatches.length > 0) {
+          const uniqueDates = new Set(dateMatches);
+          return uniqueDates.size;
+        }
+      }
+    }
     return req.days_requested;
   };
 
@@ -544,14 +555,17 @@ export function StaffRequestForm() {
 
       if (requestType === 'shift_swap') {
         if (shiftCoverType === 'shifts' && selectedSwapShifts.length > 0) {
-          const shiftDetails = availableSwapShifts
-            .filter(s => selectedSwapShifts.includes(s.id))
+          const selectedShiftObjects = availableSwapShifts
+            .filter(s => selectedSwapShifts.includes(s.id));
+          const shiftDetails = selectedShiftObjects
             .map(s => `${format(s.date, "dd MMM yyyy")} ${s.startTime}-${s.endTime} (${s.clientName})`)
             .join("; ");
           requestDetails = details ? `${details}\n\nShifts: ${shiftDetails}` : `Shifts: ${shiftDetails}`;
           requestStartDate = swapStartDate;
           requestEndDate = swapEndDate;
-          requestDays = selectedSwapShifts.length;
+          // Count unique calendar days, not individual shifts (multiple shifts on same day = 1 day)
+          const uniqueDays = new Set(selectedShiftObjects.map(s => format(s.date, "yyyy-MM-dd")));
+          requestDays = uniqueDays.size;
         } else if (shiftCoverType === 'holidays' && selectedCoverHolidayId) {
           const holiday = swapPartnerHolidays.find(h => h.id === selectedCoverHolidayId);
           if (holiday && selectedCoverDays.length > 0) {
