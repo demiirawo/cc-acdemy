@@ -640,12 +640,32 @@ export function MyHRProfile() {
           const isInsideHours = req.request_type === 'overtime_double_up' || (req as any).overtime_type === 'standard_hours';
           const subtype: 'standard' | 'double_up' = isInsideHours ? 'double_up' : 'standard';
 
+          // Determine whose patterns to check for working days
+          const targetUserId = (req.request_type === 'shift_swap' && (req as any).swap_with_user_id) 
+            ? (req as any).swap_with_user_id 
+            : req.user_id;
+          const targetPatterns = recurringPatterns.filter(p => p.user_id === targetUserId && !p.is_overtime);
+
           const daysInRange = eachDayOfInterval({ start: overlapStart, end: overlapEnd });
 
-          // Iterate all unique calendar days (not shifts) to avoid double-counting
+          // Only count days where the target user actually has a working shift pattern
           for (const day of daysInRange) {
             const dateStr = format(day, 'yyyy-MM-dd');
-            upsertOvertimeShift(dateStr, subtype, 'request');
+            const dayOfWeek = getDay(day);
+            
+            const isWorkingDay = targetPatterns.some(pattern => {
+              const patternStart = parseISO(pattern.start_date);
+              const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+              if (day < patternStart || (patternEnd && day > patternEnd)) return false;
+              if (!pattern.days_of_week.includes(dayOfWeek)) return false;
+              const deletedExs = deletedExceptionsMap.get(pattern.id);
+              if (deletedExs && deletedExs.has(dateStr)) return false;
+              return true;
+            });
+            
+            if (isWorkingDay) {
+              upsertOvertimeShift(dateStr, subtype, 'request');
+            }
           }
         }
       });
