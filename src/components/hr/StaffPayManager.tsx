@@ -961,8 +961,8 @@ export function StaffPayManager() {
       let proRataDeduction = 0;
       let proRataWorkingDays = 0;
       let proRataTotalWorkingDays = 20; // Standard working days assumption
-      const userHRFull = hrProfilesFull.find(h => h.user_id === hr.user_id);
-      if (userHRFull?.start_date) {
+      const userHRFullForProRata = hrProfilesFull.find(h => h.user_id === hr.user_id);
+      if (userHRFullForProRata?.start_date) {
         const staffStartDate = parseISO(userHRFull.start_date);
         // Only apply pro-rata if staff started within this payroll month
         if (staffStartDate > monthStart && staffStartDate <= monthEnd) {
