@@ -45,6 +45,9 @@ interface MonthlyPayPreview {
   excessHolidayDays: number;
   unpaidHolidayDeduction: number;
   unpaidHolidayDays: number;
+  proRataDeduction: number;
+  proRataWorkingDays: number;
+  proRataTotalWorkingDays: number;
   totalPay: number;
   payrollStatus: 'pending' | 'ready' | 'paid';
   currency: string;
