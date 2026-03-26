@@ -154,6 +154,18 @@ export function UpcomingRequestsPreview({
       return workingDays !== null && workingDays !== undefined ? workingDays : req.days_requested;
     }
     
+    // For shift cover, count unique calendar days from shift details if available
+    if ((req.request_type === 'shift_swap') && req.details) {
+      const shiftsMatch = req.details.match(/Shifts:\s*(.+)/s);
+      if (shiftsMatch) {
+        const dateMatches = shiftsMatch[1].match(/\d{2} \w{3} \d{4}/g);
+        if (dateMatches && dateMatches.length > 0) {
+          const uniqueDates = new Set(dateMatches);
+          return uniqueDates.size;
+        }
+      }
+    }
+
     // For shift cover, use the covered person's working days
     if (req.request_type === 'shift_swap' && req.swap_with_user_id) {
       const coverWorkingDays = coverWorkingDaysMap.get(req.id);

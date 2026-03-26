@@ -494,6 +494,17 @@ export function StaffRequestForm() {
   });
 
   const getDisplayDays = (req: StaffRequest): number => {
+    // For shift cover with individual shifts, count unique calendar days from details
+    if (req.request_type === 'shift_swap' && req.details) {
+      const shiftsMatch = req.details.match(/Shifts:\s*(.+)/s);
+      if (shiftsMatch) {
+        const dateMatches = shiftsMatch[1].match(/\d{2} \w{3} \d{4}/g);
+        if (dateMatches && dateMatches.length > 0) {
+          const uniqueDates = new Set(dateMatches);
+          return uniqueDates.size;
+        }
+      }
+    }
     return req.days_requested;
   };
 
