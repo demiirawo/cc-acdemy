@@ -2027,7 +2027,7 @@ export function StaffPayManager() {
                     </TableRow>
                     {isOTExpanded && hasOTDetails && (
                       <TableRow className="bg-muted/20">
-                        <TableCell colSpan={13} className="p-0">
+                        <TableCell colSpan={14} className="p-0">
                           <div className="px-6 py-3 space-y-3">
                             {/* Overtime Day Details */}
                             {staff.overtimeDayDetails.length > 0 && (
