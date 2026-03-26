@@ -1972,6 +1972,18 @@ export function StaffPayManager() {
                           </div>
                         ) : '-'}
                       </TableCell>
+                      <TableCell className="text-right">
+                        {staff.proRataDeduction > 0 ? (
+                          <div className="flex flex-col items-end">
+                            <span className="text-destructive">
+                              -{formatCurrency(staff.proRataDeduction, staff.currency)}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {staff.proRataWorkingDays}/{staff.proRataTotalWorkingDays} days worked
+                            </span>
+                          </div>
+                        ) : '-'}
+                      </TableCell>
                       <TableCell className="text-right text-destructive">
                         {staff.deductions > 0 ? `-${formatCurrency(staff.deductions, staff.currency)}` : '-'}
                       </TableCell>
