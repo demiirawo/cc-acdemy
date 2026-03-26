@@ -45,6 +45,9 @@ interface MonthlyPayPreview {
   excessHolidayDays: number;
   unpaidHolidayDeduction: number;
   unpaidHolidayDays: number;
+  proRataDeduction: number;
+  proRataWorkingDays: number;
+  proRataTotalWorkingDays: number;
   totalPay: number;
   payrollStatus: 'pending' | 'ready' | 'paid';
   currency: string;
@@ -781,7 +784,31 @@ export function MyHRProfile() {
       });
       const unpaidHolidayDeduction = (monthlyBaseSalary / 20) * unpaidHolidayDays;
 
-      const totalPay = monthlyBaseSalary + bonuses + overtimePay + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction - unpaidHolidayDeduction;
+      // Pro-rata deduction for staff who started mid-month
+      let proRataDeduction = 0;
+      let proRataWorkingDays = 0;
+      let proRataTotalWorkingDays = 20;
+      if (hrProfile.start_date) {
+        const staffStartDate = parseISO(hrProfile.start_date);
+        if (staffStartDate > monthStart && staffStartDate <= monthEnd) {
+          const allDaysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
+          const totalWorkingDaysInMonth = allDaysInMonth.filter(d => {
+            const dow = d.getDay();
+            return dow !== 0 && dow !== 6;
+          }).length;
+          const daysWorked = allDaysInMonth.filter(d => {
+            if (d < staffStartDate) return false;
+            const dow = d.getDay();
+            return dow !== 0 && dow !== 6;
+          }).length;
+          proRataTotalWorkingDays = totalWorkingDaysInMonth;
+          proRataWorkingDays = daysWorked;
+          const daysNotWorked = totalWorkingDaysInMonth - daysWorked;
+          proRataDeduction = (monthlyBaseSalary / totalWorkingDaysInMonth) * daysNotWorked;
+        }
+      }
+
+      const totalPay = monthlyBaseSalary + bonuses + overtimePay + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction - unpaidHolidayDeduction - proRataDeduction;
 
       // Determine payroll status
       let payrollStatus: 'pending' | 'ready' | 'paid' = 'pending';
@@ -815,6 +842,9 @@ export function MyHRProfile() {
         excessHolidayDays,
         unpaidHolidayDeduction,
         unpaidHolidayDays,
+        proRataDeduction,
+        proRataWorkingDays,
+        proRataTotalWorkingDays,
         totalPay,
         payrollStatus,
         currency: hrProfile.base_currency
@@ -1338,6 +1368,11 @@ export function MyHRProfile() {
                                       <span className="font-medium text-destructive">-{formatCurrency(preview.unpaidHolidayDeduction, preview.currency)}</span>
                                     </div>}
                                   
+                                  {preview.proRataDeduction > 0 && <div className="flex justify-between items-center py-2 border-b">
+                                      <span className="text-muted-foreground">Pro-Rata Deduction ({preview.proRataWorkingDays}/{preview.proRataTotalWorkingDays} days worked)</span>
+                                      <span className="font-medium text-destructive">-{formatCurrency(preview.proRataDeduction, preview.currency)}</span>
+                                    </div>}
+
                                   {preview.deductions > 0 && <div className="flex justify-between items-center py-2 border-b">
                                       <span className="text-muted-foreground">Deductions</span>
                                       <span className="font-medium text-destructive">-{formatCurrency(preview.deductions, preview.currency)}</span>

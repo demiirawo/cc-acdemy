@@ -957,8 +957,41 @@ export function StaffPayManager() {
       // Unpaid holiday deduction = (monthly salary / 20) * unpaid holiday days
       unpaidHolidayDeduction = (monthlyBaseSalary / 20) * unpaidHolidayDays;
       
-      // Total pay now includes holiday overtime bonus, calculated overtime pay, unused holiday payout, excess holiday deduction, and unpaid holiday deduction
-      const totalPay = monthlyBaseSalary + bonuses + overtime + expenses + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction - unpaidHolidayDeduction;
+      // Pro-rata deduction for staff who started mid-month
+      let proRataDeduction = 0;
+      let proRataWorkingDays = 0;
+      let proRataTotalWorkingDays = 20; // Standard working days assumption
+      const userHRFullForProRata = hrProfilesFull.find(h => h.user_id === hr.user_id);
+      if (userHRFullForProRata?.start_date) {
+        const staffStartDate = parseISO(userHRFull.start_date);
+        // Only apply pro-rata if staff started within this payroll month
+        if (staffStartDate > monthStart && staffStartDate <= monthEnd) {
+          // Count working days (Mon-Fri) in the full month
+          const allDaysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
+          const totalWorkingDaysInMonth = allDaysInMonth.filter(d => {
+            const dow = d.getDay();
+            return dow !== 0 && dow !== 6; // Exclude weekends
+          }).length;
+          
+          // Count working days from start date to end of month
+          const daysWorked = allDaysInMonth.filter(d => {
+            if (d < staffStartDate) return false;
+            const dow = d.getDay();
+            return dow !== 0 && dow !== 6;
+          }).length;
+          
+          proRataTotalWorkingDays = totalWorkingDaysInMonth;
+          proRataWorkingDays = daysWorked;
+          
+          // Deduction = base pay - (base pay / total working days * days worked)
+          // = base pay * (1 - days_worked / total_working_days)
+          const daysNotWorked = totalWorkingDaysInMonth - daysWorked;
+          proRataDeduction = (monthlyBaseSalary / totalWorkingDaysInMonth) * daysNotWorked;
+        }
+      }
+      
+      // Total pay now includes holiday overtime bonus, calculated overtime pay, unused holiday payout, excess holiday deduction, unpaid holiday deduction, and pro-rata deduction
+      const totalPay = monthlyBaseSalary + bonuses + overtime + expenses + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction - unpaidHolidayDeduction - proRataDeduction;
       const hasSalaryRecord = salaryRecords.length > 0;
       
       // Check if excess holiday deduction already exists for this month
@@ -995,6 +1028,9 @@ export function StaffPayManager() {
         excessHolidayDays,
         unpaidHolidayDeduction,
         unpaidHolidayDays,
+        proRataDeduction,
+        proRataWorkingDays,
+        proRataTotalWorkingDays,
         hasExcessHolidayDeduction,
         totalPay,
         totalPayInGBP,
@@ -1781,6 +1817,7 @@ export function StaffPayManager() {
                 <TableHead className="text-right">Holiday OT</TableHead>
                 <TableHead className="text-right">Unused Holiday</TableHead>
                 <TableHead className="text-right">Unpaid Hol</TableHead>
+                <TableHead className="text-right">Pro-Rata</TableHead>
                 <TableHead className="text-right">Deductions</TableHead>
                 <TableHead className="text-right">Total Pay</TableHead>
                 <TableHead className="text-right">GBP Equiv.</TableHead>
@@ -1790,7 +1827,7 @@ export function StaffPayManager() {
             <TableBody>
               {payrollSummary.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
                     No staff with salary configured. Set up HR profiles first.
                   </TableCell>
                 </TableRow>
@@ -1935,6 +1972,18 @@ export function StaffPayManager() {
                           </div>
                         ) : '-'}
                       </TableCell>
+                      <TableCell className="text-right">
+                        {staff.proRataDeduction > 0 ? (
+                          <div className="flex flex-col items-end">
+                            <span className="text-destructive">
+                              -{formatCurrency(staff.proRataDeduction, staff.currency)}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {staff.proRataWorkingDays}/{staff.proRataTotalWorkingDays} days worked
+                            </span>
+                          </div>
+                        ) : '-'}
+                      </TableCell>
                       <TableCell className="text-right text-destructive">
                         {staff.deductions > 0 ? `-${formatCurrency(staff.deductions, staff.currency)}` : '-'}
                       </TableCell>
@@ -1978,7 +2027,7 @@ export function StaffPayManager() {
                     </TableRow>
                     {isOTExpanded && hasOTDetails && (
                       <TableRow className="bg-muted/20">
-                        <TableCell colSpan={13} className="p-0">
+                        <TableCell colSpan={14} className="p-0">
                           <div className="px-6 py-3 space-y-3">
                             {/* Overtime Day Details */}
                             {staff.overtimeDayDetails.length > 0 && (
