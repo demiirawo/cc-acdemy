@@ -750,6 +750,7 @@ export function StaffPayManager() {
       });
       
       // Add request-based overtime to the map
+      // Only count days where the covered user (or requesting user) actually has a shift pattern
       userOvertimeRequests.forEach(req => {
         const startDate = parseISO(req.start_date);
         const endDate = parseISO(req.end_date);
@@ -758,10 +759,32 @@ export function StaffPayManager() {
         const isInsideHours = req.request_type === 'overtime_double_up' || (req.overtime_type === 'standard_hours');
         const subtype: 'standard' | 'double_up' = isInsideHours ? 'double_up' : 'standard';
         
+        // Determine whose patterns to check: covered user's patterns if shift_swap, else requesting user's
+        const targetUserId = (req.request_type === 'shift_swap' && req.swap_with_user_id) 
+          ? req.swap_with_user_id 
+          : hr.user_id;
+        const targetPatterns = recurringPatterns.filter(p => p.user_id === targetUserId && !p.is_overtime);
+        
         const daysInRange = eachDayOfInterval({ start: effectiveStart, end: effectiveEnd });
         daysInRange.forEach(day => {
           const dStr = format(day, 'yyyy-MM-dd');
-          upsertOvertimeShift(dStr, subtype, 'request', 'Cover', req.request_type);
+          const dayOfWeek = day.getDay();
+          
+          // Only count this day if it's a working day for the target user
+          const isWorkingDay = targetPatterns.some(pattern => {
+            const patternStart = parseISO(pattern.start_date);
+            const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+            if (day < patternStart || (patternEnd && day > patternEnd)) return false;
+            if (!pattern.days_of_week.includes(dayOfWeek)) return false;
+            // Check for deleted exceptions
+            const deletedExs = deletedExceptionsMap.get(pattern.id);
+            if (deletedExs && deletedExs.has(dStr)) return false;
+            return true;
+          });
+          
+          if (isWorkingDay) {
+            upsertOvertimeShift(dStr, subtype, 'request', 'Cover', req.request_type);
+          }
         });
       });
       
