@@ -1515,8 +1515,8 @@ export function MyHRProfile() {
                                 {format(parseISO(request.start_date), 'dd MMM yyyy')}
                                 {request.details?.includes('Imported from historical records')
                                   ? request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`
-                                  : dayBreakdown.length > 0 
-                                    ? ` (${dayBreakdown.length} working day${dayBreakdown.length !== 1 ? 's' : ''})`
+                                  : uniqueWorkingDays > 0 
+                                    ? ` (${uniqueWorkingDays} working day${uniqueWorkingDays !== 1 ? 's' : ''})`
                                     : request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`
                                 }
                               </p>
