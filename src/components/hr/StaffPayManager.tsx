@@ -1817,6 +1817,7 @@ export function StaffPayManager() {
                 <TableHead className="text-right">Holiday OT</TableHead>
                 <TableHead className="text-right">Unused Holiday</TableHead>
                 <TableHead className="text-right">Unpaid Hol</TableHead>
+                <TableHead className="text-right">Pro-Rata</TableHead>
                 <TableHead className="text-right">Deductions</TableHead>
                 <TableHead className="text-right">Total Pay</TableHead>
                 <TableHead className="text-right">GBP Equiv.</TableHead>
