@@ -1368,6 +1368,11 @@ export function MyHRProfile() {
                                       <span className="font-medium text-destructive">-{formatCurrency(preview.unpaidHolidayDeduction, preview.currency)}</span>
                                     </div>}
                                   
+                                  {preview.proRataDeduction > 0 && <div className="flex justify-between items-center py-2 border-b">
+                                      <span className="text-muted-foreground">Pro-Rata Deduction ({preview.proRataWorkingDays}/{preview.proRataTotalWorkingDays} days worked)</span>
+                                      <span className="font-medium text-destructive">-{formatCurrency(preview.proRataDeduction, preview.currency)}</span>
+                                    </div>}
+
                                   {preview.deductions > 0 && <div className="flex justify-between items-center py-2 border-b">
                                       <span className="text-muted-foreground">Deductions</span>
                                       <span className="font-medium text-destructive">-{formatCurrency(preview.deductions, preview.currency)}</span>
