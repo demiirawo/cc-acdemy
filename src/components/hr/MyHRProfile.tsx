@@ -1498,6 +1498,8 @@ export function MyHRProfile() {
                 return result;
               };
               const dayBreakdown = getDayByDayBreakdown();
+              // Count unique calendar days (multiple shifts on same day = 1 working day)
+              const uniqueWorkingDays = new Set(dayBreakdown.map(d => format(d.date, 'yyyy-MM-dd'))).size;
               const isMultiDay = request.start_date !== request.end_date && dayBreakdown.length > 1;
               const summaryShiftTime = dayBreakdown.length > 0 ? [...new Set(dayBreakdown.map(d => d.shiftTime))].join(', ') : null;
 
@@ -1513,8 +1515,8 @@ export function MyHRProfile() {
                                 {format(parseISO(request.start_date), 'dd MMM yyyy')}
                                 {request.details?.includes('Imported from historical records')
                                   ? request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`
-                                  : dayBreakdown.length > 0 
-                                    ? ` (${dayBreakdown.length} working day${dayBreakdown.length !== 1 ? 's' : ''})`
+                                  : uniqueWorkingDays > 0 
+                                    ? ` (${uniqueWorkingDays} working day${uniqueWorkingDays !== 1 ? 's' : ''})`
                                     : request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`
                                 }
                               </p>
@@ -1544,8 +1546,8 @@ export function MyHRProfile() {
                                 {format(parseISO(request.start_date), 'dd MMM yyyy')} - {format(parseISO(request.end_date), 'dd MMM yyyy')}
                                 {request.details?.includes('Imported from historical records')
                                   ? request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`
-                                  : dayBreakdown.length > 0 
-                                    ? ` (${dayBreakdown.length} working day${dayBreakdown.length !== 1 ? 's' : ''})`
+                                  : uniqueWorkingDays > 0 
+                                    ? ` (${uniqueWorkingDays} working day${uniqueWorkingDays !== 1 ? 's' : ''})`
                                     : request.days_requested > 0 && ` (${request.days_requested} day${request.days_requested !== 1 ? 's' : ''})`
                                 }
                               </p>
