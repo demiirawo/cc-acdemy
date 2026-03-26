@@ -418,7 +418,7 @@ export function StaffPayManager() {
       // Fetch approved overtime and shift_swap requests for overtime pay calculation
       const { data: overtimeRequestsData, error: overtimeRequestsError } = await supabase
         .from('staff_requests')
-        .select('user_id, days_requested, start_date, end_date, request_type, overtime_type')
+        .select('user_id, days_requested, start_date, end_date, request_type, overtime_type, swap_with_user_id')
         .eq('status', 'approved')
         .in('request_type', ['overtime', 'overtime_standard', 'overtime_double_up', 'shift_swap']);
       
