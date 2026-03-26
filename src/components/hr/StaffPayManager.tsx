@@ -1827,7 +1827,7 @@ export function StaffPayManager() {
             <TableBody>
               {payrollSummary.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={13} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={14} className="text-center py-8 text-muted-foreground">
                     No staff with salary configured. Set up HR profiles first.
                   </TableCell>
                 </TableRow>
