@@ -544,14 +544,17 @@ export function StaffRequestForm() {
 
       if (requestType === 'shift_swap') {
         if (shiftCoverType === 'shifts' && selectedSwapShifts.length > 0) {
-          const shiftDetails = availableSwapShifts
-            .filter(s => selectedSwapShifts.includes(s.id))
+          const selectedShiftObjects = availableSwapShifts
+            .filter(s => selectedSwapShifts.includes(s.id));
+          const shiftDetails = selectedShiftObjects
             .map(s => `${format(s.date, "dd MMM yyyy")} ${s.startTime}-${s.endTime} (${s.clientName})`)
             .join("; ");
           requestDetails = details ? `${details}\n\nShifts: ${shiftDetails}` : `Shifts: ${shiftDetails}`;
           requestStartDate = swapStartDate;
           requestEndDate = swapEndDate;
-          requestDays = selectedSwapShifts.length;
+          // Count unique calendar days, not individual shifts (multiple shifts on same day = 1 day)
+          const uniqueDays = new Set(selectedShiftObjects.map(s => format(s.date, "yyyy-MM-dd")));
+          requestDays = uniqueDays.size;
         } else if (shiftCoverType === 'holidays' && selectedCoverHolidayId) {
           const holiday = swapPartnerHolidays.find(h => h.id === selectedCoverHolidayId);
           if (holiday && selectedCoverDays.length > 0) {
