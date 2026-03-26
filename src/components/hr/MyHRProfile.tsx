@@ -842,6 +842,9 @@ export function MyHRProfile() {
         excessHolidayDays,
         unpaidHolidayDeduction,
         unpaidHolidayDays,
+        proRataDeduction,
+        proRataWorkingDays,
+        proRataTotalWorkingDays,
         totalPay,
         payrollStatus,
         currency: hrProfile.base_currency
