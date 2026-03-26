@@ -781,7 +781,31 @@ export function MyHRProfile() {
       });
       const unpaidHolidayDeduction = (monthlyBaseSalary / 20) * unpaidHolidayDays;
 
-      const totalPay = monthlyBaseSalary + bonuses + overtimePay + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction - unpaidHolidayDeduction;
+      // Pro-rata deduction for staff who started mid-month
+      let proRataDeduction = 0;
+      let proRataWorkingDays = 0;
+      let proRataTotalWorkingDays = 20;
+      if (hrProfile.start_date) {
+        const staffStartDate = parseISO(hrProfile.start_date);
+        if (staffStartDate > monthStart && staffStartDate <= monthEnd) {
+          const allDaysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
+          const totalWorkingDaysInMonth = allDaysInMonth.filter(d => {
+            const dow = d.getDay();
+            return dow !== 0 && dow !== 6;
+          }).length;
+          const daysWorked = allDaysInMonth.filter(d => {
+            if (d < staffStartDate) return false;
+            const dow = d.getDay();
+            return dow !== 0 && dow !== 6;
+          }).length;
+          proRataTotalWorkingDays = totalWorkingDaysInMonth;
+          proRataWorkingDays = daysWorked;
+          const daysNotWorked = totalWorkingDaysInMonth - daysWorked;
+          proRataDeduction = (monthlyBaseSalary / totalWorkingDaysInMonth) * daysNotWorked;
+        }
+      }
+
+      const totalPay = monthlyBaseSalary + bonuses + overtimePay + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction - unpaidHolidayDeduction - proRataDeduction;
 
       // Determine payroll status
       let payrollStatus: 'pending' | 'ready' | 'paid' = 'pending';
