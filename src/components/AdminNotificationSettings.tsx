@@ -321,9 +321,43 @@ export function AdminNotificationSettings() {
         })}
 
         <Separator />
+
+        <div className="space-y-4">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 text-indigo-500">
+              <Bell className="h-5 w-5" />
+            </div>
+            <div className="space-y-1 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">UK Clock Change Reminders</span>
+                <Badge variant="default">Always On</Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Automatically sends emails to all active staff 7 days and 1 day before UK clock changes (last Sunday of March &amp; October), with detailed schedule impact for Nigeria-based staff.
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleTestNotification("clock_change")}
+                  disabled={isTesting === "clock_change"}
+                >
+                  {isTesting === "clock_change" ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <Play className="h-4 w-4 mr-1" />
+                  )}
+                  Test
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <Separator />
         
         <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
-          <strong>Note:</strong> Alerts are sent daily at the configured times. The "New Request" alert (holiday, shift cover, etc.) is sent immediately when a request is submitted.
+          <strong>Note:</strong> Alerts are sent daily at the configured times. The "New Request" alert (holiday, shift cover, etc.) is sent immediately when a request is submitted. UK Clock Change reminders are always active and sent automatically.
         </div>
       </CardContent>
     </Card>
