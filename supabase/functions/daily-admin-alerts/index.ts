@@ -469,9 +469,32 @@ const handler = async (req: Request): Promise<Response> => {
           if (staffEmails.length === 0 && testType !== "clock_change") break;
 
           const isTest = testType === "clock_change";
-          const actualDaysUntil = isTest ? 7 : daysUntil;
-          const changeType = isTest ? "spring_forward" : clockChange.type;
-          const changeDate = isTest ? new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000) : clockChange.date;
+          
+          // For test mode, find the actual next upcoming clock change
+          let actualDaysUntil = daysUntil;
+          let changeType = clockChange.type;
+          let changeDate = clockChange.date;
+          
+          if (isTest) {
+            // Find the nearest future clock change date
+            const futureChanges = clockChangeDates
+              .filter(c => {
+                const d = Math.round((c.date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                return d >= 0;
+              })
+              .sort((a, b) => a.date.getTime() - b.date.getTime());
+            
+            if (futureChanges.length > 0) {
+              changeDate = futureChanges[0].date;
+              changeType = futureChanges[0].type;
+              actualDaysUntil = Math.round((changeDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+            } else {
+              // Fallback: next year's spring forward
+              changeDate = getLastSundayOfMonth(currentYear + 1, 2);
+              changeType = "spring_forward";
+              actualDaysUntil = Math.round((changeDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+            }
+          }
           const changeDateStr = formatDate(changeDate.toISOString().split("T")[0]);
           
           const isSpringForward = changeType === "spring_forward";
