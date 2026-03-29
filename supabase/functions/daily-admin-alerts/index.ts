@@ -421,6 +421,169 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
+    // ===== 6. UK CLOCK CHANGE REMINDERS (Always on, sent to all staff) =====
+    if (!testType || testType === "clock_change") {
+      // Calculate UK clock change dates for this year and next
+      const getLastSundayOfMonth = (year: number, month: number): Date => {
+        // month is 0-indexed (2 = March, 9 = October)
+        const lastDay = new Date(year, month + 1, 0); // last day of month
+        const dayOfWeek = lastDay.getDay(); // 0 = Sunday
+        const lastSunday = new Date(year, month + 1, 0 - (dayOfWeek === 0 ? 0 : dayOfWeek));
+        lastSunday.setHours(0, 0, 0, 0);
+        return lastSunday;
+      };
+
+      const currentYear = today.getFullYear();
+      const clockChangeDates: { date: Date; type: "spring_forward" | "fall_back" }[] = [];
+      
+      // Check current and next year to handle edge cases near year boundary
+      for (const year of [currentYear, currentYear + 1]) {
+        clockChangeDates.push(
+          { date: getLastSundayOfMonth(year, 2), type: "spring_forward" }, // Last Sunday March
+          { date: getLastSundayOfMonth(year, 9), type: "fall_back" }       // Last Sunday October
+        );
+      }
+
+      for (const clockChange of clockChangeDates) {
+        const daysUntil = Math.round((clockChange.date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        
+        // Send 7 days before and 1 day before
+        if (daysUntil === 7 || daysUntil === 1 || testType === "clock_change") {
+          // Fetch all active staff emails (not clients)
+          const { data: allProfiles } = await supabaseClient
+            .from("profiles")
+            .select("user_id, email, display_name")
+            .neq("role", "client");
+
+          // Filter to active employment status
+          const { data: activeHrProfiles } = await supabaseClient
+            .from("hr_profiles")
+            .select("user_id")
+            .in("employment_status", ["active", "onboarding_probation", "onboarding_passed"]);
+
+          const activeUserIds = new Set(activeHrProfiles?.map(h => h.user_id) || []);
+          const staffEmails = allProfiles
+            ?.filter(p => p.email && activeUserIds.has(p.user_id))
+            .map(p => p.email as string) || [];
+
+          if (staffEmails.length === 0 && testType !== "clock_change") break;
+
+          const isTest = testType === "clock_change";
+          const actualDaysUntil = isTest ? 7 : daysUntil;
+          const changeType = isTest ? "spring_forward" : clockChange.type;
+          const changeDate = isTest ? new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000) : clockChange.date;
+          const changeDateStr = formatDate(changeDate.toISOString().split("T")[0]);
+          
+          const isSpringForward = changeType === "spring_forward";
+          const direction = isSpringForward ? "forward" : "back";
+          const emoji = isSpringForward ? "⏰🌸" : "⏰🍂";
+          
+          // Nigeria is WAT (UTC+1) permanently
+          // UK GMT (winter) = UTC+0, BST (summer) = UTC+1
+          // During GMT: UK 9am = Nigeria 10am (1hr difference)
+          // During BST: UK 9am = Nigeria 9am (same time)
+          const scheduleImpact = isSpringForward
+            ? `<p style="font-size: 14px; color: #374151; margin-bottom: 12px;">
+                <strong>What this means for you:</strong> The UK moves from GMT (UTC+0) to BST (UTC+1).
+               </p>
+               <p style="font-size: 14px; color: #374151; margin-bottom: 12px;">
+                 Currently, when it's <strong>9:00 AM in the UK</strong>, it's <strong>10:00 AM in Nigeria</strong> (1 hour ahead).
+               </p>
+               <p style="font-size: 14px; color: #374151; margin-bottom: 12px;">
+                 After the change, UK and Nigeria will be on the <strong>same time</strong>. So <strong>9:00 AM UK = 9:00 AM Nigeria</strong>.
+               </p>
+               <p style="font-size: 14px; color: #ef4444; font-weight: 600; margin-bottom: 12px;">
+                 ⚠️ Your working day will effectively start <strong>1 hour earlier</strong> in Nigeria time.
+               </p>`
+            : `<p style="font-size: 14px; color: #374151; margin-bottom: 12px;">
+                <strong>What this means for you:</strong> The UK moves from BST (UTC+1) to GMT (UTC+0).
+               </p>
+               <p style="font-size: 14px; color: #374151; margin-bottom: 12px;">
+                 Currently, UK and Nigeria are on the <strong>same time</strong> (<strong>9:00 AM UK = 9:00 AM Nigeria</strong>).
+               </p>
+               <p style="font-size: 14px; color: #374151; margin-bottom: 12px;">
+                 After the change, when it's <strong>9:00 AM in the UK</strong>, it will be <strong>10:00 AM in Nigeria</strong> (1 hour ahead).
+               </p>
+               <p style="font-size: 14px; color: #22c55e; font-weight: 600; margin-bottom: 12px;">
+                 ✓ Your working day will effectively start <strong>1 hour later</strong> in Nigeria time.
+               </p>`;
+
+          const urgency = actualDaysUntil === 1 ? "TOMORROW" : `in ${actualDaysUntil} days`;
+          const subject = isTest 
+            ? `[TEST] ${emoji} UK Clock Change ${urgency} - Clocks go ${direction}`
+            : `${emoji} UK Clock Change ${urgency} - Clocks go ${direction}`;
+
+          const emailTargets = staffEmails.length > 0 ? staffEmails : adminEmails;
+
+          try {
+            await resend.emails.send({
+              from: "Care & Cuddle Academy <hello@care-cuddle-academy.co.uk>",
+              to: emailTargets,
+              subject,
+              html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                  <div style="background-color: ${isSpringForward ? '#6366f1' : '#8b5cf6'}; padding: 20px; border-radius: 8px 8px 0 0;">
+                    <h1 style="color: white; margin: 0; font-size: 24px;">${emoji} UK Clock Change Reminder</h1>
+                    <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0 0; font-size: 14px;">
+                      ${actualDaysUntil === 1 ? '⚡ This happens TOMORROW!' : `This happens ${urgency}`}
+                    </p>
+                  </div>
+                  <div style="background-color: #f9fafb; padding: 24px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb; border-top: none;">
+                    <p style="font-size: 16px; color: #111827; font-weight: 600; margin-bottom: 16px;">
+                      On ${changeDateStr}, UK clocks go <strong>${direction} by 1 hour</strong>.
+                    </p>
+                    
+                    <div style="background-color: white; padding: 16px; border-radius: 6px; border: 1px solid #e5e7eb; margin-bottom: 20px;">
+                      ${scheduleImpact}
+                    </div>
+
+                    <div style="background-color: ${isSpringForward ? '#eef2ff' : '#f5f3ff'}; padding: 16px; border-radius: 6px; margin-bottom: 20px;">
+                      <p style="font-size: 14px; color: #374151; margin: 0; font-weight: 600;">📋 Quick Reference:</p>
+                      <table style="width: 100%; border-collapse: collapse; margin-top: 8px;">
+                        <tr>
+                          <td style="padding: 4px 0; font-size: 13px; color: #6b7280;">Before change:</td>
+                          <td style="padding: 4px 0; font-size: 13px; color: #111827; font-weight: 600;">${isSpringForward ? 'UK 9am = Nigeria 10am' : 'UK 9am = Nigeria 9am'}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 4px 0; font-size: 13px; color: #6b7280;">After change:</td>
+                          <td style="padding: 4px 0; font-size: 13px; color: #111827; font-weight: 600;">${isSpringForward ? 'UK 9am = Nigeria 9am' : 'UK 9am = Nigeria 10am'}</td>
+                        </tr>
+                      </table>
+                    </div>
+                    
+                    <p style="color: #6b7280; font-size: 13px;">
+                      Please adjust your schedule accordingly. If you have any questions, contact your manager.
+                    </p>
+                  </div>
+                  <p style="color: #9ca3af; font-size: 12px; text-align: center; margin-top: 20px;">
+                    Care & Cuddle Staff Management System
+                  </p>
+                </div>
+              `,
+            });
+
+            results.push({
+              type: "clock_change",
+              title: `Clock Change (${direction})`,
+              items: [`${emoji} UK clocks go ${direction} on ${changeDateStr} - ${actualDaysUntil === 1 ? 'TOMORROW' : `${actualDaysUntil} days away`}`],
+              emailSent: true,
+            });
+          } catch (error) {
+            results.push({
+              type: "clock_change",
+              title: `Clock Change (${direction})`,
+              items: [`${emoji} UK clocks go ${direction} on ${changeDateStr}`],
+              emailSent: false,
+              error: error instanceof Error ? error.message : "Unknown error",
+            });
+          }
+
+          // Only send one clock change alert per run (the nearest one)
+          if (!isTest) break;
+        }
+      }
+    }
+
     const emailsSent = results.filter(r => r.emailSent).length;
     const hasItems = results.some(r => r.items.length > 0);
 
