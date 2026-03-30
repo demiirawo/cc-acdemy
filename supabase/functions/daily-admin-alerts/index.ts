@@ -51,30 +51,49 @@ const sendIndividualAlert = async (
 
   try {
     await resendClient.emails.send({
-      from: "Care & Cuddle Academy <hello@care-cuddle-academy.co.uk>",
+      from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
       to: adminEmails,
       subject,
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background-color: ${color}; padding: 20px; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0; font-size: 24px;">${title}</h1>
-            <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0 0; font-size: 14px;">${formatDate(todayStr)}</p>
-          </div>
-          <div style="background-color: #f9fafb; padding: 24px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb; border-top: none;">
-            <ul style="margin: 0; padding-left: 20px; color: #374151;">
-              ${itemsHtml}
-            </ul>
-            
-            <div style="text-align: center; margin-top: 24px;">
-              <a href="https://cc-acdemy.lovable.app" style="display: inline-block; background-color: #f97316; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
-                Go to Dashboard
-              </a>
-            </div>
-          </div>
-          <p style="color: #9ca3af; font-size: 12px; text-align: center; margin-top: 20px;">
-            Care & Cuddle Staff Management System
-          </p>
-        </div>
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f5; font-family: Arial, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="500" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+          <tr>
+            <td style="background-color: ${BRAND_COLOR}; padding: 24px 40px; text-align: center;">
+              <img src="${LOGO_URL}" alt="Care Cuddle Academy" width="140" style="display: block; margin: 0 auto; margin-bottom: 16px;" />
+              <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 600;">${title}</h1>
+              <p style="color: rgba(255,255,255,0.9); margin: 6px 0 0 0; font-size: 13px;">${formatDate(todayStr)}</p>
+              <div style="width: 60px; height: 3px; background-color: ${color}; margin: 12px auto 0; border-radius: 2px;"></div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 32px 40px;">
+              <ul style="margin: 0; padding-left: 20px; color: #374151;">
+                ${itemsHtml}
+              </ul>
+              <div style="text-align: center; margin-top: 24px;">
+                <a href="https://cc-acdemy.lovable.app" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+                  Go to Dashboard
+                </a>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 20px 40px; background-color: #f9fafb; text-align: center; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; color: #9ca3af; font-size: 12px;">© ${new Date().getFullYear()} Care Cuddle Academy. All rights reserved.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
       `,
     });
     return { success: true };
