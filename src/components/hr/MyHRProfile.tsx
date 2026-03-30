@@ -367,6 +367,23 @@ export function MyHRProfile() {
       });
       setStaffRequests(requestsData || []);
 
+      // Fetch covered users' recurring patterns for shift_swap requests
+      const coveredUserIds = [...new Set(
+        (requestsData || [])
+          .filter(r => r.request_type === 'shift_swap' && r.swap_with_user_id)
+          .map(r => r.swap_with_user_id)
+      )].filter(Boolean) as string[];
+      
+      if (coveredUserIds.length > 0) {
+        const { data: coveredPatterns } = await supabase
+          .from('recurring_shift_patterns')
+          .select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, is_overtime, overtime_subtype')
+          .in('user_id', coveredUserIds);
+        setCoveredUserPatterns(coveredPatterns || []);
+      } else {
+        setCoveredUserPatterns([]);
+      }
+
       // Fetch recurring bonuses
       const {
         data: bonusesData
