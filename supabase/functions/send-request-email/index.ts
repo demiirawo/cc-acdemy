@@ -9,6 +9,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const LOGO_URL = "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
+const BRAND_COLOR = "#5E18EB";
+
 interface EmailRequest {
   type: "new_request" | "request_approved" | "request_rejected";
   requestId: string;
@@ -46,8 +49,49 @@ const formatDate = (dateStr: string): string => {
   });
 };
 
+const emailWrapper = (headerTitle: string, headerSubtitle: string, content: string, accentColor?: string) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f5; font-family: Arial, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="500" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+          <!-- Logo Header -->
+          <tr>
+            <td style="background-color: ${BRAND_COLOR}; padding: 24px 40px; text-align: center;">
+              <img src="${LOGO_URL}" alt="Care Cuddle Academy" width="140" style="display: block; margin: 0 auto; margin-bottom: 16px;" />
+              <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 600;">${headerTitle}</h1>
+              ${headerSubtitle ? `<p style="color: rgba(255,255,255,0.9); margin: 6px 0 0 0; font-size: 13px;">${headerSubtitle}</p>` : ''}
+              ${accentColor ? `<div style="width: 60px; height: 3px; background-color: ${accentColor}; margin: 12px auto 0; border-radius: 2px;"></div>` : ''}
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding: 32px 40px;">
+              ${content}
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 20px 40px; background-color: #f9fafb; text-align: center; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; color: #9ca3af; font-size: 12px;">
+                © ${new Date().getFullYear()} Care Cuddle Academy. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
 const handler = async (req: Request): Promise<Response> => {
-  // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -82,7 +126,6 @@ const handler = async (req: Request): Promise<Response> => {
     let emailResult;
 
     if (type === "new_request") {
-      // Fetch all admin users to send notification
       const { data: adminProfiles, error: adminError } = await supabaseClient
         .from("profiles")
         .select("email, display_name")
@@ -107,58 +150,50 @@ const handler = async (req: Request): Promise<Response> => {
 
       console.log("Sending new request notification to admins:", adminEmails);
 
+      const bodyContent = `
+        <p style="color: #374151; font-size: 16px; margin: 0 0 20px;">
+          <strong>${requesterName}</strong> has submitted a new <strong>${requestTypeLabel}</strong> request.
+        </p>
+        
+        <div style="background-color: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; margin-bottom: 24px;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Request Type:</td>
+              <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">${requestTypeLabel}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Dates:</td>
+              <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">${dateRange}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Days Requested:</td>
+              <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">${daysRequested} day${daysRequested !== 1 ? "s" : ""}</td>
+            </tr>
+            ${details ? `
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; font-size: 14px; vertical-align: top;">Details:</td>
+              <td style="padding: 8px 0; color: #111827; font-size: 14px;">${details}</td>
+            </tr>
+            ` : ""}
+          </table>
+        </div>
+        
+        <p style="color: #6b7280; font-size: 14px; margin-bottom: 24px;">
+          Please log in to the system to review and respond to this request.
+        </p>
+        
+        <div style="text-align: center;">
+          <a href="https://cc-acdemy.lovable.app" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+            Review Request
+          </a>
+        </div>
+      `;
+
       emailResult = await resend.emails.send({
-        from: "Care & Cuddle Academy <hello@care-cuddle-academy.co.uk>",
+        from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
         to: adminEmails,
         subject: `New ${requestTypeLabel} Request from ${requesterName}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="background-color: #f97316; padding: 20px; border-radius: 8px 8px 0 0;">
-              <h1 style="color: white; margin: 0; font-size: 24px;">New Staff Request</h1>
-            </div>
-            <div style="background-color: #f9fafb; padding: 24px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb; border-top: none;">
-              <p style="color: #374151; font-size: 16px; margin-bottom: 20px;">
-                <strong>${requesterName}</strong> has submitted a new <strong>${requestTypeLabel}</strong> request.
-              </p>
-              
-              <div style="background-color: white; padding: 16px; border-radius: 6px; border: 1px solid #e5e7eb; margin-bottom: 20px;">
-                <table style="width: 100%; border-collapse: collapse;">
-                  <tr>
-                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Request Type:</td>
-                    <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">${requestTypeLabel}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Dates:</td>
-                    <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">${dateRange}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Days Requested:</td>
-                    <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">${daysRequested} day${daysRequested !== 1 ? "s" : ""}</td>
-                  </tr>
-                  ${details ? `
-                  <tr>
-                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px; vertical-align: top;">Details:</td>
-                    <td style="padding: 8px 0; color: #111827; font-size: 14px;">${details}</td>
-                  </tr>
-                  ` : ""}
-                </table>
-              </div>
-              
-              <p style="color: #6b7280; font-size: 14px; margin-bottom: 20px;">
-                Please log in to the system to review and respond to this request.
-              </p>
-              
-              <div style="text-align: center;">
-                <a href="https://cc-acdemy.lovable.app" style="display: inline-block; background-color: #f97316; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
-                  Review Request
-                </a>
-              </div>
-            </div>
-            <p style="color: #9ca3af; font-size: 12px; text-align: center; margin-top: 20px;">
-              Care & Cuddle Staff Management System
-            </p>
-          </div>
-        `,
+        html: emailWrapper("New Staff Request", `From ${requesterName}`, bodyContent),
       });
     } else if (type === "request_approved" || type === "request_rejected") {
       const isApproved = type === "request_approved";
@@ -167,67 +202,59 @@ const handler = async (req: Request): Promise<Response> => {
 
       console.log(`Sending ${statusText.toLowerCase()} notification to:`, requesterEmail);
 
+      const bodyContent = `
+        <p style="color: #374151; font-size: 16px; margin: 0 0 20px;">
+          Hi ${requesterName},
+        </p>
+        <p style="color: #374151; font-size: 16px; margin: 0 0 20px;">
+          Your <strong>${requestTypeLabel}</strong> request has been <strong style="color: ${statusColor};">${statusText.toLowerCase()}</strong>${reviewerName ? ` by ${reviewerName}` : ""}.
+        </p>
+        
+        <div style="background-color: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; margin-bottom: 24px;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Request Type:</td>
+              <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">${requestTypeLabel}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Dates:</td>
+              <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">${dateRange}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Days:</td>
+              <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">${daysRequested} day${daysRequested !== 1 ? "s" : ""}</td>
+            </tr>
+            ${reviewNotes ? `
+            <tr>
+              <td style="padding: 8px 0; color: #6b7280; font-size: 14px; vertical-align: top;">Review Notes:</td>
+              <td style="padding: 8px 0; color: #111827; font-size: 14px;">${reviewNotes}</td>
+            </tr>
+            ` : ""}
+          </table>
+        </div>
+        
+        ${isApproved ? `
+        <p style="color: #22c55e; font-size: 14px; margin-bottom: 24px;">
+          ✓ This time has been added to your calendar.
+        </p>
+        ` : `
+        <p style="color: #6b7280; font-size: 14px; margin-bottom: 24px;">
+          If you have any questions about this decision, please speak to your manager.
+        </p>
+        `}
+        
+        <div style="text-align: center;">
+          <a href="https://cc-acdemy.lovable.app" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+            View My Requests
+          </a>
+        </div>
+      `;
+
       emailResult = await resend.emails.send({
-        from: "Care & Cuddle Academy <hello@care-cuddle-academy.co.uk>",
+        from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
         to: [requesterEmail],
         subject: `Your ${requestTypeLabel} Request has been ${statusText}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="background-color: ${statusColor}; padding: 20px; border-radius: 8px 8px 0 0;">
-              <h1 style="color: white; margin: 0; font-size: 24px;">Request ${statusText}</h1>
-            </div>
-            <div style="background-color: #f9fafb; padding: 24px; border-radius: 0 0 8px 8px; border: 1px solid #e5e7eb; border-top: none;">
-              <p style="color: #374151; font-size: 16px; margin-bottom: 20px;">
-                Hi ${requesterName},
-              </p>
-              <p style="color: #374151; font-size: 16px; margin-bottom: 20px;">
-                Your <strong>${requestTypeLabel}</strong> request has been <strong style="color: ${statusColor};">${statusText.toLowerCase()}</strong>${reviewerName ? ` by ${reviewerName}` : ""}.
-              </p>
-              
-              <div style="background-color: white; padding: 16px; border-radius: 6px; border: 1px solid #e5e7eb; margin-bottom: 20px;">
-                <table style="width: 100%; border-collapse: collapse;">
-                  <tr>
-                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Request Type:</td>
-                    <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">${requestTypeLabel}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Dates:</td>
-                    <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">${dateRange}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px;">Days:</td>
-                    <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600;">${daysRequested} day${daysRequested !== 1 ? "s" : ""}</td>
-                  </tr>
-                  ${reviewNotes ? `
-                  <tr>
-                    <td style="padding: 8px 0; color: #6b7280; font-size: 14px; vertical-align: top;">Review Notes:</td>
-                    <td style="padding: 8px 0; color: #111827; font-size: 14px;">${reviewNotes}</td>
-                  </tr>
-                  ` : ""}
-                </table>
-              </div>
-              
-              ${isApproved ? `
-              <p style="color: #22c55e; font-size: 14px; margin-bottom: 20px;">
-                ✓ This time has been added to your calendar.
-              </p>
-              ` : `
-              <p style="color: #6b7280; font-size: 14px; margin-bottom: 20px;">
-                If you have any questions about this decision, please speak to your manager.
-              </p>
-              `}
-              
-              <div style="text-align: center;">
-                <a href="https://cc-acdemy.lovable.app" style="display: inline-block; background-color: #f97316; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600;">
-                  View My Requests
-                </a>
-              </div>
-            </div>
-            <p style="color: #9ca3af; font-size: 12px; text-align: center; margin-top: 20px;">
-              Care & Cuddle Staff Management System
-            </p>
-          </div>
-        `,
+        html: emailWrapper(`Request ${statusText}`, requestTypeLabel, bodyContent, statusColor),
       });
     } else {
       throw new Error(`Unknown email type: ${type}`);
