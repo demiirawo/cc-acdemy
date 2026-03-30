@@ -649,7 +649,7 @@ export function MyHRProfile() {
       const approvedOvertimeRequests = staffRequests.filter(req => {
         if (req.status !== 'approved') return false;
         if (req.request_type === 'overtime' || req.request_type === 'overtime_standard' || req.request_type === 'overtime_double_up') return true;
-        if (req.request_type === 'shift_swap' && (req as any).overtime_type) return true;
+        if (req.request_type === 'shift_swap' && req.overtime_type) return true;
         return false;
       });
 
