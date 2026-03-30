@@ -121,6 +121,8 @@ interface StaffRequest {
   status: string;
   details: string | null;
   created_at: string;
+  swap_with_user_id: string | null;
+  overtime_type: string | null;
 }
 interface RecurringBonus {
   id: string;
@@ -249,6 +251,7 @@ export function MyHRProfile() {
   const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
   const [staffRequests, setStaffRequests] = useState<StaffRequest[]>([]);
+  const [coveredUserPatterns, setCoveredUserPatterns] = useState<RecurringShiftPattern[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [onboardingData, setOnboardingData] = useState<OnboardingFormData | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
@@ -363,6 +366,23 @@ export function MyHRProfile() {
         ascending: false
       });
       setStaffRequests(requestsData || []);
+
+      // Fetch covered users' recurring patterns for shift_swap requests
+      const coveredUserIds = [...new Set(
+        (requestsData || [])
+          .filter(r => r.request_type === 'shift_swap' && r.swap_with_user_id)
+          .map(r => r.swap_with_user_id)
+      )].filter(Boolean) as string[];
+      
+      if (coveredUserIds.length > 0) {
+        const { data: coveredPatterns } = await supabase
+          .from('recurring_shift_patterns')
+          .select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, is_overtime, overtime_subtype')
+          .in('user_id', coveredUserIds);
+        setCoveredUserPatterns(coveredPatterns || []);
+      } else {
+        setCoveredUserPatterns([]);
+      }
 
       // Fetch recurring bonuses
       const {
@@ -629,7 +649,7 @@ export function MyHRProfile() {
       const approvedOvertimeRequests = staffRequests.filter(req => {
         if (req.status !== 'approved') return false;
         if (req.request_type === 'overtime' || req.request_type === 'overtime_standard' || req.request_type === 'overtime_double_up') return true;
-        if (req.request_type === 'shift_swap' && (req as any).overtime_type) return true;
+        if (req.request_type === 'shift_swap' && req.overtime_type) return true;
         return false;
       });
 
@@ -640,12 +660,16 @@ export function MyHRProfile() {
         if (reqStart <= monthEnd && reqEnd >= monthStart) {
           const overlapStart = reqStart > monthStart ? reqStart : monthStart;
           const overlapEnd = reqEnd < monthEnd ? reqEnd : monthEnd;
-          const isInsideHours = req.request_type === 'overtime_double_up' || (req as any).overtime_type === 'standard_hours';
+          const isInsideHours = req.request_type === 'overtime_double_up' || req.overtime_type === 'standard_hours';
           const subtype: 'standard' | 'double_up' = isInsideHours ? 'double_up' : 'standard';
 
-          // For shift swaps, ideally check covered user's patterns, but we only have current user's data
-          // Use non-overtime patterns to determine working days
-          const targetPatterns = recurringPatterns.filter(p => !p.is_overtime);
+          // For shift swaps, use the covered user's patterns; otherwise use current user's patterns
+          const targetUserId = (req.request_type === 'shift_swap' && req.swap_with_user_id)
+            ? req.swap_with_user_id
+            : null;
+          const targetPatterns = targetUserId
+            ? coveredUserPatterns.filter(p => p.user_id === targetUserId && !p.is_overtime)
+            : recurringPatterns.filter(p => !p.is_overtime);
 
           const daysInRange = eachDayOfInterval({ start: overlapStart, end: overlapEnd });
 
@@ -851,7 +875,7 @@ export function MyHRProfile() {
       });
     }
     return previews;
-  }, [hrProfile, staffSchedules, recurringPatterns, patternExceptions, publicHolidays, payRecords, recurringBonuses, holidays, staffRequests]);
+  }, [hrProfile, staffSchedules, recurringPatterns, coveredUserPatterns, patternExceptions, publicHolidays, payRecords, recurringBonuses, holidays, staffRequests]);
   const toggleMonth = (monthKey: string) => {
     setExpandedMonths(prev => {
       const next = new Set(prev);
