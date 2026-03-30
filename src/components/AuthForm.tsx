@@ -103,16 +103,6 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
         description: "There was an issue sending the magic link. Please try again or contact support@ccforms.co.uk for assistance.",
         variant: "destructive",
       });
-          description: "This email address is already signed up. Please contact support@ccforms.co.uk for assistance.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Sign up issue",
-          description: "There was an issue with sign up. Please contact support@ccforms.co.uk for assistance.",
-          variant: "destructive",
-        });
-      }
     } finally {
       setIsLoading(false);
     }
