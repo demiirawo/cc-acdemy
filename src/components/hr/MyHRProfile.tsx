@@ -121,6 +121,8 @@ interface StaffRequest {
   status: string;
   details: string | null;
   created_at: string;
+  swap_with_user_id: string | null;
+  overtime_type: string | null;
 }
 interface RecurringBonus {
   id: string;
