@@ -84,7 +84,7 @@ const REQUEST_TYPE_INFO = {
 };
 
 // Types available for new requests
-const SELECTABLE_REQUEST_TYPES = ['overtime', 'holiday_paid', 'holiday_unpaid', 'shift_swap'] as const;
+const SELECTABLE_REQUEST_TYPES = ['holiday_paid', 'holiday_unpaid', 'shift_swap'] as const;
 
 // Legacy type info for displaying old requests
 const LEGACY_REQUEST_TYPE_INFO: Record<string, { label: string; description: string; icon: typeof Clock; color: string }> = {
