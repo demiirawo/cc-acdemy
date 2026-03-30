@@ -7,6 +7,8 @@ const corsHeaders = {
 };
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
+const LOGO_URL = "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
+const BRAND_COLOR = "#5E18EB";
 
 interface ShiftAuditLog {
   id: string;
@@ -66,7 +68,6 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Check if shift_change notifications are enabled
     const { data: settings } = await supabase
       .from("notification_settings")
       .select("*")
@@ -79,7 +80,6 @@ serve(async (req) => {
       });
     }
 
-    // Get recent unprocessed shift changes (last 5 minutes)
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const { data: auditLogs, error: auditError } = await supabase
       .from("shift_audit_log")
@@ -94,7 +94,6 @@ serve(async (req) => {
       });
     }
 
-    // Get admin emails
     const { data: admins } = await supabase
       .from("profiles")
       .select("email")
@@ -107,7 +106,6 @@ serve(async (req) => {
       });
     }
 
-    // Get all unique user IDs to fetch names
     const userIds = [...new Set(auditLogs.map((log: ShiftAuditLog) => log.changed_by).filter(Boolean))];
     const { data: profiles } = await supabase
       .from("profiles")
@@ -116,7 +114,6 @@ serve(async (req) => {
 
     const profileMap = new Map(profiles?.map((p) => [p.user_id, p.display_name || p.email || "Unknown"]) || []);
 
-    // Build email content
     const changes = auditLogs.map((log: ShiftAuditLog) => {
       const changedBy = log.changed_by ? profileMap.get(log.changed_by) || "Unknown" : "System";
       const data = log.action === "DELETE" ? log.old_data : log.new_data;
@@ -132,18 +129,18 @@ serve(async (req) => {
         
         details = `
           <div style="margin-left: 20px; color: #4b5563;">
-            <p><strong>Client:</strong> ${clientName}</p>
-            <p><strong>Date:</strong> ${date}</p>
-            <p><strong>Time:</strong> ${startTime} - ${endTime}</p>
+            <p style="margin: 4px 0;"><strong>Client:</strong> ${clientName}</p>
+            <p style="margin: 4px 0;"><strong>Date:</strong> ${date}</p>
+            <p style="margin: 4px 0;"><strong>Time:</strong> ${startTime} - ${endTime}</p>
           </div>
         `;
       }
 
       return `
         <div style="border-left: 4px solid ${getActionColor(log.action)}; padding: 12px; margin: 12px 0; background: #f9fafb; border-radius: 4px;">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
             <span style="font-weight: bold; color: ${getActionColor(log.action)};">${getActionLabel(log.action)} ${tableLabel}</span>
-            <span style="color: #6b7280; font-size: 12px;">${new Date(log.changed_at).toLocaleTimeString("en-GB")}</span>
+            <span style="color: #6b7280; font-size: 12px; float: right;">${new Date(log.changed_at).toLocaleTimeString("en-GB")}</span>
           </div>
           <p style="color: #374151; margin: 8px 0;">Changed by: <strong>${changedBy}</strong></p>
           ${details}
@@ -152,29 +149,51 @@ serve(async (req) => {
     }).join("");
 
     const emailHtml = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8">
-          <title>Shift Change Alert</title>
-        </head>
-        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-          <div style="background: linear-gradient(135deg, #8b5cf6, #6366f1); padding: 20px; border-radius: 8px 8px 0 0;">
-            <h1 style="color: white; margin: 0; font-size: 24px;">🔔 Shift Change Alert</h1>
-            <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0 0;">${auditLogs.length} change(s) detected</p>
-          </div>
-          <div style="background: white; padding: 20px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
-            ${changes}
-            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;">
-            <p style="color: #6b7280; font-size: 12px; text-align: center;">
-              This is an automated alert from Care Cuddle Academy
-            </p>
-          </div>
-        </body>
-      </html>
-    `;
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f5; font-family: Arial, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table width="500" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+          <!-- Logo Header -->
+          <tr>
+            <td style="background-color: ${BRAND_COLOR}; padding: 24px 40px; text-align: center;">
+              <img src="${LOGO_URL}" alt="Care Cuddle Academy" width="140" style="display: block; margin: 0 auto; margin-bottom: 16px;" />
+              <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 600;">🔔 Shift Change Alert</h1>
+              <p style="color: rgba(255,255,255,0.9); margin: 6px 0 0 0; font-size: 13px;">${auditLogs.length} change(s) detected</p>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding: 32px 40px;">
+              ${changes}
+              <div style="text-align: center; margin-top: 24px;">
+                <a href="https://cc-acdemy.lovable.app" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+                  Go to Dashboard
+                </a>
+              </div>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 20px 40px; background-color: #f9fafb; text-align: center; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; color: #9ca3af; font-size: 12px;">
+                © ${new Date().getFullYear()} Care Cuddle Academy. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
 
-    // Send email via Resend
     const resendResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -182,7 +201,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "Care Cuddle Academy <alerts@carecuddle.co.uk>",
+        from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
         to: adminEmails,
         subject: `🔔 Shift Change Alert: ${auditLogs.length} change(s)`,
         html: emailHtml,
