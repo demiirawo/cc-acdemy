@@ -660,12 +660,16 @@ export function MyHRProfile() {
         if (reqStart <= monthEnd && reqEnd >= monthStart) {
           const overlapStart = reqStart > monthStart ? reqStart : monthStart;
           const overlapEnd = reqEnd < monthEnd ? reqEnd : monthEnd;
-          const isInsideHours = req.request_type === 'overtime_double_up' || (req as any).overtime_type === 'standard_hours';
+          const isInsideHours = req.request_type === 'overtime_double_up' || req.overtime_type === 'standard_hours';
           const subtype: 'standard' | 'double_up' = isInsideHours ? 'double_up' : 'standard';
 
-          // For shift swaps, ideally check covered user's patterns, but we only have current user's data
-          // Use non-overtime patterns to determine working days
-          const targetPatterns = recurringPatterns.filter(p => !p.is_overtime);
+          // For shift swaps, use the covered user's patterns; otherwise use current user's patterns
+          const targetUserId = (req.request_type === 'shift_swap' && req.swap_with_user_id)
+            ? req.swap_with_user_id
+            : null;
+          const targetPatterns = targetUserId
+            ? coveredUserPatterns.filter(p => p.user_id === targetUserId && !p.is_overtime)
+            : recurringPatterns.filter(p => !p.is_overtime);
 
           const daysInRange = eachDayOfInterval({ start: overlapStart, end: overlapEnd });
 
