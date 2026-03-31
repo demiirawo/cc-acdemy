@@ -2517,7 +2517,7 @@ export function StaffScheduleManager() {
                             return true;
                           })
                           .map(request => {
-                            const typeInfo = getRequestTypeInfo(request.request_type, request.status);
+                            const typeInfo = getRequestTypeInfo(request.request_type, request.status, request.overtime_type);
                             const IconComponent = typeInfo.icon;
                             return (
                               <div 
