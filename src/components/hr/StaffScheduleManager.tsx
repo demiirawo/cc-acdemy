@@ -1737,6 +1737,7 @@ export function StaffScheduleManager() {
         holidayUserId: coveredUserId,
         holidayUserName: getStaffName(coveredUserId),
         overtimeType: req.request_type,
+        coverOvertimeType: (req as any).overtime_type as string | null,
         shifts: coveredSchedules.map(s => ({
           clientName: s.client_name,
           startTime: format(parseISO(s.start_datetime), "HH:mm"),
