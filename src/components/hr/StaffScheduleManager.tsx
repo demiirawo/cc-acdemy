@@ -2344,8 +2344,19 @@ export function StaffScheduleManager() {
                         )}
 
                         {/* Covering for someone indicator - with delete option */}
-                        {coveringFor && coveringFor.length > 0 && coveringFor.map((cover, idx) => (
-                          <div key={idx} className="text-[10px] text-blue-700 bg-blue-50 rounded px-1 py-0.5 mb-1 group relative">
+                        {coveringFor && coveringFor.length > 0 && coveringFor.map((cover, idx) => {
+                          const coverLabel = cover?.coverOvertimeType === 'outside_hours' 
+                            ? 'Cover + OT (Outside)' 
+                            : cover?.coverOvertimeType === 'standard_hours' 
+                            ? 'Cover + OT (Inside)' 
+                            : 'Covering';
+                          const coverColorClass = cover?.coverOvertimeType === 'outside_hours'
+                            ? 'text-orange-700 bg-orange-50'
+                            : cover?.coverOvertimeType === 'standard_hours'
+                            ? 'text-amber-700 bg-amber-50'
+                            : 'text-blue-700 bg-blue-50';
+                          return (
+                          <div key={idx} className={`text-[10px] ${coverColorClass} rounded px-1 py-0.5 mb-1 group relative`}>
                             <div className="flex items-center gap-1 font-medium">
                               <Users className="h-2.5 w-2.5 flex-shrink-0" />
                               <span className="flex-1">Covering: {cover?.holidayUserName}</span>
