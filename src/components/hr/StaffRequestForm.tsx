@@ -1467,7 +1467,16 @@ export function StaffRequestForm() {
                         </p>
                         {request.request_type === 'shift_swap' && request.swap_with_user_id && (
                           <p className="text-sm text-muted-foreground">
-                            Swapping with: {getStaffName(request.swap_with_user_id)}
+                            Covering: {getStaffName(request.swap_with_user_id)}
+                            {request.overtime_type === 'outside_hours' && (
+                              <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0 border-orange-300 text-orange-700">OT (Outside)</Badge>
+                            )}
+                            {request.overtime_type === 'standard_hours' && (
+                              <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0 border-amber-300 text-amber-700">OT (Inside)</Badge>
+                            )}
+                            {!request.overtime_type && (
+                              <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0 border-blue-300 text-blue-700">Standard Cover</Badge>
+                            )}
                           </p>
                         )}
                         {request.details && (
