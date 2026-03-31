@@ -1744,7 +1744,7 @@ export function StaffScheduleManager() {
           endTime: format(parseISO(s.end_datetime), "HH:mm")
         }))
       };
-    }).filter(Boolean) as { requestId: string; holidayUserId: string; holidayUserName: string; overtimeType: string; shifts: { clientName: string; startTime: string; endTime: string }[] }[];
+    }).filter(Boolean) as { requestId: string; holidayUserId: string; holidayUserName: string; overtimeType: string; coverOvertimeType: string | null; shifts: { clientName: string; startTime: string; endTime: string }[] }[];
   };
 
   const calculateScheduleCost = (schedule: Schedule) => {
