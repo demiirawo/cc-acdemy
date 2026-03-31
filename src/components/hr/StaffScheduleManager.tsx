@@ -1374,12 +1374,111 @@ export function StaffScheduleManager() {
     });
   };
 
+  // Generate cover schedules from approved shift_swap and overtime cover requests
+  const coverSchedulesForClientView = useMemo(() => {
+    const coverSchedules: (Schedule & { isCoverShift: true; coveringForName: string; coverOvertimeType: string | null })[] = [];
+    
+    for (const request of staffRequests) {
+      if (request.status !== 'approved') continue;
+      
+      let coveredUserId: string | null = null;
+      
+      if (request.request_type === 'shift_swap' && request.swap_with_user_id) {
+        coveredUserId = request.swap_with_user_id;
+      } else if (['overtime', 'overtime_standard', 'overtime_double_up'].includes(request.request_type) && request.linked_holiday_id) {
+        const linkedHoliday = holidays.find(h => h.id === request.linked_holiday_id);
+        if (linkedHoliday) coveredUserId = linkedHoliday.user_id;
+      }
+      
+      if (!coveredUserId) continue;
+      
+      // For each day in the request range, find the covered user's shifts
+      const reqStart = parseISO(request.start_date);
+      const reqEnd = parseISO(request.end_date);
+      
+      for (const day of weekDays) {
+        if (isBefore(day, startOfDay(reqStart)) || isAfter(day, endOfDay(reqEnd))) continue;
+        
+        const dateStr = format(day, "yyyy-MM-dd");
+        
+        // Find covered user's schedules for this day
+        let coveredDaySchedules = allSchedules.filter(s => {
+          if (s.user_id !== coveredUserId) return false;
+          if (s.is_pattern_overtime) return false; // Skip overtime patterns
+          return format(parseISO(s.start_datetime), "yyyy-MM-dd") === dateStr;
+        });
+        
+        // If no schedules found, check recurring patterns
+        if (coveredDaySchedules.length === 0) {
+          const dayOfWeek = getDay(day);
+          const matchingPatterns = recurringPatterns.filter(pattern => {
+            if (pattern.user_id !== coveredUserId) return false;
+            if (pattern.is_overtime) return false;
+            const patternStartDate = parseISO(pattern.start_date);
+            const patternEndDate = pattern.end_date ? parseISO(pattern.end_date) : null;
+            if (isBefore(day, patternStartDate)) return false;
+            if (patternEndDate && isAfter(day, patternEndDate)) return false;
+            if (pattern.recurrence_interval === 'daily') return true;
+            if (pattern.recurrence_interval === 'weekly') return pattern.days_of_week.includes(dayOfWeek);
+            if (pattern.recurrence_interval === 'biweekly') {
+              if (!pattern.days_of_week.includes(dayOfWeek)) return false;
+              const weeksDiff = differenceInWeeks(startOfWeek(day, { weekStartsOn: 1 }), startOfWeek(patternStartDate, { weekStartsOn: 1 }));
+              return weeksDiff % 2 === 0;
+            }
+            return false;
+          });
+          
+          coveredDaySchedules = matchingPatterns.map(pattern => ({
+            id: `pattern-${pattern.id}-${dateStr}`,
+            user_id: pattern.user_id,
+            client_name: pattern.client_name,
+            start_datetime: `${dateStr}T${pattern.start_time}`,
+            end_datetime: `${dateStr}T${pattern.end_time}`,
+            notes: pattern.notes,
+            hourly_rate: pattern.hourly_rate,
+            currency: pattern.currency,
+            shift_type: pattern.shift_type
+          }));
+        }
+        
+        // Create cover schedule entries for each of the covered user's shifts
+        for (const coveredSchedule of coveredDaySchedules) {
+          coverSchedules.push({
+            id: `cover-${request.id}-${coveredSchedule.id}`,
+            user_id: request.user_id,
+            client_name: coveredSchedule.client_name,
+            start_datetime: coveredSchedule.start_datetime,
+            end_datetime: coveredSchedule.end_datetime,
+            notes: null,
+            hourly_rate: coveredSchedule.hourly_rate,
+            currency: coveredSchedule.currency || 'GBP',
+            shift_type: coveredSchedule.shift_type || null,
+            isCoverShift: true,
+            coveringForName: getStaffName(coveredUserId!),
+            coverOvertimeType: request.overtime_type || null,
+          });
+        }
+      }
+    }
+    
+    return coverSchedules;
+  }, [staffRequests, holidays, weekDays, allSchedules, recurringPatterns]);
+
   const getSchedulesForClientDay = (clientName: string, day: Date) => {
-    return allSchedules
+    const dateStr = format(day, "yyyy-MM-dd");
+    
+    const regularSchedules = allSchedules
       .filter(s => {
         const scheduleDate = parseISO(s.start_datetime);
-        return s.client_name === clientName && format(scheduleDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd");
-      })
+        return s.client_name === clientName && format(scheduleDate, "yyyy-MM-dd") === dateStr;
+      });
+    
+    const coverEntries = coverSchedulesForClientView
+      .filter(s => {
+        return s.client_name === clientName && format(parseISO(s.start_datetime), "yyyy-MM-dd") === dateStr;
+      });
+    
+    return [...regularSchedules, ...coverEntries]
       .sort((a, b) => parseISO(a.start_datetime).getTime() - parseISO(b.start_datetime).getTime());
   };
 
