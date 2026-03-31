@@ -2359,7 +2359,7 @@ export function StaffScheduleManager() {
                           <div key={idx} className={`text-[10px] ${coverColorClass} rounded px-1 py-0.5 mb-1 group relative`}>
                             <div className="flex items-center gap-1 font-medium">
                               <Users className="h-2.5 w-2.5 flex-shrink-0" />
-                              <span className="flex-1">Covering: {cover?.holidayUserName}</span>
+                              <span className="flex-1">{coverLabel}: {cover?.holidayUserName}</span>
                               {canEditSchedule && cover?.requestId && (
                                 <Button
                                   variant="ghost"
