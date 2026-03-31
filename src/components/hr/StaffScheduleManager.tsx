@@ -2387,7 +2387,8 @@ export function StaffScheduleManager() {
                               </div>
                             )}
                           </div>
-                        ))}
+                          );
+                        })}
                         
                         {/* Show schedules: hide standard schedules if on holiday, but always show overtime pattern schedules */}
                         {daySchedules.filter(schedule => {
