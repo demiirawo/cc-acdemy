@@ -2442,51 +2442,44 @@ export function StaffScheduleManager() {
                           </div>
                         )}
 
-                        {/* Covering for someone indicator - with delete option */}
+                        {/* Covering for someone - shown as compact shift boxes */}
                         {coveringFor && coveringFor.length > 0 && coveringFor.map((cover, idx) => {
-                          const coverLabel = cover?.coverOvertimeType === 'outside_hours' 
-                            ? 'Cover + OT (Outside)' 
-                            : cover?.coverOvertimeType === 'standard_hours' 
-                            ? 'Cover + OT (Inside)' 
-                            : 'Covering';
-                          const coverColorClass = cover?.coverOvertimeType === 'outside_hours'
-                            ? 'text-orange-700 bg-orange-50'
-                            : cover?.coverOvertimeType === 'standard_hours'
-                            ? 'text-amber-700 bg-amber-50'
-                            : 'text-blue-700 bg-blue-50';
-                          return (
-                          <div key={idx} className={`text-[10px] ${coverColorClass} rounded px-1 py-0.5 mb-1 group relative`}>
-                            <div className="flex items-center gap-1 font-medium">
-                              <Users className="h-2.5 w-2.5 flex-shrink-0" />
-                              <span className="flex-1">{coverLabel}: {cover?.holidayUserName}</span>
+                          if (!cover?.shifts || cover.shifts.length === 0) return null;
+                          const isOT = cover?.coverOvertimeType === 'outside_hours' || cover?.coverOvertimeType === 'standard_hours';
+                          return cover.shifts.map((shift, shiftIdx) => (
+                            <div 
+                              key={`${idx}-${shiftIdx}`} 
+                              className={`rounded p-1 mb-1 text-xs border group relative ${
+                                isOT ? 'bg-orange-50 border-orange-200' : 'bg-cyan-50 border-cyan-200'
+                              }`}
+                            >
+                              <div className={`font-medium truncate ${isOT ? 'text-orange-900' : 'text-cyan-900'}`}>
+                                {shift.clientName}
+                              </div>
+                              <div className={`text-muted-foreground`}>
+                                {shift.startTime} - {shift.endTime}
+                              </div>
+                              <div className={`text-[10px] flex items-center gap-1 ${isOT ? 'text-orange-700' : 'text-cyan-700'}`}>
+                                <Users className="h-2.5 w-2.5" />
+                                <span>Covering {cover?.holidayUserName}</span>
+                                {isOT && <span className="font-semibold">· OT</span>}
+                              </div>
                               {canEditSchedule && cover?.requestId && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-4 w-4 opacity-0 group-hover:opacity-100 -mr-0.5"
+                                  className="absolute top-0 right-0 h-4 w-4 opacity-0 group-hover:opacity-100"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     deleteCoverRequestMutation.mutate(cover.requestId);
                                   }}
-                                  title="Remove cover assignment"
+                                  title="Remove cover"
                                 >
                                   <X className="h-2.5 w-2.5 text-destructive" />
                                 </Button>
                               )}
                             </div>
-                            {cover?.shifts && cover.shifts.length > 0 ? (
-                              cover.shifts.map((shift, shiftIdx) => (
-                                <div key={shiftIdx} className="ml-3 text-blue-600">
-                                  {shift.clientName} ({shift.startTime} - {shift.endTime})
-                                </div>
-                              ))
-                            ) : (
-                              <div className="ml-3 text-blue-500 italic">
-                                No shifts defined for {cover?.holidayUserName}
-                              </div>
-                            )}
-                          </div>
-                          );
+                          ));
                         })}
                         
                         {/* Show schedules: hide standard schedules if on holiday, but always show overtime pattern schedules */}
@@ -2700,65 +2693,30 @@ export function StaffScheduleManager() {
                                   key={day.toISOString()} 
                                   className="min-h-[60px] p-1 rounded border bg-background border-border"
                                 >
-                                  {daySchedules.map(schedule => {
-                                    const isCover = 'isCoverShift' in schedule && (schedule as any).isCoverShift;
-                                    const coverForName = isCover ? (schedule as any).coveringForName : null;
-                                    const coverOT = isCover ? (schedule as any).coverOvertimeType : null;
+                                  {/* Filter out separate cover entries - they'll be shown inline with holiday shifts */}
+                                  {daySchedules.filter(s => !('isCoverShift' in s && (s as any).isCoverShift)).map(schedule => {
                                     const cost = calculateScheduleCost(schedule);
-                                    const staffOnHoliday = !isCover && isStaffOnHoliday(schedule.user_id, day);
+                                    const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
                                     const isFromPattern = schedule.id.startsWith('pattern-');
                                     const isPatternOvertime = schedule.is_pattern_overtime;
                                     const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
                                     const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
-                                    
-                                    // Cover shift styling
-                                    if (isCover) {
-                                      const coverLabel = coverOT === 'outside_hours' 
-                                        ? 'Cover + OT' 
-                                        : coverOT === 'standard_hours' 
-                                        ? 'Cover + OT' 
-                                        : 'Shift Cover';
-                                      const coverBg = coverOT 
-                                        ? 'bg-orange-50 border-orange-300' 
-                                        : 'bg-cyan-50 border-cyan-300';
-                                      const coverText = coverOT 
-                                        ? 'text-orange-900' 
-                                        : 'text-cyan-900';
-                                      
-                                      return (
-                                        <div 
-                                          key={schedule.id} 
-                                          className={`rounded p-1.5 mb-1 text-xs border ${coverBg}`}
-                                        >
-                                          <div className={`font-semibold truncate flex items-center gap-1 ${coverText}`}>
-                                            <Users className="h-3 w-3 flex-shrink-0" />
-                                            <span>{getStaffName(schedule.user_id)}</span>
-                                          </div>
-                                          <div className={`text-[10px] ${coverText} opacity-80`}>
-                                            <span className="font-medium">{coverLabel}</span>
-                                            {coverForName && <span> for {coverForName}</span>}
-                                          </div>
-                                          <div className={`${coverText} opacity-80`}>
-                                            {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
-                                          </div>
-                                        </div>
-                                      );
-                                    }
                                     
                                     return (
                                       <div 
                                         key={schedule.id} 
                                         className={`rounded p-1.5 mb-1 text-xs group relative ${canEditSchedule ? 'cursor-pointer hover:ring-2 hover:ring-primary/50' : ''} border ${
                                           staffOnHoliday 
-                                            ? 'bg-amber-100 border-amber-300' 
+                                            ? 'bg-amber-50 border-amber-200' 
                                             : `${colors.bg} ${colors.border}`
                                         }`}
                                         onClick={() => handleScheduleClick(schedule)}
                                         onDoubleClick={() => handleScheduleClick(schedule)}
                                         title={scheduleEditHint}
                                       >
-                                        <div className={`font-semibold truncate flex items-center gap-1 ${staffOnHoliday ? 'text-amber-900' : colors.text}`}>
-                                          {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600" />}
+                                        {/* Staff name + time */}
+                                        <div className={`font-semibold truncate flex items-center gap-1 ${staffOnHoliday ? 'text-amber-800 line-through opacity-70' : colors.text}`}>
+                                          {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-500 flex-shrink-0" />}
                                           {isFromPattern && !staffOnHoliday && (
                                             <Infinity className="h-3 w-3 opacity-60" />
                                           )}
@@ -2770,41 +2728,34 @@ export function StaffScheduleManager() {
                                           <span>{getStaffName(schedule.user_id)}</span>
                                         </div>
                                         
-                                        {/* Holiday/Coverage info */}
+                                        <div className={`${staffOnHoliday ? 'text-amber-700' : colors.text} opacity-80`}>
+                                          {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
+                                        </div>
+                                        
+                                        {/* Combined holiday + cover info in one box */}
                                         {staffOnHoliday && (
-                                          <div className="mt-0.5">
-                                            <div className="text-[10px] text-amber-800 opacity-80">
-                                              {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
-                                            </div>
-                                            <div className="text-[10px] text-amber-700 capitalize">
-                                              {holidayInfo?.absence_type || 'On holiday'}
-                                            </div>
+                                          <div className="mt-1 pt-1 border-t border-amber-200">
                                             {coverage && coverage.length > 0 ? (
-                                              <div className="text-[10px] text-green-700 bg-green-50 rounded px-1 py-0.5 mt-0.5">
-                                                <span className="font-medium">Cover:</span> {coverage.map(c => c.name).join(', ')}
+                                              <div className="flex items-center gap-1 text-[10px] text-green-700">
+                                                <Users className="h-2.5 w-2.5 flex-shrink-0" />
+                                                <span className="font-medium">Cover:</span>
+                                                <span>{coverage.map(c => c.name).join(', ')}</span>
                                               </div>
                                             ) : (
-                                              <div className="text-[10px] text-red-600 bg-red-50 rounded px-1 py-0.5 mt-0.5 flex items-center gap-1">
-                                                <AlertTriangle className="h-2.5 w-2.5" />
+                                              <div className="flex items-center gap-1 text-[10px] text-red-600">
+                                                <AlertTriangle className="h-2.5 w-2.5 flex-shrink-0" />
                                                 <span>No cover</span>
                                               </div>
                                             )}
                                           </div>
                                         )}
                                         
-                                        {!staffOnHoliday && (
-                                          <div className={`${colors.text} opacity-80`}>
-                                            <div>
-                                              {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
-                                            </div>
-                                            {cost !== null && (
-                                              <div className="text-[10px] opacity-70">
-                                                {schedule.currency} {cost.toFixed(2)}
-                                              </div>
-                                            )}
+                                        {!staffOnHoliday && cost !== null && (
+                                          <div className={`text-[10px] ${colors.text} opacity-70`}>
+                                            {schedule.currency} {cost.toFixed(2)}
                                           </div>
                                         )}
-                                        {canEditSchedule && (
+                                        {canEditSchedule && !staffOnHoliday && (
                                           <Button
                                             variant="ghost"
                                             size="icon"
