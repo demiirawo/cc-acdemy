@@ -2442,51 +2442,44 @@ export function StaffScheduleManager() {
                           </div>
                         )}
 
-                        {/* Covering for someone indicator - with delete option */}
+                        {/* Covering for someone - shown as compact shift boxes */}
                         {coveringFor && coveringFor.length > 0 && coveringFor.map((cover, idx) => {
-                          const coverLabel = cover?.coverOvertimeType === 'outside_hours' 
-                            ? 'Cover + OT (Outside)' 
-                            : cover?.coverOvertimeType === 'standard_hours' 
-                            ? 'Cover + OT (Inside)' 
-                            : 'Covering';
-                          const coverColorClass = cover?.coverOvertimeType === 'outside_hours'
-                            ? 'text-orange-700 bg-orange-50'
-                            : cover?.coverOvertimeType === 'standard_hours'
-                            ? 'text-amber-700 bg-amber-50'
-                            : 'text-blue-700 bg-blue-50';
-                          return (
-                          <div key={idx} className={`text-[10px] ${coverColorClass} rounded px-1 py-0.5 mb-1 group relative`}>
-                            <div className="flex items-center gap-1 font-medium">
-                              <Users className="h-2.5 w-2.5 flex-shrink-0" />
-                              <span className="flex-1">{coverLabel}: {cover?.holidayUserName}</span>
+                          if (!cover?.shifts || cover.shifts.length === 0) return null;
+                          const isOT = cover?.coverOvertimeType === 'outside_hours' || cover?.coverOvertimeType === 'standard_hours';
+                          return cover.shifts.map((shift, shiftIdx) => (
+                            <div 
+                              key={`${idx}-${shiftIdx}`} 
+                              className={`rounded p-1 mb-1 text-xs border group relative ${
+                                isOT ? 'bg-orange-50 border-orange-200' : 'bg-cyan-50 border-cyan-200'
+                              }`}
+                            >
+                              <div className={`font-medium truncate ${isOT ? 'text-orange-900' : 'text-cyan-900'}`}>
+                                {shift.clientName}
+                              </div>
+                              <div className={`text-muted-foreground`}>
+                                {shift.startTime} - {shift.endTime}
+                              </div>
+                              <div className={`text-[10px] flex items-center gap-1 ${isOT ? 'text-orange-700' : 'text-cyan-700'}`}>
+                                <Users className="h-2.5 w-2.5" />
+                                <span>Covering {cover?.holidayUserName}</span>
+                                {isOT && <span className="font-semibold">· OT</span>}
+                              </div>
                               {canEditSchedule && cover?.requestId && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-4 w-4 opacity-0 group-hover:opacity-100 -mr-0.5"
+                                  className="absolute top-0 right-0 h-4 w-4 opacity-0 group-hover:opacity-100"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     deleteCoverRequestMutation.mutate(cover.requestId);
                                   }}
-                                  title="Remove cover assignment"
+                                  title="Remove cover"
                                 >
                                   <X className="h-2.5 w-2.5 text-destructive" />
                                 </Button>
                               )}
                             </div>
-                            {cover?.shifts && cover.shifts.length > 0 ? (
-                              cover.shifts.map((shift, shiftIdx) => (
-                                <div key={shiftIdx} className="ml-3 text-blue-600">
-                                  {shift.clientName} ({shift.startTime} - {shift.endTime})
-                                </div>
-                              ))
-                            ) : (
-                              <div className="ml-3 text-blue-500 italic">
-                                No shifts defined for {cover?.holidayUserName}
-                              </div>
-                            )}
-                          </div>
-                          );
+                          ));
                         })}
                         
                         {/* Show schedules: hide standard schedules if on holiday, but always show overtime pattern schedules */}
