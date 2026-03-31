@@ -2701,12 +2701,49 @@ export function StaffScheduleManager() {
                                   className="min-h-[60px] p-1 rounded border bg-background border-border"
                                 >
                                   {daySchedules.map(schedule => {
+                                    const isCover = 'isCoverShift' in schedule && (schedule as any).isCoverShift;
+                                    const coverForName = isCover ? (schedule as any).coveringForName : null;
+                                    const coverOT = isCover ? (schedule as any).coverOvertimeType : null;
                                     const cost = calculateScheduleCost(schedule);
-                                    const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
+                                    const staffOnHoliday = !isCover && isStaffOnHoliday(schedule.user_id, day);
                                     const isFromPattern = schedule.id.startsWith('pattern-');
                                     const isPatternOvertime = schedule.is_pattern_overtime;
                                     const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
                                     const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
+                                    
+                                    // Cover shift styling
+                                    if (isCover) {
+                                      const coverLabel = coverOT === 'outside_hours' 
+                                        ? 'Cover + OT' 
+                                        : coverOT === 'standard_hours' 
+                                        ? 'Cover + OT' 
+                                        : 'Shift Cover';
+                                      const coverBg = coverOT 
+                                        ? 'bg-orange-50 border-orange-300' 
+                                        : 'bg-cyan-50 border-cyan-300';
+                                      const coverText = coverOT 
+                                        ? 'text-orange-900' 
+                                        : 'text-cyan-900';
+                                      
+                                      return (
+                                        <div 
+                                          key={schedule.id} 
+                                          className={`rounded p-1.5 mb-1 text-xs border ${coverBg}`}
+                                        >
+                                          <div className={`font-semibold truncate flex items-center gap-1 ${coverText}`}>
+                                            <Users className="h-3 w-3 flex-shrink-0" />
+                                            <span>{getStaffName(schedule.user_id)}</span>
+                                          </div>
+                                          <div className={`text-[10px] ${coverText} opacity-80`}>
+                                            <span className="font-medium">{coverLabel}</span>
+                                            {coverForName && <span> for {coverForName}</span>}
+                                          </div>
+                                          <div className={`${coverText} opacity-80`}>
+                                            {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
                                     
                                     return (
                                       <div 
