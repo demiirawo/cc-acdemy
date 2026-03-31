@@ -1527,7 +1527,7 @@ export function StaffScheduleManager() {
     return hasPatternShifts;
   };
 
-  const getRequestTypeInfo = (type: string, status: string) => {
+  const getRequestTypeInfo = (type: string, status: string, overtimeType?: string | null) => {
     const isPending = status === 'pending';
     switch (type) {
       case 'overtime_standard':
@@ -1548,12 +1548,29 @@ export function StaffScheduleManager() {
           color: isPending ? 'bg-green-50 border-green-200 border-dashed text-green-600' : 'bg-green-100 border-green-300 text-green-700', 
           icon: Palmtree 
         };
-      case 'shift_swap':
+      case 'shift_swap': {
+        // Differentiate by overtime_type
+        if (overtimeType === 'outside_hours') {
+          return { 
+            label: 'Cover + OT (Outside)', 
+            color: isPending ? 'bg-orange-50 border-orange-200 border-dashed text-orange-600' : 'bg-orange-100 border-orange-300 text-orange-700', 
+            icon: Clock 
+          };
+        }
+        if (overtimeType === 'standard_hours') {
+          return { 
+            label: 'Cover + OT (Inside)', 
+            color: isPending ? 'bg-amber-50 border-amber-200 border-dashed text-amber-600' : 'bg-amber-100 border-amber-300 text-amber-700', 
+            icon: Clock 
+          };
+        }
+        // Not Overtime (standard cover)
         return { 
           label: 'Shift Cover', 
           color: isPending ? 'bg-blue-50 border-blue-200 border-dashed text-blue-600' : 'bg-blue-100 border-blue-300 text-blue-700', 
           icon: RefreshCw 
         };
+      }
       default:
         return { 
           label: 'Request', 
