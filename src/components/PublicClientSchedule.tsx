@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { normalizeTime } from "@/lib/coverageUtils";
+import { isShiftCoveredByRequest } from "@/lib/coverageUtils";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -534,6 +534,28 @@ export const PublicClientSchedule = () => {
     }));
   };
 
+  const getStandardShiftCoverage = (coveredUserId: string, schedule: Pick<Schedule, "id" | "client_name" | "start_datetime" | "end_datetime">, day: Date) => {
+    const coverRequests = staffRequests.filter(request => {
+      if (request.swap_with_user_id !== coveredUserId) return false;
+      if (request.status !== 'approved' || request.request_type !== 'shift_swap') return false;
+
+      return isShiftCoveredByRequest(request, {
+        id: schedule.id,
+        date: format(day, "yyyy-MM-dd"),
+        startTime: format(parseISO(schedule.start_datetime), "HH:mm"),
+        endTime: format(parseISO(schedule.end_datetime), "HH:mm"),
+        clientName: schedule.client_name,
+      });
+    });
+
+    if (coverRequests.length === 0) return null;
+
+    return coverRequests.map(request => ({
+      userId: request.user_id,
+      name: getStaffName(request.user_id),
+    }));
+  };
+
   // Generate virtual schedules from patterns
   const virtualSchedulesFromPatterns = useMemo(() => {
     const virtualSchedules: Schedule[] = [];
@@ -817,28 +839,7 @@ export const PublicClientSchedule = () => {
                     const isOvertime = schedule.is_pattern_overtime;
                     
                     // Check for non-holiday shift cover
-                    const nonHolidayCoverage = !staffOnHoliday ? (() => {
-                      const schedStart = normalizeTime(format(parseISO(schedule.start_datetime), "HH:mm"));
-                      const schedEnd = normalizeTime(format(parseISO(schedule.end_datetime), "HH:mm"));
-                      const dateStr = format(day, "yyyy-MM-dd");
-                      const coverRequests = staffRequests.filter(r => {
-                        if (r.swap_with_user_id !== schedule.user_id) return false;
-                        if (r.status !== 'approved' || r.request_type !== 'shift_swap') return false;
-                        if (!isWithinInterval(day, { start: startOfDay(parseISO(r.start_date)), end: endOfDay(parseISO(r.end_date)) })) return false;
-                        if (r.coverage_metadata && typeof r.coverage_metadata === 'object') {
-                          const meta = r.coverage_metadata as { type?: string; shifts?: { start_time: string; end_time: string; date?: string }[] };
-                          if (meta.type === 'individual_shifts' && meta.shifts) {
-                            return meta.shifts.some(s => s.date === dateStr && normalizeTime(s.start_time) === schedStart && normalizeTime(s.end_time) === schedEnd);
-                          }
-                        }
-                        return true;
-                      });
-                      if (coverRequests.length === 0) return null;
-                      return coverRequests.map(r => ({
-                        userId: r.user_id,
-                        name: getStaffName(r.user_id),
-                      }));
-                    })() : null;
+                    const nonHolidayCoverage = !staffOnHoliday ? getStandardShiftCoverage(schedule.user_id, schedule, day) : null;
                     
                     const hasNonHolidayCover = nonHolidayCoverage && nonHolidayCoverage.length > 0;
                     
@@ -980,28 +981,7 @@ export const PublicClientSchedule = () => {
                       const isOvertime = schedule.is_pattern_overtime;
                       
                       // Check for non-holiday shift cover
-                      const nonHolidayCoverage = !staffOnHoliday ? (() => {
-                        const schedStart = normalizeTime(format(parseISO(schedule.start_datetime), "HH:mm"));
-                        const schedEnd = normalizeTime(format(parseISO(schedule.end_datetime), "HH:mm"));
-                        const dateStr = format(day, "yyyy-MM-dd");
-                        const coverRequests = staffRequests.filter(r => {
-                          if (r.swap_with_user_id !== schedule.user_id) return false;
-                          if (r.status !== 'approved' || r.request_type !== 'shift_swap') return false;
-                          if (!isWithinInterval(day, { start: startOfDay(parseISO(r.start_date)), end: endOfDay(parseISO(r.end_date)) })) return false;
-                          if (r.coverage_metadata && typeof r.coverage_metadata === 'object') {
-                            const meta = r.coverage_metadata as { type?: string; shifts?: { start_time: string; end_time: string; date?: string }[] };
-                            if (meta.type === 'individual_shifts' && meta.shifts) {
-                              return meta.shifts.some(s => s.date === dateStr && normalizeTime(s.start_time) === schedStart && normalizeTime(s.end_time) === schedEnd);
-                            }
-                          }
-                          return true;
-                        });
-                        if (coverRequests.length === 0) return null;
-                        return coverRequests.map(r => ({
-                          userId: r.user_id,
-                          name: getStaffName(r.user_id),
-                        }));
-                      })() : null;
+                      const nonHolidayCoverage = !staffOnHoliday ? getStandardShiftCoverage(schedule.user_id, schedule, day) : null;
                       
                       const hasNonHolidayCover = nonHolidayCoverage && nonHolidayCoverage.length > 0;
                       
