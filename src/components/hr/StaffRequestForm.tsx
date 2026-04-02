@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification";
+import { invalidateAllCoverageQueries, buildCoverageMetadata } from "@/lib/coverageUtils";
 
 
 type RequestType = 'overtime' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap' | 'overtime_standard' | 'overtime_double_up';
