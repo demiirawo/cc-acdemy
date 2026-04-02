@@ -49,6 +49,7 @@ interface StaffRequest {
   end_date: string;
   status: string;
   linked_holiday_id: string | null;
+  coverage_metadata?: Record<string, unknown> | null;
 }
 export function DashboardLiveView() {
   // Use state for current time to enable updates
