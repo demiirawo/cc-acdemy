@@ -92,6 +92,7 @@ interface StaffRequest {
   end_date: string;
   linked_holiday_id: string | null;
   swap_with_user_id: string | null;
+  coverage_metadata: Record<string, unknown> | null;
 }
 
 const ABSENCE_TYPES = [
