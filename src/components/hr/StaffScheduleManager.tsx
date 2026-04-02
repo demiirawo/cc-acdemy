@@ -167,11 +167,11 @@ const getShiftTypeColors = (shiftType: string | null | undefined) => {
  * Filters schedules to only those that match the coverage_metadata shifts.
  * If no metadata or no shifts array, returns all schedules (backward compat).
  */
-function filterSchedulesByCoverageMetadata(
-  schedules: { start_datetime: string; end_datetime: string; client_name: string; [key: string]: unknown }[],
+function filterSchedulesByCoverageMetadata<T extends { start_datetime: string; end_datetime: string; client_name: string }>(
+  schedules: T[],
   coverageMetadata: Record<string, unknown> | null | undefined,
   day: Date
-): typeof schedules {
+): T[] {
   if (!coverageMetadata || typeof coverageMetadata !== 'object') return schedules;
   
   const meta = coverageMetadata as { type?: string; shifts?: { start_time: string; end_time: string; client_name: string; date?: string }[]; covered_dates?: string[] };
