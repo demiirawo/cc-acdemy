@@ -1442,6 +1442,9 @@ export function StaffScheduleManager() {
           }));
         }
         
+        // Filter by coverage_metadata if available (only show specifically selected shifts)
+        coveredDaySchedules = filterSchedulesByCoverageMetadata(coveredDaySchedules, request.coverage_metadata, day);
+        
         // Create cover schedule entries for each of the covered user's shifts
         for (const coveredSchedule of coveredDaySchedules) {
           coverSchedules.push({
