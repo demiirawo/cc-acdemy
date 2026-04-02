@@ -163,41 +163,7 @@ const getShiftTypeColors = (shiftType: string | null | undefined) => {
   return SHIFT_TYPE_COLORS[shiftType || ""] || SHIFT_TYPE_COLORS["default"];
 };
 
-/**
- * Filters schedules to only those that match the coverage_metadata shifts.
- * If no metadata or no shifts array, returns all schedules (backward compat).
- */
-function filterSchedulesByCoverageMetadata<T extends { start_datetime: string; end_datetime: string; client_name: string }>(
-  schedules: T[],
-  coverageMetadata: Record<string, unknown> | null | undefined,
-  day: Date
-): T[] {
-  if (!coverageMetadata || typeof coverageMetadata !== 'object') return schedules;
-  
-  const meta = coverageMetadata as { type?: string; shifts?: { start_time: string; end_time: string; client_name: string; date?: string }[]; covered_dates?: string[] };
-  
-  // If type is 'individual_shifts' and we have shift details, filter precisely
-  if (meta.type === 'individual_shifts' && meta.shifts && Array.isArray(meta.shifts)) {
-    const dateStr = format(day, "yyyy-MM-dd");
-    const shiftsForDay = meta.shifts.filter(s => s.date === dateStr);
-    
-    if (shiftsForDay.length === 0) return [];
-    
-    return schedules.filter(schedule => {
-      const schedStart = format(parseISO(schedule.start_datetime), "HH:mm");
-      const schedEnd = format(parseISO(schedule.end_datetime), "HH:mm");
-      return shiftsForDay.some(s => s.start_time === schedStart && s.end_time === schedEnd);
-    });
-  }
-  
-  // If type is 'holiday_days', check if this day is in covered_dates
-  if (meta.type === 'holiday_days' && meta.covered_dates && Array.isArray(meta.covered_dates)) {
-    const dateStr = format(day, "yyyy-MM-dd");
-    if (!meta.covered_dates.includes(dateStr)) return [];
-  }
-  
-  return schedules;
-}
+// filterSchedulesByCoverageMetadata is imported from @/lib/coverageUtils
 
 const DAYS_OF_WEEK = [
   { value: 1, label: "Mon" },
