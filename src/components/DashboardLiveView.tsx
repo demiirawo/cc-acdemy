@@ -223,7 +223,20 @@ export function DashboardLiveView() {
       const coveredUserId = req.swap_with_user_id || (req.linked_holiday_id ? holidays.find(h => h.id === req.linked_holiday_id)?.user_id : null);
       if (!coveredUserId) return;
       const allSchedulesForCover = [...schedules, ...virtualSchedules];
-      const coveredSchedules = allSchedulesForCover.filter(s => s.user_id === coveredUserId && isSameDay(parseISO(s.start_datetime), today));
+      let coveredSchedules = allSchedulesForCover.filter(s => s.user_id === coveredUserId && isSameDay(parseISO(s.start_datetime), today));
+      // Filter by coverage_metadata if available
+      if (req.coverage_metadata && typeof req.coverage_metadata === 'object') {
+        const meta = req.coverage_metadata as { type?: string; shifts?: { start_time: string; end_time: string; date?: string }[] };
+        if (meta.type === 'individual_shifts' && meta.shifts) {
+          const dateStr = format(today, "yyyy-MM-dd");
+          const shiftsForDay = meta.shifts.filter(s => s.date === dateStr);
+          coveredSchedules = coveredSchedules.filter(s => {
+            const sStart = normalizeTime(format(parseISO(s.start_datetime), "HH:mm"));
+            const sEnd = normalizeTime(format(parseISO(s.end_datetime), "HH:mm"));
+            return shiftsForDay.some(ms => normalizeTime(ms.start_time) === sStart && normalizeTime(ms.end_time) === sEnd);
+          });
+        }
+      }
       coveredSchedules.forEach(coveredSchedule => {
         covers.push({
           id: `cover-${req.id}-${coveredSchedule.id}`,
