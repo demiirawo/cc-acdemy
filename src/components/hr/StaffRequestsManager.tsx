@@ -240,35 +240,9 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
 
       if (error) throw error;
 
-      // If it's a shift cover being approved, assign the covered staff's shifts to the covering staff
-      if (status === 'approved' && request.request_type === 'shift_swap' && request.swap_with_user_id) {
-        // request.user_id = the staff member who is COVERING
-        // request.swap_with_user_id = the staff member being COVERED (whose shifts need to be taken over)
-        const startDate = request.start_date;
-        const endDate = request.end_date;
-        
-        // Get the covered staff's schedules in the date range
-        const { data: coveredSchedules, error: coveredSchedError } = await supabase
-          .from("staff_schedules")
-          .select("*")
-          .eq("user_id", request.swap_with_user_id)
-          .gte("start_datetime", startDate)
-          .lte("start_datetime", endDate + "T23:59:59");
-        
-        if (coveredSchedError) console.error('Error fetching covered staff schedules:', coveredSchedError);
-        
-        // Reassign the covered staff's schedules to the covering staff
-        if (coveredSchedules && coveredSchedules.length > 0) {
-          for (const schedule of coveredSchedules) {
-            await supabase
-              .from("staff_schedules")
-              .update({ user_id: request.user_id })
-              .eq("id", schedule.id);
-          }
-        }
-        
-        console.log(`Shift cover completed: ${coveredSchedules?.length || 0} schedules reassigned to covering staff`);
-      }
+      // Shift cover approval: do NOT reassign staff_schedules.user_id.
+      // The original shift stays with the covered person; the UI overlays "Covered by X"
+      // using the approved request + coverage_metadata.
 
       // If it's a holiday request being approved, sync to staff_holidays
       if (status === 'approved' && (request.request_type === 'holiday' || request.request_type === 'holiday_paid' || request.request_type === 'holiday_unpaid')) {
