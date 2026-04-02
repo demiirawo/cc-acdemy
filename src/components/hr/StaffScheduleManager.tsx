@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay, subDays } from "date-fns";
 import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar, Link2, Check, X } from "lucide-react";
 import { UnifiedShiftEditor, ShiftToEdit } from "./UnifiedShiftEditor";
-import { invalidateAllCoverageQueries } from "@/lib/coverageUtils";
+import { invalidateAllCoverageQueries, filterSchedulesByCoverageMetadata, normalizeTime } from "@/lib/coverageUtils";
 import { LiveTimelineView } from "./LiveTimelineView";
 
 interface Schedule {
@@ -163,41 +163,7 @@ const getShiftTypeColors = (shiftType: string | null | undefined) => {
   return SHIFT_TYPE_COLORS[shiftType || ""] || SHIFT_TYPE_COLORS["default"];
 };
 
-/**
- * Filters schedules to only those that match the coverage_metadata shifts.
- * If no metadata or no shifts array, returns all schedules (backward compat).
- */
-function filterSchedulesByCoverageMetadata<T extends { start_datetime: string; end_datetime: string; client_name: string }>(
-  schedules: T[],
-  coverageMetadata: Record<string, unknown> | null | undefined,
-  day: Date
-): T[] {
-  if (!coverageMetadata || typeof coverageMetadata !== 'object') return schedules;
-  
-  const meta = coverageMetadata as { type?: string; shifts?: { start_time: string; end_time: string; client_name: string; date?: string }[]; covered_dates?: string[] };
-  
-  // If type is 'individual_shifts' and we have shift details, filter precisely
-  if (meta.type === 'individual_shifts' && meta.shifts && Array.isArray(meta.shifts)) {
-    const dateStr = format(day, "yyyy-MM-dd");
-    const shiftsForDay = meta.shifts.filter(s => s.date === dateStr);
-    
-    if (shiftsForDay.length === 0) return [];
-    
-    return schedules.filter(schedule => {
-      const schedStart = format(parseISO(schedule.start_datetime), "HH:mm");
-      const schedEnd = format(parseISO(schedule.end_datetime), "HH:mm");
-      return shiftsForDay.some(s => s.start_time === schedStart && s.end_time === schedEnd);
-    });
-  }
-  
-  // If type is 'holiday_days', check if this day is in covered_dates
-  if (meta.type === 'holiday_days' && meta.covered_dates && Array.isArray(meta.covered_dates)) {
-    const dateStr = format(day, "yyyy-MM-dd");
-    if (!meta.covered_dates.includes(dateStr)) return [];
-  }
-  
-  return schedules;
-}
+// filterSchedulesByCoverageMetadata is imported from @/lib/coverageUtils
 
 const DAYS_OF_WEEK = [
   { value: 1, label: "Mon" },
@@ -2538,19 +2504,19 @@ export function StaffScheduleManager() {
                           
                           // Check if this specific shift is covered by someone (non-holiday shift cover)
                           const shiftCoverage = !onHoliday ? (() => {
-                            const schedStart = format(parseISO(schedule.start_datetime), "HH:mm");
-                            const schedEnd = format(parseISO(schedule.end_datetime), "HH:mm");
+                            const schedStart = normalizeTime(format(parseISO(schedule.start_datetime), "HH:mm"));
+                            const schedEnd = normalizeTime(format(parseISO(schedule.end_datetime), "HH:mm"));
+                            const dateStr = format(day, "yyyy-MM-dd");
                             const coverRequests = staffRequests.filter(r => {
                               if (r.swap_with_user_id !== staff.user_id) return false;
                               if (r.status !== 'approved') return false;
                               if (r.request_type !== 'shift_swap') return false;
                               if (!isWithinInterval(day, { start: startOfDay(parseISO(r.start_date)), end: endOfDay(parseISO(r.end_date)) })) return false;
-                              // Check coverage_metadata to match this specific shift
+                              // Use centralized matching with time normalization
                               if (r.coverage_metadata && typeof r.coverage_metadata === 'object') {
                                 const meta = r.coverage_metadata as { type?: string; shifts?: { start_time: string; end_time: string; date?: string }[] };
                                 if (meta.type === 'individual_shifts' && meta.shifts) {
-                                  const dateStr = format(day, "yyyy-MM-dd");
-                                  return meta.shifts.some(s => s.date === dateStr && s.start_time === schedStart && s.end_time === schedEnd);
+                                  return meta.shifts.some(s => s.date === dateStr && normalizeTime(s.start_time) === schedStart && normalizeTime(s.end_time) === schedEnd);
                                 }
                               }
                               // No metadata = legacy, match all shifts
@@ -2789,19 +2755,18 @@ export function StaffScheduleManager() {
                                     
                                     // Check for non-holiday shift cover (shift_swap where person isn't on holiday)
                                     const nonHolidayCoverage = !staffOnHoliday ? (() => {
-                                      const schedStart = format(parseISO(schedule.start_datetime), "HH:mm");
-                                      const schedEnd = format(parseISO(schedule.end_datetime), "HH:mm");
+                                      const schedStart = normalizeTime(format(parseISO(schedule.start_datetime), "HH:mm"));
+                                      const schedEnd = normalizeTime(format(parseISO(schedule.end_datetime), "HH:mm"));
+                                      const dateStr = format(day, "yyyy-MM-dd");
                                       const coverRequests = staffRequests.filter(r => {
                                         if (r.swap_with_user_id !== schedule.user_id) return false;
                                         if (r.status !== 'approved') return false;
                                         if (r.request_type !== 'shift_swap') return false;
                                         if (!isWithinInterval(day, { start: startOfDay(parseISO(r.start_date)), end: endOfDay(parseISO(r.end_date)) })) return false;
-                                        // Check coverage_metadata to match this specific shift
                                         if (r.coverage_metadata && typeof r.coverage_metadata === 'object') {
                                           const meta = r.coverage_metadata as { type?: string; shifts?: { start_time: string; end_time: string; date?: string }[] };
                                           if (meta.type === 'individual_shifts' && meta.shifts) {
-                                            const dateStr = format(day, "yyyy-MM-dd");
-                                            return meta.shifts.some(s => s.date === dateStr && s.start_time === schedStart && s.end_time === schedEnd);
+                                            return meta.shifts.some(s => s.date === dateStr && normalizeTime(s.start_time) === schedStart && normalizeTime(s.end_time) === schedEnd);
                                           }
                                         }
                                         return true;

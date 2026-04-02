@@ -39,6 +39,7 @@ interface StaffRequest {
   end_date: string;
   status: string;
   linked_holiday_id: string | null;
+  coverage_metadata?: Record<string, unknown> | null;
 }
 
 interface RecurringPattern {
