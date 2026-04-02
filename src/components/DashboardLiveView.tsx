@@ -145,7 +145,7 @@ export function DashboardLiveView() {
         error
       } = await supabase.from("staff_requests").select("id, user_id, request_type, swap_with_user_id, start_date, end_date, status, linked_holiday_id, coverage_metadata").eq("status", "approved").lte("start_date", format(today, "yyyy-MM-dd")).gte("end_date", format(today, "yyyy-MM-dd"));
       if (error) throw error;
-      return data || [];
+      return (data || []) as StaffRequest[];
     }
   });
   const getStaffName = (userId: string): string => {

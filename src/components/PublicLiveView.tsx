@@ -138,7 +138,7 @@ export function PublicLiveView() {
         .lte("start_date", format(today, "yyyy-MM-dd"))
         .gte("end_date", format(today, "yyyy-MM-dd"));
       if (error) throw error;
-      return data || [];
+      return (data || []) as StaffRequest[];
     },
   });
 
