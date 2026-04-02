@@ -1,6 +1,81 @@
 import { QueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 
+type CoverageMetadataShift = {
+  id?: string;
+  date?: string;
+  start_time: string;
+  end_time: string;
+  client_name?: string;
+};
+
+type ShiftMatchTarget = {
+  id?: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  clientName?: string;
+};
+
+const PATTERN_SHIFT_DATE_REGEX = /(\d{4}-\d{2}-\d{2})$/;
+
+function formatCoverageDate(date: Date | string): string {
+  if (date instanceof Date) {
+    return format(date, "yyyy-MM-dd");
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return date;
+  }
+
+  const parsedDate = parseISO(date);
+  if (!Number.isNaN(parsedDate.getTime())) {
+    return format(parsedDate, "yyyy-MM-dd");
+  }
+
+  return String(date).split("T")[0];
+}
+
+function getCoverageShiftDate(shift: CoverageMetadataShift): string | undefined {
+  if (shift.id) {
+    const idDateMatch = shift.id.match(PATTERN_SHIFT_DATE_REGEX);
+    if (idDateMatch) {
+      return idDateMatch[1];
+    }
+  }
+
+  if (!shift.date) {
+    return undefined;
+  }
+
+  return formatCoverageDate(shift.date);
+}
+
+function clientsMatch(expectedClient?: string, actualClient?: string): boolean {
+  if (!expectedClient || !actualClient) {
+    return true;
+  }
+
+  return expectedClient.trim().toLowerCase() === actualClient.trim().toLowerCase();
+}
+
+function doesCoverageShiftMatch(metadataShift: CoverageMetadataShift, shift: ShiftMatchTarget): boolean {
+  if (metadataShift.id && shift.id && metadataShift.id === shift.id) {
+    return true;
+  }
+
+  const metadataDate = getCoverageShiftDate(metadataShift);
+  if (!metadataDate || metadataDate !== shift.date) {
+    return false;
+  }
+
+  return (
+    normalizeTime(metadataShift.start_time) === normalizeTime(shift.startTime) &&
+    normalizeTime(metadataShift.end_time) === normalizeTime(shift.endTime) &&
+    clientsMatch(metadataShift.client_name, shift.clientName)
+  );
+}
+
 /**
  * Invalidates all query keys related to shift coverage across the app.
  * Call this after any create/update/delete of staff_requests (especially shift_swap).
@@ -48,14 +123,14 @@ export function buildCoverageMetadata(
     type: 'individual_shifts',
     shifts: selectedShifts.map(s => ({
       id: s.id,
-      date: s.date instanceof Date ? s.date.toISOString().split('T')[0] : String(s.date),
+      date: formatCoverageDate(s.date),
       start_time: s.startTime,
       end_time: s.endTime,
       client_name: s.clientName,
       is_pattern: s.isPattern,
     })),
     covered_dates: [...new Set(selectedShifts.map(s => 
-      s.date instanceof Date ? s.date.toISOString().split('T')[0] : String(s.date)
+      formatCoverageDate(s.date)
     ))].sort(),
   };
 }
@@ -127,6 +202,7 @@ export function isShiftCoveredByRequest(
     end_date: string;
   },
   shift: {
+    id?: string;
     date: string;       // yyyy-MM-dd
     startTime: string;  // HH:mm or HH:mm:ss
     endTime: string;    // HH:mm or HH:mm:ss
@@ -140,17 +216,20 @@ export function isShiftCoveredByRequest(
   if (request.coverage_metadata && typeof request.coverage_metadata === 'object') {
     const meta = request.coverage_metadata as {
       type?: string;
-      shifts?: { start_time: string; end_time: string; date?: string; client_name?: string }[];
+      shifts?: CoverageMetadataShift[];
       covered_dates?: string[];
     };
 
     if (meta.type === 'individual_shifts' && meta.shifts && Array.isArray(meta.shifts)) {
-      return meta.shifts.some(s => {
-        const metaDate = s.date || '';
-        const metaStart = normalizeTime(s.start_time);
-        const metaEnd = normalizeTime(s.end_time);
-        return metaDate === shiftDate && metaStart === shiftStart && metaEnd === shiftEnd;
-      });
+      return meta.shifts.some(s =>
+        doesCoverageShiftMatch(s, {
+          id: shift.id,
+          date: shiftDate,
+          startTime: shiftStart,
+          endTime: shiftEnd,
+          clientName: shift.clientName,
+        })
+      );
     }
 
     if (meta.type === 'holiday_days' && meta.covered_dates && Array.isArray(meta.covered_dates)) {
@@ -177,18 +256,21 @@ export function filterSchedulesByCoverageMetadata<T extends { start_datetime: st
 
   const meta = coverageMetadata as {
     type?: string;
-    shifts?: { start_time: string; end_time: string; client_name?: string; date?: string }[];
+    shifts?: CoverageMetadataShift[];
     covered_dates?: string[];
   };
   
   if (meta.type === 'individual_shifts' && meta.shifts && Array.isArray(meta.shifts)) {
-    const shiftsForDay = meta.shifts.filter(s => s.date === dateStr);
-    if (shiftsForDay.length === 0) return [];
-    
     return schedules.filter(schedule => {
-      const schedStart = normalizeTime(format(parseISO(schedule.start_datetime), "HH:mm"));
-      const schedEnd = normalizeTime(format(parseISO(schedule.end_datetime), "HH:mm"));
-      return shiftsForDay.some(s => normalizeTime(s.start_time) === schedStart && normalizeTime(s.end_time) === schedEnd);
+      return meta.shifts!.some(shift =>
+        doesCoverageShiftMatch(shift, {
+          id: 'id' in schedule ? String((schedule as T & { id?: string }).id ?? '') || undefined : undefined,
+          date: dateStr,
+          startTime: format(parseISO(schedule.start_datetime), "HH:mm"),
+          endTime: format(parseISO(schedule.end_datetime), "HH:mm"),
+          clientName: schedule.client_name,
+        })
+      );
     });
   }
   

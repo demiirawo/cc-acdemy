@@ -1,5 +1,5 @@
 import { format, parseISO, differenceInMinutes, startOfDay, endOfDay, isSameDay, isWithinInterval, getDay, differenceInWeeks, startOfWeek, isBefore, isAfter } from "date-fns";
-import { normalizeTime } from "@/lib/coverageUtils";
+import { filterSchedulesByCoverageMetadata } from "@/lib/coverageUtils";
 import { Infinity, UserCheck, Palmtree } from "lucide-react";
 import { useMemo } from "react";
 
@@ -187,18 +187,7 @@ export function LiveTimelineView({
         }));
       }
       
-      // Filter by coverage_metadata if available
-      if (req.coverage_metadata && typeof req.coverage_metadata === 'object') {
-        const meta = req.coverage_metadata as { type?: string; shifts?: { start_time: string; end_time: string; date?: string }[] };
-        if (meta.type === 'individual_shifts' && meta.shifts) {
-          const shiftsForDay = meta.shifts.filter(s => s.date === dateStr);
-          coveredSchedules = coveredSchedules.filter(s => {
-            const sStart = normalizeTime(format(parseISO(s.start_datetime), "HH:mm"));
-            const sEnd = normalizeTime(format(parseISO(s.end_datetime), "HH:mm"));
-            return shiftsForDay.some(ms => normalizeTime(ms.start_time) === sStart && normalizeTime(ms.end_time) === sEnd);
-          });
-        }
-      }
+      coveredSchedules = filterSchedulesByCoverageMetadata(coveredSchedules, req.coverage_metadata, today);
       
       // Create cover shifts for the covering staff member
       coveredSchedules.forEach(coveredSchedule => {

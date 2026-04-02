@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { normalizeTime } from "@/lib/coverageUtils";
+import { filterSchedulesByCoverageMetadata } from "@/lib/coverageUtils";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -145,7 +145,7 @@ export function DashboardLiveView() {
         error
       } = await supabase.from("staff_requests").select("id, user_id, request_type, swap_with_user_id, start_date, end_date, status, linked_holiday_id, coverage_metadata").eq("status", "approved").lte("start_date", format(today, "yyyy-MM-dd")).gte("end_date", format(today, "yyyy-MM-dd"));
       if (error) throw error;
-      return data || [];
+      return (data || []) as StaffRequest[];
     }
   });
   const getStaffName = (userId: string): string => {
@@ -224,19 +224,7 @@ export function DashboardLiveView() {
       if (!coveredUserId) return;
       const allSchedulesForCover = [...schedules, ...virtualSchedules];
       let coveredSchedules = allSchedulesForCover.filter(s => s.user_id === coveredUserId && isSameDay(parseISO(s.start_datetime), today));
-      // Filter by coverage_metadata if available
-      if (req.coverage_metadata && typeof req.coverage_metadata === 'object') {
-        const meta = req.coverage_metadata as { type?: string; shifts?: { start_time: string; end_time: string; date?: string }[] };
-        if (meta.type === 'individual_shifts' && meta.shifts) {
-          const dateStr = format(today, "yyyy-MM-dd");
-          const shiftsForDay = meta.shifts.filter(s => s.date === dateStr);
-          coveredSchedules = coveredSchedules.filter(s => {
-            const sStart = normalizeTime(format(parseISO(s.start_datetime), "HH:mm"));
-            const sEnd = normalizeTime(format(parseISO(s.end_datetime), "HH:mm"));
-            return shiftsForDay.some(ms => normalizeTime(ms.start_time) === sStart && normalizeTime(ms.end_time) === sEnd);
-          });
-        }
-      }
+      coveredSchedules = filterSchedulesByCoverageMetadata(coveredSchedules, req.coverage_metadata, today);
       coveredSchedules.forEach(coveredSchedule => {
         covers.push({
           id: `cover-${req.id}-${coveredSchedule.id}`,
