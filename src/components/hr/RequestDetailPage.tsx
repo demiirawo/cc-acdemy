@@ -493,16 +493,7 @@ export function RequestDetailPage({
     onSuccess: () => {
       refetchLinkedHoliday();
       refetchCoveringStaff();
-      queryClient.invalidateQueries({
-        queryKey: ["covering-staff", request?.id]
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["all-staff-requests"]
-      });
-      queryClient.invalidateQueries({ queryKey: ["staff-holidays"] });
-      queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-cover-status"] });
-      queryClient.invalidateQueries({ queryKey: ["linked-holidays-for-requests"] });
-      queryClient.invalidateQueries({ queryKey: ["linked-holiday", request?.id] });
+      invalidateAllCoverageQueries(queryClient);
       toast.success("Cover assigned successfully");
     },
     onError: error => {
