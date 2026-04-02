@@ -1338,7 +1338,7 @@ export function StaffScheduleManager() {
     }
   });
 
-  // Delete cover request mutation - removes cover assignment and syncs to staff_requests
+   // Delete cover request mutation - removes cover assignment and syncs to staff_requests
   const deleteCoverRequestMutation = useMutation({
     mutationFn: async (requestId: string) => {
       const { error } = await supabase
@@ -1350,8 +1350,7 @@ export function StaffScheduleManager() {
     },
     onSuccess: () => {
       toast.success("Cover assignment removed");
-      queryClient.invalidateQueries({ queryKey: ["staff-requests"] });
-      queryClient.invalidateQueries({ queryKey: ["staff-requests-for-schedule"] });
+      invalidateAllCoverageQueries(queryClient);
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to remove cover assignment");

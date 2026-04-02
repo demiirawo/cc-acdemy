@@ -682,7 +682,7 @@ export function StaffRequestForm() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["my-staff-requests"] });
+      invalidateAllCoverageQueries(queryClient);
       const staffName = isAdmin && selectedStaffId && selectedStaffId !== user?.id 
         ? staffMembers.find(s => s.user_id === selectedStaffId)?.display_name || "staff member"
         : null;
