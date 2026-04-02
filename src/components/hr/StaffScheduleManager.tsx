@@ -2676,7 +2676,7 @@ export function StaffScheduleManager() {
                         {!onHoliday && daySchedules.length === 0 && dayOvertime.length === 0 && getRequestsForStaffDay(staff.user_id, day).filter(r => {
                           if (['holiday', 'holiday_paid', 'holiday_unpaid'].includes(r.request_type)) return false;
                           if (['overtime', 'overtime_standard', 'overtime_double_up'].includes(r.request_type) && r.linked_holiday_id) return false;
-                          if (r.request_type === 'shift_swap' && r.swap_with_user_id && !doesCoveredUserHaveShiftsOnDay(r.swap_with_user_id, day)) return false;
+                          if (r.request_type === 'shift_swap' && r.swap_with_user_id) return false;
                           return true;
                         }).length === 0 && !coveringFor?.length && (
                           <div className="text-xs text-muted-foreground italic flex items-center justify-center h-full">
