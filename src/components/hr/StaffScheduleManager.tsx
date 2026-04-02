@@ -107,6 +107,7 @@ interface StaffRequest {
   status: string;
   linked_holiday_id: string | null;
   overtime_type: 'standard_hours' | 'outside_hours' | null;
+  coverage_metadata: Record<string, unknown> | null;
 }
 
 type ViewMode = "staff" | "client";
