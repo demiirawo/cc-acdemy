@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay, subDays } from "date-fns";
 import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar, Link2, Check, X } from "lucide-react";
 import { UnifiedShiftEditor, ShiftToEdit } from "./UnifiedShiftEditor";
+import { invalidateAllCoverageQueries } from "@/lib/coverageUtils";
 import { LiveTimelineView } from "./LiveTimelineView";
 
 interface Schedule {

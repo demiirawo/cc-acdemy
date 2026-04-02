@@ -621,7 +621,7 @@ export function StaffRequestForm() {
             status: requestStatus,
             reviewed_by: isAdmin ? user.id : null,
             reviewed_at: isAdmin ? new Date().toISOString() : null,
-            coverage_metadata: coverageMetadata,
+            coverage_metadata: coverageMetadata as any,
           }).eq("id", existing[0].id);
           if (error) throw error;
           return; // Skip insert below
