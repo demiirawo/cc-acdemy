@@ -535,15 +535,21 @@ export const PublicClientSchedule = () => {
   };
 
   const getStandardShiftCoverage = (coveredUserId: string, schedule: Pick<Schedule, "id" | "client_name" | "start_datetime" | "end_datetime">, day: Date) => {
+    const dateStr = format(day, "yyyy-MM-dd");
+    const shiftStart = format(parseISO(schedule.start_datetime), "HH:mm");
+    const shiftEnd = format(parseISO(schedule.end_datetime), "HH:mm");
+    
     const coverRequests = staffRequests.filter(request => {
+      if (request.request_type !== 'shift_swap') return false;
+      if (request.status !== 'approved') return false;
       if (request.swap_with_user_id !== coveredUserId) return false;
-      if (request.status !== 'approved' || request.request_type !== 'shift_swap') return false;
+      if (dateStr < request.start_date || dateStr > request.end_date) return false;
 
       return isShiftCoveredByRequest(request, {
         id: schedule.id,
-        date: format(day, "yyyy-MM-dd"),
-        startTime: format(parseISO(schedule.start_datetime), "HH:mm"),
-        endTime: format(parseISO(schedule.end_datetime), "HH:mm"),
+        date: dateStr,
+        startTime: shiftStart,
+        endTime: shiftEnd,
         clientName: schedule.client_name,
       });
     });
