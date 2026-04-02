@@ -286,8 +286,11 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
       queryClient.invalidateQueries({ queryKey: ["my-staff-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-requests-for-schedule"] });
       queryClient.invalidateQueries({ queryKey: ["staff-schedules"] });
       queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-schedule"] });
+      queryClient.invalidateQueries({ queryKey: ["public-staff-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-requests-for-dashboard-live"] });
       toast.success(`Request ${variables.status}`);
       setReviewDialogOpen(false);
       setSelectedRequest(null);
