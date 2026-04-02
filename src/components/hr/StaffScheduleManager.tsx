@@ -107,6 +107,7 @@ interface StaffRequest {
   status: string;
   linked_holiday_id: string | null;
   overtime_type: 'standard_hours' | 'outside_hours' | null;
+  coverage_metadata: Record<string, unknown> | null;
 }
 
 type ViewMode = "staff" | "client";
@@ -161,6 +162,42 @@ const SHIFT_TYPE_COLORS: Record<string, { bg: string; border: string; text: stri
 const getShiftTypeColors = (shiftType: string | null | undefined) => {
   return SHIFT_TYPE_COLORS[shiftType || ""] || SHIFT_TYPE_COLORS["default"];
 };
+
+/**
+ * Filters schedules to only those that match the coverage_metadata shifts.
+ * If no metadata or no shifts array, returns all schedules (backward compat).
+ */
+function filterSchedulesByCoverageMetadata<T extends { start_datetime: string; end_datetime: string; client_name: string }>(
+  schedules: T[],
+  coverageMetadata: Record<string, unknown> | null | undefined,
+  day: Date
+): T[] {
+  if (!coverageMetadata || typeof coverageMetadata !== 'object') return schedules;
+  
+  const meta = coverageMetadata as { type?: string; shifts?: { start_time: string; end_time: string; client_name: string; date?: string }[]; covered_dates?: string[] };
+  
+  // If type is 'individual_shifts' and we have shift details, filter precisely
+  if (meta.type === 'individual_shifts' && meta.shifts && Array.isArray(meta.shifts)) {
+    const dateStr = format(day, "yyyy-MM-dd");
+    const shiftsForDay = meta.shifts.filter(s => s.date === dateStr);
+    
+    if (shiftsForDay.length === 0) return [];
+    
+    return schedules.filter(schedule => {
+      const schedStart = format(parseISO(schedule.start_datetime), "HH:mm");
+      const schedEnd = format(parseISO(schedule.end_datetime), "HH:mm");
+      return shiftsForDay.some(s => s.start_time === schedStart && s.end_time === schedEnd);
+    });
+  }
+  
+  // If type is 'holiday_days', check if this day is in covered_dates
+  if (meta.type === 'holiday_days' && meta.covered_dates && Array.isArray(meta.covered_dates)) {
+    const dateStr = format(day, "yyyy-MM-dd");
+    if (!meta.covered_dates.includes(dateStr)) return [];
+  }
+  
+  return schedules;
+}
 
 const DAYS_OF_WEEK = [
   { value: 1, label: "Mon" },
@@ -1441,6 +1478,9 @@ export function StaffScheduleManager() {
           }));
         }
         
+        // Filter by coverage_metadata if available (only show specifically selected shifts)
+        coveredDaySchedules = filterSchedulesByCoverageMetadata(coveredDaySchedules, request.coverage_metadata, day);
+        
         // Create cover schedule entries for each of the covered user's shifts
         for (const coveredSchedule of coveredDaySchedules) {
           coverSchedules.push({
@@ -1827,6 +1867,9 @@ export function StaffScheduleManager() {
           shift_type: pattern.shift_type
         }));
       }
+      
+      // Filter by coverage_metadata if available (only show specifically selected shifts)
+      coveredSchedules = filterSchedulesByCoverageMetadata(coveredSchedules, req.coverage_metadata, day);
       
       // Only return covering info if there are actually shifts to cover on this day
       if (coveredSchedules.length === 0) return null;
@@ -2602,10 +2645,8 @@ export function StaffScheduleManager() {
                             if (['holiday', 'holiday_paid', 'holiday_unpaid'].includes(r.request_type)) return false;
                             // Filter out overtime that's linked to a holiday (shown in "Covering" section)
                             if (['overtime', 'overtime_standard', 'overtime_double_up'].includes(r.request_type) && r.linked_holiday_id) return false;
-                            // Filter out shift_swap on days when the covered person has no shifts
-                            if (r.request_type === 'shift_swap' && r.swap_with_user_id) {
-                              if (!doesCoveredUserHaveShiftsOnDay(r.swap_with_user_id, day)) return false;
-                            }
+                            // Filter out shift_swap requests - they are already shown in the "Covering for" section above
+                            if (r.request_type === 'shift_swap' && r.swap_with_user_id) return false;
                             return true;
                           })
                           .map(request => {
@@ -2635,7 +2676,7 @@ export function StaffScheduleManager() {
                         {!onHoliday && daySchedules.length === 0 && dayOvertime.length === 0 && getRequestsForStaffDay(staff.user_id, day).filter(r => {
                           if (['holiday', 'holiday_paid', 'holiday_unpaid'].includes(r.request_type)) return false;
                           if (['overtime', 'overtime_standard', 'overtime_double_up'].includes(r.request_type) && r.linked_holiday_id) return false;
-                          if (r.request_type === 'shift_swap' && r.swap_with_user_id && !doesCoveredUserHaveShiftsOnDay(r.swap_with_user_id, day)) return false;
+                          if (r.request_type === 'shift_swap' && r.swap_with_user_id) return false;
                           return true;
                         }).length === 0 && !coveringFor?.length && (
                           <div className="text-xs text-muted-foreground italic flex items-center justify-center h-full">
