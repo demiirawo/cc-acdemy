@@ -2504,19 +2504,19 @@ export function StaffScheduleManager() {
                           
                           // Check if this specific shift is covered by someone (non-holiday shift cover)
                           const shiftCoverage = !onHoliday ? (() => {
-                            const schedStart = format(parseISO(schedule.start_datetime), "HH:mm");
-                            const schedEnd = format(parseISO(schedule.end_datetime), "HH:mm");
+                            const schedStart = normalizeTime(format(parseISO(schedule.start_datetime), "HH:mm"));
+                            const schedEnd = normalizeTime(format(parseISO(schedule.end_datetime), "HH:mm"));
+                            const dateStr = format(day, "yyyy-MM-dd");
                             const coverRequests = staffRequests.filter(r => {
                               if (r.swap_with_user_id !== staff.user_id) return false;
                               if (r.status !== 'approved') return false;
                               if (r.request_type !== 'shift_swap') return false;
                               if (!isWithinInterval(day, { start: startOfDay(parseISO(r.start_date)), end: endOfDay(parseISO(r.end_date)) })) return false;
-                              // Check coverage_metadata to match this specific shift
+                              // Use centralized matching with time normalization
                               if (r.coverage_metadata && typeof r.coverage_metadata === 'object') {
                                 const meta = r.coverage_metadata as { type?: string; shifts?: { start_time: string; end_time: string; date?: string }[] };
                                 if (meta.type === 'individual_shifts' && meta.shifts) {
-                                  const dateStr = format(day, "yyyy-MM-dd");
-                                  return meta.shifts.some(s => s.date === dateStr && s.start_time === schedStart && s.end_time === schedEnd);
+                                  return meta.shifts.some(s => s.date === dateStr && normalizeTime(s.start_time) === schedStart && normalizeTime(s.end_time) === schedEnd);
                                 }
                               }
                               // No metadata = legacy, match all shifts
