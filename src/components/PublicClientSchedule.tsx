@@ -942,6 +942,26 @@ export const PublicClientSchedule = () => {
                       const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
                       const isOvertime = schedule.is_pattern_overtime;
                       
+                      // Check for non-holiday shift cover
+                      const nonHolidayCoverage = !staffOnHoliday ? (() => {
+                        const coverRequests = staffRequests.filter(r => 
+                          r.swap_with_user_id === schedule.user_id &&
+                          r.status === 'approved' &&
+                          r.request_type === 'shift_swap' &&
+                          isWithinInterval(day, { 
+                            start: startOfDay(parseISO(r.start_date)), 
+                            end: endOfDay(parseISO(r.end_date)) 
+                          })
+                        );
+                        if (coverRequests.length === 0) return null;
+                        return coverRequests.map(r => ({
+                          userId: r.user_id,
+                          name: getStaffName(r.user_id),
+                        }));
+                      })() : null;
+                      
+                      const hasNonHolidayCover = nonHolidayCoverage && nonHolidayCoverage.length > 0;
+                      
                       return (
                         <div 
                           key={schedule.id} 
@@ -957,17 +977,21 @@ export const PublicClientSchedule = () => {
                           } ${
                             staffOnHoliday 
                               ? 'bg-amber-100 border-amber-300' + (isAdmin ? ' hover:bg-amber-200' : '')
-                              : isOvertime
-                                ? 'bg-orange-100 border-orange-300'
-                                : `${colors.bg} ${colors.border}`
+                              : hasNonHolidayCover
+                                ? 'bg-cyan-50 border-cyan-200'
+                                : isOvertime
+                                  ? 'bg-orange-100 border-orange-300'
+                                  : `${colors.bg} ${colors.border}`
                           }`}
                         >
                           <div className={`font-semibold truncate flex items-center gap-1 ${
                             staffOnHoliday 
                               ? 'text-amber-900' 
-                              : isOvertime 
-                                ? 'text-orange-900'
-                                : colors.text
+                              : hasNonHolidayCover
+                                ? 'text-cyan-800'
+                                : isOvertime 
+                                  ? 'text-orange-900'
+                                  : colors.text
                           }`}>
                             {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600 flex-shrink-0" />}
                             {isOvertime && !staffOnHoliday && <Clock className="h-3 w-3 text-orange-600 flex-shrink-0" />}
@@ -1001,9 +1025,16 @@ export const PublicClientSchedule = () => {
                               )}
                             </div>
                           ) : (
-                            <div className={`${isOvertime ? 'text-orange-900' : colors.text} opacity-80`}>
-                              {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
-                            </div>
+                            <>
+                              <div className={`${hasNonHolidayCover ? 'text-cyan-700' : isOvertime ? 'text-orange-900' : colors.text} opacity-80`}>
+                                {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
+                              </div>
+                              {hasNonHolidayCover && (
+                                <div className="text-[10px] text-cyan-700 bg-cyan-50 rounded px-1 py-0.5 mt-0.5">
+                                  <span className="font-medium">Covered by:</span> {nonHolidayCoverage!.map(c => c.name).join(', ')}
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       );
