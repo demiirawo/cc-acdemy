@@ -2645,10 +2645,8 @@ export function StaffScheduleManager() {
                             if (['holiday', 'holiday_paid', 'holiday_unpaid'].includes(r.request_type)) return false;
                             // Filter out overtime that's linked to a holiday (shown in "Covering" section)
                             if (['overtime', 'overtime_standard', 'overtime_double_up'].includes(r.request_type) && r.linked_holiday_id) return false;
-                            // Filter out shift_swap on days when the covered person has no shifts
-                            if (r.request_type === 'shift_swap' && r.swap_with_user_id) {
-                              if (!doesCoveredUserHaveShiftsOnDay(r.swap_with_user_id, day)) return false;
-                            }
+                            // Filter out shift_swap requests - they are already shown in the "Covering for" section above
+                            if (r.request_type === 'shift_swap' && r.swap_with_user_id) return false;
                             return true;
                           })
                           .map(request => {
