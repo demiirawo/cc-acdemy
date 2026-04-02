@@ -814,6 +814,26 @@ export const PublicClientSchedule = () => {
                     const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
                     const isOvertime = schedule.is_pattern_overtime;
                     
+                    // Check for non-holiday shift cover
+                    const nonHolidayCoverage = !staffOnHoliday ? (() => {
+                      const coverRequests = staffRequests.filter(r => 
+                        r.swap_with_user_id === schedule.user_id &&
+                        r.status === 'approved' &&
+                        r.request_type === 'shift_swap' &&
+                        isWithinInterval(day, { 
+                          start: startOfDay(parseISO(r.start_date)), 
+                          end: endOfDay(parseISO(r.end_date)) 
+                        })
+                      );
+                      if (coverRequests.length === 0) return null;
+                      return coverRequests.map(r => ({
+                        userId: r.user_id,
+                        name: getStaffName(r.user_id),
+                      }));
+                    })() : null;
+                    
+                    const hasNonHolidayCover = nonHolidayCoverage && nonHolidayCoverage.length > 0;
+                    
                     return (
                       <div 
                         key={schedule.id}
@@ -829,9 +849,11 @@ export const PublicClientSchedule = () => {
                         } ${
                           staffOnHoliday 
                             ? 'bg-amber-50 border-amber-200' 
-                            : isOvertime
-                              ? 'bg-orange-50 border-orange-200'
-                              : `${colors.bg} ${colors.border}`
+                            : hasNonHolidayCover
+                              ? 'bg-cyan-50 border-cyan-200'
+                              : isOvertime
+                                ? 'bg-orange-50 border-orange-200'
+                                : `${colors.bg} ${colors.border}`
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -839,7 +861,7 @@ export const PublicClientSchedule = () => {
                             {staffOnHoliday && <Palmtree className="h-4 w-4 text-amber-600 flex-shrink-0" />}
                             {isOvertime && !staffOnHoliday && <Clock className="h-4 w-4 text-orange-600 flex-shrink-0" />}
                             <span className={`font-medium truncate ${
-                              staffOnHoliday ? 'text-amber-900' : isOvertime ? 'text-orange-900' : colors.text
+                              staffOnHoliday ? 'text-amber-900' : hasNonHolidayCover ? 'text-cyan-800' : isOvertime ? 'text-orange-900' : colors.text
                             }`}>
                               {getStaffName(schedule.user_id)}
                             </span>
@@ -880,9 +902,16 @@ export const PublicClientSchedule = () => {
                             )}
                           </div>
                         ) : (
-                          <div className={`mt-1 text-sm ${isOvertime ? 'text-orange-800' : colors.text} opacity-80`}>
-                            {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
-                          </div>
+                          <>
+                            <div className={`mt-1 text-sm ${hasNonHolidayCover ? 'text-cyan-700' : isOvertime ? 'text-orange-800' : colors.text} opacity-80`}>
+                              {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
+                            </div>
+                            {hasNonHolidayCover && (
+                              <div className="text-sm text-cyan-700 bg-cyan-50 rounded px-2 py-1 mt-1">
+                                <span className="font-medium">Covered by:</span> {nonHolidayCoverage!.map(c => c.name).join(', ')}
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     );
