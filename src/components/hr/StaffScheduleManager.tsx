@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay, subDays } from "date-fns";
 import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar, Link2, Check, X } from "lucide-react";
 import { UnifiedShiftEditor, ShiftToEdit } from "./UnifiedShiftEditor";
+import { invalidateAllCoverageQueries } from "@/lib/coverageUtils";
 import { LiveTimelineView } from "./LiveTimelineView";
 
 interface Schedule {
@@ -1338,7 +1339,7 @@ export function StaffScheduleManager() {
     }
   });
 
-  // Delete cover request mutation - removes cover assignment and syncs to staff_requests
+   // Delete cover request mutation - removes cover assignment and syncs to staff_requests
   const deleteCoverRequestMutation = useMutation({
     mutationFn: async (requestId: string) => {
       const { error } = await supabase
@@ -1350,8 +1351,7 @@ export function StaffScheduleManager() {
     },
     onSuccess: () => {
       toast.success("Cover assignment removed");
-      queryClient.invalidateQueries({ queryKey: ["staff-requests"] });
-      queryClient.invalidateQueries({ queryKey: ["staff-requests-for-schedule"] });
+      invalidateAllCoverageQueries(queryClient);
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to remove cover assignment");
@@ -2693,7 +2693,7 @@ export function StaffScheduleManager() {
                                   key={day.toISOString()} 
                                   className="min-h-[60px] p-1 rounded border bg-background border-border"
                                 >
-                                  {/* Filter out separate cover entries - they'll be shown inline with holiday shifts */}
+                                  {/* Filter out separate cover entries - they'll be shown inline */}
                                   {daySchedules.filter(s => !('isCoverShift' in s && (s as any).isCoverShift)).map(schedule => {
                                     const cost = calculateScheduleCost(schedule);
                                     const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
@@ -2702,20 +2702,44 @@ export function StaffScheduleManager() {
                                     const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
                                     const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
                                     
+                                    // Check for non-holiday shift cover (shift_swap where person isn't on holiday)
+                                    const nonHolidayCoverage = !staffOnHoliday ? (() => {
+                                      const coverRequests = staffRequests.filter(r => 
+                                        r.swap_with_user_id === schedule.user_id &&
+                                        r.status === 'approved' &&
+                                        r.request_type === 'shift_swap' &&
+                                        isWithinInterval(day, { 
+                                          start: startOfDay(parseISO(r.start_date)), 
+                                          end: endOfDay(parseISO(r.end_date)) 
+                                        })
+                                      );
+                                      if (coverRequests.length === 0) return null;
+                                      return coverRequests.map(r => ({
+                                        requestId: r.id,
+                                        userId: r.user_id,
+                                        name: getStaffName(r.user_id),
+                                        type: r.request_type
+                                      }));
+                                    })() : null;
+                                    
+                                    const hasNonHolidayCover = nonHolidayCoverage && nonHolidayCoverage.length > 0;
+                                    
                                     return (
                                       <div 
                                         key={schedule.id} 
                                         className={`rounded p-1.5 mb-1 text-xs group relative ${canEditSchedule ? 'cursor-pointer hover:ring-2 hover:ring-primary/50' : ''} border ${
                                           staffOnHoliday 
                                             ? 'bg-amber-50 border-amber-200' 
-                                            : `${colors.bg} ${colors.border}`
+                                            : hasNonHolidayCover
+                                              ? 'bg-cyan-50 border-cyan-200'
+                                              : `${colors.bg} ${colors.border}`
                                         }`}
                                         onClick={() => handleScheduleClick(schedule)}
                                         onDoubleClick={() => handleScheduleClick(schedule)}
                                         title={scheduleEditHint}
                                       >
                                         {/* Staff name + time */}
-                                        <div className={`font-semibold truncate flex items-center gap-1 ${staffOnHoliday ? 'text-amber-800 line-through opacity-70' : colors.text}`}>
+                                        <div className={`font-semibold truncate flex items-center gap-1 ${staffOnHoliday ? 'text-amber-800 line-through opacity-70' : hasNonHolidayCover ? 'text-cyan-800' : colors.text}`}>
                                           {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-500 flex-shrink-0" />}
                                           {isFromPattern && !staffOnHoliday && (
                                             <Infinity className="h-3 w-3 opacity-60" />
@@ -2728,7 +2752,7 @@ export function StaffScheduleManager() {
                                           <span>{getStaffName(schedule.user_id)}</span>
                                         </div>
                                         
-                                        <div className={`${staffOnHoliday ? 'text-amber-700' : colors.text} opacity-80`}>
+                                        <div className={`${staffOnHoliday ? 'text-amber-700' : hasNonHolidayCover ? 'text-cyan-700' : colors.text} opacity-80`}>
                                           {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
                                         </div>
                                         
@@ -2750,7 +2774,18 @@ export function StaffScheduleManager() {
                                           </div>
                                         )}
                                         
-                                        {!staffOnHoliday && cost !== null && (
+                                        {/* Non-holiday shift cover info */}
+                                        {hasNonHolidayCover && (
+                                          <div className="mt-1 pt-1 border-t border-cyan-200">
+                                            <div className="flex items-center gap-1 text-[10px] text-cyan-700">
+                                              <Users className="h-2.5 w-2.5 flex-shrink-0" />
+                                              <span className="font-medium">Covered by:</span>
+                                              <span>{nonHolidayCoverage!.map(c => c.name).join(', ')}</span>
+                                            </div>
+                                          </div>
+                                        )}
+                                        
+                                        {!staffOnHoliday && !hasNonHolidayCover && cost !== null && (
                                           <div className={`text-[10px] ${colors.text} opacity-70`}>
                                             {schedule.currency} {cost.toFixed(2)}
                                           </div>

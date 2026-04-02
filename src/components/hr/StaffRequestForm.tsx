@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification";
+import { invalidateAllCoverageQueries, buildCoverageMetadata } from "@/lib/coverageUtils";
 
 
 type RequestType = 'overtime' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap' | 'overtime_standard' | 'overtime_double_up';
@@ -587,6 +588,46 @@ export function StaffRequestForm() {
       // Admin-submitted requests go straight to approved
       const requestStatus = isAdmin ? 'approved' : 'pending';
 
+      // Build structured coverage metadata for shift_swap requests
+      let coverageMetadata: Record<string, unknown> | null = null;
+      if (requestType === 'shift_swap') {
+        if (shiftCoverType === 'shifts' && selectedSwapShifts.length > 0) {
+          const selectedShiftObjects = availableSwapShifts.filter(s => selectedSwapShifts.includes(s.id));
+          coverageMetadata = buildCoverageMetadata(selectedShiftObjects);
+        } else if (shiftCoverType === 'holidays' && selectedCoverDays.length > 0) {
+          coverageMetadata = buildCoverageMetadata([], selectedCoverDays);
+        }
+      }
+
+      // Check for existing shift_swap with same parameters to avoid duplicates
+      if (requestType === 'shift_swap') {
+        const { data: existing } = await supabase
+          .from("staff_requests")
+          .select("id")
+          .eq("request_type", "shift_swap")
+          .eq("user_id", targetUserId)
+          .eq("swap_with_user_id", swapWithUserId)
+          .eq("start_date", format(requestStartDate!, "yyyy-MM-dd"))
+          .eq("end_date", format(requestEndDate!, "yyyy-MM-dd"))
+          .in("status", ["approved", "pending"])
+          .limit(1);
+        
+        if (existing && existing.length > 0) {
+          // Update existing instead of creating duplicate
+          const { error } = await supabase.from("staff_requests").update({
+            days_requested: requestDays,
+            details: requestDetails || null,
+            overtime_type: overtimeType,
+            status: requestStatus,
+            reviewed_by: isAdmin ? user.id : null,
+            reviewed_at: isAdmin ? new Date().toISOString() : null,
+            coverage_metadata: coverageMetadata as any,
+          }).eq("id", existing[0].id);
+          if (error) throw error;
+          return; // Skip insert below
+        }
+      }
+
       const { error } = await supabase.from("staff_requests").insert({
         user_id: targetUserId,
         request_type: requestType,
@@ -599,8 +640,9 @@ export function StaffRequestForm() {
         details: requestDetails || null,
         status: requestStatus,
         reviewed_by: isAdmin ? user.id : null,
-        reviewed_at: isAdmin ? new Date().toISOString() : null
-      });
+        reviewed_at: isAdmin ? new Date().toISOString() : null,
+        coverage_metadata: coverageMetadata as any,
+      } as any);
 
       if (error) throw error;
 
@@ -640,7 +682,7 @@ export function StaffRequestForm() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["my-staff-requests"] });
+      invalidateAllCoverageQueries(queryClient);
       const staffName = isAdmin && selectedStaffId && selectedStaffId !== user?.id 
         ? staffMembers.find(s => s.user_id === selectedStaffId)?.display_name || "staff member"
         : null;

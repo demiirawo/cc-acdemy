@@ -1,0 +1,1 @@
+ALTER TABLE public.staff_requests ADD COLUMN IF NOT EXISTS coverage_metadata jsonb DEFAULT NULL;

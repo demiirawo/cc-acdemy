@@ -15,6 +15,7 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification";
+import { invalidateAllCoverageQueries } from "@/lib/coverageUtils";
 type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
 interface StaffRequest {
   id: string;
@@ -492,16 +493,7 @@ export function RequestDetailPage({
     onSuccess: () => {
       refetchLinkedHoliday();
       refetchCoveringStaff();
-      queryClient.invalidateQueries({
-        queryKey: ["covering-staff", request?.id]
-      });
-      queryClient.invalidateQueries({
-        queryKey: ["all-staff-requests"]
-      });
-      queryClient.invalidateQueries({ queryKey: ["staff-holidays"] });
-      queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-cover-status"] });
-      queryClient.invalidateQueries({ queryKey: ["linked-holidays-for-requests"] });
-      queryClient.invalidateQueries({ queryKey: ["linked-holiday", request?.id] });
+      invalidateAllCoverageQueries(queryClient);
       toast.success("Cover assigned successfully");
     },
     onError: error => {
@@ -528,11 +520,7 @@ export function RequestDetailPage({
     },
     onSuccess: () => {
       refetchCoveringStaff();
-      queryClient.invalidateQueries({ queryKey: ["covering-staff", request?.id] });
-      queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
-      queryClient.invalidateQueries({ queryKey: ["staff-holidays"] });
-      queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-cover-status"] });
-      queryClient.invalidateQueries({ queryKey: ["linked-holidays-for-requests"] });
+      invalidateAllCoverageQueries(queryClient);
       toast.success("Cover unassigned");
     },
     onError: (error) => {

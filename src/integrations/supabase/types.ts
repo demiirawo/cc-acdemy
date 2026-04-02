@@ -1727,6 +1727,7 @@ export type Database = {
       staff_requests: {
         Row: {
           client_informed: boolean | null
+          coverage_metadata: Json | null
           created_at: string
           days_requested: number
           details: string | null
@@ -1746,6 +1747,7 @@ export type Database = {
         }
         Insert: {
           client_informed?: boolean | null
+          coverage_metadata?: Json | null
           created_at?: string
           days_requested?: number
           details?: string | null
@@ -1765,6 +1767,7 @@ export type Database = {
         }
         Update: {
           client_informed?: boolean | null
+          coverage_metadata?: Json | null
           created_at?: string
           days_requested?: number
           details?: string | null
