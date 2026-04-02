@@ -416,7 +416,7 @@ export const PublicClientSchedule = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("staff_requests")
-        .select("id, user_id, request_type, status, start_date, end_date, linked_holiday_id, swap_with_user_id")
+        .select("id, user_id, request_type, status, start_date, end_date, linked_holiday_id, swap_with_user_id, coverage_metadata")
         .eq("status", "approved")
         .lte("start_date", format(currentWeekEnd, "yyyy-MM-dd"))
         .gte("end_date", format(currentWeekStart, "yyyy-MM-dd"));
