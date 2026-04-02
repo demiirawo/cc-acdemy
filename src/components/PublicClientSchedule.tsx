@@ -981,15 +981,21 @@ export const PublicClientSchedule = () => {
                       
                       // Check for non-holiday shift cover
                       const nonHolidayCoverage = !staffOnHoliday ? (() => {
-                        const coverRequests = staffRequests.filter(r => 
-                          r.swap_with_user_id === schedule.user_id &&
-                          r.status === 'approved' &&
-                          r.request_type === 'shift_swap' &&
-                          isWithinInterval(day, { 
-                            start: startOfDay(parseISO(r.start_date)), 
-                            end: endOfDay(parseISO(r.end_date)) 
-                          })
-                        );
+                        const schedStart = normalizeTime(format(parseISO(schedule.start_datetime), "HH:mm"));
+                        const schedEnd = normalizeTime(format(parseISO(schedule.end_datetime), "HH:mm"));
+                        const dateStr = format(day, "yyyy-MM-dd");
+                        const coverRequests = staffRequests.filter(r => {
+                          if (r.swap_with_user_id !== schedule.user_id) return false;
+                          if (r.status !== 'approved' || r.request_type !== 'shift_swap') return false;
+                          if (!isWithinInterval(day, { start: startOfDay(parseISO(r.start_date)), end: endOfDay(parseISO(r.end_date)) })) return false;
+                          if (r.coverage_metadata && typeof r.coverage_metadata === 'object') {
+                            const meta = r.coverage_metadata as { type?: string; shifts?: { start_time: string; end_time: string; date?: string }[] };
+                            if (meta.type === 'individual_shifts' && meta.shifts) {
+                              return meta.shifts.some(s => s.date === dateStr && normalizeTime(s.start_time) === schedStart && normalizeTime(s.end_time) === schedEnd);
+                            }
+                          }
+                          return true;
+                        });
                         if (coverRequests.length === 0) return null;
                         return coverRequests.map(r => ({
                           userId: r.user_id,
