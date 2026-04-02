@@ -2536,43 +2536,82 @@ export function StaffScheduleManager() {
                           const isFromPattern = schedule.id.startsWith('pattern-');
                           const isPatternOvertime = schedule.is_pattern_overtime;
                           
+                          // Check if this specific shift is covered by someone (non-holiday shift cover)
+                          const shiftCoverage = !onHoliday ? (() => {
+                            const schedStart = format(parseISO(schedule.start_datetime), "HH:mm");
+                            const schedEnd = format(parseISO(schedule.end_datetime), "HH:mm");
+                            const coverRequests = staffRequests.filter(r => {
+                              if (r.swap_with_user_id !== staff.user_id) return false;
+                              if (r.status !== 'approved') return false;
+                              if (r.request_type !== 'shift_swap') return false;
+                              if (!isWithinInterval(day, { start: startOfDay(parseISO(r.start_date)), end: endOfDay(parseISO(r.end_date)) })) return false;
+                              // Check coverage_metadata to match this specific shift
+                              if (r.coverage_metadata && typeof r.coverage_metadata === 'object') {
+                                const meta = r.coverage_metadata as { type?: string; shifts?: { start_time: string; end_time: string; date?: string }[] };
+                                if (meta.type === 'individual_shifts' && meta.shifts) {
+                                  const dateStr = format(day, "yyyy-MM-dd");
+                                  return meta.shifts.some(s => s.date === dateStr && s.start_time === schedStart && s.end_time === schedEnd);
+                                }
+                              }
+                              // No metadata = legacy, match all shifts
+                              return true;
+                            });
+                            if (coverRequests.length === 0) return null;
+                            return coverRequests.map(r => ({
+                              requestId: r.id,
+                              name: getStaffName(r.user_id),
+                            }));
+                          })() : null;
+                          const hasCover = shiftCoverage && shiftCoverage.length > 0;
+                          
                           return (
                             <div 
                               key={schedule.id} 
                               className={`rounded p-1 mb-1 text-xs group relative ${canEditSchedule ? 'cursor-pointer hover:ring-2 hover:ring-primary/50' : ''} ${
-                                isFromPattern 
-                                  ? isPatternOvertime
-                                    ? 'bg-orange-50 border border-orange-300'
-                                    : 'bg-violet-50 border border-violet-300' 
-                                  : 'bg-primary/10 border border-primary/30'
+                                hasCover
+                                  ? 'bg-cyan-50 border border-cyan-200'
+                                  : isFromPattern 
+                                    ? isPatternOvertime
+                                      ? 'bg-orange-50 border border-orange-300'
+                                      : 'bg-violet-50 border border-violet-300' 
+                                    : 'bg-primary/10 border border-primary/30'
                               }`}
                               onClick={() => handleScheduleClick(schedule)}
                               onDoubleClick={() => handleScheduleClick(schedule)}
                               title={scheduleEditHint}
                             >
-                              <div className="font-medium truncate flex items-center gap-1">
+                              <div className={`font-medium truncate flex items-center gap-1 ${hasCover ? 'text-cyan-800' : ''}`}>
                                 {schedule.client_name}
-                                {isFromPattern && (
+                                {isFromPattern && !hasCover && (
                                   <Infinity className={`h-3 w-3 ${isPatternOvertime ? 'text-orange-500' : 'text-violet-500'}`} />
                                 )}
-                                {isPatternOvertime && (
+                                {isPatternOvertime && !hasCover && (
                                   <span className={`text-[9px] font-bold px-1 rounded ${schedule.overtime_subtype === 'double_up' ? 'bg-red-200 text-red-800' : 'bg-orange-200 text-orange-800'}`}>
                                     {schedule.overtime_subtype === 'double_up' ? 'OT (In)' : 'OT (Out)'}
                                   </span>
                                 )}
                               </div>
                               {schedule.shift_type && (
-                                <div className="text-[10px] text-primary font-medium">{schedule.shift_type}</div>
+                                <div className={`text-[10px] ${hasCover ? 'text-cyan-700' : 'text-primary'} font-medium`}>{schedule.shift_type}</div>
                               )}
-                              <div className="text-muted-foreground">
+                              <div className={hasCover ? 'text-cyan-700' : 'text-muted-foreground'}>
                                 {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
                               </div>
-                              {cost !== null && (
+                              {hasCover && (
+                                <div className="mt-1 pt-1 border-t border-cyan-200">
+                                  <div className="flex items-center gap-1 text-[10px] text-cyan-700">
+                                    <Users className="h-2.5 w-2.5 flex-shrink-0" />
+                                    <span className="font-medium">Covered by:</span>
+                                    <span>{shiftCoverage!.map(c => c.name).join(', ')}</span>
+                                  </div>
+                                </div>
+                              )}
+                              {!hasCover && cost !== null && (
                                 <div className="text-muted-foreground">
                                   {schedule.currency} {cost.toFixed(2)}
                                 </div>
                               )}
-                              {schedule.notes && (
+                              {schedule.notes && !hasCover && (
                                 <div className="italic truncate text-muted-foreground">{schedule.notes}</div>
                               )}
                               {canEditSchedule && (
@@ -2582,8 +2621,13 @@ export function StaffScheduleManager() {
                                   className="absolute top-0 right-0 h-5 w-5 opacity-0 group-hover:opacity-100"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleDeleteClick(schedule.id);
+                                    if (hasCover) {
+                                      deleteCoverRequestMutation.mutate(shiftCoverage![0].requestId);
+                                    } else {
+                                      handleDeleteClick(schedule.id);
+                                    }
                                   }}
+                                  title={hasCover ? "Remove cover" : undefined}
                                 >
                                   <Trash2 className="h-3 w-3 text-destructive" />
                                 </Button>
@@ -2745,15 +2789,23 @@ export function StaffScheduleManager() {
                                     
                                     // Check for non-holiday shift cover (shift_swap where person isn't on holiday)
                                     const nonHolidayCoverage = !staffOnHoliday ? (() => {
-                                      const coverRequests = staffRequests.filter(r => 
-                                        r.swap_with_user_id === schedule.user_id &&
-                                        r.status === 'approved' &&
-                                        r.request_type === 'shift_swap' &&
-                                        isWithinInterval(day, { 
-                                          start: startOfDay(parseISO(r.start_date)), 
-                                          end: endOfDay(parseISO(r.end_date)) 
-                                        })
-                                      );
+                                      const schedStart = format(parseISO(schedule.start_datetime), "HH:mm");
+                                      const schedEnd = format(parseISO(schedule.end_datetime), "HH:mm");
+                                      const coverRequests = staffRequests.filter(r => {
+                                        if (r.swap_with_user_id !== schedule.user_id) return false;
+                                        if (r.status !== 'approved') return false;
+                                        if (r.request_type !== 'shift_swap') return false;
+                                        if (!isWithinInterval(day, { start: startOfDay(parseISO(r.start_date)), end: endOfDay(parseISO(r.end_date)) })) return false;
+                                        // Check coverage_metadata to match this specific shift
+                                        if (r.coverage_metadata && typeof r.coverage_metadata === 'object') {
+                                          const meta = r.coverage_metadata as { type?: string; shifts?: { start_time: string; end_time: string; date?: string }[] };
+                                          if (meta.type === 'individual_shifts' && meta.shifts) {
+                                            const dateStr = format(day, "yyyy-MM-dd");
+                                            return meta.shifts.some(s => s.date === dateStr && s.start_time === schedStart && s.end_time === schedEnd);
+                                          }
+                                        }
+                                        return true;
+                                      });
                                       if (coverRequests.length === 0) return null;
                                       return coverRequests.map(r => ({
                                         requestId: r.id,
