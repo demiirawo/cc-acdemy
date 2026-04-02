@@ -1829,6 +1829,9 @@ export function StaffScheduleManager() {
         }));
       }
       
+      // Filter by coverage_metadata if available (only show specifically selected shifts)
+      coveredSchedules = filterSchedulesByCoverageMetadata(coveredSchedules, req.coverage_metadata, day);
+      
       // Only return covering info if there are actually shifts to cover on this day
       if (coveredSchedules.length === 0) return null;
       
