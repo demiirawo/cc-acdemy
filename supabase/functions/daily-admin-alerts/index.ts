@@ -157,7 +157,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     const results: AlertResult[] = [];
 
-    // ===== 1. BIRTHDAYS =====
+    // ===== 1. BIRTHDAYS (sent to ALL active staff, not just admins) =====
     const birthdaySetting = settingsMap.get("birthday_today");
     if ((birthdaySetting?.is_enabled || testType === "birthday_today") && (!testType || testType === "birthday_today")) {
       const { data: onboardingDocs } = await supabaseClient
@@ -179,6 +179,25 @@ const handler = async (req: Request): Promise<Response> => {
       }
 
       if (todayBirthdays.length > 0 || testType === "birthday_today") {
+        // Fetch all active staff emails (not clients) - same as clock change
+        const { data: allStaffProfiles } = await supabaseClient
+          .from("profiles")
+          .select("user_id, email, display_name")
+          .neq("role", "client");
+
+        const { data: activeHrForBirthday } = await supabaseClient
+          .from("hr_profiles")
+          .select("user_id")
+          .in("employment_status", ["active", "onboarding_probation", "onboarding_passed"]);
+
+        const activeBirthdayUserIds = new Set(activeHrForBirthday?.map(h => h.user_id) || []);
+        const allStaffEmails = allStaffProfiles
+          ?.filter(p => p.email && activeBirthdayUserIds.has(p.user_id))
+          .map(p => p.email as string) || [];
+
+        // Fall back to admin emails if no active staff found
+        const birthdayRecipients = allStaffEmails.length > 0 ? allStaffEmails : adminEmails;
+
         const displayItems = todayBirthdays.length > 0 
           ? todayBirthdays 
           : ["[TEST] John Smith", "[TEST] Jane Doe"];
@@ -194,7 +213,7 @@ const handler = async (req: Request): Promise<Response> => {
         
         const result = await sendIndividualAlert(
           resend,
-          adminEmails,
+          birthdayRecipients,
           isTest
             ? `[TEST] 🎂 Birthday: John Smith, Jane Doe`
             : `🎂 Birthday: ${namesForSubject}`,
