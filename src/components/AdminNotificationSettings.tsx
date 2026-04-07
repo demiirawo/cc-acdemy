@@ -31,7 +31,7 @@ const NOTIFICATION_CONFIG: Record<string, {
 }> = {
   birthday_today: {
     title: "Staff Birthdays",
-    description: "Alert on the day of staff birthdays (combines multiple if same day)",
+    description: "Alert sent to ALL active staff on the day of staff birthdays (combines multiple if same day)",
     icon: <Cake className="h-5 w-5" />,
     color: "text-pink-500",
     showDaysBefore: false,
