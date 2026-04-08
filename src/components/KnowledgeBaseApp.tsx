@@ -699,8 +699,11 @@ export function KnowledgeBaseApp() {
             category_order,
             parent_page_id,
             space_id
-          `).eq('id', item.id).single();
-        if (error) throw error;
+          `).eq('id', item.id).is('deleted_at', null).single();
+        if (error) {
+          console.error('Error fetching page:', error, 'Page ID:', item.id);
+          throw error;
+        }
         if (data) {
           const pageData = {
             id: data.id,
@@ -721,16 +724,16 @@ export function KnowledgeBaseApp() {
           const breadcrumbPath = await buildBreadcrumbs(pageData);
           setBreadcrumbs(breadcrumbPath);
 
-          // Increment view count
-          await supabase.from('pages').update({
+          // Increment view count (don't let this block or fail the page load)
+          supabase.from('pages').update({
             view_count: (data.view_count || 0) + 1
-          }).eq('id', data.id);
+          }).eq('id', data.id).then(() => {});
 
           // Update URL
           navigate(`/page/${data.id}`);
         }
-      } catch (error) {
-        console.error('Error fetching page:', error);
+      } catch (error: any) {
+        console.error('Error fetching page:', error, 'Page ID:', item.id, 'Error code:', error?.code, 'Error message:', error?.message);
         toast({
           title: "Error loading page",
           description: "Failed to load page content.",
