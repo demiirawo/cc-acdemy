@@ -699,12 +699,20 @@ export function KnowledgeBaseApp() {
             category_order,
             parent_page_id,
             space_id
-          `).eq('id', item.id).is('deleted_at', null).single();
+          `).eq('id', item.id).is('deleted_at', null).maybeSingle();
         if (error) {
           console.error('Error fetching page:', error, 'Page ID:', item.id);
           throw error;
         }
-        if (data) {
+        if (!data) {
+          toast({
+            title: "Page not found",
+            description: "This page may have been deleted or moved.",
+            variant: "destructive"
+          });
+          return;
+        }
+        {
           const pageData = {
             id: data.id,
             title: data.title,
