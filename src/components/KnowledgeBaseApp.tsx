@@ -712,8 +712,7 @@ export function KnowledgeBaseApp() {
           });
           return;
         }
-        {
-          const pageData = {
+        const pageData = {
             id: data.id,
             title: data.title,
             content: data.content,
@@ -739,7 +738,6 @@ export function KnowledgeBaseApp() {
 
           // Update URL
           navigate(`/page/${data.id}`);
-        }
       } catch (error: any) {
         console.error('Error fetching page:', error, 'Page ID:', item.id, 'Error code:', error?.code, 'Error message:', error?.message);
         toast({
