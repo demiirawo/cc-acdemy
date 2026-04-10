@@ -38,6 +38,8 @@ interface AlertResult {
   error?: string;
 }
 
+const BIRTHDAY_IMAGE_URL = "https://cc-acdemy.lovable.app/images/birthday-celebration.png";
+
 const sendIndividualAlert = async (
   resendClient: typeof resend,
   adminEmails: string[],
@@ -45,9 +47,22 @@ const sendIndividualAlert = async (
   title: string,
   color: string,
   items: string[],
-  todayStr: string
+  todayStr: string,
+  options?: { hideDashboardButton?: boolean; showCelebrationImage?: boolean }
 ): Promise<{ success: boolean; error?: string }> => {
   const itemsHtml = items.map(item => `<li style="margin-bottom: 8px; font-size: 14px;">${item}</li>`).join("");
+
+  const footerContent = options?.showCelebrationImage
+    ? `<div style="text-align: center; margin-top: 24px;">
+        <img src="${BIRTHDAY_IMAGE_URL}" alt="Celebration" width="150" height="150" style="display: inline-block;" />
+      </div>`
+    : options?.hideDashboardButton
+    ? ''
+    : `<div style="text-align: center; margin-top: 24px;">
+        <a href="https://cc-acdemy.lovable.app" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+          Go to Dashboard
+        </a>
+      </div>`;
 
   try {
     await resendClient.emails.send({
@@ -76,11 +91,7 @@ const sendIndividualAlert = async (
               <ul style="margin: 0; padding-left: 20px; color: #374151;">
                 ${itemsHtml}
               </ul>
-              <div style="text-align: center; margin-top: 24px;">
-                <a href="https://cc-acdemy.lovable.app" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
-                  Go to Dashboard
-                </a>
-              </div>
+              ${footerContent}
             </td>
           </tr>
           <tr>
@@ -220,7 +231,8 @@ const handler = async (req: Request): Promise<Response> => {
           "🎂 Happy Birthday!",
           "#ec4899",
           [message],
-          todayStr
+          todayStr,
+          { showCelebrationImage: true }
         );
         
         results.push({
