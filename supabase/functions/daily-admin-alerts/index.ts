@@ -231,7 +231,8 @@ const handler = async (req: Request): Promise<Response> => {
           "🎂 Happy Birthday!",
           "#ec4899",
           [message],
-          todayStr
+          todayStr,
+          { showCelebrationImage: true }
         );
         
         results.push({
