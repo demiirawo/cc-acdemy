@@ -1024,6 +1024,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                           className={`rounded p-1.5 mb-1 text-xs border transition-shadow ${
                             staffOnHoliday 
                               ? 'bg-amber-100 border-amber-300'
+                              : hasNonHolidayCover
                                 ? 'bg-cyan-50 border-cyan-200'
                                 : isOvertime
                                   ? 'bg-orange-100 border-orange-300'
