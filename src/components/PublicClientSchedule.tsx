@@ -70,7 +70,7 @@ interface StaffMember {
   user_id: string;
   display_name: string;
   email: string;
-  phone_number?: string | null;
+  work_phone?: string | null;
 }
 
 interface StaffHoliday {
@@ -265,19 +265,19 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
       
       if (error) throw error;
 
-      // Fetch phone numbers from onboarding documents
-      const { data: onboardingDocs } = await supabase
-        .from("staff_onboarding_documents")
-        .select("user_id, phone_number");
+      // Fetch work phone numbers from hr_profiles
+      const { data: hrProfiles } = await supabase
+        .from("hr_profiles")
+        .select("user_id, work_phone");
 
       const phoneMap = new Map<string, string | null>();
-      (onboardingDocs || []).forEach((doc: any) => {
-        if (doc.phone_number) phoneMap.set(doc.user_id, doc.phone_number);
+      (hrProfiles || []).forEach((hr: any) => {
+        if (hr.work_phone) phoneMap.set(hr.user_id, hr.work_phone);
       });
 
       return (profiles || []).map(p => ({
         ...p,
-        phone_number: phoneMap.get(p.user_id) || null,
+        work_phone: phoneMap.get(p.user_id) || null,
       })) as StaffMember[];
     },
   });
@@ -307,7 +307,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
 
   const getStaffPhone = (userId: string) => {
     const staff = staffMembers.find(s => s.user_id === userId);
-    return staff?.phone_number || null;
+    return staff?.work_phone || null;
   };
 
   // Handle shift click to open unified editor

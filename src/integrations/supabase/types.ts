@@ -486,6 +486,7 @@ export type Database = {
           unlimited_holiday: boolean
           updated_at: string
           user_id: string
+          work_phone: string | null
         }
         Insert: {
           annual_holiday_allowance?: number | null
@@ -504,6 +505,7 @@ export type Database = {
           unlimited_holiday?: boolean
           updated_at?: string
           user_id: string
+          work_phone?: string | null
         }
         Update: {
           annual_holiday_allowance?: number | null
@@ -522,6 +524,7 @@ export type Database = {
           unlimited_holiday?: boolean
           updated_at?: string
           user_id?: string
+          work_phone?: string | null
         }
         Relationships: []
       }

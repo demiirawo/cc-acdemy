@@ -1,0 +1,1 @@
+ALTER TABLE public.hr_profiles ADD COLUMN work_phone text NULL;
