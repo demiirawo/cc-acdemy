@@ -157,7 +157,7 @@ const getShiftTypeColors = (shiftType: string | null | undefined) => {
   return SHIFT_TYPE_COLORS[shiftType || ""] || SHIFT_TYPE_COLORS["default"];
 };
 
-export const PublicClientSchedule = () => {
+export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: boolean }) => {
   const { clientName } = useParams<{ clientName: string }>();
   const decodedClientName = decodeURIComponent(clientName || "");
   const queryClient = useQueryClient();
@@ -1149,7 +1149,7 @@ export const PublicClientSchedule = () => {
 
 
         {/* Password Manager Section */}
-        <ClientPasswordManager clientName={decodedClientName} />
+        {!scheduleOnly && <ClientPasswordManager clientName={decodedClientName} />}
         
         {/* Footer */}
         <div className="text-center mt-4 sm:mt-6 pb-4 text-xs sm:text-sm text-muted-foreground">

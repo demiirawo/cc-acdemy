@@ -26,6 +26,7 @@ const App = () => (
           <Route path="/view/:viewName" element={<Index />} />
           
           <Route path="/public/schedule/:clientName" element={<PublicClientSchedule />} />
+          <Route path="/public/schedule-only/:clientName" element={<PublicClientSchedule scheduleOnly />} />
           <Route path="/embed/live-view" element={<PublicLiveView />} />
           <Route path="/public/:token" element={<PublicPageView />} />
           <Route path="/project/:projectId" element={<ProjectView />} />
