@@ -70,6 +70,7 @@ interface StaffMember {
   user_id: string;
   display_name: string;
   email: string;
+  phone_number?: string | null;
 }
 
 interface StaffHoliday {
@@ -259,12 +260,26 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
   const { data: staffMembers = [], isLoading: staffLoading } = useQuery({
     queryKey: ["public-staff-profiles"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: profiles, error } = await supabase
         .from("profiles")
         .select("user_id, display_name, email");
       
       if (error) throw error;
-      return (data || []) as StaffMember[];
+
+      // Fetch phone numbers from onboarding documents
+      const { data: onboardingDocs } = await supabase
+        .from("staff_onboarding_documents")
+        .select("user_id, phone_number");
+
+      const phoneMap = new Map<string, string | null>();
+      (onboardingDocs || []).forEach((doc: any) => {
+        if (doc.phone_number) phoneMap.set(doc.user_id, doc.phone_number);
+      });
+
+      return (profiles || []).map(p => ({
+        ...p,
+        phone_number: phoneMap.get(p.user_id) || null,
+      })) as StaffMember[];
     },
   });
 
