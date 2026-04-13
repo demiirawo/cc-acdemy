@@ -917,6 +917,18 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                             )}
                           </div>
                         </div>
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                          {getStaffEmail(schedule.user_id) && (
+                            <a href={`mailto:${getStaffEmail(schedule.user_id)}`} className="text-xs text-muted-foreground hover:underline">
+                              {getStaffEmail(schedule.user_id)}
+                            </a>
+                          )}
+                          {getStaffPhone(schedule.user_id) && (
+                            <a href={`tel:${getStaffPhone(schedule.user_id)}`} className="text-xs text-muted-foreground hover:underline">
+                              {getStaffPhone(schedule.user_id)}
+                            </a>
+                          )}
+                        </div>
                         
                         {staffOnHoliday ? (
                           <div className="mt-2 space-y-1">
@@ -1052,6 +1064,18 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                             {getStaffName(schedule.user_id)}
                             {isOvertime && !staffOnHoliday && (
                               <span className="text-[9px] bg-orange-200 text-orange-800 px-1 rounded ml-auto">OT</span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-x-2 gap-y-0">
+                            {getStaffEmail(schedule.user_id) && (
+                              <a href={`mailto:${getStaffEmail(schedule.user_id)}`} className="text-[9px] text-muted-foreground hover:underline truncate">
+                                {getStaffEmail(schedule.user_id)}
+                              </a>
+                            )}
+                            {getStaffPhone(schedule.user_id) && (
+                              <a href={`tel:${getStaffPhone(schedule.user_id)}`} className="text-[9px] text-muted-foreground hover:underline">
+                                {getStaffPhone(schedule.user_id)}
+                              </a>
                             )}
                           </div>
                           
