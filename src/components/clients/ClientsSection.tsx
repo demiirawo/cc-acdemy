@@ -285,6 +285,7 @@ export function ClientsSection() {
                     <TableHead>Status</TableHead>
                     <TableHead>Key Contact</TableHead>
                     <TableHead>Public Schedule</TableHead>
+                    <TableHead>Schedule Only</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -333,7 +334,29 @@ export function ClientsSection() {
                           </Button>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => copyScheduleOnlyLink(client.name, client.id)}
+                            title="Copy schedule-only link"
+                          >
+                            {copiedScheduleOnlyId === client.id ? (
+                              <Check className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openScheduleOnly(client.name)}
+                            title="Open schedule only"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>
+                        </div>
                         <div className="flex items-center justify-end gap-2">
                           <Button
                             variant="ghost"
