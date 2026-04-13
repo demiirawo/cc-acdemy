@@ -18,7 +18,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { toast } from "sonner";
 import { UnifiedShiftEditor, ShiftToEdit } from "@/components/hr/UnifiedShiftEditor";
-import { useUserRole } from "@/hooks/useUserRole";
+
 
 interface ClientWhiteboard {
   id: string;
