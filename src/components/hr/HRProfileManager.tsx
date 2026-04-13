@@ -186,6 +186,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
     display_name: '',
     employee_id: '',
     job_title: '',
+    work_phone: '',
     start_date: '',
     base_currency: 'GBP',
     base_salary: 0,
@@ -416,6 +417,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
         display_name: userProfile.display_name || '',
         employee_id: existingHR.employee_id || '',
         job_title: existingHR.job_title || '',
+        work_phone: (existingHR as any).work_phone || '',
         start_date: existingHR.start_date || '',
         base_currency: existingHR.base_currency,
         base_salary: existingHR.base_salary || 0,
@@ -434,6 +436,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
         display_name: userProfile.display_name || '',
         employee_id: '',
         job_title: '',
+        work_phone: '',
         start_date: '',
         base_currency: 'GBP',
         base_salary: 0,
@@ -530,6 +533,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
         user_id: formData.user_id,
         employee_id: formData.employee_id || null,
         job_title: formData.job_title || null,
+        work_phone: formData.work_phone || null,
         department: null,
         start_date: formData.start_date || null,
         base_currency: formData.base_currency,
@@ -1200,6 +1204,14 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
                       value={formData.job_title}
                       onChange={(e) => setFormData({ ...formData, job_title: e.target.value })}
                       placeholder="Care Assistant"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Work Phone Number</Label>
+                    <Input
+                      value={formData.work_phone}
+                      onChange={(e) => setFormData({ ...formData, work_phone: e.target.value })}
+                      placeholder="+44 7700 900000"
                     />
                   </div>
                   <div className="space-y-2">
