@@ -284,7 +284,7 @@ export function ClientsSection() {
                     <TableHead>Name</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Key Contact</TableHead>
-                    <TableHead>Public Schedule</TableHead>
+                    <TableHead>All Info</TableHead>
                     <TableHead>Schedule Only</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
