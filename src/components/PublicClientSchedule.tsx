@@ -162,7 +162,6 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
   const { clientName } = useParams<{ clientName: string }>();
   const decodedClientName = decodeURIComponent(clientName || "");
   const queryClient = useQueryClient();
-  const { isAdmin } = useUserRole();
   
   const [weekOffset, setWeekOffset] = useState(0);
   
@@ -877,16 +876,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                     return (
                       <div 
                         key={schedule.id}
-                        onClick={isAdmin ? (e) => {
-                          if (staffOnHoliday && holidayInfo) {
-                            handleHolidayClick(holidayInfo, e);
-                          } else if (!schedule.id.startsWith('bench-')) {
-                            handleShiftClick(schedule, day, e);
-                          }
-                        } : undefined}
                         className={`p-3 rounded-lg border transition-shadow ${
-                          isAdmin ? 'cursor-pointer hover:shadow-md' : ''
-                        } ${
                           staffOnHoliday 
                             ? 'bg-amber-50 border-amber-200' 
                             : hasNonHolidayCover
@@ -1031,19 +1021,9 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                       return (
                         <div 
                           key={schedule.id} 
-                          onClick={isAdmin ? (e) => {
-                            if (staffOnHoliday && holidayInfo) {
-                              handleHolidayClick(holidayInfo, e);
-                            } else if (!schedule.id.startsWith('bench-')) {
-                              handleShiftClick(schedule, day, e);
-                            }
-                          } : undefined}
                           className={`rounded p-1.5 mb-1 text-xs border transition-shadow ${
-                            isAdmin ? 'cursor-pointer hover:shadow-md' : ''
-                          } ${
                             staffOnHoliday 
-                              ? 'bg-amber-100 border-amber-300' + (isAdmin ? ' hover:bg-amber-200' : '')
-                              : hasNonHolidayCover
+                              ? 'bg-amber-100 border-amber-300'
                                 ? 'bg-cyan-50 border-cyan-200'
                                 : isOvertime
                                   ? 'bg-orange-100 border-orange-300'
