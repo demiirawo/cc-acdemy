@@ -917,9 +917,9 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                             )}
                           </div>
                         </div>
-                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                        <div className="flex flex-col mt-1">
                           {getStaffEmail(schedule.user_id) && (
-                            <a href={`mailto:${getStaffEmail(schedule.user_id)}`} className="text-xs text-muted-foreground hover:underline">
+                            <a href={`mailto:${getStaffEmail(schedule.user_id)}`} className="text-xs text-muted-foreground hover:underline truncate">
                               {getStaffEmail(schedule.user_id)}
                             </a>
                           )}
@@ -1066,7 +1066,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                               <span className="text-[9px] bg-orange-200 text-orange-800 px-1 rounded ml-auto">OT</span>
                             )}
                           </div>
-                          <div className="flex flex-wrap gap-x-2 gap-y-0">
+                          <div className="flex flex-col">
                             {getStaffEmail(schedule.user_id) && (
                               <a href={`mailto:${getStaffEmail(schedule.user_id)}`} className="text-[9px] text-muted-foreground hover:underline truncate">
                                 {getStaffEmail(schedule.user_id)}
