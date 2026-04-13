@@ -919,12 +919,12 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                         </div>
                         <div className="flex flex-col mt-1">
                           {getStaffEmail(schedule.user_id) && (
-                            <a href={`mailto:${getStaffEmail(schedule.user_id)}`} className="text-xs text-muted-foreground hover:underline truncate">
+                            <a href={`mailto:${getStaffEmail(schedule.user_id)}`} onClick={e => e.stopPropagation()} className="text-xs text-muted-foreground hover:underline truncate">
                               {getStaffEmail(schedule.user_id)}
                             </a>
                           )}
                           {getStaffPhone(schedule.user_id) && (
-                            <a href={`tel:${getStaffPhone(schedule.user_id)}`} className="text-xs text-muted-foreground hover:underline">
+                            <a href={`tel:${getStaffPhone(schedule.user_id)}`} onClick={e => e.stopPropagation()} className="text-xs text-muted-foreground hover:underline">
                               {getStaffPhone(schedule.user_id)}
                             </a>
                           )}
@@ -1068,12 +1068,12 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                           </div>
                           <div className="flex flex-col">
                             {getStaffEmail(schedule.user_id) && (
-                              <a href={`mailto:${getStaffEmail(schedule.user_id)}`} className="text-[9px] text-muted-foreground hover:underline truncate">
+                              <a href={`mailto:${getStaffEmail(schedule.user_id)}`} onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground hover:underline truncate">
                                 {getStaffEmail(schedule.user_id)}
                               </a>
                             )}
                             {getStaffPhone(schedule.user_id) && (
-                              <a href={`tel:${getStaffPhone(schedule.user_id)}`} className="text-[9px] text-muted-foreground hover:underline">
+                              <a href={`tel:${getStaffPhone(schedule.user_id)}`} onClick={e => e.stopPropagation()} className="text-[9px] text-muted-foreground hover:underline">
                                 {getStaffPhone(schedule.user_id)}
                               </a>
                             )}
