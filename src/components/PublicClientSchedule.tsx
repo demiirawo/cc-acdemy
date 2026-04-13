@@ -301,6 +301,16 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
     return staff?.display_name || staff?.email?.split('@')[0] || 'Unknown';
   };
 
+  const getStaffEmail = (userId: string) => {
+    const staff = staffMembers.find(s => s.user_id === userId);
+    return staff?.email || null;
+  };
+
+  const getStaffPhone = (userId: string) => {
+    const staff = staffMembers.find(s => s.user_id === userId);
+    return staff?.phone_number || null;
+  };
+
   // Handle shift click to open unified editor
   const handleShiftClick = (schedule: Schedule, day: Date, e: React.MouseEvent) => {
     e.stopPropagation();
