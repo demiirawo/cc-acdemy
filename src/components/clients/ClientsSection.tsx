@@ -33,6 +33,7 @@ export function ClientsSection() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedScheduleOnlyId, setCopiedScheduleOnlyId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     status: "active",
@@ -173,6 +174,11 @@ export function ClientsSection() {
     return `${window.location.origin}/public/schedule/${encodedName}`;
   };
 
+  const getScheduleOnlyUrl = (clientName: string) => {
+    const encodedName = encodeURIComponent(clientName);
+    return `${window.location.origin}/public/schedule-only/${encodedName}`;
+  };
+
   const copyPublicLink = async (clientName: string, clientId: string) => {
     const url = getPublicScheduleUrl(clientName);
     try {
@@ -185,8 +191,25 @@ export function ClientsSection() {
     }
   };
 
+  const copyScheduleOnlyLink = async (clientName: string, clientId: string) => {
+    const url = getScheduleOnlyUrl(clientName);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedScheduleOnlyId(clientId);
+      toast.success("Schedule-only link copied to clipboard");
+      setTimeout(() => setCopiedScheduleOnlyId(null), 2000);
+    } catch {
+      toast.error("Failed to copy link");
+    }
+  };
+
   const openPublicSchedule = (clientName: string) => {
     const url = getPublicScheduleUrl(clientName);
+    window.open(url, "_blank");
+  };
+
+  const openScheduleOnly = (clientName: string) => {
+    const url = getScheduleOnlyUrl(clientName);
     window.open(url, "_blank");
   };
 
@@ -262,6 +285,7 @@ export function ClientsSection() {
                     <TableHead>Status</TableHead>
                     <TableHead>Key Contact</TableHead>
                     <TableHead>Public Schedule</TableHead>
+                    <TableHead>Schedule Only</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -305,6 +329,30 @@ export function ClientsSection() {
                             size="sm"
                             onClick={() => openPublicSchedule(client.name)}
                             title="Open public schedule"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => copyScheduleOnlyLink(client.name, client.id)}
+                            title="Copy schedule-only link"
+                          >
+                            {copiedScheduleOnlyId === client.id ? (
+                              <Check className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => openScheduleOnly(client.name)}
+                            title="Open schedule only"
                           >
                             <ExternalLink className="h-4 w-4" />
                           </Button>
