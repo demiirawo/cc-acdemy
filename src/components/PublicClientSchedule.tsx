@@ -70,6 +70,7 @@ interface StaffMember {
   user_id: string;
   display_name: string;
   email: string;
+  phone_number?: string | null;
 }
 
 interface StaffHoliday {
@@ -259,12 +260,26 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
   const { data: staffMembers = [], isLoading: staffLoading } = useQuery({
     queryKey: ["public-staff-profiles"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data: profiles, error } = await supabase
         .from("profiles")
         .select("user_id, display_name, email");
       
       if (error) throw error;
-      return (data || []) as StaffMember[];
+
+      // Fetch phone numbers from onboarding documents
+      const { data: onboardingDocs } = await supabase
+        .from("staff_onboarding_documents")
+        .select("user_id, phone_number");
+
+      const phoneMap = new Map<string, string | null>();
+      (onboardingDocs || []).forEach((doc: any) => {
+        if (doc.phone_number) phoneMap.set(doc.user_id, doc.phone_number);
+      });
+
+      return (profiles || []).map(p => ({
+        ...p,
+        phone_number: phoneMap.get(p.user_id) || null,
+      })) as StaffMember[];
     },
   });
 
@@ -284,6 +299,16 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
   const getStaffName = (userId: string) => {
     const staff = staffMembers.find(s => s.user_id === userId);
     return staff?.display_name || staff?.email?.split('@')[0] || 'Unknown';
+  };
+
+  const getStaffEmail = (userId: string) => {
+    const staff = staffMembers.find(s => s.user_id === userId);
+    return staff?.email || null;
+  };
+
+  const getStaffPhone = (userId: string) => {
+    const staff = staffMembers.find(s => s.user_id === userId);
+    return staff?.phone_number || null;
   };
 
   // Handle shift click to open unified editor
@@ -892,6 +917,18 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                             )}
                           </div>
                         </div>
+                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                          {getStaffEmail(schedule.user_id) && (
+                            <a href={`mailto:${getStaffEmail(schedule.user_id)}`} className="text-xs text-muted-foreground hover:underline">
+                              {getStaffEmail(schedule.user_id)}
+                            </a>
+                          )}
+                          {getStaffPhone(schedule.user_id) && (
+                            <a href={`tel:${getStaffPhone(schedule.user_id)}`} className="text-xs text-muted-foreground hover:underline">
+                              {getStaffPhone(schedule.user_id)}
+                            </a>
+                          )}
+                        </div>
                         
                         {staffOnHoliday ? (
                           <div className="mt-2 space-y-1">
@@ -1027,6 +1064,18 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                             {getStaffName(schedule.user_id)}
                             {isOvertime && !staffOnHoliday && (
                               <span className="text-[9px] bg-orange-200 text-orange-800 px-1 rounded ml-auto">OT</span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-x-2 gap-y-0">
+                            {getStaffEmail(schedule.user_id) && (
+                              <a href={`mailto:${getStaffEmail(schedule.user_id)}`} className="text-[9px] text-muted-foreground hover:underline truncate">
+                                {getStaffEmail(schedule.user_id)}
+                              </a>
+                            )}
+                            {getStaffPhone(schedule.user_id) && (
+                              <a href={`tel:${getStaffPhone(schedule.user_id)}`} className="text-[9px] text-muted-foreground hover:underline">
+                                {getStaffPhone(schedule.user_id)}
+                              </a>
                             )}
                           </div>
                           
