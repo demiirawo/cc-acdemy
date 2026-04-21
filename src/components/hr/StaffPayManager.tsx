@@ -1657,33 +1657,49 @@ export function StaffPayManager() {
       {currenciesInPayroll.length > 0 && (
         <Card>
           <CardContent className="p-4">
-            <div className="text-sm font-medium mb-3">Manual Currency Conversion Rates (to GBP)</div>
+            <div className="text-sm font-medium mb-3">Manual Currency Conversion Rates (from GBP)</div>
             <div className="flex flex-wrap gap-4">
               {currenciesInPayroll.map(currency => {
                 const currInfo = CURRENCIES.find(c => c.code === currency);
-                const currentRate = manualRates[currency] ?? exchangeRates[currency] ?? 0;
+                const currentRateToGBP = manualRates[currency] ?? exchangeRates[currency] ?? 0;
+                // Inverted: how many units of `currency` per 1 GBP
+                const invertedRate = currentRateToGBP > 0 ? 1 / currentRateToGBP : 0;
                 const isManual = currency in manualRates;
-                
+                const manualInvertedDisplay = isManual && manualRates[currency] > 0
+                  ? (1 / manualRates[currency]).toFixed(4)
+                  : '';
+
                 return (
                   <div key={currency} className="flex items-center gap-2">
                     <Label className="text-sm whitespace-nowrap min-w-[60px]">
-                      1 {currInfo?.symbol || currency} =
+                      1 £ =
                     </Label>
                     <div className="flex items-center gap-1">
-                      <span className="text-muted-foreground">£</span>
                       <Input
                         type="number"
                         step="0.0001"
-                        value={isManual ? manualRates[currency] : ''}
-                        placeholder={currentRate.toFixed(6)}
-                        onChange={(e) => handleManualRateChange(currency, e.target.value)}
+                        value={manualInvertedDisplay}
+                        placeholder={invertedRate ? invertedRate.toFixed(4) : ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '') {
+                            handleManualRateChange(currency, '');
+                          } else {
+                            const inv = parseFloat(val);
+                            if (!isNaN(inv) && inv > 0) {
+                              // Store as rate_to_gbp (inverse of what user entered)
+                              handleManualRateChange(currency, String(1 / inv));
+                            }
+                          }
+                        }}
                         className="w-28 h-8 text-sm"
                       />
+                      <span className="text-muted-foreground">{currInfo?.symbol || currency}</span>
                     </div>
                     {isManual && (
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         className="h-8 px-2 text-xs"
                         onClick={() => handleManualRateChange(currency, '')}
                       >
@@ -1695,7 +1711,7 @@ export function StaffPayManager() {
               })}
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              Leave empty to use API rates. Enter a value to override.
+              Leave empty to use API rates. Enter how many units of the currency equal £1.
             </p>
           </CardContent>
         </Card>
