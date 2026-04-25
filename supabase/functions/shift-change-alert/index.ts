@@ -8,7 +8,7 @@ const corsHeaders = {
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const LOGO_URL = "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
-const BRAND_COLOR = "#5E18EB";
+const BRAND_COLOR = "#5F17EB";
 
 interface ShiftAuditLog {
   id: string;
