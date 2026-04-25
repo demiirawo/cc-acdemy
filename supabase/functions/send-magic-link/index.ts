@@ -8,8 +8,8 @@ const corsHeaders = {
 };
 
 const LOGO_URL = "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
-const BRAND_COLOR = "#5E18EB";
-const BRAND_DARK = "#4A11C0";
+const BRAND_COLOR = "#5F17EB";
+const BRAND_DARK = "#4A0FC0";
 
 const emailWrapper = (content: string) => `
 <!DOCTYPE html>
