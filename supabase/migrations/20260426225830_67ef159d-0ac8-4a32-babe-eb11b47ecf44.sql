@@ -1,0 +1,1 @@
+ALTER TABLE public.hr_profiles ADD COLUMN IF NOT EXISTS employment_end_date date;
