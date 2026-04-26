@@ -1131,7 +1131,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   <div className="space-y-2">
                     <Label>Employment Status</Label>
                     <Select
@@ -1150,17 +1150,17 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label>Start Date</Label>
+                    <Label>Employment Start Date</Label>
                     <Input
                       type="date"
                       value={formData.start_date}
                       onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
                     />
                   </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Employment End Date</Label>
                     <Input
