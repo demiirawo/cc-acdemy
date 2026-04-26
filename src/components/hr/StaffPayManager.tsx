@@ -581,6 +581,13 @@ export function StaffPayManager() {
       } else if (hr.pay_frequency === 'bi-weekly') {
         monthlyBaseSalary = (hr.base_salary || 0) * 2.17;
       }
+
+      // Zero out base salary for any month entirely after the employment end date
+      const userHRFull = hrProfilesFull.find(h => h.user_id === hr.user_id);
+      const employmentEndDate = userHRFull?.employment_end_date ? parseISO(userHRFull.employment_end_date) : null;
+      if (employmentEndDate && employmentEndDate < monthStart) {
+        monthlyBaseSalary = 0;
+      }
       
       // Calculate hourly rate from monthly salary (assuming ~173 working hours/month)
       const estimatedHourlyRate = monthlyBaseSalary / 173;
