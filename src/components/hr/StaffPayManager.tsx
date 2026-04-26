@@ -583,9 +583,9 @@ export function StaffPayManager() {
       }
 
       // Zero out base salary for any month entirely after the employment end date
-      const userHRFull = hrProfilesFull.find(h => h.user_id === hr.user_id);
-      const employmentEndDate = userHRFull?.employment_end_date ? parseISO(userHRFull.employment_end_date) : null;
-      if (employmentEndDate && employmentEndDate < monthStart) {
+      const hrFullForEnd = hrProfilesFull.find(h => h.user_id === hr.user_id);
+      const employmentEndDateForZero = hrFullForEnd?.employment_end_date ? parseISO(hrFullForEnd.employment_end_date) : null;
+      if (employmentEndDateForZero && employmentEndDateForZero < monthStart) {
         monthlyBaseSalary = 0;
       }
       
