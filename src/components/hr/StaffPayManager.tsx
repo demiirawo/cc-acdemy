@@ -173,7 +173,7 @@ export function StaffPayManager() {
   const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; status: string; absence_type: string }[]>([]);
-  const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; unlimited_holiday: boolean }[]>([]);
+  const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; employment_end_date: string | null; unlimited_holiday: boolean }[]>([]);
   const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null; swap_with_user_id: string | null }[]>([]);
   const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string }[]>([]);
   const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<{ user_id: string; start_date: string; end_date: string }[]>([]);
@@ -411,7 +411,7 @@ export function StaffPayManager() {
       // Fetch full HR profiles for holiday allowance
       const { data: hrFullData } = await supabase
         .from('hr_profiles')
-        .select('user_id, annual_holiday_allowance, start_date, unlimited_holiday');
+        .select('user_id, annual_holiday_allowance, start_date, employment_end_date, unlimited_holiday');
       
       setHRProfilesFull(hrFullData || []);
 
@@ -957,37 +957,38 @@ export function StaffPayManager() {
       // Unpaid holiday deduction = (monthly salary / 20) * unpaid holiday days
       unpaidHolidayDeduction = (monthlyBaseSalary / 20) * unpaidHolidayDays;
       
-      // Pro-rata deduction for staff who started mid-month
+      // Pro-rata deduction for staff who started or ended mid-month
       let proRataDeduction = 0;
       let proRataWorkingDays = 0;
       let proRataTotalWorkingDays = 20; // Standard working days assumption
       const userHRFullForProRata = hrProfilesFull.find(h => h.user_id === hr.user_id);
-      if (userHRFullForProRata?.start_date) {
-        const staffStartDate = parseISO(userHRFull.start_date);
-        // Only apply pro-rata if staff started within this payroll month
-        if (staffStartDate > monthStart && staffStartDate <= monthEnd) {
-          // Count working days (Mon-Fri) in the full month
-          const allDaysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
-          const totalWorkingDaysInMonth = allDaysInMonth.filter(d => {
-            const dow = d.getDay();
-            return dow !== 0 && dow !== 6; // Exclude weekends
-          }).length;
-          
-          // Count working days from start date to end of month
-          const daysWorked = allDaysInMonth.filter(d => {
-            if (d < staffStartDate) return false;
-            const dow = d.getDay();
-            return dow !== 0 && dow !== 6;
-          }).length;
-          
-          proRataTotalWorkingDays = totalWorkingDaysInMonth;
-          proRataWorkingDays = daysWorked;
-          
-          // Deduction = base pay - (base pay / total working days * days worked)
-          // = base pay * (1 - days_worked / total_working_days)
-          const daysNotWorked = totalWorkingDaysInMonth - daysWorked;
-          proRataDeduction = (monthlyBaseSalary / totalWorkingDaysInMonth) * daysNotWorked;
-        }
+      const staffStartDate = userHRFullForProRata?.start_date ? parseISO(userHRFullForProRata.start_date) : null;
+      const staffEndDate = userHRFullForProRata?.employment_end_date ? parseISO(userHRFullForProRata.employment_end_date) : null;
+
+      const startsThisMonth = staffStartDate && staffStartDate > monthStart && staffStartDate <= monthEnd;
+      const endsThisMonth = staffEndDate && staffEndDate >= monthStart && staffEndDate < monthEnd;
+
+      if (startsThisMonth || endsThisMonth) {
+        // Count working days (Mon-Fri) in the full month
+        const allDaysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd });
+        const totalWorkingDaysInMonth = allDaysInMonth.filter(d => {
+          const dow = d.getDay();
+          return dow !== 0 && dow !== 6; // Exclude weekends
+        }).length;
+
+        // Count working days within the employment window in this month
+        const daysWorked = allDaysInMonth.filter(d => {
+          if (staffStartDate && d < staffStartDate) return false;
+          if (staffEndDate && d > staffEndDate) return false;
+          const dow = d.getDay();
+          return dow !== 0 && dow !== 6;
+        }).length;
+
+        proRataTotalWorkingDays = totalWorkingDaysInMonth;
+        proRataWorkingDays = daysWorked;
+
+        const daysNotWorked = totalWorkingDaysInMonth - daysWorked;
+        proRataDeduction = (monthlyBaseSalary / totalWorkingDaysInMonth) * daysNotWorked;
       }
       
       // Total pay now includes holiday overtime bonus, calculated overtime pay, unused holiday payout, excess holiday deduction, unpaid holiday deduction, and pro-rata deduction
