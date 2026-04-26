@@ -1156,6 +1156,18 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
                   </div>
                 </div>
 
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Employment End Date</Label>
+                    <Input
+                      type="date"
+                      value={formData.employment_end_date}
+                      onChange={(e) => setFormData({ ...formData, employment_end_date: e.target.value })}
+                    />
+                    <p className="text-xs text-muted-foreground">Leave blank if currently employed</p>
+                  </div>
+                </div>
+
                 {/* Unlimited Holiday Toggle */}
                 <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
                   <div className="flex items-center gap-3">
