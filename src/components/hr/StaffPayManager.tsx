@@ -2424,6 +2424,19 @@ export function StaffPayManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {invoiceDialog && (
+        <InvoiceGeneratorDialog
+          open={invoiceDialog.open}
+          onOpenChange={(open) => setInvoiceDialog(prev => prev ? { ...prev, open } : null)}
+          staffUserId={invoiceDialog.staffUserId}
+          staffName={invoiceDialog.staffName}
+          staffEmail={invoiceDialog.staffEmail}
+          month={selectedMonth}
+          defaultAmount={invoiceDialog.amount}
+          defaultCurrency={invoiceDialog.currency}
+        />
+      )}
     </div>
   );
 }
