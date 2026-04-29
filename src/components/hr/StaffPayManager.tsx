@@ -157,6 +157,14 @@ export function StaffPayManager() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date());
+  const [invoiceDialog, setInvoiceDialog] = useState<{
+    open: boolean;
+    staffUserId: string;
+    staffName: string;
+    staffEmail: string;
+    amount: number;
+    currency: string;
+  } | null>(null);
   const [exchangeRates, setExchangeRates] = useState<ExchangeRates>(FALLBACK_RATES);
   const [manualRates, setManualRates] = useState<ExchangeRates>({});
   const [ratesDate, setRatesDate] = useState<string | null>(null);
