@@ -264,6 +264,12 @@ export function MyHRProfile() {
     documentType: string;
     documentLabel: string;
   }>({ open: false, filePath: null, documentType: '', documentLabel: '' });
+  const [invoiceDialog, setInvoiceDialog] = useState<{
+    open: boolean;
+    month: Date;
+    amount: number;
+    currency: string;
+  } | null>(null);
 
   // Admin staff selection
   const [allStaff, setAllStaff] = useState<UserProfile[]>([]);
