@@ -370,6 +370,60 @@ export type Database = {
           },
         ]
       }
+      contractor_invoice_details: {
+        Row: {
+          bank_account_name: string | null
+          bank_account_number: string | null
+          bank_name: string | null
+          company_address: string | null
+          company_name: string | null
+          contact_name: string | null
+          created_at: string
+          email: string | null
+          iban: string | null
+          id: string
+          phone: string | null
+          sort_code: string | null
+          swift: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          bank_account_name?: string | null
+          bank_account_number?: string | null
+          bank_name?: string | null
+          company_address?: string | null
+          company_name?: string | null
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          iban?: string | null
+          id?: string
+          phone?: string | null
+          sort_code?: string | null
+          swift?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          bank_account_name?: string | null
+          bank_account_number?: string | null
+          bank_name?: string | null
+          company_address?: string | null
+          company_name?: string | null
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          iban?: string | null
+          id?: string
+          phone?: string | null
+          sort_code?: string | null
+          swift?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       conversations: {
         Row: {
           created_at: string
@@ -528,6 +582,30 @@ export type Database = {
           updated_at?: string
           user_id?: string
           work_phone?: string | null
+        }
+        Relationships: []
+      }
+      invoice_bill_to_settings: {
+        Row: {
+          address_lines: string[]
+          company_name: string
+          company_number: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          address_lines?: string[]
+          company_name?: string
+          company_number?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          address_lines?: string[]
+          company_name?: string
+          company_number?: string | null
+          id?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -1545,6 +1623,57 @@ export type Database = {
           no_cover_required?: boolean
           notes?: string | null
           start_date?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      staff_invoices: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string
+          currency: string
+          date_requested: string
+          description: string
+          id: string
+          invoice_number: number
+          month: string
+          sent_at: string | null
+          sent_to_emails: string[] | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          created_by: string
+          currency?: string
+          date_requested?: string
+          description: string
+          id?: string
+          invoice_number?: number
+          month: string
+          sent_at?: string | null
+          sent_to_emails?: string[] | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string
+          currency?: string
+          date_requested?: string
+          description?: string
+          id?: string
+          invoice_number?: number
+          month?: string
+          sent_at?: string | null
+          sent_to_emails?: string[] | null
           status?: string
           updated_at?: string
           user_id?: string
