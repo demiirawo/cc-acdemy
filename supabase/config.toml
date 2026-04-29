@@ -54,3 +54,6 @@ verify_jwt = true
 
 [functions.daily-admin-alerts]
 verify_jwt = false
+
+[functions.send-invoice-email]
+verify_jwt = true
