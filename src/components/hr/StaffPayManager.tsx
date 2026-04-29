@@ -15,7 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat } from "lucide-react";
+import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat, FileBadge } from "lucide-react";
+import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO, eachDayOfInterval } from "date-fns";
 
 interface PublicHoliday {
@@ -156,6 +157,14 @@ export function StaffPayManager() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date());
+  const [invoiceDialog, setInvoiceDialog] = useState<{
+    open: boolean;
+    staffUserId: string;
+    staffName: string;
+    staffEmail: string;
+    amount: number;
+    currency: string;
+  } | null>(null);
   const [exchangeRates, setExchangeRates] = useState<ExchangeRates>(FALLBACK_RATES);
   const [manualRates, setManualRates] = useState<ExchangeRates>({});
   const [ratesDate, setRatesDate] = useState<string | null>(null);
@@ -2025,6 +2034,22 @@ export function StaffPayManager() {
                           >
                             <Edit2 className="h-4 w-4" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setInvoiceDialog({
+                              open: true,
+                              staffUserId: staff.userId,
+                              staffName: staff.displayName,
+                              staffEmail: staff.email,
+                              amount: staff.totalPay,
+                              currency: staff.currency,
+                            })}
+                            className="h-8 w-8 p-0"
+                            title="Generate Invoice"
+                          >
+                            <FileBadge className="h-4 w-4" />
+                          </Button>
                           {staff.hasSalaryRecord ? (
                             <Button 
                               variant="ghost" 
@@ -2399,6 +2424,19 @@ export function StaffPayManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {invoiceDialog && (
+        <InvoiceGeneratorDialog
+          open={invoiceDialog.open}
+          onOpenChange={(open) => setInvoiceDialog(prev => prev ? { ...prev, open } : null)}
+          staffUserId={invoiceDialog.staffUserId}
+          staffName={invoiceDialog.staffName}
+          staffEmail={invoiceDialog.staffEmail}
+          month={selectedMonth}
+          defaultAmount={invoiceDialog.amount}
+          defaultCurrency={invoiceDialog.currency}
+        />
+      )}
     </div>
   );
 }

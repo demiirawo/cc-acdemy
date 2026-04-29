@@ -10,10 +10,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye } from "lucide-react";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay } from "date-fns";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
+import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
+import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 interface UserProfile {
   user_id: string;
   display_name: string | null;
@@ -261,6 +264,12 @@ export function MyHRProfile() {
     documentType: string;
     documentLabel: string;
   }>({ open: false, filePath: null, documentType: '', documentLabel: '' });
+  const [invoiceDialog, setInvoiceDialog] = useState<{
+    open: boolean;
+    month: Date;
+    amount: number;
+    currency: string;
+  } | null>(null);
 
   // Admin staff selection
   const [allStaff, setAllStaff] = useState<UserProfile[]>([]);
@@ -1334,6 +1343,22 @@ export function MyHRProfile() {
                                 <span className="font-bold text-lg">
                                   {formatCurrency(preview.totalPay, preview.currency)}
                                 </span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setInvoiceDialog({
+                                      open: true,
+                                      month: preview.month,
+                                      amount: preview.totalPay,
+                                      currency: preview.currency,
+                                    });
+                                  }}
+                                >
+                                  <FileBadge className="h-4 w-4 mr-1" />
+                                  Generate Invoice
+                                </Button>
                               </div>
                             </div>
                           </CollapsibleTrigger>
@@ -1432,6 +1457,27 @@ export function MyHRProfile() {
             </AccordionContent>
           </AccordionItem>
         </Accordion>}
+
+      {/* Contractor / Invoicing Details Section */}
+      {selectedUserId && (
+        <Accordion type="single" collapsible className="w-full">
+          <AccordionItem value="contractor-details" className="border-2 border-primary/20 rounded-lg">
+            <AccordionTrigger className="px-6 py-4 hover:no-underline">
+              <div className="flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-primary" />
+                <span className="text-lg font-semibold">Contractor / Invoicing Details</span>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="px-6 pb-4">
+              <ContractorInvoiceDetailsForm
+                userId={selectedUserId}
+                defaultContactName={allStaff.find(s => s.user_id === selectedUserId)?.display_name || undefined}
+                defaultEmail={allStaff.find(s => s.user_id === selectedUserId)?.email || undefined}
+              />
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      )}
 
       {/* My Requests Section */}
       <Accordion type="single" collapsible className="w-full">
@@ -1614,5 +1660,19 @@ export function MyHRProfile() {
         documentType={documentPreview.documentType}
         documentLabel={documentPreview.documentLabel}
       />
+
+      {/* Invoice Generator Dialog */}
+      {invoiceDialog && selectedUserId && (
+        <InvoiceGeneratorDialog
+          open={invoiceDialog.open}
+          onOpenChange={(open) => setInvoiceDialog(prev => prev ? { ...prev, open } : null)}
+          staffUserId={selectedUserId}
+          staffName={allStaff.find(s => s.user_id === selectedUserId)?.display_name || undefined}
+          staffEmail={allStaff.find(s => s.user_id === selectedUserId)?.email || undefined}
+          month={invoiceDialog.month}
+          defaultAmount={invoiceDialog.amount}
+          defaultCurrency={invoiceDialog.currency}
+        />
+      )}
     </div>;
 }
