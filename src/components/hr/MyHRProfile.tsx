@@ -10,10 +10,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye } from "lucide-react";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay } from "date-fns";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
+import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
+import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 interface UserProfile {
   user_id: string;
   display_name: string | null;
