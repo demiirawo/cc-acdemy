@@ -1343,6 +1343,22 @@ export function MyHRProfile() {
                                 <span className="font-bold text-lg">
                                   {formatCurrency(preview.totalPay, preview.currency)}
                                 </span>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setInvoiceDialog({
+                                      open: true,
+                                      month: preview.month,
+                                      amount: preview.totalPay,
+                                      currency: preview.currency,
+                                    });
+                                  }}
+                                >
+                                  <FileBadge className="h-4 w-4 mr-1" />
+                                  Generate Invoice
+                                </Button>
                               </div>
                             </div>
                           </CollapsibleTrigger>
