@@ -1660,5 +1660,19 @@ export function MyHRProfile() {
         documentType={documentPreview.documentType}
         documentLabel={documentPreview.documentLabel}
       />
+
+      {/* Invoice Generator Dialog */}
+      {invoiceDialog && selectedUserId && (
+        <InvoiceGeneratorDialog
+          open={invoiceDialog.open}
+          onOpenChange={(open) => setInvoiceDialog(prev => prev ? { ...prev, open } : null)}
+          staffUserId={selectedUserId}
+          staffName={allStaff.find(s => s.user_id === selectedUserId)?.display_name || undefined}
+          staffEmail={allStaff.find(s => s.user_id === selectedUserId)?.email || undefined}
+          month={invoiceDialog.month}
+          defaultAmount={invoiceDialog.amount}
+          defaultCurrency={invoiceDialog.currency}
+        />
+      )}
     </div>;
 }
