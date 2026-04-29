@@ -1458,6 +1458,27 @@ export function MyHRProfile() {
           </AccordionItem>
         </Accordion>}
 
+      {/* Contractor / Invoicing Details Section */}
+      {selectedUserId && (
+        <Accordion type="single" collapsible className="w-full">
+          <AccordionItem value="contractor-details" className="border-2 border-primary/20 rounded-lg">
+            <AccordionTrigger className="px-6 py-4 hover:no-underline">
+              <div className="flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-primary" />
+                <span className="text-lg font-semibold">Contractor / Invoicing Details</span>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="px-6 pb-4">
+              <ContractorInvoiceDetailsForm
+                userId={selectedUserId}
+                defaultContactName={allStaff.find(s => s.user_id === selectedUserId)?.display_name || undefined}
+                defaultEmail={allStaff.find(s => s.user_id === selectedUserId)?.email || undefined}
+              />
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+      )}
+
       {/* My Requests Section */}
       <Accordion type="single" collapsible className="w-full">
         <AccordionItem value="my-requests" className="border-2 border-primary/20 rounded-lg">
