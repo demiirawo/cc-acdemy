@@ -2034,6 +2034,22 @@ export function StaffPayManager() {
                           >
                             <Edit2 className="h-4 w-4" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setInvoiceDialog({
+                              open: true,
+                              staffUserId: staff.userId,
+                              staffName: staff.displayName,
+                              staffEmail: staff.email,
+                              amount: staff.totalPay,
+                              currency: staff.currency,
+                            })}
+                            className="h-8 w-8 p-0"
+                            title="Generate Invoice"
+                          >
+                            <FileBadge className="h-4 w-4" />
+                          </Button>
                           {staff.hasSalaryRecord ? (
                             <Button 
                               variant="ghost" 
