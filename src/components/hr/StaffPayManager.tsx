@@ -1952,21 +1952,46 @@ export function StaffPayManager() {
                   </TableCell>
                 </TableRow>
               ) : (
-                payrollSummary.map(staff => {
-                  const isReady = readyStaff.has(staff.userId);
-                  const isOTExpanded = expandedOvertimeStaff.has(staff.userId);
-                  const hasOTDetails = staff.overtimeDayDetails.length > 0 || staff.holidayShifts.length > 0;
-                  
-                  // Conditional row background:
-                  // Paid -> light blue, Ready -> light green, Default/Pending -> light amber
-                  const rowBgClass = staff.hasSalaryRecord
-                    ? 'bg-blue-50 hover:bg-blue-100/70 dark:bg-blue-950/30 dark:hover:bg-blue-950/50'
-                    : isReady
-                      ? 'bg-green-50 hover:bg-green-100/70 dark:bg-green-950/30 dark:hover:bg-green-950/50'
-                      : 'bg-amber-50 hover:bg-amber-100/70 dark:bg-amber-950/20 dark:hover:bg-amber-950/40';
+                (() => {
+                  // Group staff by status: Pending -> Ready -> Paid
+                  const pendingGroup = payrollSummary.filter(s => !s.hasSalaryRecord && !readyStaff.has(s.userId));
+                  const readyGroup = payrollSummary.filter(s => !s.hasSalaryRecord && readyStaff.has(s.userId));
+                  const paidGroup = payrollSummary.filter(s => s.hasSalaryRecord);
 
-                  return (
-                    <React.Fragment key={staff.userId}>
+                  const groups: Array<{
+                    key: 'pending' | 'ready' | 'paid';
+                    label: string;
+                    headerClass: string;
+                    items: typeof payrollSummary;
+                  }> = [
+                    { key: 'pending', label: 'Pending', headerClass: 'bg-amber-100 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200', items: pendingGroup },
+                    { key: 'ready', label: 'Ready', headerClass: 'bg-green-100 dark:bg-green-950/40 text-green-900 dark:text-green-200', items: readyGroup },
+                    { key: 'paid', label: 'Paid', headerClass: 'bg-blue-100 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200', items: paidGroup },
+                  ];
+
+                  return groups.flatMap(group => {
+                    if (group.items.length === 0) return [];
+                    return [
+                      <TableRow key={`group-header-${group.key}`} className={`${group.headerClass} hover:${group.headerClass}`}>
+                        <TableCell colSpan={14} className="py-2 font-semibold text-sm uppercase tracking-wide">
+                          {group.label} ({group.items.length})
+                        </TableCell>
+                      </TableRow>,
+                      ...group.items.map(staff => {
+                        const isReady = readyStaff.has(staff.userId);
+                        const isOTExpanded = expandedOvertimeStaff.has(staff.userId);
+                        const hasOTDetails = staff.overtimeDayDetails.length > 0 || staff.holidayShifts.length > 0;
+
+                        // Conditional row background:
+                        // Paid -> light blue, Ready -> light green, Default/Pending -> light amber
+                        const rowBgClass = staff.hasSalaryRecord
+                          ? 'bg-blue-50 hover:bg-blue-100/70 dark:bg-blue-950/30 dark:hover:bg-blue-950/50'
+                          : isReady
+                            ? 'bg-green-50 hover:bg-green-100/70 dark:bg-green-950/30 dark:hover:bg-green-950/50'
+                            : 'bg-amber-50 hover:bg-amber-100/70 dark:bg-amber-950/20 dark:hover:bg-amber-950/40';
+
+                        return (
+                          <React.Fragment key={staff.userId}>
                     <TableRow className={`transition-colors border-b ${rowBgClass}`}>
                       <TableCell className="font-medium py-3">
                         <div>
@@ -2220,8 +2245,11 @@ export function StaffPayManager() {
                       </TableRow>
                     )}
                     </React.Fragment>
-                  );
-                })
+                        );
+                      })
+                    ];
+                  });
+                })()
               )}
             </TableBody>
           </Table>
