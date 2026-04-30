@@ -14,7 +14,8 @@ const FROM_ADDRESS = "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>";
 
 interface Body {
   invoiceId: string;
-  pdfBase64: string;
+  pdfBase64?: string;
+  pdfStoragePath?: string;
   staffEmail?: string;
   staffName?: string;
 }
@@ -44,9 +45,9 @@ serve(async (req) => {
   }
   try {
     const body = (await req.json()) as Body;
-    if (!body?.invoiceId || !body?.pdfBase64) {
+    if (!body?.invoiceId || (!body?.pdfBase64 && !body?.pdfStoragePath)) {
       return new Response(
-        JSON.stringify({ error: "invoiceId and pdfBase64 are required" }),
+        JSON.stringify({ error: "invoiceId and (pdfBase64 or pdfStoragePath) are required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -54,6 +55,27 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Resolve PDF content — prefer storage path (avoids body size limits)
+    let pdfBase64: string;
+    if (body.pdfStoragePath) {
+      const { data: fileBlob, error: dlErr } = await supabase.storage
+        .from("invoice-pdfs")
+        .download(body.pdfStoragePath);
+      if (dlErr || !fileBlob) {
+        throw new Error(`Failed to download PDF from storage: ${dlErr?.message || "not found"}`);
+      }
+      const buf = new Uint8Array(await fileBlob.arrayBuffer());
+      // Base64-encode
+      let binary = "";
+      const chunkSize = 0x8000;
+      for (let i = 0; i < buf.length; i += chunkSize) {
+        binary += String.fromCharCode(...buf.subarray(i, i + chunkSize));
+      }
+      pdfBase64 = btoa(binary);
+    } else {
+      pdfBase64 = body.pdfBase64!;
+    }
 
     // Load invoice
     const { data: invoice, error: invErr } = await supabase

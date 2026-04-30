@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Download, Send, Loader2, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
-import { downloadInvoicePdf, getInvoicePdfBase64, type InvoiceData } from "@/lib/invoice/generatePdf";
+import { downloadInvoicePdf, getInvoicePdfBlob, type InvoiceData } from "@/lib/invoice/generatePdf";
 
 interface Props {
   open: boolean;
@@ -175,12 +175,22 @@ export function InvoiceGeneratorDialog({
     setBusy(true);
     try {
       const row = await persistInvoice("sent");
-      const pdfBase64 = await getInvoicePdfBase64(buildInvoiceData(row.invoice_number));
+      const pdfBlob = await getInvoicePdfBlob(buildInvoiceData(row.invoice_number));
+
+      // Upload PDF to storage to avoid edge function body size limits
+      const storagePath = `${staffUserId}/${row.id}-${row.invoice_number}.pdf`;
+      const { error: uploadError } = await supabase.storage
+        .from("invoice-pdfs")
+        .upload(storagePath, pdfBlob, {
+          contentType: "application/pdf",
+          upsert: true,
+        });
+      if (uploadError) throw uploadError;
 
       const { error: fnError } = await supabase.functions.invoke("send-invoice-email", {
         body: {
           invoiceId: row.id,
-          pdfBase64,
+          pdfStoragePath: storagePath,
           staffEmail: staffEmail,
           staffName: staffName,
         },
