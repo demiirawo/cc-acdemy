@@ -253,3 +253,8 @@ export async function getInvoicePdfBase64(data: InvoiceData): Promise<string> {
   const dataUri = doc.output("datauristring");
   return dataUri.split(",")[1];
 }
+
+export async function getInvoicePdfBlob(data: InvoiceData): Promise<Blob> {
+  const doc = await generateInvoicePdf(data);
+  return doc.output("blob");
+}
