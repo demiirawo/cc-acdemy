@@ -34,6 +34,7 @@ interface HRProfile {
   pay_frequency: string | null;
   annual_holiday_allowance: number | null;
   unlimited_holiday: boolean;
+  public_holiday_pay_disabled?: boolean;
   notes: string | null;
   scheduling_role: string;
   employment_status: EmploymentStatus;
