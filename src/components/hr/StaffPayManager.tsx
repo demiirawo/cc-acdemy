@@ -226,6 +226,23 @@ export function StaffPayManager() {
     }
   }, [selectedMonth]);
 
+  // Fetch persisted "ready to pay" status for the selected month
+  useEffect(() => {
+    const fetchReadyStatus = async () => {
+      const monthKey = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
+      const { data, error } = await supabase
+        .from('payroll_ready_status')
+        .select('user_id')
+        .eq('pay_period_month', monthKey);
+      if (error) {
+        console.error('Error fetching payroll ready status:', error);
+        return;
+      }
+      setReadyStaff(new Set((data || []).map(r => r.user_id)));
+    };
+    fetchReadyStatus();
+  }, [selectedMonth]);
+
   const fetchPublicHolidays = async (year: number) => {
     setLoadingHolidays(true);
     try {
