@@ -1202,17 +1202,52 @@ export function StaffPayManager() {
     }
   };
 
-  // Toggle staff to ready status
-  const handleToggleReady = (userId: string) => {
+  // Toggle staff to ready status (persisted per month)
+  const handleToggleReady = async (userId: string) => {
+    const monthKey = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
+    const isCurrentlyReady = readyStaff.has(userId);
+
+    // Optimistic update
     setReadyStaff(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(userId)) {
-        newSet.delete(userId);
-      } else {
-        newSet.add(userId);
-      }
+      if (isCurrentlyReady) newSet.delete(userId);
+      else newSet.add(userId);
       return newSet;
     });
+
+    try {
+      if (isCurrentlyReady) {
+        const { error } = await supabase
+          .from('payroll_ready_status')
+          .delete()
+          .eq('user_id', userId)
+          .eq('pay_period_month', monthKey);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('payroll_ready_status')
+          .insert({
+            user_id: userId,
+            pay_period_month: monthKey,
+            marked_by: user?.id ?? null,
+          });
+        if (error) throw error;
+      }
+    } catch (error: any) {
+      console.error('Error updating ready status:', error);
+      // Revert optimistic update
+      setReadyStaff(prev => {
+        const newSet = new Set(prev);
+        if (isCurrentlyReady) newSet.add(userId);
+        else newSet.delete(userId);
+        return newSet;
+      });
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update ready status",
+        variant: "destructive",
+      });
+    }
   };
 
   // Revert paid status back to pending (delete salary record)
