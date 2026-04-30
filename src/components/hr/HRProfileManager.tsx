@@ -1194,6 +1194,23 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
                   />
                 </div>
 
+                {/* Disable Public Holiday Pay Toggle */}
+                <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
+                  <div className="flex items-center gap-3">
+                    <Shield className="h-5 w-5 text-primary" />
+                    <div>
+                      <Label className="text-base font-medium">Disable Public Holiday Pay</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Exclude this staff member from public holiday overtime (0.5× bonus)
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={!!formData.public_holiday_pay_disabled}
+                    onCheckedChange={(checked) => setFormData({ ...formData, public_holiday_pay_disabled: checked })}
+                  />
+                </div>
+
                 {formData.start_date && !formData.unlimited_holiday && (
                   <Card className="bg-muted/50">
                     <CardContent className="p-3">
