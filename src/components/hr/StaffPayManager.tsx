@@ -2245,8 +2245,11 @@ export function StaffPayManager() {
                       </TableRow>
                     )}
                     </React.Fragment>
-                  );
-                })
+                        );
+                      })
+                    ];
+                  });
+                })()
               )}
             </TableBody>
           </Table>
