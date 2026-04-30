@@ -237,7 +237,33 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
 export async function downloadInvoicePdf(data: InvoiceData, fileName?: string) {
   const doc = await generateInvoicePdf(data);
   const name = fileName || `Invoice-${data.invoiceNumber}.pdf`;
-  doc.save(name);
+  const blob = doc.output("blob");
+  const url = URL.createObjectURL(blob);
+
+  // Trigger download via a real anchor appended to body (more reliable than jsPDF's internal save,
+  // especially inside sandboxed iframes / preview environments).
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.rel = "noopener";
+  a.target = "_self";
+  document.body.appendChild(a);
+  a.click();
+
+  // If the browser blocks the download (e.g. sandboxed iframe without allow-downloads),
+  // open the PDF in a new tab as a fallback so the user can still save it.
+  setTimeout(() => {
+    try {
+      // Best-effort fallback: open in new tab. Modern browsers will ignore this if the
+      // download succeeded; if it was blocked, the user gets a viewable PDF.
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      // ignore
+    }
+    document.body.removeChild(a);
+    // Revoke after a delay so the download/new-tab has time to consume the URL
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }, 100);
 }
 
 export async function getInvoicePdfBase64(data: InvoiceData): Promise<string> {
