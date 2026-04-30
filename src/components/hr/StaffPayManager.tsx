@@ -1894,30 +1894,33 @@ export function StaffPayManager() {
       </Card>
 
       {/* Payroll Table */}
-      <Card>
-        <CardHeader>
+      <Card className="overflow-hidden">
+        <CardHeader className="bg-muted/40 border-b">
           <CardTitle className="text-lg">Staff Payroll Summary</CardTitle>
           <CardDescription>
-            Monthly breakdown for {format(selectedMonth, 'MMMM yyyy')}
+            Monthly breakdown for {format(selectedMonth, 'MMMM yyyy')} · Rows colored by status:
+            <span className="inline-flex items-center gap-1 ml-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-200 border border-amber-400" /> Pending</span>
+            <span className="inline-flex items-center gap-1 ml-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-green-200 border border-green-500" /> Ready</span>
+            <span className="inline-flex items-center gap-1 ml-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-200 border border-blue-500" /> Paid</span>
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Staff Member</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Base Salary</TableHead>
-                <TableHead className="text-right">Bonuses</TableHead>
-                <TableHead className="text-right">Overtime</TableHead>
-                <TableHead className="text-right">Holiday OT</TableHead>
-                <TableHead className="text-right">Unused Holiday</TableHead>
-                <TableHead className="text-right">Unpaid Hol</TableHead>
-                <TableHead className="text-right">Pro-Rata</TableHead>
-                <TableHead className="text-right">Deductions</TableHead>
-                <TableHead className="text-right">Total Pay</TableHead>
-                <TableHead className="text-right">GBP Equiv.</TableHead>
-                <TableHead>Actions</TableHead>
+              <TableRow className="bg-muted/60 hover:bg-muted/60">
+                <TableHead className="font-semibold">Staff Member</TableHead>
+                <TableHead className="font-semibold">Status</TableHead>
+                <TableHead className="text-right font-semibold">Base Salary</TableHead>
+                <TableHead className="text-right font-semibold">Bonuses</TableHead>
+                <TableHead className="text-right font-semibold">Overtime</TableHead>
+                <TableHead className="text-right font-semibold">Holiday OT</TableHead>
+                <TableHead className="text-right font-semibold">Unused Holiday</TableHead>
+                <TableHead className="text-right font-semibold">Unpaid Hol</TableHead>
+                <TableHead className="text-right font-semibold">Pro-Rata</TableHead>
+                <TableHead className="text-right font-semibold">Deductions</TableHead>
+                <TableHead className="text-right font-semibold">Total Pay</TableHead>
+                <TableHead className="text-right font-semibold">GBP Equiv.</TableHead>
+                <TableHead className="font-semibold">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
