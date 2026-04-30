@@ -1081,6 +1081,16 @@ export function StaffPayManager() {
     return payrollSummary.reduce((sum, s) => sum + s.totalPayInGBP, 0);
   }, [payrollSummary]);
 
+  const payrollTotalsByStatus = useMemo(() => {
+    let paid = 0, ready = 0, pending = 0;
+    payrollSummary.forEach(s => {
+      if (s.hasSalaryRecord) paid += s.totalPayInGBP;
+      else if (readyStaff.has(s.userId)) ready += s.totalPayInGBP;
+      else pending += s.totalPayInGBP;
+    });
+    return { paid, ready, pending };
+  }, [payrollSummary, readyStaff]);
+
   const handleOpenDialog = () => {
     setFormData({
       user_id: '',
@@ -1720,6 +1730,11 @@ export function StaffPayManager() {
             <div className="text-sm text-muted-foreground">Total Payroll (GBP)</div>
             <div className="text-2xl font-bold">£{totalPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             <div className="text-xs text-muted-foreground mt-1">Converted from all currencies</div>
+            <div className="mt-2 pt-2 border-t space-y-0.5 text-xs">
+              <div className="flex justify-between"><span className="text-success">Paid</span><span className="font-medium">£{payrollTotalsByStatus.paid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+              <div className="flex justify-between"><span className="text-blue-500">Ready</span><span className="font-medium">£{payrollTotalsByStatus.ready.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+              <div className="flex justify-between"><span className="text-warning">Pending</span><span className="font-medium">£{payrollTotalsByStatus.pending.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+            </div>
           </CardContent>
         </Card>
         <Card>
