@@ -549,6 +549,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
         pay_frequency: formData.pay_frequency || 'monthly',
         annual_holiday_allowance: formData.annual_holiday_allowance,
         unlimited_holiday: formData.unlimited_holiday,
+        public_holiday_pay_disabled: formData.public_holiday_pay_disabled,
         notes: formData.notes || null,
         scheduling_role: formData.scheduling_role,
         employment_status: formData.employment_status
