@@ -691,7 +691,9 @@ export function StaffPayManager() {
       
       // Holiday overtime bonus = 0.5 × daily rate × number of holiday days worked
       // (Base day pay is already included in monthly salary, so we only add the overtime portion)
-      const holidayOvertimeBonus = holidayOvertimeDays * dailyRate * 0.5;
+      // If staff has public holiday pay disabled, skip this bonus entirely.
+      const publicHolidayPayDisabled = !!(hrFullForEnd as any)?.public_holiday_pay_disabled;
+      const holidayOvertimeBonus = publicHolidayPayDisabled ? 0 : holidayOvertimeDays * dailyRate * 0.5;
       
       // Sum additions and deductions from records
       const salaryRecords = userRecords.filter(r => r.record_type === 'salary');
@@ -1037,8 +1039,8 @@ export function StaffPayManager() {
         expenses,
         deductions,
         holidayOvertimeBonus,
-        holidayOvertimeDays,
-        holidayShifts,
+        holidayOvertimeDays: publicHolidayPayDisabled ? 0 : holidayOvertimeDays,
+        holidayShifts: publicHolidayPayDisabled ? [] : holidayShifts,
         unusedHolidayPayout,
         unusedHolidayDays,
         excessHolidayDeduction,

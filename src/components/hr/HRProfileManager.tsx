@@ -34,6 +34,7 @@ interface HRProfile {
   pay_frequency: string | null;
   annual_holiday_allowance: number | null;
   unlimited_holiday: boolean;
+  public_holiday_pay_disabled?: boolean;
   notes: string | null;
   scheduling_role: string;
   employment_status: EmploymentStatus;
@@ -194,6 +195,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
     pay_frequency: 'monthly',
     annual_holiday_allowance: 28,
     unlimited_holiday: false,
+    public_holiday_pay_disabled: false,
     notes: '',
     scheduling_role: 'viewer',
     employment_status: 'onboarding_probation' as EmploymentStatus,
@@ -426,6 +428,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
         pay_frequency: existingHR.pay_frequency || 'monthly',
         annual_holiday_allowance: existingHR.annual_holiday_allowance || 28,
         unlimited_holiday: existingHR.unlimited_holiday || false,
+        public_holiday_pay_disabled: (existingHR as any).public_holiday_pay_disabled || false,
         notes: existingHR.notes || '',
         scheduling_role: existingHR.scheduling_role || 'viewer',
         employment_status: existingHR.employment_status || 'onboarding_probation',
@@ -446,6 +449,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
         pay_frequency: 'monthly',
         annual_holiday_allowance: 28,
         unlimited_holiday: false,
+        public_holiday_pay_disabled: false,
         notes: '',
         scheduling_role: 'viewer',
         employment_status: 'onboarding_probation',
@@ -545,6 +549,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
         pay_frequency: formData.pay_frequency || 'monthly',
         annual_holiday_allowance: formData.annual_holiday_allowance,
         unlimited_holiday: formData.unlimited_holiday,
+        public_holiday_pay_disabled: formData.public_holiday_pay_disabled,
         notes: formData.notes || null,
         scheduling_role: formData.scheduling_role,
         employment_status: formData.employment_status
@@ -1186,6 +1191,23 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
                   <Switch
                     checked={formData.unlimited_holiday}
                     onCheckedChange={(checked) => setFormData({ ...formData, unlimited_holiday: checked })}
+                  />
+                </div>
+
+                {/* Disable Public Holiday Pay Toggle */}
+                <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
+                  <div className="flex items-center gap-3">
+                    <Shield className="h-5 w-5 text-primary" />
+                    <div>
+                      <Label className="text-base font-medium">Disable Public Holiday Pay</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Exclude this staff member from public holiday overtime (0.5× bonus)
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={!!formData.public_holiday_pay_disabled}
+                    onCheckedChange={(checked) => setFormData({ ...formData, public_holiday_pay_disabled: checked })}
                   />
                 </div>
 
