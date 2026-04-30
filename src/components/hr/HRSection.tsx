@@ -30,7 +30,7 @@ export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {
 
   return (
     <div className="flex-1 overflow-auto p-6">
-      <div className="max-w-7xl mx-auto">
+      <div className={`${activeTab === 'pay' ? 'w-full' : 'max-w-7xl mx-auto'}`}>
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-foreground">HR Management</h1>
           <p className="text-muted-foreground mt-1">
@@ -86,7 +86,7 @@ export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {
               <TabsContent value="profiles" className="mt-0">
                 <HRProfileManager initialUserId={initialUserId} onProfileClosed={onProfileClosed} />
               </TabsContent>
-              <TabsContent value="pay" className="mt-0 relative left-1/2 right-1/2 -mx-[50vw] w-screen px-6">
+              <TabsContent value="pay" className="mt-0">
                 <StaffPayManager />
               </TabsContent>
             </>
