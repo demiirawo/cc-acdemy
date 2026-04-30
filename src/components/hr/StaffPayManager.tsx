@@ -1933,44 +1933,50 @@ export function StaffPayManager() {
                   const isOTExpanded = expandedOvertimeStaff.has(staff.userId);
                   const hasOTDetails = staff.overtimeDayDetails.length > 0 || staff.holidayShifts.length > 0;
                   
+                  // Conditional row background:
+                  // Paid -> light blue, Ready -> light green, Default/Pending -> light amber
+                  const rowBgClass = staff.hasSalaryRecord
+                    ? 'bg-blue-50 hover:bg-blue-100/70 dark:bg-blue-950/30 dark:hover:bg-blue-950/50'
+                    : isReady
+                      ? 'bg-green-50 hover:bg-green-100/70 dark:bg-green-950/30 dark:hover:bg-green-950/50'
+                      : 'bg-amber-50 hover:bg-amber-100/70 dark:bg-amber-950/20 dark:hover:bg-amber-950/40';
+
                   return (
                     <React.Fragment key={staff.userId}>
-                    <TableRow className="hover:bg-muted/30">
-                      <TableCell className="font-medium">
+                    <TableRow className={`transition-colors border-b ${rowBgClass}`}>
+                      <TableCell className="font-medium py-3">
                         <div>
-                          <div>{staff.displayName}</div>
+                          <div className="font-semibold">{staff.displayName}</div>
                           <div className="text-xs text-muted-foreground">{staff.email}</div>
                         </div>
                       </TableCell>
                       <TableCell>
                         {staff.hasSalaryRecord ? (
-                          <Badge 
-                            variant="default" 
-                            className="bg-success cursor-pointer hover:bg-success/80"
+                          <Badge
+                            className="bg-blue-500 hover:bg-blue-600 text-white border-0 cursor-pointer gap-1"
                             onClick={() => handleRevertToPending(staff.userId)}
                             title="Click to revert to pending"
                           >
-                            <CheckCircle className="h-3 w-3 mr-1" />
+                            <CheckCircle className="h-3 w-3" />
                             Paid
                           </Badge>
                         ) : isReady ? (
-                          <Badge 
-                            variant="default" 
-                            className="bg-blue-500 cursor-pointer hover:bg-blue-600"
+                          <Badge
+                            className="bg-green-600 hover:bg-green-700 text-white border-0 cursor-pointer gap-1"
                             onClick={() => handleToggleReady(staff.userId)}
                             title="Click to set back to pending"
                           >
-                            <CheckCircle className="h-3 w-3 mr-1" />
+                            <CheckCircle className="h-3 w-3" />
                             Ready
                           </Badge>
                         ) : (
-                          <Badge 
-                            variant="outline" 
-                            className="border-warning text-warning-foreground cursor-pointer hover:bg-warning/10"
+                          <Badge
+                            variant="outline"
+                            className="border-amber-500 text-amber-700 dark:text-amber-300 bg-amber-100/60 dark:bg-amber-900/30 cursor-pointer hover:bg-amber-200/60 gap-1"
                             onClick={() => handleToggleReady(staff.userId)}
                             title="Click to mark as ready"
                           >
-                            <Clock className="h-3 w-3 mr-1" />
+                            <Clock className="h-3 w-3" />
                             Pending
                           </Badge>
                         )}
