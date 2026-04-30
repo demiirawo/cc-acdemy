@@ -86,7 +86,7 @@ export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {
               <TabsContent value="profiles" className="mt-0">
                 <HRProfileManager initialUserId={initialUserId} onProfileClosed={onProfileClosed} />
               </TabsContent>
-              <TabsContent value="pay" className="mt-0 relative left-1/2 right-1/2 -mx-[50vw] w-screen px-6">
+              <TabsContent value="pay" className="mt-0">
                 <StaffPayManager />
               </TabsContent>
             </>
