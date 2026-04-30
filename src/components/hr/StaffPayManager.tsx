@@ -2160,12 +2160,7 @@ export function StaffPayManager() {
                               <FileText className="h-4 w-4 mr-1" />
                               Pay
                             </Button>
-                          ) : (
-                            <Button variant="ghost" size="sm" onClick={() => handleToggleReady(staff.userId)}>
-                              <CheckCircle className="h-4 w-4 mr-1" />
-                              Ready
-                            </Button>
-                          )}
+                          ) : null}
                         </div>
                       </TableCell>
                     </TableRow>
