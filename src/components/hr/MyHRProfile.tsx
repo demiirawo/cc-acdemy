@@ -600,9 +600,13 @@ export function MyHRProfile() {
         }
       });
 
-      const holidayOvertimeDays = countedHolidayDates.size;
+      const publicHolidayPayDisabled = !!(hrProfile as any)?.public_holiday_pay_disabled;
+      const holidayOvertimeDays = publicHolidayPayDisabled ? 0 : countedHolidayDates.size;
       // Base day pay is already in salary, so we only add the 0.5x overtime bonus
-      const holidayOvertimeBonus = holidayOvertimeDays * dailyRate * 0.5;
+      const holidayOvertimeBonus = publicHolidayPayDisabled ? 0 : countedHolidayDates.size * dailyRate * 0.5;
+      if (publicHolidayPayDisabled) {
+        holidayShifts.length = 0;
+      }
 
       // Get bonuses and deductions for this month from pay records
       const monthRecords = payRecords.filter(r => {
