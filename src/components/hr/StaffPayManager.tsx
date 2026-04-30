@@ -226,6 +226,23 @@ export function StaffPayManager() {
     }
   }, [selectedMonth]);
 
+  // Fetch persisted "ready to pay" status for the selected month
+  useEffect(() => {
+    const fetchReadyStatus = async () => {
+      const monthKey = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
+      const { data, error } = await supabase
+        .from('payroll_ready_status')
+        .select('user_id')
+        .eq('pay_period_month', monthKey);
+      if (error) {
+        console.error('Error fetching payroll ready status:', error);
+        return;
+      }
+      setReadyStaff(new Set((data || []).map(r => r.user_id)));
+    };
+    fetchReadyStatus();
+  }, [selectedMonth]);
+
   const fetchPublicHolidays = async (year: number) => {
     setLoadingHolidays(true);
     try {
@@ -1185,17 +1202,52 @@ export function StaffPayManager() {
     }
   };
 
-  // Toggle staff to ready status
-  const handleToggleReady = (userId: string) => {
+  // Toggle staff to ready status (persisted per month)
+  const handleToggleReady = async (userId: string) => {
+    const monthKey = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
+    const isCurrentlyReady = readyStaff.has(userId);
+
+    // Optimistic update
     setReadyStaff(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(userId)) {
-        newSet.delete(userId);
-      } else {
-        newSet.add(userId);
-      }
+      if (isCurrentlyReady) newSet.delete(userId);
+      else newSet.add(userId);
       return newSet;
     });
+
+    try {
+      if (isCurrentlyReady) {
+        const { error } = await supabase
+          .from('payroll_ready_status')
+          .delete()
+          .eq('user_id', userId)
+          .eq('pay_period_month', monthKey);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('payroll_ready_status')
+          .insert({
+            user_id: userId,
+            pay_period_month: monthKey,
+            marked_by: user?.id ?? null,
+          });
+        if (error) throw error;
+      }
+    } catch (error: any) {
+      console.error('Error updating ready status:', error);
+      // Revert optimistic update
+      setReadyStaff(prev => {
+        const newSet = new Set(prev);
+        if (isCurrentlyReady) newSet.add(userId);
+        else newSet.delete(userId);
+        return newSet;
+      });
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update ready status",
+        variant: "destructive",
+      });
+    }
   };
 
   // Revert paid status back to pending (delete salary record)
@@ -1257,7 +1309,16 @@ export function StaffPayManager() {
 
       if (error) throw error;
 
-      // Clear ready status for processed staff
+      // Clear ready status for processed staff (DB + state)
+      const monthKey = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
+      const processedIds = staffToProcess.map(s => s.userId);
+      const { error: clearError } = await supabase
+        .from('payroll_ready_status')
+        .delete()
+        .eq('pay_period_month', monthKey)
+        .in('user_id', processedIds);
+      if (clearError) console.error('Error clearing ready status:', clearError);
+
       setReadyStaff(prev => {
         const newSet = new Set(prev);
         staffToProcess.forEach(s => newSet.delete(s.userId));

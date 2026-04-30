@@ -1056,6 +1056,33 @@ export type Database = {
           },
         ]
       }
+      payroll_ready_status: {
+        Row: {
+          created_at: string
+          id: string
+          marked_by: string | null
+          pay_period_month: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          marked_by?: string | null
+          pay_period_month: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          marked_by?: string | null
+          pay_period_month?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
