@@ -1986,11 +1986,12 @@ export function StaffPayManager() {
                           </Badge>
                         ) : isReady ? (
                           <Badge
-                            className="bg-green-600 hover:bg-green-700 text-white border-0 cursor-pointer gap-1"
+                            className="group bg-green-600 hover:bg-green-700 text-white border-0 cursor-pointer gap-1"
                             onClick={() => handleToggleReady(staff.userId)}
-                            title="Click to set back to pending"
+                            title="Click to undo: revert to pending"
                           >
-                            <CheckCircle className="h-3 w-3" />
+                            <CheckCircle className="h-3 w-3 group-hover:hidden" />
+                            <RotateCcw className="h-3 w-3 hidden group-hover:inline" />
                             Ready
                           </Badge>
                         ) : (
