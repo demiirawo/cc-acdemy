@@ -420,7 +420,7 @@ export function StaffPayManager() {
       // Fetch full HR profiles for holiday allowance
       const { data: hrFullData } = await supabase
         .from('hr_profiles')
-        .select('user_id, annual_holiday_allowance, start_date, employment_end_date, unlimited_holiday');
+        .select('user_id, annual_holiday_allowance, start_date, employment_end_date, unlimited_holiday, public_holiday_pay_disabled');
       
       setHRProfilesFull(hrFullData || []);
 
