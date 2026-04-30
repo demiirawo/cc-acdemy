@@ -71,30 +71,31 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   const margin = 40;
   let y = margin;
 
-  // Logo
+  // Logo (top right)
   const logo = await loadImageAsDataUrl(logoUrl);
+  const logoSize = 70;
   if (logo) {
     try {
-      doc.addImage(logo, "PNG", margin, y, 80, 80);
+      doc.addImage(logo, "PNG", pageWidth - margin - logoSize, y, logoSize, logoSize);
     } catch {
       // ignore
     }
   }
 
-  // Title
+  // Title (top left)
   doc.setFont("helvetica", "bold");
   doc.setFontSize(22);
   doc.setTextColor(...BRAND_PURPLE);
-  doc.text("Contractor Invoice", pageWidth - margin, y + 30, { align: "right" });
+  doc.text("Contractor Invoice", margin, y + 30);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.setTextColor(80);
-  doc.text(`Invoice #${data.invoiceNumber}`, pageWidth - margin, y + 50, { align: "right" });
+  doc.text(`Invoice #${data.invoiceNumber}`, margin, y + 50);
   const dateStr = typeof data.dateRequested === "string"
     ? format(new Date(data.dateRequested), "EEEE, MMMM d, yyyy")
     : format(data.dateRequested, "EEEE, MMMM d, yyyy");
-  doc.text(dateStr, pageWidth - margin, y + 65, { align: "right" });
+  doc.text(dateStr, margin, y + 65);
 
   y += 100;
 
@@ -198,7 +199,7 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   // Items table
   autoTable(doc, {
     startY: y,
-    head: [["Description of Job", "Amount Requested"]],
+    head: [["Description of Job", "Amount Due"]],
     body: [[data.description, formatMoney(data.amount, data.currency)]],
     margin: { left: margin, right: margin },
     headStyles: {
@@ -206,13 +207,16 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
       textColor: 255,
       fontStyle: "bold",
       fontSize: 11,
+      halign: "left",
     },
     bodyStyles: {
       fontSize: 11,
       cellPadding: 10,
+      valign: "top",
     },
     columnStyles: {
-      1: { halign: "right", cellWidth: 160 },
+      0: { cellWidth: pageWidth - margin * 2 - 140 },
+      1: { halign: "right", cellWidth: 140, overflow: "ellipsize", fontStyle: "bold" },
     },
     theme: "grid",
   });
@@ -226,17 +230,6 @@ export async function generateInvoicePdf(data: InvoiceData): Promise<jsPDF> {
   doc.setTextColor(...BRAND_PURPLE);
   doc.text("Total", pageWidth - margin - 160, finalY + 6);
   doc.text(formatMoney(data.amount, data.currency), pageWidth - margin, finalY + 6, { align: "right" });
-
-  // Footer
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(9);
-  doc.setTextColor(120);
-  doc.text(
-    "Generated via Care Cuddle Academy",
-    pageWidth / 2,
-    doc.internal.pageSize.getHeight() - 24,
-    { align: "center" }
-  );
 
   return doc;
 }
