@@ -428,6 +428,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
         pay_frequency: existingHR.pay_frequency || 'monthly',
         annual_holiday_allowance: existingHR.annual_holiday_allowance || 28,
         unlimited_holiday: existingHR.unlimited_holiday || false,
+        public_holiday_pay_disabled: (existingHR as any).public_holiday_pay_disabled || false,
         notes: existingHR.notes || '',
         scheduling_role: existingHR.scheduling_role || 'viewer',
         employment_status: existingHR.employment_status || 'onboarding_probation',
