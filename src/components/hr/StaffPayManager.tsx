@@ -2126,6 +2126,41 @@ export function StaffPayManager() {
                           ) : null}
                         </div>
                       </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end">
+                          {staff.hasSalaryRecord ? (
+                            <Badge
+                              className="group bg-blue-500 hover:bg-blue-600 text-white border-0 cursor-pointer gap-1"
+                              onClick={() => handleRevertToPending(staff.userId)}
+                              title="Click to undo: revert to ready"
+                            >
+                              <CheckCircle className="h-3 w-3 group-hover:hidden" />
+                              <RotateCcw className="h-3 w-3 hidden group-hover:inline" />
+                              Paid
+                            </Badge>
+                          ) : isReady ? (
+                            <Badge
+                              className="group bg-green-600 hover:bg-green-700 text-white border-0 cursor-pointer gap-1"
+                              onClick={() => handleToggleReady(staff.userId)}
+                              title="Click to undo: revert to pending"
+                            >
+                              <CheckCircle className="h-3 w-3 group-hover:hidden" />
+                              <RotateCcw className="h-3 w-3 hidden group-hover:inline" />
+                              Ready
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="border-amber-500 text-amber-700 dark:text-amber-300 bg-amber-100/60 dark:bg-amber-900/30 cursor-pointer hover:bg-amber-200/60 gap-1"
+                              onClick={() => handleToggleReady(staff.userId)}
+                              title="Click to mark as ready"
+                            >
+                              <Clock className="h-3 w-3" />
+                              Pending
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
                     </TableRow>
                     {isOTExpanded && hasOTDetails && (
                       <TableRow className="bg-muted/20">
