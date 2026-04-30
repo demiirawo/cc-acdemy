@@ -1930,7 +1930,6 @@ export function StaffPayManager() {
             <TableHeader>
               <TableRow className="bg-muted/60 hover:bg-muted/60">
                 <TableHead className="font-semibold">Staff Member</TableHead>
-                <TableHead className="font-semibold">Status</TableHead>
                 <TableHead className="text-right font-semibold">Base Salary</TableHead>
                 <TableHead className="text-right font-semibold">Bonuses</TableHead>
                 <TableHead className="text-right font-semibold">Overtime</TableHead>
@@ -1942,6 +1941,7 @@ export function StaffPayManager() {
                 <TableHead className="text-right font-semibold">Total Pay</TableHead>
                 <TableHead className="text-right font-semibold">GBP Equiv.</TableHead>
                 <TableHead className="font-semibold">Actions</TableHead>
+                <TableHead className="text-right font-semibold">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
