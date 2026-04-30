@@ -1894,30 +1894,33 @@ export function StaffPayManager() {
       </Card>
 
       {/* Payroll Table */}
-      <Card>
-        <CardHeader>
+      <Card className="overflow-hidden">
+        <CardHeader className="bg-muted/40 border-b">
           <CardTitle className="text-lg">Staff Payroll Summary</CardTitle>
           <CardDescription>
-            Monthly breakdown for {format(selectedMonth, 'MMMM yyyy')}
+            Monthly breakdown for {format(selectedMonth, 'MMMM yyyy')} · Rows colored by status:
+            <span className="inline-flex items-center gap-1 ml-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-200 border border-amber-400" /> Pending</span>
+            <span className="inline-flex items-center gap-1 ml-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-green-200 border border-green-500" /> Ready</span>
+            <span className="inline-flex items-center gap-1 ml-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-blue-200 border border-blue-500" /> Paid</span>
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Staff Member</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Base Salary</TableHead>
-                <TableHead className="text-right">Bonuses</TableHead>
-                <TableHead className="text-right">Overtime</TableHead>
-                <TableHead className="text-right">Holiday OT</TableHead>
-                <TableHead className="text-right">Unused Holiday</TableHead>
-                <TableHead className="text-right">Unpaid Hol</TableHead>
-                <TableHead className="text-right">Pro-Rata</TableHead>
-                <TableHead className="text-right">Deductions</TableHead>
-                <TableHead className="text-right">Total Pay</TableHead>
-                <TableHead className="text-right">GBP Equiv.</TableHead>
-                <TableHead>Actions</TableHead>
+              <TableRow className="bg-muted/60 hover:bg-muted/60">
+                <TableHead className="font-semibold">Staff Member</TableHead>
+                <TableHead className="font-semibold">Status</TableHead>
+                <TableHead className="text-right font-semibold">Base Salary</TableHead>
+                <TableHead className="text-right font-semibold">Bonuses</TableHead>
+                <TableHead className="text-right font-semibold">Overtime</TableHead>
+                <TableHead className="text-right font-semibold">Holiday OT</TableHead>
+                <TableHead className="text-right font-semibold">Unused Holiday</TableHead>
+                <TableHead className="text-right font-semibold">Unpaid Hol</TableHead>
+                <TableHead className="text-right font-semibold">Pro-Rata</TableHead>
+                <TableHead className="text-right font-semibold">Deductions</TableHead>
+                <TableHead className="text-right font-semibold">Total Pay</TableHead>
+                <TableHead className="text-right font-semibold">GBP Equiv.</TableHead>
+                <TableHead className="font-semibold">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -1933,44 +1936,50 @@ export function StaffPayManager() {
                   const isOTExpanded = expandedOvertimeStaff.has(staff.userId);
                   const hasOTDetails = staff.overtimeDayDetails.length > 0 || staff.holidayShifts.length > 0;
                   
+                  // Conditional row background:
+                  // Paid -> light blue, Ready -> light green, Default/Pending -> light amber
+                  const rowBgClass = staff.hasSalaryRecord
+                    ? 'bg-blue-50 hover:bg-blue-100/70 dark:bg-blue-950/30 dark:hover:bg-blue-950/50'
+                    : isReady
+                      ? 'bg-green-50 hover:bg-green-100/70 dark:bg-green-950/30 dark:hover:bg-green-950/50'
+                      : 'bg-amber-50 hover:bg-amber-100/70 dark:bg-amber-950/20 dark:hover:bg-amber-950/40';
+
                   return (
                     <React.Fragment key={staff.userId}>
-                    <TableRow className="hover:bg-muted/30">
-                      <TableCell className="font-medium">
+                    <TableRow className={`transition-colors border-b ${rowBgClass}`}>
+                      <TableCell className="font-medium py-3">
                         <div>
-                          <div>{staff.displayName}</div>
+                          <div className="font-semibold">{staff.displayName}</div>
                           <div className="text-xs text-muted-foreground">{staff.email}</div>
                         </div>
                       </TableCell>
                       <TableCell>
                         {staff.hasSalaryRecord ? (
-                          <Badge 
-                            variant="default" 
-                            className="bg-success cursor-pointer hover:bg-success/80"
+                          <Badge
+                            className="bg-blue-500 hover:bg-blue-600 text-white border-0 cursor-pointer gap-1"
                             onClick={() => handleRevertToPending(staff.userId)}
                             title="Click to revert to pending"
                           >
-                            <CheckCircle className="h-3 w-3 mr-1" />
+                            <CheckCircle className="h-3 w-3" />
                             Paid
                           </Badge>
                         ) : isReady ? (
-                          <Badge 
-                            variant="default" 
-                            className="bg-blue-500 cursor-pointer hover:bg-blue-600"
+                          <Badge
+                            className="bg-green-600 hover:bg-green-700 text-white border-0 cursor-pointer gap-1"
                             onClick={() => handleToggleReady(staff.userId)}
                             title="Click to set back to pending"
                           >
-                            <CheckCircle className="h-3 w-3 mr-1" />
+                            <CheckCircle className="h-3 w-3" />
                             Ready
                           </Badge>
                         ) : (
-                          <Badge 
-                            variant="outline" 
-                            className="border-warning text-warning-foreground cursor-pointer hover:bg-warning/10"
+                          <Badge
+                            variant="outline"
+                            className="border-amber-500 text-amber-700 dark:text-amber-300 bg-amber-100/60 dark:bg-amber-900/30 cursor-pointer hover:bg-amber-200/60 gap-1"
                             onClick={() => handleToggleReady(staff.userId)}
                             title="Click to mark as ready"
                           >
-                            <Clock className="h-3 w-3 mr-1" />
+                            <Clock className="h-3 w-3" />
                             Pending
                           </Badge>
                         )}
