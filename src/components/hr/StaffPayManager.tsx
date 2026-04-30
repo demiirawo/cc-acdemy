@@ -1977,11 +1977,12 @@ export function StaffPayManager() {
                       <TableCell>
                         {staff.hasSalaryRecord ? (
                           <Badge
-                            className="bg-blue-500 hover:bg-blue-600 text-white border-0 cursor-pointer gap-1"
+                            className="group bg-blue-500 hover:bg-blue-600 text-white border-0 cursor-pointer gap-1"
                             onClick={() => handleRevertToPending(staff.userId)}
                             title="Click to undo: revert to ready"
                           >
-                            <CheckCircle className="h-3 w-3" />
+                            <CheckCircle className="h-3 w-3 group-hover:hidden" />
+                            <RotateCcw className="h-3 w-3 hidden group-hover:inline" />
                             Paid
                           </Badge>
                         ) : isReady ? (
