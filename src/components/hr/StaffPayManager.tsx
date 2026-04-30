@@ -2155,11 +2155,6 @@ export function StaffPayManager() {
                             >
                               <RotateCcw className="h-4 w-4" />
                             </Button>
-                          ) : isReady ? (
-                            <Button variant="ghost" size="sm" onClick={() => handleRunPayroll(staff.userId)}>
-                              <FileText className="h-4 w-4 mr-1" />
-                              Pay
-                            </Button>
                           ) : null}
                         </div>
                       </TableCell>
