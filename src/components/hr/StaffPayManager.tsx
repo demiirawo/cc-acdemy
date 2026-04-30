@@ -1309,7 +1309,16 @@ export function StaffPayManager() {
 
       if (error) throw error;
 
-      // Clear ready status for processed staff
+      // Clear ready status for processed staff (DB + state)
+      const monthKey = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
+      const processedIds = staffToProcess.map(s => s.userId);
+      const { error: clearError } = await supabase
+        .from('payroll_ready_status')
+        .delete()
+        .eq('pay_period_month', monthKey)
+        .in('user_id', processedIds);
+      if (clearError) console.error('Error clearing ready status:', clearError);
+
       setReadyStaff(prev => {
         const newSet = new Set(prev);
         staffToProcess.forEach(s => newSet.delete(s.userId));
