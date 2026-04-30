@@ -1974,7 +1974,7 @@ export function StaffPayManager() {
                           <div className="text-xs text-muted-foreground">{staff.email}</div>
                         </div>
                       </TableCell>
-                      {/* Status moved to end */}
+                      
                       <TableCell className="text-right">{formatCurrency(staff.baseSalary, staff.currency)}</TableCell>
                       <TableCell className="text-right text-success">
                         {staff.bonuses > 0 ? `+${formatCurrency(staff.bonuses, staff.currency)}` : '-'}
