@@ -536,6 +536,7 @@ export type Database = {
           job_title: string | null
           notes: string | null
           pay_frequency: string | null
+          public_holiday_pay_disabled: boolean
           scheduling_role: string
           start_date: string | null
           unlimited_holiday: boolean
@@ -556,6 +557,7 @@ export type Database = {
           job_title?: string | null
           notes?: string | null
           pay_frequency?: string | null
+          public_holiday_pay_disabled?: boolean
           scheduling_role?: string
           start_date?: string | null
           unlimited_holiday?: boolean
@@ -576,6 +578,7 @@ export type Database = {
           job_title?: string | null
           notes?: string | null
           pay_frequency?: string | null
+          public_holiday_pay_disabled?: boolean
           scheduling_role?: string
           start_date?: string | null
           unlimited_holiday?: boolean
