@@ -1250,7 +1250,7 @@ export function StaffPayManager() {
     }
   };
 
-  // Revert paid status back to ready (delete salary record, restore ready mark)
+  // Revert paid status back to pending (delete salary record and clear ready mark)
   const handleRevertToPending = async (userId: string) => {
     const staff = payrollSummary.find(s => s.userId === userId);
     if (!staff) return;
@@ -1268,26 +1268,20 @@ export function StaffPayManager() {
 
       if (error) throw error;
 
-      // Restore the Ready status so the user can review or undo it again
-      const { error: readyErr } = await supabase
+      const { error: clearReadyError } = await supabase
         .from('payroll_ready_status')
-        .upsert(
-          {
-            user_id: userId,
-            pay_period_month: monthKey,
-            marked_by: user?.id ?? null,
-          },
-          { onConflict: 'user_id,pay_period_month' }
-        );
-      if (readyErr) console.error('Failed to restore ready status:', readyErr);
+        .delete()
+        .eq('user_id', userId)
+        .eq('pay_period_month', monthKey);
+      if (clearReadyError) console.error('Failed to clear ready status:', clearReadyError);
 
       setReadyStaff(prev => {
         const newSet = new Set(prev);
-        newSet.add(userId);
+        newSet.delete(userId);
         return newSet;
       });
 
-      toast({ title: "Success", description: `${staff.displayName} reverted to ready. Click again to set to pending.` });
+      toast({ title: "Success", description: `${staff.displayName} reverted to pending.` });
       fetchData();
     } catch (error: any) {
       console.error('Error reverting payroll:', error);
@@ -2157,10 +2151,9 @@ export function StaffPayManager() {
                             <Badge
                               className="group bg-blue-500 hover:bg-blue-600 text-white border-0 cursor-pointer gap-1"
                               onClick={() => handleRevertToPending(staff.userId)}
-                              title="Click to undo: revert to ready"
+                              title="Click to set to pending"
                             >
-                              <CheckCircle className="h-3 w-3 group-hover:hidden" />
-                              <RotateCcw className="h-3 w-3 hidden group-hover:inline" />
+                              <RotateCcw className="h-3 w-3" />
                               Paid
                             </Badge>
                           ) : isReady ? (
