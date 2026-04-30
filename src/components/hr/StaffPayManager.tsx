@@ -1250,13 +1250,15 @@ export function StaffPayManager() {
     }
   };
 
-  // Revert paid status back to pending (delete salary record)
+  // Revert paid status back to ready (delete salary record, restore ready mark)
   const handleRevertToPending = async (userId: string) => {
     const staff = payrollSummary.find(s => s.userId === userId);
     if (!staff) return;
 
     const salaryRecord = staff.records.find(r => r.record_type === 'salary');
     if (!salaryRecord) return;
+
+    const monthKey = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
 
     try {
       const { error } = await supabase
@@ -1266,7 +1268,26 @@ export function StaffPayManager() {
 
       if (error) throw error;
 
-      toast({ title: "Success", description: `${staff.displayName} reverted to pending` });
+      // Restore the Ready status so the user can review or undo it again
+      const { error: readyErr } = await supabase
+        .from('payroll_ready_status')
+        .upsert(
+          {
+            user_id: userId,
+            pay_period_month: monthKey,
+            marked_by: user?.id ?? null,
+          },
+          { onConflict: 'user_id,pay_period_month' }
+        );
+      if (readyErr) console.error('Failed to restore ready status:', readyErr);
+
+      setReadyStaff(prev => {
+        const newSet = new Set(prev);
+        newSet.add(userId);
+        return newSet;
+      });
+
+      toast({ title: "Success", description: `${staff.displayName} reverted to ready. Click again to set to pending.` });
       fetchData();
     } catch (error: any) {
       console.error('Error reverting payroll:', error);
@@ -1958,7 +1979,7 @@ export function StaffPayManager() {
                           <Badge
                             className="bg-blue-500 hover:bg-blue-600 text-white border-0 cursor-pointer gap-1"
                             onClick={() => handleRevertToPending(staff.userId)}
-                            title="Click to revert to pending"
+                            title="Click to undo: revert to ready"
                           >
                             <CheckCircle className="h-3 w-3" />
                             Paid
