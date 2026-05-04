@@ -2132,7 +2132,7 @@ export function StaffPayManager() {
                       ...group.items.map(staff => {
                         const isReady = readyStaff.has(staff.userId);
                         const isOTExpanded = expandedOvertimeStaff.has(staff.userId);
-                        const hasOTDetails = staff.overtimeDayDetails.length > 0 || staff.holidayShifts.length > 0;
+                        const hasOTDetails = staff.overtimeDayDetails.length > 0 || staff.holidayShifts.length > 0 || staff.nonOvertimeCoverDayDetails.length > 0;
 
                         // Conditional row background:
                         // Paid -> light blue, Ready -> light green, Default/Pending -> light amber
