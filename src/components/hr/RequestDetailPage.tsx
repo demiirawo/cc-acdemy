@@ -1028,10 +1028,10 @@ Care Cuddle Team`;
                     const coveredUserIds = (coveringStaff || []).map(c => c.user_id);
                     const isPending = assignCoverMutation.isPending || unassignCoverMutation.isPending;
 
-                    type Row = { user_id: string; display_name: string | null; email: string | null; isBench: boolean };
+                    type Row = { user_id: string; display_name: string | null; email: string | null; isBench: boolean; clients: string[] };
                     const rows: Row[] = [
-                      ...benchStaff.map(s => ({ user_id: s.user_id, display_name: s.display_name, email: s.email, isBench: true })),
-                      ...otherStaff.map(s => ({ user_id: s.user_id, display_name: s.display_name, email: s.email, isBench: false })),
+                      ...benchStaff.map(s => ({ user_id: s.user_id, display_name: s.display_name, email: s.email, isBench: true, clients: s.clientAssignments || [] })),
+                      ...otherStaff.map(s => ({ user_id: s.user_id, display_name: s.display_name, email: s.email, isBench: false, clients: s.clientAssignments || [] })),
                     ].sort((a, b) => {
                       // Bench first, then alphabetical
                       if (a.isBench !== b.isBench) return a.isBench ? -1 : 1;
@@ -1045,7 +1045,7 @@ Care Cuddle Team`;
                       ? rows.filter(r =>
                           (r.display_name || '').toLowerCase().includes(search) ||
                           (r.email || '').toLowerCase().includes(search) ||
-                          (r.isBench ? 'care cuddle bench' : 'other staff').includes(search)
+                          r.clients.some(c => c.toLowerCase().includes(search))
                         )
                       : rows;
 
