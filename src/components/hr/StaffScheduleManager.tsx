@@ -1720,17 +1720,25 @@ export function StaffScheduleManager() {
       (r.request_type === 'overtime_standard' || r.request_type === 'overtime_double_up' || r.request_type === 'overtime')
     );
     
-    // Find approved shift_swap requests where this holiday user is being covered
-    const shiftSwapCoverageRequests = staffRequests.filter(r => 
-      r.swap_with_user_id === holidayUserId && 
-      r.status === 'approved' &&
-      r.request_type === 'shift_swap' &&
-      (() => {
-        const start = startOfDay(parseISO(r.start_date));
-        const end = endOfDay(parseISO(r.end_date));
-        return isWithinInterval(day, { start, end });
-      })()
-    );
+    // Find approved shift_swap requests where this holiday user is being covered.
+    // Respect coverage_metadata.covered_dates so partial-day cover only shows on the
+    // dates explicitly selected when the cover was assigned.
+    const dayStr = format(day, "yyyy-MM-dd");
+    const shiftSwapCoverageRequests = staffRequests.filter(r => {
+      if (r.swap_with_user_id !== holidayUserId) return false;
+      if (r.status !== 'approved') return false;
+      if (r.request_type !== 'shift_swap') return false;
+
+      const meta = r.coverage_metadata as { type?: string; covered_dates?: string[] } | null | undefined;
+      if (meta && Array.isArray(meta.covered_dates) && meta.covered_dates.length > 0) {
+        return meta.covered_dates.includes(dayStr);
+      }
+
+      // Legacy fallback: no metadata → assume the whole date range is covered
+      const start = startOfDay(parseISO(r.start_date));
+      const end = endOfDay(parseISO(r.end_date));
+      return isWithinInterval(day, { start, end });
+    });
     
     const allCoverageRequests = [...overtimeCoverageRequests, ...shiftSwapCoverageRequests];
     
