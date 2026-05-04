@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat, FileBadge } from "lucide-react";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO, eachDayOfInterval } from "date-fns";
+import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 
 interface PublicHoliday {
   date: string;
@@ -183,7 +185,7 @@ export function StaffPayManager() {
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; status: string; absence_type: string }[]>([]);
   const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; employment_end_date: string | null; unlimited_holiday: boolean; public_holiday_pay_disabled?: boolean }[]>([]);
-  const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null; swap_with_user_id: string | null }[]>([]);
+  const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null; swap_with_user_id: string | null; coverage_metadata: Json | null }[]>([]);
   const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string }[]>([]);
   const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<{ user_id: string; start_date: string; end_date: string }[]>([]);
   const { toast } = useToast();
@@ -444,7 +446,7 @@ export function StaffPayManager() {
       // Fetch approved overtime and shift_swap requests for overtime pay calculation
       const { data: overtimeRequestsData, error: overtimeRequestsError } = await supabase
         .from('staff_requests')
-        .select('user_id, days_requested, start_date, end_date, request_type, overtime_type, swap_with_user_id')
+        .select('user_id, days_requested, start_date, end_date, request_type, overtime_type, swap_with_user_id, coverage_metadata')
         .eq('status', 'approved')
         .in('request_type', ['overtime', 'overtime_standard', 'overtime_double_up', 'shift_swap']);
       
@@ -528,6 +530,23 @@ export function StaffPayManager() {
     const getScheduleDate = (datetime: string): string => {
       const date = new Date(datetime);
       return format(date, 'yyyy-MM-dd');
+    };
+
+    const getGranularCoveredDates = (request: {
+      coverage_metadata: Json | null;
+      start_date: string;
+      end_date: string;
+    }): string[] => {
+      const normalizedCoverageMetadata =
+        request.coverage_metadata && typeof request.coverage_metadata === 'object' && !Array.isArray(request.coverage_metadata)
+          ? (request.coverage_metadata as Record<string, unknown>)
+          : null;
+
+      return getCoveredDatesFromRequest({
+        start_date: request.start_date,
+        end_date: request.end_date,
+        coverage_metadata: normalizedCoverageMetadata,
+      });
     };
     
     // Create separate maps for deleted vs overtime exceptions
@@ -685,13 +704,17 @@ export function StaffPayManager() {
       // but won't have a recurring pattern or actual schedule for that client
       const userCoverRequests = approvedOvertimeRequests.filter(r => r.user_id === hr.user_id);
       userCoverRequests.forEach(req => {
-        const reqStart = parseISO(req.start_date);
-        const reqEnd = parseISO(req.end_date);
-        // Iterate through each day of the cover request
-        let coverDate = new Date(Math.max(reqStart.getTime(), monthStart.getTime()));
-        const coverEndDate = new Date(Math.min(reqEnd.getTime(), monthEnd.getTime()));
-        while (coverDate <= coverEndDate) {
-          const coverDateStr = format(coverDate, 'yyyy-MM-dd');
+        const granularCoveredDates = getGranularCoveredDates(req)
+          .filter(date => date >= format(monthStart, 'yyyy-MM-dd') && date <= format(monthEnd, 'yyyy-MM-dd'));
+
+        const coverDatesToCheck = granularCoveredDates.length > 0
+          ? granularCoveredDates
+          : eachDayOfInterval({
+              start: parseISO(req.start_date) < monthStart ? monthStart : parseISO(req.start_date),
+              end: parseISO(req.end_date) > monthEnd ? monthEnd : parseISO(req.end_date),
+            }).map(day => format(day, 'yyyy-MM-dd'));
+
+        coverDatesToCheck.forEach(coverDateStr => {
           if (holidayDatesSet.has(coverDateStr) && !countedHolidayDates.has(coverDateStr) && !userLeaveDates.has(coverDateStr)) {
             holidayOvertimeDays += 1;
             countedHolidayDates.add(coverDateStr);
@@ -702,8 +725,7 @@ export function StaffPayManager() {
             });
             console.log(`  HOLIDAY MATCH (cover request): ${coverDateStr} - 1 day`);
           }
-          coverDate.setDate(coverDate.getDate() + 1);
-        }
+        });
       });
       
       // Holiday overtime bonus = 0.5 × daily rate × number of holiday days worked
@@ -800,7 +822,13 @@ export function StaffPayManager() {
           : hr.user_id;
         const targetPatterns = recurringPatterns.filter(p => p.user_id === targetUserId && !p.is_overtime);
         
-        const daysInRange = eachDayOfInterval({ start: effectiveStart, end: effectiveEnd });
+        const granularCoveredDates = getGranularCoveredDates(req)
+          .filter(date => date >= format(monthStart, 'yyyy-MM-dd') && date <= format(monthEnd, 'yyyy-MM-dd'));
+
+        const daysInRange = granularCoveredDates.length > 0
+          ? granularCoveredDates.map(date => parseISO(date))
+          : eachDayOfInterval({ start: effectiveStart, end: effectiveEnd });
+
         daysInRange.forEach(day => {
           const dStr = format(day, 'yyyy-MM-dd');
           const dayOfWeek = day.getDay();
@@ -897,11 +925,15 @@ export function StaffPayManager() {
       
       // Build overtimeRequestDetails for backward compatibility
       const overtimeRequestDetails = userOvertimeRequests.map(req => {
+        const granularCoveredDates = getGranularCoveredDates(req)
+          .filter(date => date >= format(monthStart, 'yyyy-MM-dd') && date <= format(monthEnd, 'yyyy-MM-dd'));
         const startDate = parseISO(req.start_date);
         const endDate = parseISO(req.end_date);
         const effectiveStart = startDate < monthStart ? monthStart : startDate;
         const effectiveEnd = endDate > monthEnd ? monthEnd : endDate;
-        const daysInMonth = eachDayOfInterval({ start: effectiveStart, end: effectiveEnd }).length;
+        const daysInMonth = granularCoveredDates.length > 0
+          ? granularCoveredDates.length
+          : eachDayOfInterval({ start: effectiveStart, end: effectiveEnd }).length;
         return {
           type: req.request_type,
           overtimeType: req.overtime_type,
