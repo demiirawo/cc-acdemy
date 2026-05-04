@@ -1016,9 +1016,32 @@ Care Cuddle Team`;
 
                     if (rows.length === 0) return null;
 
+                    const search = staffSearch.trim().toLowerCase();
+                    const filteredRows = search
+                      ? rows.filter(r =>
+                          (r.display_name || '').toLowerCase().includes(search) ||
+                          (r.email || '').toLowerCase().includes(search) ||
+                          (r.isBench ? 'care cuddle bench' : 'other staff').includes(search)
+                        )
+                      : rows;
+
                     return (
                       <div className="space-y-2">
-                        <Label className="text-muted-foreground text-sm">Available Staff</Label>
+                        <div className="flex items-center justify-between gap-2">
+                          <Label className="text-muted-foreground text-sm">Available Staff</Label>
+                          <span className="text-xs text-muted-foreground">
+                            {filteredRows.length} of {rows.length}
+                          </span>
+                        </div>
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Search staff by name or group..."
+                            value={staffSearch}
+                            onChange={(e) => setStaffSearch(e.target.value)}
+                            className="pl-8 h-9"
+                          />
+                        </div>
                         <div className="border rounded-md overflow-hidden">
                           <table className="w-full text-sm">
                             <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
@@ -1030,7 +1053,14 @@ Care Cuddle Team`;
                               </tr>
                             </thead>
                             <tbody>
-                              {rows.map((staff, idx) => {
+                              {filteredRows.length === 0 && (
+                                <tr>
+                                  <td colSpan={4} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                                    No staff match "{staffSearch}"
+                                  </td>
+                                </tr>
+                              )}
+                              {filteredRows.map((staff, idx) => {
                                 const isAssigned = coveredUserIds.includes(staff.user_id);
                                 return (
                                   <tr
