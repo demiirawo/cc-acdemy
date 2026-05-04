@@ -2390,6 +2390,27 @@ export function StaffPayManager() {
                                 </div>
                               </div>
                             )}
+                            {/* Non-Overtime Cover Details */}
+                            {staff.nonOvertimeCoverDayDetails.length > 0 && (
+                              <div>
+                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                                  Non-Overtime Covers (×0 — no extra pay)
+                                </h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1">
+                                  {staff.nonOvertimeCoverDayDetails.map((c, idx) => (
+                                    <div key={idx} className="flex items-center gap-2 text-xs py-1 px-2 rounded bg-background border">
+                                      <span className="font-mono text-muted-foreground min-w-[80px]">
+                                        {format(parseISO(c.date), 'EEE dd MMM')}
+                                      </span>
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+                                        ×0 Cover
+                                      </span>
+                                      <span className="text-muted-foreground truncate">Covering {c.coveredFor}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
