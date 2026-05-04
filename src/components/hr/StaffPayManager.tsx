@@ -18,6 +18,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat, FileBadge } from "lucide-react";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO, eachDayOfInterval } from "date-fns";
+import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 
 interface PublicHoliday {
   date: string;
@@ -183,7 +184,7 @@ export function StaffPayManager() {
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; status: string; absence_type: string }[]>([]);
   const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; employment_end_date: string | null; unlimited_holiday: boolean; public_holiday_pay_disabled?: boolean }[]>([]);
-  const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null; swap_with_user_id: string | null }[]>([]);
+  const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null; swap_with_user_id: string | null; coverage_metadata: Record<string, unknown> | null }[]>([]);
   const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string }[]>([]);
   const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<{ user_id: string; start_date: string; end_date: string }[]>([]);
   const { toast } = useToast();
@@ -444,7 +445,7 @@ export function StaffPayManager() {
       // Fetch approved overtime and shift_swap requests for overtime pay calculation
       const { data: overtimeRequestsData, error: overtimeRequestsError } = await supabase
         .from('staff_requests')
-        .select('user_id, days_requested, start_date, end_date, request_type, overtime_type, swap_with_user_id')
+        .select('user_id, days_requested, start_date, end_date, request_type, overtime_type, swap_with_user_id, coverage_metadata')
         .eq('status', 'approved')
         .in('request_type', ['overtime', 'overtime_standard', 'overtime_double_up', 'shift_swap']);
       
