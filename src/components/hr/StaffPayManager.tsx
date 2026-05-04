@@ -915,6 +915,36 @@ export function StaffPayManager() {
           .filter(([, value]) => value.source === 'request')
           .map(([date]) => date)
       );
+
+      // Non-overtime cover days (shift_swap with no overtime_type) — informational only, £0 pay
+      const nonOvertimeCoverDayDetails: Array<{ date: string; coveredFor: string }> = [];
+      const nonOvertimeCoverRequests = approvedOvertimeRequests.filter(r => {
+        if (r.user_id !== hr.user_id) return false;
+        if (r.request_type !== 'shift_swap') return false;
+        if (r.overtime_type) return false; // only non-overtime covers
+        const startDate = parseISO(r.start_date);
+        const endDate = parseISO(r.end_date);
+        return startDate <= monthEnd && endDate >= monthStart;
+      });
+      nonOvertimeCoverRequests.forEach(req => {
+        const startDate = parseISO(req.start_date);
+        const endDate = parseISO(req.end_date);
+        const effectiveStart = startDate < monthStart ? monthStart : startDate;
+        const effectiveEnd = endDate > monthEnd ? monthEnd : endDate;
+        const granular = getGranularCoveredDates(req)
+          .filter(d => d >= format(monthStart, 'yyyy-MM-dd') && d <= format(monthEnd, 'yyyy-MM-dd'));
+        const dates = granular.length > 0
+          ? granular
+          : (effectiveStart <= effectiveEnd
+              ? eachDayOfInterval({ start: effectiveStart, end: effectiveEnd }).map(d => format(d, 'yyyy-MM-dd'))
+              : []);
+        const coveredForName = req.swap_with_user_id
+          ? (userProfiles.find(p => p.user_id === req.swap_with_user_id)?.display_name || 'Colleague')
+          : 'Colleague';
+        dates.forEach(dStr => {
+          nonOvertimeCoverDayDetails.push({ date: dStr, coveredFor: coveredForName });
+        });
+      });
       
       // Add pattern-based overtime to the map (skip dates already covered by requests)
       const userPatterns = recurringPatterns.filter(p => p.user_id === hr.user_id);
@@ -1142,6 +1172,7 @@ export function StaffPayManager() {
         doubleUpOvertimeDays: totalDoubleUpOTDays,
         overtimeRequestDetails,
         overtimeDayDetails: overtimeDayDetails.sort((a, b) => a.date.localeCompare(b.date)),
+        nonOvertimeCoverDayDetails: nonOvertimeCoverDayDetails.sort((a, b) => a.date.localeCompare(b.date)),
         calculatedOvertimePay,
         expenses,
         deductions,
@@ -2101,7 +2132,7 @@ export function StaffPayManager() {
                       ...group.items.map(staff => {
                         const isReady = readyStaff.has(staff.userId);
                         const isOTExpanded = expandedOvertimeStaff.has(staff.userId);
-                        const hasOTDetails = staff.overtimeDayDetails.length > 0 || staff.holidayShifts.length > 0;
+                        const hasOTDetails = staff.overtimeDayDetails.length > 0 || staff.holidayShifts.length > 0 || staff.nonOvertimeCoverDayDetails.length > 0;
 
                         // Conditional row background:
                         // Paid -> light blue, Ready -> light green, Default/Pending -> light amber
@@ -2354,6 +2385,27 @@ export function StaffPayManager() {
                                         +0.5x Holiday
                                       </span>
                                       <span className="text-muted-foreground truncate">{hs.holidayName}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            {/* Non-Overtime Cover Details */}
+                            {staff.nonOvertimeCoverDayDetails.length > 0 && (
+                              <div>
+                                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                                  Non-Overtime Covers (×0 — no extra pay)
+                                </h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1">
+                                  {staff.nonOvertimeCoverDayDetails.map((c, idx) => (
+                                    <div key={idx} className="flex items-center gap-2 text-xs py-1 px-2 rounded bg-background border">
+                                      <span className="font-mono text-muted-foreground min-w-[80px]">
+                                        {format(parseISO(c.date), 'EEE dd MMM')}
+                                      </span>
+                                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground">
+                                        ×0 Cover
+                                      </span>
+                                      <span className="text-muted-foreground truncate">Covering {c.coveredFor}</span>
                                     </div>
                                   ))}
                                 </div>
