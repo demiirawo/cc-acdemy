@@ -520,17 +520,28 @@ export function RequestDetailPage({
   const unassignCoverMutation = useMutation({
     mutationFn: async (coverUserId: string) => {
       if (!request) throw new Error("No request");
-      
-      // Find and delete the cover request for this user
-      const { error } = await supabase
+
+      // Find any cover rows for this user that overlap the request's date range.
+      // Partial covers (single-day) won't match exact start/end, so we match overlap instead.
+      const { data: rows, error: findErr } = await supabase
         .from("staff_requests")
-        .delete()
+        .select("id")
         .eq("request_type", "shift_swap")
         .eq("user_id", coverUserId)
         .eq("swap_with_user_id", request.user_id)
-        .eq("start_date", request.start_date)
-        .eq("end_date", request.end_date);
-      
+        .lte("start_date", request.end_date)
+        .gte("end_date", request.start_date);
+
+      if (findErr) throw findErr;
+      if (!rows || rows.length === 0) {
+        throw new Error("No matching cover assignment found");
+      }
+
+      const { error } = await supabase
+        .from("staff_requests")
+        .delete()
+        .in("id", rows.map(r => r.id));
+
       if (error) throw error;
     },
     onSuccess: () => {
