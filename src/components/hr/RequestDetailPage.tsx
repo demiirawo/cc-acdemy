@@ -963,15 +963,39 @@ Care Cuddle Team`;
                   {/* Current Cover */}
                   {coveringStaff && coveringStaff.length > 0 ? <div className="space-y-3">
                       <Label className="text-muted-foreground text-sm">Assigned Cover</Label>
-                      {coveringStaff.map((cover, idx) => <div key={idx} className="flex items-center gap-3 p-3 bg-success/10 border border-success/20 rounded-lg">
-                          <CheckCircle2 className="h-5 w-5 text-success" />
-                          <div>
-                            <p className="font-medium">{cover.staffName}</p>
-                            <p className="text-sm text-muted-foreground">
-                              Covering from {format(new Date(cover.start_date), 'dd MMM')} to {format(new Date(cover.end_date), 'dd MMM')}
-                            </p>
+                      {coveringStaff.map((cover, idx) => {
+                        // Prefer explicit covered_dates from coverage_metadata; fall back to date range.
+                        const meta = cover.coverage_metadata as { covered_dates?: string[] } | null | undefined;
+                        const coveredDates = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0
+                          ? [...meta!.covered_dates!].sort()
+                          : null;
+                        const formatDay = (d: string) => format(new Date(d), 'do MMM');
+                        let coverageLabel: string;
+                        if (coveredDates && coveredDates.length > 0) {
+                          if (coveredDates.length === 1) {
+                            coverageLabel = `Covering ${formatDay(coveredDates[0])}`;
+                          } else if (coveredDates.length === 2) {
+                            coverageLabel = `Covering ${formatDay(coveredDates[0])} and ${formatDay(coveredDates[1])}`;
+                          } else {
+                            const head = coveredDates.slice(0, -1).map(formatDay).join(', ');
+                            const tail = formatDay(coveredDates[coveredDates.length - 1]);
+                            coverageLabel = `Covering ${head} and ${tail}`;
+                          }
+                        } else if (cover.start_date === cover.end_date) {
+                          coverageLabel = `Covering ${formatDay(cover.start_date)}`;
+                        } else {
+                          coverageLabel = `Covering ${formatDay(cover.start_date)} to ${formatDay(cover.end_date)}`;
+                        }
+                        return (
+                          <div key={idx} className="flex items-center gap-3 p-3 bg-success/10 border border-success/20 rounded-lg">
+                            <CheckCircle2 className="h-5 w-5 text-success" />
+                            <div>
+                              <p className="font-medium">{cover.staffName}</p>
+                              <p className="text-sm text-muted-foreground">{coverageLabel}</p>
+                            </div>
                           </div>
-                        </div>)}
+                        );
+                      })}
                     </div> : <div className="flex items-center gap-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
                       <AlertCircle className="h-5 w-5 text-amber-600" />
                       <div className="flex-1">
