@@ -1028,10 +1028,10 @@ Care Cuddle Team`;
                     const coveredUserIds = (coveringStaff || []).map(c => c.user_id);
                     const isPending = assignCoverMutation.isPending || unassignCoverMutation.isPending;
 
-                    type Row = { user_id: string; display_name: string | null; email: string | null; isBench: boolean };
+                    type Row = { user_id: string; display_name: string | null; email: string | null; isBench: boolean; clients: string[] };
                     const rows: Row[] = [
-                      ...benchStaff.map(s => ({ user_id: s.user_id, display_name: s.display_name, email: s.email, isBench: true })),
-                      ...otherStaff.map(s => ({ user_id: s.user_id, display_name: s.display_name, email: s.email, isBench: false })),
+                      ...benchStaff.map(s => ({ user_id: s.user_id, display_name: s.display_name, email: s.email, isBench: true, clients: s.clientAssignments || [] })),
+                      ...otherStaff.map(s => ({ user_id: s.user_id, display_name: s.display_name, email: s.email, isBench: false, clients: s.clientAssignments || [] })),
                     ].sort((a, b) => {
                       // Bench first, then alphabetical
                       if (a.isBench !== b.isBench) return a.isBench ? -1 : 1;
@@ -1045,7 +1045,7 @@ Care Cuddle Team`;
                       ? rows.filter(r =>
                           (r.display_name || '').toLowerCase().includes(search) ||
                           (r.email || '').toLowerCase().includes(search) ||
-                          (r.isBench ? 'care cuddle bench' : 'other staff').includes(search)
+                          r.clients.some(c => c.toLowerCase().includes(search))
                         )
                       : rows;
 
@@ -1060,7 +1060,7 @@ Care Cuddle Team`;
                         <div className="relative">
                           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                           <Input
-                            placeholder="Search staff by name or group..."
+                            placeholder="Search staff by name or client..."
                             value={staffSearch}
                             onChange={(e) => setStaffSearch(e.target.value)}
                             className="pl-8 h-9"
@@ -1072,7 +1072,7 @@ Care Cuddle Team`;
                               <tr>
                                 <th className="text-left font-medium px-3 py-2 w-10">#</th>
                                 <th className="text-left font-medium px-3 py-2">Name</th>
-                                <th className="text-left font-medium px-3 py-2">Group</th>
+                                <th className="text-left font-medium px-3 py-2">Clients</th>
                                 <th className="text-right font-medium px-3 py-2 w-32">Action</th>
                               </tr>
                             </thead>
@@ -1099,10 +1099,17 @@ Care Cuddle Team`;
                                       </div>
                                     </td>
                                     <td className="px-3 py-2">
-                                      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                                        <span className={`inline-block w-2 h-2 rounded-full ${staff.isBench ? 'bg-purple-500' : 'bg-blue-500'}`}></span>
-                                        {staff.isBench ? 'Care Cuddle Bench' : 'Other Staff'}
-                                      </span>
+                                      {staff.clients.length > 0 ? (
+                                        <div className="flex flex-wrap gap-1">
+                                          {staff.clients.map((client, i) => (
+                                            <Badge key={i} variant="secondary" className="text-xs font-normal">
+                                              {client}
+                                            </Badge>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground italic">No clients</span>
+                                      )}
                                     </td>
                                     <td className="px-3 py-2 text-right">
                                       <Button
