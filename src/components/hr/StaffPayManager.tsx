@@ -2021,19 +2021,41 @@ export function StaffPayManager() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/60 hover:bg-muted/60">
-                <TableHead className="font-semibold">Staff Member</TableHead>
-                <TableHead className="text-right font-semibold">Base Salary</TableHead>
-                <TableHead className="text-right font-semibold">Bonuses</TableHead>
-                <TableHead className="text-right font-semibold">Overtime</TableHead>
-                <TableHead className="text-right font-semibold">Holiday OT</TableHead>
-                <TableHead className="text-right font-semibold">Unused Holiday</TableHead>
-                <TableHead className="text-right font-semibold">Unpaid Hol</TableHead>
-                <TableHead className="text-right font-semibold">Pro-Rata</TableHead>
-                <TableHead className="text-right font-semibold">Deductions</TableHead>
-                <TableHead className="text-right font-semibold">Total Pay</TableHead>
-                <TableHead className="text-right font-semibold">GBP Equiv.</TableHead>
-                <TableHead className="font-semibold">Actions</TableHead>
-                <TableHead className="text-right font-semibold">Status</TableHead>
+                {(() => {
+                  const SortableHead = ({ k, label, align = 'left' }: { k: SortKey; label: string; align?: 'left' | 'right' }) => {
+                    const active = sortKey === k;
+                    const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+                    return (
+                      <TableHead className={`font-semibold ${align === 'right' ? 'text-right' : ''}`}>
+                        <button
+                          type="button"
+                          onClick={() => handleSort(k)}
+                          className={`inline-flex items-center gap-1 hover:text-primary transition-colors ${align === 'right' ? 'ml-auto' : ''} ${active ? 'text-primary' : ''}`}
+                        >
+                          <span>{label}</span>
+                          <Icon className="h-3 w-3 opacity-70" />
+                        </button>
+                      </TableHead>
+                    );
+                  };
+                  return (
+                    <>
+                      <SortableHead k="displayName" label="Staff Member" />
+                      <SortableHead k="baseSalary" label="Base Salary" align="right" />
+                      <SortableHead k="bonuses" label="Bonuses" align="right" />
+                      <SortableHead k="overtime" label="Overtime" align="right" />
+                      <SortableHead k="holidayOvertimeBonus" label="Holiday OT" align="right" />
+                      <SortableHead k="unusedHolidayPayout" label="Unused Holiday" align="right" />
+                      <SortableHead k="unpaidHolidayDeduction" label="Unpaid Hol" align="right" />
+                      <SortableHead k="proRataDeduction" label="Pro-Rata" align="right" />
+                      <SortableHead k="deductions" label="Deductions" align="right" />
+                      <SortableHead k="totalPay" label="Total Pay" align="right" />
+                      <SortableHead k="totalPayInGBP" label="GBP Equiv." align="right" />
+                      <TableHead className="font-semibold">Actions</TableHead>
+                      <TableHead className="text-right font-semibold">Status</TableHead>
+                    </>
+                  );
+                })()}
               </TableRow>
             </TableHeader>
             <TableBody>
