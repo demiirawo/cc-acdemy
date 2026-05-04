@@ -112,6 +112,7 @@ export function RequestDetailPage({
   const [detailsValue, setDetailsValue] = useState("");
   const [coverAssignDialog, setCoverAssignDialog] = useState<{ userId: string; displayName: string } | null>(null);
   const [coverOvertimeType, setCoverOvertimeType] = useState<'none' | 'outside_hours' | 'inside_hours'>('none');
+  const [coverSelectedDates, setCoverSelectedDates] = useState<string[]>([]);
 
   // Fetch the specific request
   const {
