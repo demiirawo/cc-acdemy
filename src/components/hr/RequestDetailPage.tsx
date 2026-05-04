@@ -430,44 +430,56 @@ export function RequestDetailPage({
 
   // Assign cover mutation
   const assignCoverMutation = useMutation({
-    mutationFn: async ({ coverUserId, overtimeType }: { coverUserId: string; overtimeType: 'none' | 'outside_hours' | 'inside_hours' }) => {
+    mutationFn: async ({ coverUserId, overtimeType, selectedDates }: { coverUserId: string; overtimeType: 'none' | 'outside_hours' | 'inside_hours'; selectedDates: string[] }) => {
       if (!user || !request) throw new Error("Not authenticated or no request");
 
-      // Compute working days from the covered person's shift patterns (same logic as display)
+      // Compute working dates from the covered person's shift patterns
       const affectedShifts = getAffectedShiftsByDay();
-      const uniqueWorkingDates = new Set(affectedShifts.map(s => s.date.toISOString().split('T')[0]));
-      const computedWorkingDays = uniqueWorkingDates.size;
-      
-      // Use computed working days if available, otherwise fall back to linked holiday or request
-      const daysRequested = computedWorkingDays > 0 
-        ? computedWorkingDays 
+      const allWorkingDates = Array.from(new Set(affectedShifts.map(s => s.date.toISOString().split('T')[0]))).sort();
+
+      // Determine the dates this cover will actually work
+      const coveredDates = selectedDates.length > 0
+        ? selectedDates.slice().sort()
+        : allWorkingDates;
+
+      const daysRequested = coveredDates.length > 0
+        ? coveredDates.length
         : (linkedHoliday?.days_taken ?? request.days_requested);
 
       // Map overtime selection to the overtime_type field
       const mappedOvertimeType = overtimeType === 'outside_hours' ? 'outside_hours' 
         : overtimeType === 'inside_hours' ? 'standard_hours' 
         : null;
-      
+
+      // Compute start/end dates from the selected covered dates so the cover only spans relevant dates
+      const coverStartDate = coveredDates.length > 0 ? coveredDates[0] : request.start_date;
+      const coverEndDate = coveredDates.length > 0 ? coveredDates[coveredDates.length - 1] : request.end_date;
+
+      const coverageMetadata = coveredDates.length > 0
+        ? { type: 'holiday_days' as const, covered_dates: coveredDates }
+        : null;
+
       const payload = {
         user_id: coverUserId,
         request_type: 'shift_swap' as const,
         swap_with_user_id: request.user_id,
-        start_date: request.start_date,
-        end_date: request.end_date,
+        start_date: coverStartDate,
+        end_date: coverEndDate,
         days_requested: daysRequested,
         details: `Covering for ${getStaffName(request.user_id)} during their holiday`,
         status: 'approved',
         reviewed_by: user.id,
         reviewed_at: new Date().toISOString(),
         client_informed: false,
-        overtime_type: mappedOvertimeType
+        overtime_type: mappedOvertimeType,
+        coverage_metadata: coverageMetadata,
       };
 
       // If a cover request already exists for this exact period, update it instead of inserting a duplicate
       const {
         data: existing,
         error: existingError
-      } = await supabase.from("staff_requests").select("id").eq("request_type", "shift_swap").eq("user_id", coverUserId).eq("swap_with_user_id", request.user_id).eq("start_date", request.start_date).eq("end_date", request.end_date).limit(1);
+      } = await supabase.from("staff_requests").select("id").eq("request_type", "shift_swap").eq("user_id", coverUserId).eq("swap_with_user_id", request.user_id).gte("start_date", request.start_date).lte("end_date", request.end_date).limit(1);
       if (existingError) throw existingError;
       if (existing && existing.length > 0) {
         const {
