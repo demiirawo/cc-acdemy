@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat, FileBadge } from "lucide-react";
+import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat, FileBadge, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO, eachDayOfInterval } from "date-fns";
 import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
@@ -177,6 +177,29 @@ export function StaffPayManager() {
   const [savingAdjustment, setSavingAdjustment] = useState(false);
   const [readyStaff, setReadyStaff] = useState<Set<string>>(new Set());
   const [expandedOvertimeStaff, setExpandedOvertimeStaff] = useState<Set<string>>(new Set());
+  type SortKey = 'displayName' | 'baseSalary' | 'bonuses' | 'overtime' | 'holidayOvertimeBonus' | 'unusedHolidayPayout' | 'unpaidHolidayDeduction' | 'proRataDeduction' | 'deductions' | 'totalPay' | 'totalPayInGBP';
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'displayName' ? 'asc' : 'desc');
+    }
+  };
+  const sortItems = <T extends Record<string, any>>(items: T[]): T[] => {
+    if (!sortKey) return items;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...items].sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return String(av ?? '').localeCompare(String(bv ?? '')) * dir;
+      }
+      return ((Number(av) || 0) - (Number(bv) || 0)) * dir;
+    });
+  };
   const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
   const [loadingHolidays, setLoadingHolidays] = useState(false);
   const [holidaysYear, setHolidaysYear] = useState(new Date().getFullYear());
@@ -1998,19 +2021,41 @@ export function StaffPayManager() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/60 hover:bg-muted/60">
-                <TableHead className="font-semibold">Staff Member</TableHead>
-                <TableHead className="text-right font-semibold">Base Salary</TableHead>
-                <TableHead className="text-right font-semibold">Bonuses</TableHead>
-                <TableHead className="text-right font-semibold">Overtime</TableHead>
-                <TableHead className="text-right font-semibold">Holiday OT</TableHead>
-                <TableHead className="text-right font-semibold">Unused Holiday</TableHead>
-                <TableHead className="text-right font-semibold">Unpaid Hol</TableHead>
-                <TableHead className="text-right font-semibold">Pro-Rata</TableHead>
-                <TableHead className="text-right font-semibold">Deductions</TableHead>
-                <TableHead className="text-right font-semibold">Total Pay</TableHead>
-                <TableHead className="text-right font-semibold">GBP Equiv.</TableHead>
-                <TableHead className="font-semibold">Actions</TableHead>
-                <TableHead className="text-right font-semibold">Status</TableHead>
+                {(() => {
+                  const SortableHead = ({ k, label, align = 'left' }: { k: SortKey; label: string; align?: 'left' | 'right' }) => {
+                    const active = sortKey === k;
+                    const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+                    return (
+                      <TableHead className={`font-semibold ${align === 'right' ? 'text-right' : ''}`}>
+                        <button
+                          type="button"
+                          onClick={() => handleSort(k)}
+                          className={`inline-flex items-center gap-1 hover:text-primary transition-colors ${align === 'right' ? 'ml-auto' : ''} ${active ? 'text-primary' : ''}`}
+                        >
+                          <span>{label}</span>
+                          <Icon className="h-3 w-3 opacity-70" />
+                        </button>
+                      </TableHead>
+                    );
+                  };
+                  return (
+                    <>
+                      <SortableHead k="displayName" label="Staff Member" />
+                      <SortableHead k="baseSalary" label="Base Salary" align="right" />
+                      <SortableHead k="bonuses" label="Bonuses" align="right" />
+                      <SortableHead k="overtime" label="Overtime" align="right" />
+                      <SortableHead k="holidayOvertimeBonus" label="Holiday OT" align="right" />
+                      <SortableHead k="unusedHolidayPayout" label="Unused Holiday" align="right" />
+                      <SortableHead k="unpaidHolidayDeduction" label="Unpaid Hol" align="right" />
+                      <SortableHead k="proRataDeduction" label="Pro-Rata" align="right" />
+                      <SortableHead k="deductions" label="Deductions" align="right" />
+                      <SortableHead k="totalPay" label="Total Pay" align="right" />
+                      <SortableHead k="totalPayInGBP" label="GBP Equiv." align="right" />
+                      <TableHead className="font-semibold">Actions</TableHead>
+                      <TableHead className="text-right font-semibold">Status</TableHead>
+                    </>
+                  );
+                })()}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -2033,9 +2078,9 @@ export function StaffPayManager() {
                     headerClass: string;
                     items: typeof payrollSummary;
                   }> = [
-                    { key: 'pending', label: 'Pending', headerClass: 'bg-amber-100 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200', items: pendingGroup },
-                    { key: 'ready', label: 'Ready', headerClass: 'bg-green-100 dark:bg-green-950/40 text-green-900 dark:text-green-200', items: readyGroup },
-                    { key: 'paid', label: 'Paid', headerClass: 'bg-blue-100 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200', items: paidGroup },
+                    { key: 'pending', label: 'Pending', headerClass: 'bg-amber-100 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200', items: sortItems(pendingGroup) },
+                    { key: 'ready', label: 'Ready', headerClass: 'bg-green-100 dark:bg-green-950/40 text-green-900 dark:text-green-200', items: sortItems(readyGroup) },
+                    { key: 'paid', label: 'Paid', headerClass: 'bg-blue-100 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200', items: sortItems(paidGroup) },
                   ];
 
                   return groups.flatMap(group => {
