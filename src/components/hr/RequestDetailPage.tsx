@@ -1161,45 +1161,102 @@ Care Cuddle Team`;
           </Card>
         </div>
       </div>
-      {/* Cover Assignment Overtime Type Dialog */}
+      {/* Cover Assignment Dialog */}
       <Dialog open={!!coverAssignDialog} onOpenChange={(open) => { if (!open) setCoverAssignDialog(null); }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Assign Cover: {coverAssignDialog?.displayName}</DialogTitle>
             <DialogDescription>
-              Choose whether this cover shift should be classified as overtime.
+              Choose which dates this person will cover and whether the work counts as overtime.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <Label>Cover Type</Label>
-            <Select value={coverOvertimeType} onValueChange={(v) => setCoverOvertimeType(v as 'none' | 'outside_hours' | 'inside_hours')}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Not Overtime</SelectItem>
-                <SelectItem value="outside_hours">Overtime (Outside Normal Hours)</SelectItem>
-                <SelectItem value="inside_hours">Overtime (Inside Normal Hours)</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              {coverOvertimeType === 'outside_hours' 
-                ? 'Paid at 1.5× the daily rate — work outside their normal scheduled hours.' 
-                : coverOvertimeType === 'inside_hours' 
-                  ? 'Paid at 0.5× premium on top of base — work during their normal scheduled hours (e.g. public holiday).'
-                  : 'Standard cover, no overtime pay applied.'}
-            </p>
+          <div className="space-y-4 py-2">
+            {(() => {
+              const affected = getAffectedShiftsByDay();
+              const uniqueByDate = new Map<string, { date: Date; clientName: string; shiftTime: string }>();
+              affected.forEach(s => {
+                const key = s.date.toISOString().split('T')[0];
+                if (!uniqueByDate.has(key)) uniqueByDate.set(key, s);
+              });
+              const dateOptions = Array.from(uniqueByDate.entries()).sort(([a], [b]) => a.localeCompare(b));
+              if (dateOptions.length === 0) return null;
+              const allSelected = dateOptions.every(([d]) => coverSelectedDates.includes(d));
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Dates to Cover</Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setCoverSelectedDates(allSelected ? [] : dateOptions.map(([d]) => d))}
+                    >
+                      {allSelected ? 'Clear all' : 'Select all'}
+                    </Button>
+                  </div>
+                  <div className="space-y-1 border rounded-md p-2 max-h-56 overflow-y-auto">
+                    {dateOptions.map(([dateKey, info]) => {
+                      const checked = coverSelectedDates.includes(dateKey);
+                      return (
+                        <label key={dateKey} className="flex items-center gap-2 p-2 rounded hover:bg-muted cursor-pointer text-sm">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(v) => {
+                              setCoverSelectedDates(prev =>
+                                v ? Array.from(new Set([...prev, dateKey])) : prev.filter(d => d !== dateKey)
+                              );
+                            }}
+                          />
+                          <span className="font-medium flex-1">{format(info.date, 'EEE, dd MMM yyyy')}</span>
+                          <span className="text-xs text-muted-foreground">{info.shiftTime}</span>
+                          <span className="text-xs text-muted-foreground">({info.clientName})</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {coverSelectedDates.length} of {dateOptions.length} day{dateOptions.length !== 1 ? 's' : ''} selected
+                  </p>
+                </div>
+              );
+            })()}
+
+            <div className="space-y-2">
+              <Label>Cover Type</Label>
+              <Select value={coverOvertimeType} onValueChange={(v) => setCoverOvertimeType(v as 'none' | 'outside_hours' | 'inside_hours')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Not Overtime</SelectItem>
+                  <SelectItem value="outside_hours">Overtime (Outside Normal Hours)</SelectItem>
+                  <SelectItem value="inside_hours">Overtime (Inside Normal Hours)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {coverOvertimeType === 'outside_hours' 
+                  ? 'Paid at 1.5× the daily rate — work outside their normal scheduled hours.' 
+                  : coverOvertimeType === 'inside_hours' 
+                    ? 'Paid at 0.5× premium on top of base — work during their normal scheduled hours (e.g. public holiday).'
+                    : 'Standard cover, no overtime pay applied.'}
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCoverAssignDialog(null)}>Cancel</Button>
             <Button 
               onClick={() => {
                 if (coverAssignDialog) {
-                  assignCoverMutation.mutate({ coverUserId: coverAssignDialog.userId, overtimeType: coverOvertimeType });
+                  assignCoverMutation.mutate({
+                    coverUserId: coverAssignDialog.userId,
+                    overtimeType: coverOvertimeType,
+                    selectedDates: coverSelectedDates,
+                  });
                   setCoverAssignDialog(null);
                 }
               }}
-              disabled={assignCoverMutation.isPending}
+              disabled={assignCoverMutation.isPending || coverSelectedDates.length === 0}
             >
               Assign Cover
             </Button>
