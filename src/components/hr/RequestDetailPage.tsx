@@ -112,6 +112,7 @@ export function RequestDetailPage({
   const [detailsValue, setDetailsValue] = useState("");
   const [coverAssignDialog, setCoverAssignDialog] = useState<{ userId: string; displayName: string } | null>(null);
   const [coverOvertimeType, setCoverOvertimeType] = useState<'none' | 'outside_hours' | 'inside_hours'>('none');
+  const [coverSelectedDates, setCoverSelectedDates] = useState<string[]>([]);
 
   // Fetch the specific request
   const {
@@ -429,44 +430,56 @@ export function RequestDetailPage({
 
   // Assign cover mutation
   const assignCoverMutation = useMutation({
-    mutationFn: async ({ coverUserId, overtimeType }: { coverUserId: string; overtimeType: 'none' | 'outside_hours' | 'inside_hours' }) => {
+    mutationFn: async ({ coverUserId, overtimeType, selectedDates }: { coverUserId: string; overtimeType: 'none' | 'outside_hours' | 'inside_hours'; selectedDates: string[] }) => {
       if (!user || !request) throw new Error("Not authenticated or no request");
 
-      // Compute working days from the covered person's shift patterns (same logic as display)
+      // Compute working dates from the covered person's shift patterns
       const affectedShifts = getAffectedShiftsByDay();
-      const uniqueWorkingDates = new Set(affectedShifts.map(s => s.date.toISOString().split('T')[0]));
-      const computedWorkingDays = uniqueWorkingDates.size;
-      
-      // Use computed working days if available, otherwise fall back to linked holiday or request
-      const daysRequested = computedWorkingDays > 0 
-        ? computedWorkingDays 
+      const allWorkingDates = Array.from(new Set(affectedShifts.map(s => s.date.toISOString().split('T')[0]))).sort();
+
+      // Determine the dates this cover will actually work
+      const coveredDates = selectedDates.length > 0
+        ? selectedDates.slice().sort()
+        : allWorkingDates;
+
+      const daysRequested = coveredDates.length > 0
+        ? coveredDates.length
         : (linkedHoliday?.days_taken ?? request.days_requested);
 
       // Map overtime selection to the overtime_type field
       const mappedOvertimeType = overtimeType === 'outside_hours' ? 'outside_hours' 
         : overtimeType === 'inside_hours' ? 'standard_hours' 
         : null;
-      
+
+      // Compute start/end dates from the selected covered dates so the cover only spans relevant dates
+      const coverStartDate = coveredDates.length > 0 ? coveredDates[0] : request.start_date;
+      const coverEndDate = coveredDates.length > 0 ? coveredDates[coveredDates.length - 1] : request.end_date;
+
+      const coverageMetadata = coveredDates.length > 0
+        ? { type: 'holiday_days' as const, covered_dates: coveredDates }
+        : null;
+
       const payload = {
         user_id: coverUserId,
         request_type: 'shift_swap' as const,
         swap_with_user_id: request.user_id,
-        start_date: request.start_date,
-        end_date: request.end_date,
+        start_date: coverStartDate,
+        end_date: coverEndDate,
         days_requested: daysRequested,
         details: `Covering for ${getStaffName(request.user_id)} during their holiday`,
         status: 'approved',
         reviewed_by: user.id,
         reviewed_at: new Date().toISOString(),
         client_informed: false,
-        overtime_type: mappedOvertimeType
+        overtime_type: mappedOvertimeType,
+        coverage_metadata: coverageMetadata,
       };
 
       // If a cover request already exists for this exact period, update it instead of inserting a duplicate
       const {
         data: existing,
         error: existingError
-      } = await supabase.from("staff_requests").select("id").eq("request_type", "shift_swap").eq("user_id", coverUserId).eq("swap_with_user_id", request.user_id).eq("start_date", request.start_date).eq("end_date", request.end_date).limit(1);
+      } = await supabase.from("staff_requests").select("id").eq("request_type", "shift_swap").eq("user_id", coverUserId).eq("swap_with_user_id", request.user_id).gte("start_date", request.start_date).lte("end_date", request.end_date).limit(1);
       if (existingError) throw existingError;
       if (existing && existing.length > 0) {
         const {
@@ -1009,6 +1022,8 @@ Care Cuddle Team`;
                             } else {
                               setCoverAssignDialog({ userId: staff.user_id, displayName: staff.display_name || staff.email || 'Staff' });
                               setCoverOvertimeType('none');
+                              const allDates = Array.from(new Set(getAffectedShiftsByDay().map(s => s.date.toISOString().split('T')[0])));
+                              setCoverSelectedDates(allDates);
                             }
                           }}
                           className={isAssigned ? "bg-success/20 text-success border-success hover:bg-destructive/20 hover:text-destructive hover:border-destructive" : "hover:bg-purple-50 hover:border-purple-300"}
@@ -1040,6 +1055,8 @@ Care Cuddle Team`;
                             } else {
                               setCoverAssignDialog({ userId: staff.user_id, displayName: staff.display_name || staff.email || 'Staff' });
                               setCoverOvertimeType('none');
+                              const allDates = Array.from(new Set(getAffectedShiftsByDay().map(s => s.date.toISOString().split('T')[0])));
+                              setCoverSelectedDates(allDates);
                             }
                           }}
                           className={isAssigned ? "bg-success/20 text-success border-success hover:bg-destructive/20 hover:text-destructive hover:border-destructive" : "hover:bg-blue-50 hover:border-blue-300"}
@@ -1144,45 +1161,102 @@ Care Cuddle Team`;
           </Card>
         </div>
       </div>
-      {/* Cover Assignment Overtime Type Dialog */}
+      {/* Cover Assignment Dialog */}
       <Dialog open={!!coverAssignDialog} onOpenChange={(open) => { if (!open) setCoverAssignDialog(null); }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Assign Cover: {coverAssignDialog?.displayName}</DialogTitle>
             <DialogDescription>
-              Choose whether this cover shift should be classified as overtime.
+              Choose which dates this person will cover and whether the work counts as overtime.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <Label>Cover Type</Label>
-            <Select value={coverOvertimeType} onValueChange={(v) => setCoverOvertimeType(v as 'none' | 'outside_hours' | 'inside_hours')}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Not Overtime</SelectItem>
-                <SelectItem value="outside_hours">Overtime (Outside Normal Hours)</SelectItem>
-                <SelectItem value="inside_hours">Overtime (Inside Normal Hours)</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              {coverOvertimeType === 'outside_hours' 
-                ? 'Paid at 1.5× the daily rate — work outside their normal scheduled hours.' 
-                : coverOvertimeType === 'inside_hours' 
-                  ? 'Paid at 0.5× premium on top of base — work during their normal scheduled hours (e.g. public holiday).'
-                  : 'Standard cover, no overtime pay applied.'}
-            </p>
+          <div className="space-y-4 py-2">
+            {(() => {
+              const affected = getAffectedShiftsByDay();
+              const uniqueByDate = new Map<string, { date: Date; clientName: string; shiftTime: string }>();
+              affected.forEach(s => {
+                const key = s.date.toISOString().split('T')[0];
+                if (!uniqueByDate.has(key)) uniqueByDate.set(key, s);
+              });
+              const dateOptions = Array.from(uniqueByDate.entries()).sort(([a], [b]) => a.localeCompare(b));
+              if (dateOptions.length === 0) return null;
+              const allSelected = dateOptions.every(([d]) => coverSelectedDates.includes(d));
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Dates to Cover</Label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setCoverSelectedDates(allSelected ? [] : dateOptions.map(([d]) => d))}
+                    >
+                      {allSelected ? 'Clear all' : 'Select all'}
+                    </Button>
+                  </div>
+                  <div className="space-y-1 border rounded-md p-2 max-h-56 overflow-y-auto">
+                    {dateOptions.map(([dateKey, info]) => {
+                      const checked = coverSelectedDates.includes(dateKey);
+                      return (
+                        <label key={dateKey} className="flex items-center gap-2 p-2 rounded hover:bg-muted cursor-pointer text-sm">
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(v) => {
+                              setCoverSelectedDates(prev =>
+                                v ? Array.from(new Set([...prev, dateKey])) : prev.filter(d => d !== dateKey)
+                              );
+                            }}
+                          />
+                          <span className="font-medium flex-1">{format(info.date, 'EEE, dd MMM yyyy')}</span>
+                          <span className="text-xs text-muted-foreground">{info.shiftTime}</span>
+                          <span className="text-xs text-muted-foreground">({info.clientName})</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {coverSelectedDates.length} of {dateOptions.length} day{dateOptions.length !== 1 ? 's' : ''} selected
+                  </p>
+                </div>
+              );
+            })()}
+
+            <div className="space-y-2">
+              <Label>Cover Type</Label>
+              <Select value={coverOvertimeType} onValueChange={(v) => setCoverOvertimeType(v as 'none' | 'outside_hours' | 'inside_hours')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Not Overtime</SelectItem>
+                  <SelectItem value="outside_hours">Overtime (Outside Normal Hours)</SelectItem>
+                  <SelectItem value="inside_hours">Overtime (Inside Normal Hours)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {coverOvertimeType === 'outside_hours' 
+                  ? 'Paid at 1.5× the daily rate — work outside their normal scheduled hours.' 
+                  : coverOvertimeType === 'inside_hours' 
+                    ? 'Paid at 0.5× premium on top of base — work during their normal scheduled hours (e.g. public holiday).'
+                    : 'Standard cover, no overtime pay applied.'}
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCoverAssignDialog(null)}>Cancel</Button>
             <Button 
               onClick={() => {
                 if (coverAssignDialog) {
-                  assignCoverMutation.mutate({ coverUserId: coverAssignDialog.userId, overtimeType: coverOvertimeType });
+                  assignCoverMutation.mutate({
+                    coverUserId: coverAssignDialog.userId,
+                    overtimeType: coverOvertimeType,
+                    selectedDates: coverSelectedDates,
+                  });
                   setCoverAssignDialog(null);
                 }
               }}
-              disabled={assignCoverMutation.isPending}
+              disabled={assignCoverMutation.isPending || coverSelectedDates.length === 0}
             >
               Assign Cover
             </Button>
