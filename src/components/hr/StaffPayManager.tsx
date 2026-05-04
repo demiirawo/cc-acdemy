@@ -177,6 +177,29 @@ export function StaffPayManager() {
   const [savingAdjustment, setSavingAdjustment] = useState(false);
   const [readyStaff, setReadyStaff] = useState<Set<string>>(new Set());
   const [expandedOvertimeStaff, setExpandedOvertimeStaff] = useState<Set<string>>(new Set());
+  type SortKey = 'displayName' | 'baseSalary' | 'bonuses' | 'overtime' | 'holidayOvertimeBonus' | 'unusedHolidayPayout' | 'unpaidHolidayDeduction' | 'proRataDeduction' | 'deductions' | 'totalPay' | 'totalPayInGBP';
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'displayName' ? 'asc' : 'desc');
+    }
+  };
+  const sortItems = <T extends Record<string, any>>(items: T[]): T[] => {
+    if (!sortKey) return items;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return [...items].sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      if (typeof av === 'string' || typeof bv === 'string') {
+        return String(av ?? '').localeCompare(String(bv ?? '')) * dir;
+      }
+      return ((Number(av) || 0) - (Number(bv) || 0)) * dir;
+    });
+  };
   const [publicHolidays, setPublicHolidays] = useState<PublicHoliday[]>([]);
   const [loadingHolidays, setLoadingHolidays] = useState(false);
   const [holidaysYear, setHolidaysYear] = useState(new Date().getFullYear());
