@@ -995,80 +995,90 @@ Care Cuddle Team`;
               {/* Assign Cover Section - always show for holiday requests */}
               {isHolidayRequest && <div className="space-y-4">
                   <Separator />
-                  
-                  {/* Care Cuddle Bench Staff */}
-                  {(() => {
-                const benchStaff = allStaffWithAssignments.filter(s => s.isBench && s.user_id !== request.user_id);
-                const otherStaff = allStaffWithAssignments.filter(s => !s.isBench && s.user_id !== request.user_id);
-                const coveredUserIds = (coveringStaff || []).map(c => c.user_id);
-                return <>
-                        {benchStaff.length > 0 && <div>
-                            <Label className="text-muted-foreground text-sm flex items-center gap-2">
-                              <span className="inline-block w-2 h-2 rounded-full bg-purple-500"></span>
-                              Care Cuddle Bench
-                            </Label>
-                            <div className="flex flex-wrap gap-2 mt-2">
-                              {benchStaff.map(staff => {
-                        const isAssigned = coveredUserIds.includes(staff.user_id);
-                        const isPending = assignCoverMutation.isPending || unassignCoverMutation.isPending;
-                        return <Button 
-                          key={staff.user_id} 
-                          variant={isAssigned ? "secondary" : "outline"} 
-                          size="sm" 
-                          disabled={isPending} 
-                          onClick={() => {
-                            if (isAssigned) {
-                              unassignCoverMutation.mutate(staff.user_id);
-                            } else {
-                              setCoverAssignDialog({ userId: staff.user_id, displayName: staff.display_name || staff.email || 'Staff' });
-                              setCoverOvertimeType('none');
-                              const allDates = Array.from(new Set(getAffectedShiftsByDay().map(s => s.date.toISOString().split('T')[0])));
-                              setCoverSelectedDates(allDates);
-                            }
-                          }}
-                          className={isAssigned ? "bg-success/20 text-success border-success hover:bg-destructive/20 hover:text-destructive hover:border-destructive" : "hover:bg-purple-50 hover:border-purple-300"}
-                        >
-                                    {isAssigned && <CheckCircle2 className="h-3 w-3 mr-1" />}
-                                    {staff.display_name || staff.email}
-                                  </Button>;
-                      })}
-                            </div>
-                          </div>}
 
-                        {otherStaff.length > 0 && <div>
-                            <Label className="text-muted-foreground text-sm flex items-center gap-2">
-                              <span className="inline-block w-2 h-2 rounded-full bg-blue-500"></span>
-                              Other Staff
-                            </Label>
-                            <div className="flex flex-wrap gap-2 mt-2">
-                              {otherStaff.map(staff => {
-                        const isAssigned = coveredUserIds.includes(staff.user_id);
-                        const isPending = assignCoverMutation.isPending || unassignCoverMutation.isPending;
-                        return <Button 
-                          key={staff.user_id} 
-                          variant={isAssigned ? "secondary" : "outline"} 
-                          size="sm" 
-                          disabled={isPending} 
-                          onClick={() => {
-                            if (isAssigned) {
-                              unassignCoverMutation.mutate(staff.user_id);
-                            } else {
-                              setCoverAssignDialog({ userId: staff.user_id, displayName: staff.display_name || staff.email || 'Staff' });
-                              setCoverOvertimeType('none');
-                              const allDates = Array.from(new Set(getAffectedShiftsByDay().map(s => s.date.toISOString().split('T')[0])));
-                              setCoverSelectedDates(allDates);
-                            }
-                          }}
-                          className={isAssigned ? "bg-success/20 text-success border-success hover:bg-destructive/20 hover:text-destructive hover:border-destructive" : "hover:bg-blue-50 hover:border-blue-300"}
-                        >
-                                    {isAssigned && <CheckCircle2 className="h-3 w-3 mr-1" />}
-                                    {staff.display_name || staff.email}
-                                  </Button>;
-                      })}
-                            </div>
-                          </div>}
-                      </>;
-              })()}
+                  {(() => {
+                    const benchStaff = allStaffWithAssignments.filter(s => s.isBench && s.user_id !== request.user_id);
+                    const otherStaff = allStaffWithAssignments.filter(s => !s.isBench && s.user_id !== request.user_id);
+                    const coveredUserIds = (coveringStaff || []).map(c => c.user_id);
+                    const isPending = assignCoverMutation.isPending || unassignCoverMutation.isPending;
+
+                    type Row = { user_id: string; display_name: string | null; email: string | null; isBench: boolean };
+                    const rows: Row[] = [
+                      ...benchStaff.map(s => ({ user_id: s.user_id, display_name: s.display_name, email: s.email, isBench: true })),
+                      ...otherStaff.map(s => ({ user_id: s.user_id, display_name: s.display_name, email: s.email, isBench: false })),
+                    ].sort((a, b) => {
+                      // Bench first, then alphabetical
+                      if (a.isBench !== b.isBench) return a.isBench ? -1 : 1;
+                      return (a.display_name || a.email || '').localeCompare(b.display_name || b.email || '');
+                    });
+
+                    if (rows.length === 0) return null;
+
+                    return (
+                      <div className="space-y-2">
+                        <Label className="text-muted-foreground text-sm">Available Staff</Label>
+                        <div className="border rounded-md overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
+                              <tr>
+                                <th className="text-left font-medium px-3 py-2 w-10">#</th>
+                                <th className="text-left font-medium px-3 py-2">Name</th>
+                                <th className="text-left font-medium px-3 py-2">Group</th>
+                                <th className="text-right font-medium px-3 py-2 w-32">Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rows.map((staff, idx) => {
+                                const isAssigned = coveredUserIds.includes(staff.user_id);
+                                return (
+                                  <tr
+                                    key={staff.user_id}
+                                    className={`border-t ${isAssigned ? 'bg-success/5' : idx % 2 === 0 ? 'bg-background' : 'bg-muted/20'}`}
+                                  >
+                                    <td className="px-3 py-2 text-muted-foreground tabular-nums">{idx + 1}</td>
+                                    <td className="px-3 py-2 font-medium">
+                                      <div className="flex items-center gap-2">
+                                        {isAssigned && <CheckCircle2 className="h-3.5 w-3.5 text-success" />}
+                                        <span>{staff.display_name || staff.email}</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                                        <span className={`inline-block w-2 h-2 rounded-full ${staff.isBench ? 'bg-purple-500' : 'bg-blue-500'}`}></span>
+                                        {staff.isBench ? 'Care Cuddle Bench' : 'Other Staff'}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2 text-right">
+                                      <Button
+                                        variant={isAssigned ? "secondary" : "outline"}
+                                        size="sm"
+                                        disabled={isPending}
+                                        onClick={() => {
+                                          if (isAssigned) {
+                                            unassignCoverMutation.mutate(staff.user_id);
+                                          } else {
+                                            setCoverAssignDialog({ userId: staff.user_id, displayName: staff.display_name || staff.email || 'Staff' });
+                                            setCoverOvertimeType('none');
+                                            const allDates = Array.from(new Set(getAffectedShiftsByDay().map(s => s.date.toISOString().split('T')[0])));
+                                            setCoverSelectedDates(allDates);
+                                          }
+                                        }}
+                                        className={isAssigned
+                                          ? "bg-success/20 text-success border-success hover:bg-destructive/20 hover:text-destructive hover:border-destructive"
+                                          : ""}
+                                      >
+                                        {isAssigned ? 'Unassign' : 'Assign'}
+                                      </Button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>}
             </CardContent>
           </Card>
