@@ -986,11 +986,27 @@ Care Cuddle Team`;
                         } else {
                           coverageLabel = `Covering ${formatDay(cover.start_date)} to ${formatDay(cover.end_date)}`;
                         }
+                        const otType = (cover as { overtime_type?: 'standard_hours' | 'outside_hours' | null }).overtime_type;
+                        const otLabel = otType === 'outside_hours'
+                          ? 'OT (Outside Hours · 1.5x)'
+                          : otType === 'standard_hours'
+                            ? 'OT (Inside Hours · +0.5x)'
+                            : null;
+                        const otBadgeClass = otType === 'outside_hours'
+                          ? 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950/40 dark:text-orange-200 dark:border-orange-800'
+                          : 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800';
                         return (
                           <div key={idx} className="flex items-center gap-3 p-3 bg-success/10 border border-success/20 rounded-lg">
-                            <CheckCircle2 className="h-5 w-5 text-success" />
-                            <div>
-                              <p className="font-medium">{cover.staffName}</p>
+                            <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-medium">{cover.staffName}</p>
+                                {otLabel && (
+                                  <Badge variant="outline" className={otBadgeClass}>
+                                    {otLabel}
+                                  </Badge>
+                                )}
+                              </div>
                               <p className="text-sm text-muted-foreground">{coverageLabel}</p>
                             </div>
                           </div>
