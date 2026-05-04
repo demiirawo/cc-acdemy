@@ -2078,9 +2078,9 @@ export function StaffPayManager() {
                     headerClass: string;
                     items: typeof payrollSummary;
                   }> = [
-                    { key: 'pending', label: 'Pending', headerClass: 'bg-amber-100 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200', items: pendingGroup },
-                    { key: 'ready', label: 'Ready', headerClass: 'bg-green-100 dark:bg-green-950/40 text-green-900 dark:text-green-200', items: readyGroup },
-                    { key: 'paid', label: 'Paid', headerClass: 'bg-blue-100 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200', items: paidGroup },
+                    { key: 'pending', label: 'Pending', headerClass: 'bg-amber-100 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200', items: sortItems(pendingGroup) },
+                    { key: 'ready', label: 'Ready', headerClass: 'bg-green-100 dark:bg-green-950/40 text-green-900 dark:text-green-200', items: sortItems(readyGroup) },
+                    { key: 'paid', label: 'Paid', headerClass: 'bg-blue-100 dark:bg-blue-950/40 text-blue-900 dark:text-blue-200', items: sortItems(paidGroup) },
                   ];
 
                   return groups.flatMap(group => {
