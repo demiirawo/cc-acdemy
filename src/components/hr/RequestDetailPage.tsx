@@ -1022,6 +1022,8 @@ Care Cuddle Team`;
                             } else {
                               setCoverAssignDialog({ userId: staff.user_id, displayName: staff.display_name || staff.email || 'Staff' });
                               setCoverOvertimeType('none');
+                              const allDates = Array.from(new Set(getAffectedShiftsByDay().map(s => s.date.toISOString().split('T')[0])));
+                              setCoverSelectedDates(allDates);
                             }
                           }}
                           className={isAssigned ? "bg-success/20 text-success border-success hover:bg-destructive/20 hover:text-destructive hover:border-destructive" : "hover:bg-purple-50 hover:border-purple-300"}
