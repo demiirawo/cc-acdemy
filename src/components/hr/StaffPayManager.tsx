@@ -531,6 +531,23 @@ export function StaffPayManager() {
       const date = new Date(datetime);
       return format(date, 'yyyy-MM-dd');
     };
+
+    const getGranularCoveredDates = (request: {
+      coverage_metadata: Json | null;
+      start_date: string;
+      end_date: string;
+    }): string[] => {
+      const normalizedCoverageMetadata =
+        request.coverage_metadata && typeof request.coverage_metadata === 'object' && !Array.isArray(request.coverage_metadata)
+          ? (request.coverage_metadata as Record<string, unknown>)
+          : null;
+
+      return getCoveredDatesFromRequest({
+        start_date: request.start_date,
+        end_date: request.end_date,
+        coverage_metadata: normalizedCoverageMetadata,
+      });
+    };
     
     // Create separate maps for deleted vs overtime exceptions
     const deletedExceptionsMap = new Map<string, Set<string>>();
@@ -687,7 +704,7 @@ export function StaffPayManager() {
       // but won't have a recurring pattern or actual schedule for that client
       const userCoverRequests = approvedOvertimeRequests.filter(r => r.user_id === hr.user_id);
       userCoverRequests.forEach(req => {
-        const granularCoveredDates = getCoveredDatesFromRequest(req)
+        const granularCoveredDates = getGranularCoveredDates(req)
           .filter(date => date >= format(monthStart, 'yyyy-MM-dd') && date <= format(monthEnd, 'yyyy-MM-dd'));
 
         const coverDatesToCheck = granularCoveredDates.length > 0
@@ -805,7 +822,7 @@ export function StaffPayManager() {
           : hr.user_id;
         const targetPatterns = recurringPatterns.filter(p => p.user_id === targetUserId && !p.is_overtime);
         
-        const granularCoveredDates = getCoveredDatesFromRequest(req)
+        const granularCoveredDates = getGranularCoveredDates(req)
           .filter(date => date >= format(monthStart, 'yyyy-MM-dd') && date <= format(monthEnd, 'yyyy-MM-dd'));
 
         const daysInRange = granularCoveredDates.length > 0
@@ -908,7 +925,7 @@ export function StaffPayManager() {
       
       // Build overtimeRequestDetails for backward compatibility
       const overtimeRequestDetails = userOvertimeRequests.map(req => {
-        const granularCoveredDates = getCoveredDatesFromRequest(req)
+        const granularCoveredDates = getGranularCoveredDates(req)
           .filter(date => date >= format(monthStart, 'yyyy-MM-dd') && date <= format(monthEnd, 'yyyy-MM-dd'));
         const startDate = parseISO(req.start_date);
         const endDate = parseISO(req.end_date);
