@@ -915,6 +915,36 @@ export function StaffPayManager() {
           .filter(([, value]) => value.source === 'request')
           .map(([date]) => date)
       );
+
+      // Non-overtime cover days (shift_swap with no overtime_type) — informational only, £0 pay
+      const nonOvertimeCoverDayDetails: Array<{ date: string; coveredFor: string }> = [];
+      const nonOvertimeCoverRequests = approvedOvertimeRequests.filter(r => {
+        if (r.user_id !== hr.user_id) return false;
+        if (r.request_type !== 'shift_swap') return false;
+        if (r.overtime_type) return false; // only non-overtime covers
+        const startDate = parseISO(r.start_date);
+        const endDate = parseISO(r.end_date);
+        return startDate <= monthEnd && endDate >= monthStart;
+      });
+      nonOvertimeCoverRequests.forEach(req => {
+        const startDate = parseISO(req.start_date);
+        const endDate = parseISO(req.end_date);
+        const effectiveStart = startDate < monthStart ? monthStart : startDate;
+        const effectiveEnd = endDate > monthEnd ? monthEnd : endDate;
+        const granular = getGranularCoveredDates(req)
+          .filter(d => d >= format(monthStart, 'yyyy-MM-dd') && d <= format(monthEnd, 'yyyy-MM-dd'));
+        const dates = granular.length > 0
+          ? granular
+          : (effectiveStart <= effectiveEnd
+              ? eachDayOfInterval({ start: effectiveStart, end: effectiveEnd }).map(d => format(d, 'yyyy-MM-dd'))
+              : []);
+        const coveredForName = req.swap_with_user_id
+          ? (profiles.find(p => p.user_id === req.swap_with_user_id)?.display_name || 'Colleague')
+          : 'Colleague';
+        dates.forEach(dStr => {
+          nonOvertimeCoverDayDetails.push({ date: dStr, coveredFor: coveredForName });
+        });
+      });
       
       // Add pattern-based overtime to the map (skip dates already covered by requests)
       const userPatterns = recurringPatterns.filter(p => p.user_id === hr.user_id);
