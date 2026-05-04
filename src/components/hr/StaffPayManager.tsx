@@ -939,7 +939,7 @@ export function StaffPayManager() {
               ? eachDayOfInterval({ start: effectiveStart, end: effectiveEnd }).map(d => format(d, 'yyyy-MM-dd'))
               : []);
         const coveredForName = req.swap_with_user_id
-          ? (profiles.find(p => p.user_id === req.swap_with_user_id)?.display_name || 'Colleague')
+          ? (userProfiles.find(p => p.user_id === req.swap_with_user_id)?.display_name || 'Colleague')
           : 'Colleague';
         dates.forEach(dStr => {
           nonOvertimeCoverDayDetails.push({ date: dStr, coveredFor: coveredForName });
