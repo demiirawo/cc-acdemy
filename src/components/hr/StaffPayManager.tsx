@@ -64,6 +64,7 @@ interface RecurringShiftPattern {
   client_name: string;
   is_overtime: boolean;
   overtime_subtype: string | null;
+  recurrence_interval: string;
 }
 
 interface ShiftPatternException {
@@ -395,7 +396,7 @@ export function StaffPayManager() {
       // Fetch recurring shift patterns
       const { data: patterns, error: patternsError } = await supabase
         .from('recurring_shift_patterns')
-        .select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, hourly_rate, currency, client_name, is_overtime, overtime_subtype');
+        .select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, hourly_rate, currency, client_name, is_overtime, overtime_subtype, recurrence_interval');
       
       if (patternsError) {
         console.error('Error fetching recurring patterns:', patternsError);
@@ -530,6 +531,25 @@ export function StaffPayManager() {
     const getScheduleDate = (datetime: string): string => {
       const date = new Date(datetime);
       return format(date, 'yyyy-MM-dd');
+    };
+
+    const isDateOnRecurrenceSchedule = (currentDate: Date, patternStartDate: string, recurrenceInterval: string): boolean => {
+      const start = parseISO(patternStartDate);
+      const msDiff = currentDate.getTime() - start.getTime();
+      const dayDiff = Math.floor(msDiff / (1000 * 60 * 60 * 24));
+
+      switch (recurrenceInterval) {
+        case 'daily':
+        case 'weekly':
+        case 'one_off':
+          return true;
+        case 'biweekly':
+          return Math.floor(dayDiff / 7) % 2 === 0;
+        case 'monthly':
+          return currentDate.getDate() === start.getDate();
+        default:
+          return true;
+      }
     };
 
     const getGranularCoveredDates = (request: {
@@ -821,6 +841,11 @@ export function StaffPayManager() {
           ? req.swap_with_user_id 
           : hr.user_id;
         const targetPatterns = recurringPatterns.filter(p => p.user_id === targetUserId && !p.is_overtime);
+        const targetActualScheduleDates = new Set(
+          staffSchedules
+            .filter(schedule => schedule.user_id === targetUserId)
+            .map(schedule => getScheduleDate(schedule.start_datetime))
+        );
         
         const granularCoveredDates = getGranularCoveredDates(req)
           .filter(date => date >= format(monthStart, 'yyyy-MM-dd') && date <= format(monthEnd, 'yyyy-MM-dd'));
@@ -834,18 +859,21 @@ export function StaffPayManager() {
           const dayOfWeek = day.getDay();
           
           // Only count this day if it's a working day for the target user
-          const isWorkingDay = targetPatterns.some(pattern => {
+          const hasActualSchedule = targetActualScheduleDates.has(dStr);
+
+          const hasRecurringShift = targetPatterns.some(pattern => {
             const patternStart = parseISO(pattern.start_date);
             const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
             if (day < patternStart || (patternEnd && day > patternEnd)) return false;
             if (!pattern.days_of_week.includes(dayOfWeek)) return false;
+            if (!isDateOnRecurrenceSchedule(day, pattern.start_date, pattern.recurrence_interval)) return false;
             // Check for deleted exceptions
             const deletedExs = deletedExceptionsMap.get(pattern.id);
             if (deletedExs && deletedExs.has(dStr)) return false;
             return true;
           });
           
-          if (isWorkingDay) {
+          if (hasActualSchedule || hasRecurringShift) {
             upsertOvertimeShift(dStr, subtype, 'request', 'Cover', req.request_type);
           }
         });
