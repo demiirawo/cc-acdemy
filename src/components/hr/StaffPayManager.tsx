@@ -891,6 +891,7 @@ export function StaffPayManager() {
           // Only count this day if it's a working day for the target user
           const hasActualSchedule = targetActualScheduleDates.has(dStr);
 
+          let matchedClientName: string | undefined;
           const hasRecurringShift = targetPatterns.some(pattern => {
             const patternStart = parseISO(pattern.start_date);
             const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
@@ -900,11 +901,20 @@ export function StaffPayManager() {
             // Check for deleted exceptions
             const deletedExs = deletedExceptionsMap.get(pattern.id);
             if (deletedExs && deletedExs.has(dStr)) return false;
+            matchedClientName = pattern.client_name;
             return true;
           });
-          
+
+          // Fallback: try to find client from actual schedule for the target user on this day
+          if (!matchedClientName && hasActualSchedule) {
+            const sched = staffSchedules.find(s =>
+              s.user_id === targetUserId && getScheduleDate(s.start_datetime) === dStr
+            );
+            matchedClientName = (sched as { client_name?: string } | undefined)?.client_name;
+          }
+
           if (hasActualSchedule || hasRecurringShift) {
-            upsertOvertimeShift(dStr, subtype, 'request', 'Cover', req.request_type);
+            upsertOvertimeShift(dStr, subtype, 'request', matchedClientName || 'Cover', req.request_type);
           }
         });
       });
