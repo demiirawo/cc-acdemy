@@ -1172,6 +1172,7 @@ export function StaffPayManager() {
         doubleUpOvertimeDays: totalDoubleUpOTDays,
         overtimeRequestDetails,
         overtimeDayDetails: overtimeDayDetails.sort((a, b) => a.date.localeCompare(b.date)),
+        nonOvertimeCoverDayDetails: nonOvertimeCoverDayDetails.sort((a, b) => a.date.localeCompare(b.date)),
         calculatedOvertimePay,
         expenses,
         deductions,
