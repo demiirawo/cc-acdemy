@@ -747,15 +747,22 @@ export function StaffPayManager() {
       // but won't have a recurring pattern or actual schedule for that client
       const userCoverRequests = approvedOvertimeRequests.filter(r => r.user_id === hr.user_id);
       userCoverRequests.forEach(req => {
+        // Skip requests that don't overlap the selected month at all
+        const reqStart = parseISO(req.start_date);
+        const reqEnd = parseISO(req.end_date);
+        if (reqEnd < monthStart || reqStart > monthEnd) return;
+
         const granularCoveredDates = getGranularCoveredDates(req)
           .filter(date => date >= format(monthStart, 'yyyy-MM-dd') && date <= format(monthEnd, 'yyyy-MM-dd'));
 
+        const effectiveStart = reqStart < monthStart ? monthStart : reqStart;
+        const effectiveEnd = reqEnd > monthEnd ? monthEnd : reqEnd;
+
         const coverDatesToCheck = granularCoveredDates.length > 0
           ? granularCoveredDates
-          : eachDayOfInterval({
-              start: parseISO(req.start_date) < monthStart ? monthStart : parseISO(req.start_date),
-              end: parseISO(req.end_date) > monthEnd ? monthEnd : parseISO(req.end_date),
-            }).map(day => format(day, 'yyyy-MM-dd'));
+          : (effectiveStart <= effectiveEnd
+              ? eachDayOfInterval({ start: effectiveStart, end: effectiveEnd }).map(day => format(day, 'yyyy-MM-dd'))
+              : []);
 
         coverDatesToCheck.forEach(coverDateStr => {
           if (holidayDatesSet.has(coverDateStr) && !countedHolidayDates.has(coverDateStr) && !userLeaveDates.has(coverDateStr)) {
