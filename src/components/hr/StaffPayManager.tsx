@@ -841,10 +841,11 @@ export function StaffPayManager() {
           ? req.swap_with_user_id 
           : hr.user_id;
         const targetPatterns = recurringPatterns.filter(p => p.user_id === targetUserId && !p.is_overtime);
-        const targetActualSchedules = staffSchedules.filter(schedule => {
-          if (schedule.user_id !== targetUserId) return false;
-          return getScheduleDate(schedule.start_datetime) === format(day, 'yyyy-MM-dd');
-        });
+        const targetActualScheduleDates = new Set(
+          staffSchedules
+            .filter(schedule => schedule.user_id === targetUserId)
+            .map(schedule => getScheduleDate(schedule.start_datetime))
+        );
         
         const granularCoveredDates = getGranularCoveredDates(req)
           .filter(date => date >= format(monthStart, 'yyyy-MM-dd') && date <= format(monthEnd, 'yyyy-MM-dd'));
@@ -858,7 +859,7 @@ export function StaffPayManager() {
           const dayOfWeek = day.getDay();
           
           // Only count this day if it's a working day for the target user
-          const hasActualSchedule = targetActualSchedules.length > 0;
+          const hasActualSchedule = targetActualScheduleDates.has(dStr);
 
           const hasRecurringShift = targetPatterns.some(pattern => {
             const patternStart = parseISO(pattern.start_date);
