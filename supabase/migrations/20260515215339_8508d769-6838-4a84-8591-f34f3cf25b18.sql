@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public.is_recruitment_test_live(uuid) TO anon, authenticated;
