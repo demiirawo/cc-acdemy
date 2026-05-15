@@ -41,6 +41,7 @@ export function RecruitmentSection() {
         <ResultDetail
           attemptId={view.attemptId}
           onBack={() => setView({ name: "results", testId: view.testId })}
+          onNavigate={(attemptId) => setView({ name: "detail", attemptId, testId: view.testId })}
         />
       )}
     </div>

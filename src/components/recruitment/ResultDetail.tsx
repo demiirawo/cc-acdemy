@@ -3,13 +3,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Check, X, FileText, ExternalLink } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, X, FileText, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { INTEGRITY_PENALTIES } from "./types";
 
 interface Props {
   attemptId: string;
   onBack: () => void;
+  onNavigate?: (attemptId: string) => void;
 }
 
 interface AnswerRow {
@@ -40,7 +41,7 @@ interface SnapRow {
   taken_at: string;
 }
 
-export function ResultDetail({ attemptId, onBack }: Props) {
+export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
   const [attempt, setAttempt] = useState<any>(null);
   const [test, setTest] = useState<any>(null);
   const [answers, setAnswers] = useState<AnswerRow[]>([]);
@@ -51,6 +52,7 @@ export function ResultDetail({ attemptId, onBack }: Props) {
   const [cvUrl, setCvUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [enlarged, setEnlarged] = useState<string | null>(null);
+  const [siblings, setSiblings] = useState<string[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -64,16 +66,18 @@ export function ResultDetail({ attemptId, onBack }: Props) {
         return;
       }
       setAttempt(a);
-      const [{ data: t }, { data: ans }, { data: ev }, { data: sn }] = await Promise.all([
+      const [{ data: t }, { data: ans }, { data: ev }, { data: sn }, { data: sib }] = await Promise.all([
         supabase.from("recruitment_tests").select("*").eq("id", a.test_id).maybeSingle(),
         supabase.from("recruitment_answers").select("*").eq("attempt_id", attemptId),
         supabase.from("recruitment_events").select("*").eq("attempt_id", attemptId).order("occurred_at"),
         supabase.from("recruitment_snapshots").select("*").eq("attempt_id", attemptId).order("taken_at"),
+        supabase.from("recruitment_attempts").select("id").eq("test_id", a.test_id).order("total_score", { ascending: false }),
       ]);
       setTest(t);
       setAnswers((ans as AnswerRow[]) || []);
       setEvents((ev as EventRow[]) || []);
       setSnapshots((sn as SnapRow[]) || []);
+      setSiblings(((sib as { id: string }[]) || []).map((r) => r.id));
 
       const qIds = (ans || []).map((r: any) => r.question_id);
       if (qIds.length) {
@@ -126,11 +130,30 @@ export function ResultDetail({ attemptId, onBack }: Props) {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />Back</Button>
-        <h1 className="text-xl font-bold">{attempt.candidate_name}</h1>
-        <div className="w-20" />
-      </div>
+      {(() => {
+        const idx = siblings.indexOf(attemptId);
+        const prevId = idx > 0 ? siblings[idx - 1] : null;
+        const nextId = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
+        return (
+          <div className="flex items-center justify-between gap-3">
+            <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />Back</Button>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold">{attempt.candidate_name}</h1>
+              {idx >= 0 && siblings.length > 1 && (
+                <span className="text-xs text-muted-foreground">({idx + 1} of {siblings.length})</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" disabled={!prevId} onClick={() => prevId && onNavigate?.(prevId)}>
+                <ChevronLeft className="h-4 w-4 mr-1" />Prev
+              </Button>
+              <Button variant="outline" size="sm" disabled={!nextId} onClick={() => nextId && onNavigate?.(nextId)}>
+                Next<ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: scores + breakdown */}
