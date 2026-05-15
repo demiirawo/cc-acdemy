@@ -3,7 +3,18 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { ArrowLeft, ExternalLink, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import type { RecruitmentAttempt, RecruitmentTest } from "./types";
 
@@ -17,32 +28,69 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
   const [test, setTest] = useState<RecruitmentTest | null>(null);
   const [attempts, setAttempts] = useState<RecruitmentAttempt[]>([]);
   const [loading, setLoading] = useState(true);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const { toast } = useToast();
+
+  const load = async () => {
+    setLoading(true);
+    const [{ data: t, error: testError }, { data: a, error: attemptsError }] = await Promise.all([
+      supabase.from("recruitment_tests").select("*").eq("id", testId).maybeSingle(),
+      supabase
+        .from("recruitment_attempts")
+        .select("*")
+        .eq("test_id", testId)
+        .order("total_score", { ascending: false }),
+    ]);
+
+    if (testError || attemptsError) {
+      toast({
+        title: "Could not load results",
+        description: testError?.message || attemptsError?.message,
+        variant: "destructive",
+      });
+    }
+
+    setTest((t as RecruitmentTest) || null);
+    setAttempts((a as RecruitmentAttempt[]) || []);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    (async () => {
-      const [{ data: t }, { data: a }] = await Promise.all([
-        supabase.from("recruitment_tests").select("*").eq("id", testId).maybeSingle(),
-        supabase
-          .from("recruitment_attempts")
-          .select("*")
-          .eq("test_id", testId)
-          .order("total_score", { ascending: false }),
-      ]);
-      setTest((t as RecruitmentTest) || null);
-      setAttempts((a as RecruitmentAttempt[]) || []);
-      setLoading(false);
-    })();
+    load();
   }, [testId]);
 
   const pct = (a: RecruitmentAttempt) =>
     a.max_score > 0 ? Math.round((Number(a.total_score) / Number(a.max_score)) * 100) : 0;
 
+  const deleteAllEntries = async () => {
+    setDeleting(true);
+    const { error } = await supabase.from("recruitment_attempts").delete().eq("test_id", testId);
+
+    if (error) {
+      toast({ title: "Delete failed", description: error.message, variant: "destructive" });
+      setDeleting(false);
+      return;
+    }
+
+    setAttempts([]);
+    setConfirmDeleteOpen(false);
+    setDeleting(false);
+    toast({ title: "All entries deleted" });
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />Back</Button>
-        {test && <h1 className="text-xl font-bold">{test.title} — Results</h1>}
-        <div className="w-20" />
+        {test && <h1 className="text-xl font-bold text-center flex-1">{test.title} — Results</h1>}
+        <Button
+          variant="outline"
+          onClick={() => setConfirmDeleteOpen(true)}
+          disabled={loading || deleting || attempts.length === 0}
+        >
+          <Trash2 className="h-4 w-4 mr-2" />Delete all
+        </Button>
       </div>
 
       {loading ? (
@@ -97,6 +145,23 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
           </table>
         </Card>
       )}
+
+      <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete all entries?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove all candidate results for this test, including submitted and in-progress attempts.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={deleteAllEntries} disabled={deleting}>
+              {deleting ? "Deleting..." : "Delete all"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
