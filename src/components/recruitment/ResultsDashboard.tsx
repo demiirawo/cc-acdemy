@@ -190,7 +190,13 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
                       <Badge variant={st.variant}>{st.label}</Badge>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
-                      {a.submitted_at ? format(new Date(a.submitted_at), "d MMM yyyy HH:mm") : "—"}
+                      {a.submitted_at ? (
+                        format(new Date(a.submitted_at), "d MMM yyyy HH:mm")
+                      ) : a.started_at ? (
+                        <span className="italic">Started {format(new Date(a.started_at), "d MMM yyyy HH:mm")}</span>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <Button
