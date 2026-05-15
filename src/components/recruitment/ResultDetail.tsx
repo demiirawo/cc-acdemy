@@ -195,9 +195,10 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
   if (loading) return <p className="text-muted-foreground">Loading...</p>;
   if (!attempt) return <p className="text-muted-foreground">Not found.</p>;
 
+  const cappedTotal = Math.min(Number(attempt.total_score), Number(attempt.max_score));
   const scorePct =
     attempt.max_score > 0
-      ? Math.round((Number(attempt.total_score) / Number(attempt.max_score)) * 100)
+      ? Math.min(100, Math.round((cappedTotal / Number(attempt.max_score)) * 100))
       : 0;
 
   return (
