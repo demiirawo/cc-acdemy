@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
         .eq("attempt_id", attemptId),
     ]);
 
-    const total = (answers ?? []).reduce(
+    const rawTotal = (answers ?? []).reduce(
       (s: number, r: any) => s + Number(r.points_awarded ?? 0),
       0,
     );
@@ -76,6 +76,8 @@ Deno.serve(async (req) => {
       (s: number, q: any) => s + Number(q.weight ?? 0),
       0,
     );
+    // Defensive cap: total can never exceed max (guards against duplicate answer rows)
+    const total = max > 0 ? Math.min(rawTotal, max) : rawTotal;
 
     // Recompute integrity from anti-cheat events (must match client INTEGRITY_PENALTIES)
     const PENALTIES: Record<string, number> = {
