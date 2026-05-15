@@ -429,7 +429,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'clients' | 'schedule';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'clients' | 'schedule' | 'recruitment';
 interface SidebarItem {
   id: string;
   title: string;
