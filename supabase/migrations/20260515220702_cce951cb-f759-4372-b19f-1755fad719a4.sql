@@ -1,0 +1,1 @@
+GRANT DELETE ON public.recruitment_attempts TO authenticated;
