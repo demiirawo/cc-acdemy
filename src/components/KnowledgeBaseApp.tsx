@@ -547,7 +547,8 @@ export function KnowledgeBaseApp() {
         'recycling-bin': 'recycling-bin',
         'hr': 'hr',
         'clients': 'clients',
-        'schedule': 'schedule'
+        'schedule': 'schedule',
+        'recruitment': 'recruitment'
       };
         
         if (viewMap[viewName]) {
