@@ -1410,6 +1410,7 @@ export type Database = {
           email: string
           id: string
           integrity_score: number
+          ip_address: string | null
           max_score: number
           phone: string | null
           started_at: string
@@ -1426,6 +1427,7 @@ export type Database = {
           email: string
           id?: string
           integrity_score?: number
+          ip_address?: string | null
           max_score?: number
           phone?: string | null
           started_at?: string
@@ -1442,6 +1444,7 @@ export type Database = {
           email?: string
           id?: string
           integrity_score?: number
+          ip_address?: string | null
           max_score?: number
           phone?: string | null
           started_at?: string
