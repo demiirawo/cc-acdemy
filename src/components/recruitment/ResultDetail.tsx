@@ -66,16 +66,18 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
         return;
       }
       setAttempt(a);
-      const [{ data: t }, { data: ans }, { data: ev }, { data: sn }] = await Promise.all([
+      const [{ data: t }, { data: ans }, { data: ev }, { data: sn }, { data: sib }] = await Promise.all([
         supabase.from("recruitment_tests").select("*").eq("id", a.test_id).maybeSingle(),
         supabase.from("recruitment_answers").select("*").eq("attempt_id", attemptId),
         supabase.from("recruitment_events").select("*").eq("attempt_id", attemptId).order("occurred_at"),
         supabase.from("recruitment_snapshots").select("*").eq("attempt_id", attemptId).order("taken_at"),
+        supabase.from("recruitment_attempts").select("id").eq("test_id", a.test_id).order("total_score", { ascending: false }),
       ]);
       setTest(t);
       setAnswers((ans as AnswerRow[]) || []);
       setEvents((ev as EventRow[]) || []);
       setSnapshots((sn as SnapRow[]) || []);
+      setSiblings(((sib as { id: string }[]) || []).map((r) => r.id));
 
       const qIds = (ans || []).map((r: any) => r.question_id);
       if (qIds.length) {
