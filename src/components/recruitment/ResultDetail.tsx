@@ -410,35 +410,31 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
             {snapshots.length === 0 ? (
               <p className="text-sm text-muted-foreground">No snapshots captured.</p>
             ) : (
-              <Carousel opts={{ align: "start", dragFree: true }} className="w-full">
-                <CarouselContent className="-ml-2">
+              <div className="w-full overflow-x-auto pb-3 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-muted [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full">
+                <div className="flex gap-3 min-w-min">
                   {snapshots.map((s, idx) => (
-                    <CarouselItem key={s.id} className="pl-2 basis-1/3 sm:basis-1/5 md:basis-1/6">
-                      <button
-                        onClick={() => setEnlarged(idx)}
-                        className="w-full border rounded overflow-hidden hover:ring-2 hover:ring-primary"
-                      >
-                        {snapUrls[s.id] ? (
-                          <img
-                            src={snapUrls[s.id]}
-                            alt="snap"
-                            className="w-full h-32 object-cover"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="w-full h-32 bg-muted animate-pulse" />
-                        )}
-                        <p className="text-[10px] text-muted-foreground p-1 truncate">
-                          {format(new Date(s.taken_at), "HH:mm:ss")}
-                        </p>
-                      </button>
-                    </CarouselItem>
+                    <button
+                      key={s.id}
+                      onClick={() => setEnlarged(idx)}
+                      className="shrink-0 w-40 border rounded overflow-hidden hover:ring-2 hover:ring-primary"
+                    >
+                      {snapUrls[s.id] ? (
+                        <img
+                          src={snapUrls[s.id]}
+                          alt="snap"
+                          className="w-full h-32 object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <div className="w-full h-32 bg-muted animate-pulse" />
+                      )}
+                      <p className="text-[10px] text-muted-foreground p-1 truncate">
+                        {format(new Date(s.taken_at), "HH:mm:ss")}
+                      </p>
+                    </button>
                   ))}
-                </CarouselContent>
-                <CarouselPrevious />
-                <CarouselNext />
-              </Carousel>
-
+                </div>
+              </div>
             )}
           </Card>
 
