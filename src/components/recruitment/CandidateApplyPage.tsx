@@ -149,8 +149,15 @@ export function CandidateApplyPage() {
     const onVisibility = () => {
       if (document.hidden && throttle("tab_hidden")) logEvent("tab_hidden");
     };
-    // Real "cursor left the viewport" — fires on document, not on every child boundary.
-    const onMouseLeave = () => {
+    // Real "cursor left the viewport" — verify with coordinates + relatedTarget to
+    // avoid false positives from child element boundaries or focus shifts.
+    const onMouseOut = (e: MouseEvent) => {
+      if (e.relatedTarget !== null) return; // moved to another element, not out
+      const x = e.clientX;
+      const y = e.clientY;
+      const trulyLeft =
+        y <= 0 || x <= 0 || x >= window.innerWidth || y >= window.innerHeight;
+      if (!trulyLeft) return;
       if (throttle("mouse_leave", 2500)) logEvent("mouse_leave");
     };
     const onFsChange = () => {
@@ -173,7 +180,7 @@ export function CandidateApplyPage() {
 
     window.addEventListener("blur", onBlur);
     document.addEventListener("visibilitychange", onVisibility);
-    document.addEventListener("mouseleave", onMouseLeave);
+    document.addEventListener("mouseout", onMouseOut);
     document.addEventListener("fullscreenchange", onFsChange);
     document.addEventListener("contextmenu", onContext);
     document.addEventListener("copy", onCopy);
@@ -181,7 +188,7 @@ export function CandidateApplyPage() {
     return () => {
       window.removeEventListener("blur", onBlur);
       document.removeEventListener("visibilitychange", onVisibility);
-      document.removeEventListener("mouseleave", onMouseLeave);
+      document.removeEventListener("mouseout", onMouseOut);
       document.removeEventListener("fullscreenchange", onFsChange);
       document.removeEventListener("contextmenu", onContext);
       document.removeEventListener("copy", onCopy);
