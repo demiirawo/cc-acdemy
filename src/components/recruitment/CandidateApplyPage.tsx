@@ -36,6 +36,8 @@ export function CandidateApplyPage() {
   const [selected, setSelected] = useState<number[]>([]);
   const [timeLeft, setTimeLeft] = useState(20);
   const [submitting, setSubmitting] = useState(false);
+  const totalScoreRef = useRef(0);
+  const integrityScoreRef = useRef(100);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -81,6 +83,15 @@ export function CandidateApplyPage() {
   const logEvent = useCallback(async (event_type: string, metadata: any = {}) => {
     const id = attemptIdRef.current;
     if (!id) return;
+    const penalties: Record<string, number> = {
+      tab_blur: 5,
+      mouse_leave: 5,
+      fullscreen_exit: 10,
+      copy_attempt: 2,
+      paste_attempt: 2,
+      contextmenu: 2,
+    };
+    integrityScoreRef.current = Math.max(0, integrityScoreRef.current - (penalties[event_type] ?? 0));
     await supabase.from("recruitment_events").insert({ attempt_id: id, event_type, metadata });
   }, []);
 
@@ -214,19 +225,20 @@ export function CandidateApplyPage() {
 
     // Create attempt + upload CV
     setSubmitting(true);
-    const { data: a, error: aErr } = await supabase
+    const newAttemptId = crypto.randomUUID();
+    const { error: aErr } = await supabase
       .from("recruitment_attempts")
       .insert({
+        id: newAttemptId,
         test_id: test.id,
         candidate_name: form.name,
         email: form.email,
         phone: form.phone || null,
         user_agent: navigator.userAgent,
       })
-      .select("id")
-      .single();
+;
 
-    if (aErr || !a) {
+    if (aErr) {
       toast({ title: "Could not start test", description: aErr?.message, variant: "destructive" });
       setSubmitting(false);
       return;
@@ -234,18 +246,20 @@ export function CandidateApplyPage() {
 
     let cvPath: string | null = null;
     if (cvFile) {
-      const path = `${a.id}/cv.pdf`;
+      const path = `${newAttemptId}/cv.pdf`;
       const { error: upErr } = await supabase.storage
         .from("candidate-cvs")
         .upload(path, cvFile, { contentType: "application/pdf", upsert: true });
       if (!upErr) {
         cvPath = path;
-        await supabase.from("recruitment_attempts").update({ cv_path: cvPath }).eq("id", a.id);
+        await supabase.from("recruitment_attempts").update({ cv_path: cvPath }).eq("id", newAttemptId);
       }
     }
 
-    setAttemptId(a.id);
-    attemptIdRef.current = a.id;
+    totalScoreRef.current = 0;
+    integrityScoreRef.current = 100;
+    setAttemptId(newAttemptId);
+    attemptIdRef.current = newAttemptId;
     setSubmitting(false);
     setStage("test");
   };
@@ -270,6 +284,7 @@ export function CandidateApplyPage() {
       points_awarded: points,
       time_taken_ms: Date.now() - qStartRef.current,
     });
+    totalScoreRef.current += points;
 
     if (qIndex + 1 < questions.length) {
       setQIndex(qIndex + 1);
@@ -283,25 +298,9 @@ export function CandidateApplyPage() {
     if (!id) return;
     setStage("done");
 
-    // Compute totals
-    const { data: ans } = await supabase
-      .from("recruitment_answers")
-      .select("points_awarded")
-      .eq("attempt_id", id);
-    const total = (ans || []).reduce((s, r: any) => s + Number(r.points_awarded || 0), 0);
+    const total = totalScoreRef.current;
     const max = questions.reduce((s, q) => s + q.weight, 0);
-
-    const { data: ev } = await supabase
-      .from("recruitment_events")
-      .select("event_type")
-      .eq("attempt_id", id);
-    const PENALTIES: Record<string, number> = {
-      tab_blur: 5, mouse_leave: 5, fullscreen_exit: 10,
-      copy_attempt: 2, paste_attempt: 2, contextmenu: 2,
-    };
-    let integrity = 100;
-    (ev || []).forEach((e: any) => (integrity -= PENALTIES[e.event_type] ?? 0));
-    integrity = Math.max(0, integrity);
+    const integrity = integrityScoreRef.current;
 
     await supabase
       .from("recruitment_attempts")
