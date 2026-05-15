@@ -878,7 +878,7 @@ export function RealKnowledgeBaseSidebar({
       <div className="p-4 border-b border-sidebar-border">
         <div className="space-y-1">
           {navigationItems
-            .filter(item => item.id !== 'clients' || isAdmin)
+            .filter(item => (item.id !== 'clients' || isAdmin) && (!('adminOnly' in item) || !item.adminOnly || isAdmin))
             .map((item) => {
             const Icon = item.icon;
             const isSelected = selectedId === item.id;
