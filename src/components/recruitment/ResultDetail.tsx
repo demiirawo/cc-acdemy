@@ -290,33 +290,12 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
           </div>
 
           <Card className="p-6">
-            <h2 className="font-semibold mb-3">Anti-cheat flags</h2>
-            {Object.keys(eventCounts).length === 0 ? (
+            <h2 className="font-semibold mb-3">Anti-cheat timeline ({events.filter((e) => (INTEGRITY_PENALTIES[e.event_type] ?? 0) > 0).length})</h2>
+            {events.filter((e) => (INTEGRITY_PENALTIES[e.event_type] ?? 0) > 0).length === 0 ? (
               <p className="text-sm text-muted-foreground">No flags raised. ✅</p>
             ) : (
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                {Object.entries(eventCounts).map(([k, n]) => (
-                  <div key={k} className="flex justify-between border rounded px-3 py-2">
-                    <span className="capitalize">{k.replace(/_/g, " ")}</span>
-                    <span className="font-mono">
-                      {n}×{" "}
-                      <span className="text-muted-foreground">
-                        (−{(INTEGRITY_PENALTIES[k] ?? 0) * n})
-                      </span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          <Card className="p-6">
-            <h2 className="font-semibold mb-3">Events timeline ({events.filter((e) => e.event_type !== "snapshot").length})</h2>
-            {events.filter((e) => e.event_type !== "snapshot").length === 0 ? (
-              <p className="text-sm text-muted-foreground">No anti-cheat events captured.</p>
-            ) : (
-              <div className="space-y-1 text-xs max-h-64 overflow-y-auto">
-                {events.filter((e) => e.event_type !== "snapshot").map((e) => {
+              <div className="space-y-1 text-xs max-h-80 overflow-y-auto">
+                {events.filter((e) => (INTEGRITY_PENALTIES[e.event_type] ?? 0) > 0).map((e) => {
                   const penalty = INTEGRITY_PENALTIES[e.event_type] ?? 0;
                   return (
                     <div
@@ -327,11 +306,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
                         {format(new Date(e.occurred_at), "HH:mm:ss")}
                       </span>
                       <span className="capitalize flex-1">{e.event_type.replace(/_/g, " ")}</span>
-                      {penalty > 0 ? (
-                        <span className="font-mono text-destructive">−{penalty}</span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
+                      <span className="font-mono text-destructive">−{penalty}</span>
                     </div>
                   );
                 })}
