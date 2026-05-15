@@ -44,6 +44,7 @@ export interface RecruitmentAttempt {
 // Penalty weights per event type (subtracted from 100)
 export const INTEGRITY_PENALTIES: Record<string, number> = {
   tab_blur: 5,
+  tab_hidden: 5,
   mouse_leave: 5,
   fullscreen_exit: 10,
   copy_attempt: 2,
