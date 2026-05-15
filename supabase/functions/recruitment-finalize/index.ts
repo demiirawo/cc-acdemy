@@ -52,8 +52,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Compute total from recorded answers + max from test questions
-    const [{ data: answers }, { data: questions }] = await Promise.all([
+    // Compute total from recorded answers + max from test questions + integrity from events
+    const [{ data: answers }, { data: questions }, { data: events }] = await Promise.all([
       supabase
         .from("recruitment_answers")
         .select("points_awarded")
@@ -62,6 +62,10 @@ Deno.serve(async (req) => {
         .from("recruitment_questions")
         .select("weight")
         .eq("test_id", attempt.test_id),
+      supabase
+        .from("recruitment_events")
+        .select("event_type")
+        .eq("attempt_id", attemptId),
     ]);
 
     const total = (answers ?? []).reduce(
@@ -73,10 +77,25 @@ Deno.serve(async (req) => {
       0,
     );
 
+    // Recompute integrity from anti-cheat events (must match client INTEGRITY_PENALTIES)
+    const PENALTIES: Record<string, number> = {
+      tab_blur: 5,
+      tab_hidden: 5,
+      mouse_leave: 5,
+      fullscreen_exit: 10,
+      copy_attempt: 2,
+      paste_attempt: 2,
+      contextmenu: 2,
+    };
+    const computedIntegrity = Math.max(
+      0,
+      (events ?? []).reduce(
+        (s: number, e: any) => s - (PENALTIES[e.event_type] ?? 0),
+        100,
+      ),
+    );
     const integrity =
-      typeof integrityOverride === "number"
-        ? integrityOverride
-        : (attempt.integrity_score ?? 100);
+      typeof integrityOverride === "number" ? integrityOverride : computedIntegrity;
 
     const { error: updErr } = await supabase
       .from("recruitment_attempts")
