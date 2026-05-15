@@ -415,7 +415,7 @@ export function CandidateApplyPage() {
       const path = `${newAttemptId}/cv.pdf`;
       const { error: upErr } = await supabase.storage
         .from("candidate-cvs")
-        .upload(path, cvFile, { contentType: "application/pdf", upsert: true });
+        .upload(path, cvFile, { contentType: "application/pdf", upsert: false });
       if (upErr) {
         toast({
           title: "CV upload failed",
