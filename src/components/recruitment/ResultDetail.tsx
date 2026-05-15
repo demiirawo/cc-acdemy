@@ -237,7 +237,6 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
         );
       })()}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <div className="space-y-4">
           <Card className="p-6">
             <h2 className="font-semibold mb-3">Candidate</h2>
