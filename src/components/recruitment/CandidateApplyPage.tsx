@@ -85,6 +85,7 @@ export function CandidateApplyPage() {
     if (!id) return;
     const penalties: Record<string, number> = {
       tab_blur: 5,
+      tab_hidden: 5,
       mouse_leave: 5,
       fullscreen_exit: 10,
       copy_attempt: 2,
@@ -92,42 +93,60 @@ export function CandidateApplyPage() {
       contextmenu: 2,
     };
     integrityScoreRef.current = Math.max(0, integrityScoreRef.current - (penalties[event_type] ?? 0));
-    await supabase.from("recruitment_events").insert({ attempt_id: id, event_type, metadata });
+    const { error } = await supabase
+      .from("recruitment_events")
+      .insert({ attempt_id: id, event_type, metadata });
+    if (error) console.warn("[recruitment] event insert failed", event_type, error);
   }, []);
 
   // Anti-cheat listeners (active during test stage)
   useEffect(() => {
     if (stage !== "test") return;
 
-    const onBlur = () => logEvent("tab_blur");
-    const onMouseLeave = (e: MouseEvent) => {
-      if (e.relatedTarget === null) logEvent("mouse_leave");
+    let lastEventAt: Record<string, number> = {};
+    const throttle = (key: string, ms = 1500) => {
+      const now = Date.now();
+      if ((lastEventAt[key] ?? 0) + ms > now) return false;
+      lastEventAt[key] = now;
+      return true;
+    };
+
+    const onBlur = () => throttle("tab_blur") && logEvent("tab_blur");
+    const onVisibility = () => {
+      if (document.hidden && throttle("tab_hidden")) logEvent("tab_hidden");
+    };
+    // mouseleave doesn't bubble reliably from document — use mouseout on documentElement
+    const onMouseOut = (e: MouseEvent) => {
+      const to = (e as any).relatedTarget || (e as any).toElement;
+      if (!to && throttle("mouse_leave", 2500)) logEvent("mouse_leave");
     };
     const onFsChange = () => {
-      if (!document.fullscreenElement) logEvent("fullscreen_exit");
+      if (!document.fullscreenElement && throttle("fullscreen_exit")) logEvent("fullscreen_exit");
     };
     const onContext = (e: MouseEvent) => {
       e.preventDefault();
-      logEvent("contextmenu");
+      if (throttle("contextmenu")) logEvent("contextmenu");
     };
     const onCopy = (e: ClipboardEvent) => {
       e.preventDefault();
-      logEvent("copy_attempt");
+      if (throttle("copy_attempt")) logEvent("copy_attempt");
     };
     const onPaste = (e: ClipboardEvent) => {
       e.preventDefault();
-      logEvent("paste_attempt");
+      if (throttle("paste_attempt")) logEvent("paste_attempt");
     };
 
     window.addEventListener("blur", onBlur);
-    document.addEventListener("mouseleave", onMouseLeave);
+    document.addEventListener("visibilitychange", onVisibility);
+    document.documentElement.addEventListener("mouseout", onMouseOut);
     document.addEventListener("fullscreenchange", onFsChange);
     document.addEventListener("contextmenu", onContext);
     document.addEventListener("copy", onCopy);
     document.addEventListener("paste", onPaste);
     return () => {
       window.removeEventListener("blur", onBlur);
-      document.removeEventListener("mouseleave", onMouseLeave);
+      document.removeEventListener("visibilitychange", onVisibility);
+      document.documentElement.removeEventListener("mouseout", onMouseOut);
       document.removeEventListener("fullscreenchange", onFsChange);
       document.removeEventListener("contextmenu", onContext);
       document.removeEventListener("copy", onCopy);
@@ -139,30 +158,51 @@ export function CandidateApplyPage() {
   const takeSnapshot = useCallback(async () => {
     const video = videoRef.current;
     const id = attemptIdRef.current;
-    if (!video || !id || video.readyState < 2) return;
+    if (!id) return;
+    if (!video || video.readyState < 2 || !video.videoWidth) {
+      console.warn("[recruitment] snapshot skipped — video not ready");
+      return;
+    }
+    const w = video.videoWidth || 320;
+    const h = video.videoHeight || 240;
     const canvas = document.createElement("canvas");
-    canvas.width = 320;
-    canvas.height = 240;
+    canvas.width = w;
+    canvas.height = h;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const blob: Blob | null = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.7));
-    if (!blob) return;
-    const path = `${id}/${Date.now()}.jpg`;
-    const { error } = await supabase.storage.from("candidate-snapshots").upload(path, blob, {
-      contentType: "image/jpeg",
-    });
-    if (!error) {
-      await supabase.from("recruitment_snapshots").insert({ attempt_id: id, storage_path: path });
-      await supabase.from("recruitment_events").insert({ attempt_id: id, event_type: "snapshot" });
+    try {
+      ctx.drawImage(video, 0, 0, w, h);
+    } catch (err) {
+      console.warn("[recruitment] drawImage failed", err);
+      return;
     }
+    const blob: Blob | null = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.7));
+    if (!blob) {
+      console.warn("[recruitment] toBlob returned null");
+      return;
+    }
+    const path = `${id}/${Date.now()}.jpg`;
+    const { error: upErr } = await supabase.storage
+      .from("candidate-snapshots")
+      .upload(path, blob, { contentType: "image/jpeg", upsert: false });
+    if (upErr) {
+      console.warn("[recruitment] snapshot upload failed", upErr);
+      return;
+    }
+    const { error: insErr } = await supabase
+      .from("recruitment_snapshots")
+      .insert({ attempt_id: id, storage_path: path });
+    if (insErr) console.warn("[recruitment] snapshot row insert failed", insErr);
+    await supabase
+      .from("recruitment_events")
+      .insert({ attempt_id: id, event_type: "snapshot" });
   }, []);
 
   useEffect(() => {
     if (stage !== "test") return;
     snapshotTimerRef.current = window.setInterval(takeSnapshot, SNAPSHOT_INTERVAL_MS);
-    // first snap shortly after start
-    const first = window.setTimeout(takeSnapshot, 2000);
+    // first snap shortly after start (give the video a moment to attach)
+    const first = window.setTimeout(takeSnapshot, 3000);
     return () => {
       if (snapshotTimerRef.current) clearInterval(snapshotTimerRef.current);
       clearTimeout(first);
