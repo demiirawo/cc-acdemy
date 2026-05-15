@@ -64,6 +64,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
   const [loading, setLoading] = useState(true);
   const [enlarged, setEnlarged] = useState<number | null>(null);
   const [siblings, setSiblings] = useState<string[]>([]);
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
 
   // Main fetch
   useEffect(() => {
