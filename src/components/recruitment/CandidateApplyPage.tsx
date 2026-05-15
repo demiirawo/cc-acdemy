@@ -180,7 +180,7 @@ export function CandidateApplyPage() {
 
     window.addEventListener("blur", onBlur);
     document.addEventListener("visibilitychange", onVisibility);
-    document.addEventListener("mouseleave", onMouseLeave);
+    document.addEventListener("mouseout", onMouseOut);
     document.addEventListener("fullscreenchange", onFsChange);
     document.addEventListener("contextmenu", onContext);
     document.addEventListener("copy", onCopy);
@@ -188,7 +188,7 @@ export function CandidateApplyPage() {
     return () => {
       window.removeEventListener("blur", onBlur);
       document.removeEventListener("visibilitychange", onVisibility);
-      document.removeEventListener("mouseleave", onMouseLeave);
+      document.removeEventListener("mouseout", onMouseOut);
       document.removeEventListener("fullscreenchange", onFsChange);
       document.removeEventListener("contextmenu", onContext);
       document.removeEventListener("copy", onCopy);
