@@ -130,11 +130,30 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />Back</Button>
-        <h1 className="text-xl font-bold">{attempt.candidate_name}</h1>
-        <div className="w-20" />
-      </div>
+      {(() => {
+        const idx = siblings.indexOf(attemptId);
+        const prevId = idx > 0 ? siblings[idx - 1] : null;
+        const nextId = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
+        return (
+          <div className="flex items-center justify-between gap-3">
+            <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />Back</Button>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold">{attempt.candidate_name}</h1>
+              {idx >= 0 && siblings.length > 1 && (
+                <span className="text-xs text-muted-foreground">({idx + 1} of {siblings.length})</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" disabled={!prevId} onClick={() => prevId && onNavigate?.(prevId)}>
+                <ChevronLeft className="h-4 w-4 mr-1" />Prev
+              </Button>
+              <Button variant="outline" size="sm" disabled={!nextId} onClick={() => nextId && onNavigate?.(nextId)}>
+                Next<ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: scores + breakdown */}
