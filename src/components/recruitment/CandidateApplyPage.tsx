@@ -372,7 +372,10 @@ export function CandidateApplyPage() {
     // 1) Camera
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
     } catch {
       toast({
         title: "Camera access required",
