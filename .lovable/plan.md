@@ -1,181 +1,77 @@
-## Goal
+## Candidate Evaluation Module
 
-Let contractor staff (paid via their limited companies) generate a branded PDF invoice for any month from their 12-Month Pay Forecast. Admins can do the same on behalf of any staff member from the payroll/forecast view. The invoice mirrors the supplied example (Care Cuddle Ltd as Bill To) and uses each contractor's stored company details.
+A public assessment tool for Care Cuddle job applicants. Admins build tests with custom questions, share a single public link, candidates complete the timed test under anti-cheat monitoring, and admins review ranked results with webcam evidence and CV preview.
 
-## What gets built
+### Candidate experience (public, no login)
 
-### 1. Contractor billing details (one-time setup per staff)
+Route: `/apply/:testSlug`
 
-New section on the staff member's HR profile (and editable by admins on Edit Staff): **Contractor / Invoicing Details**
+1. Landing page — role description, instructions, "Start" button.
+2. Pre-test form — full name, email, phone, PDF CV upload (required, max 10MB).
+3. Permissions step — request webcam access + enter fullscreen; cannot proceed without both granted.
+4. Test runs question-by-question with a 20-second countdown per question. Auto-advance on timeout (unanswered = 0 points).
+5. Question types: multiple choice, multi-select, true/false (all auto-scored).
+6. Anti-cheat running in background:
+   - Webcam snapshot every ~15s, uploaded to private storage
+   - Tab blur / window focus loss → flag + counter
+   - Mouseleave window → flag + counter
+   - Fullscreen exit → flag + counter
+   - Copy / paste / right-click blocked → flag on attempt
+7. Submission screen — "Thanks, we'll be in touch." No score shown to candidate.
 
-Fields:
-- Company Name (e.g. "KHALE CONSULT LTD")
-- Requested By / Contact Name (defaults to display name)
-- Phone Number (defaults to Personal Phone)
-- Email (defaults to account email)
-- Company Address (multi-line)
-- Bank Account Name
-- Bank Account Number
-- Bank Name
-- Optional: Sort Code / IBAN / SWIFT (extra fields for international flexibility)
+### Admin experience (inside existing app)
 
-Stored in a new `contractor_invoice_details` table, one row per `user_id`. Staff edit their own; admins can edit anyone's.
+New "Recruitment" section in the sidebar (admin-only). Pages:
 
-**Bill To** is fixed to Care Cuddle Ltd (matches the example) and stored as a single editable admin-only setting (so it can be updated centrally if the company address changes) — defaults populated from the example PDF.
+- **Tests list** — create / edit / archive tests. Each test has: title, role, description, pass threshold %, status (draft/live/closed), public link with copy button.
+- **Test builder** — add/reorder questions, set type, options, correct answer(s), weight per question.
+- **Results dashboard** for a test — table of candidates ranked by total score (highest first), columns: name, email, score %, integrity score %, flags count, submitted date, CV link, "View" action.
+- **Result detail page** — split layout:
+  - Left: candidate info, total score breakdown per question (correct/incorrect), integrity score breakdown (counts of each flag type), timeline of events
+  - Right: inline PDF CV preview
+  - Below: gallery of webcam snapshots in chronological order, click to enlarge
+  - Anti-cheat score formula: starts at 100, subtracts weighted penalties (e.g., −5 per tab blur, −5 per mouse leave, −10 per fullscreen exit, −2 per blocked copy/paste). Floors at 0.
 
-### 2. Invoice numbering
+### Database (new tables)
 
-A new `staff_invoices` table records every generated invoice with an auto-incrementing `invoice_number` (sequence) so numbers stay unique platform-wide and match the example's simple numeric format ("19").
+- `recruitment_tests` — title, slug, description, role, pass_threshold, status, created_by
+- `recruitment_questions` — test_id, position, question_text, question_type, options (jsonb), correct_answers (jsonb), weight
+- `recruitment_attempts` — test_id, candidate_name, email, phone, cv_path, started_at, submitted_at, total_score, max_score, integrity_score, status
+- `recruitment_answers` — attempt_id, question_id, answer (jsonb), is_correct, points_awarded, time_taken_ms
+- `recruitment_events` — attempt_id, event_type (tab_blur, mouse_leave, fullscreen_exit, copy_attempt, paste_attempt, contextmenu, snapshot), occurred_at, metadata
+- `recruitment_snapshots` — attempt_id, storage_path, taken_at
 
-Columns: id, user_id, invoice_number (int, unique), month (date — first of month), description, amount, currency, status (draft/sent), pdf_url (optional), created_at, created_by, sent_at, sent_to_emails (text[]).
+RLS: admins read all; public role can INSERT into attempts/answers/events/snapshots scoped to a valid live test (anonymous insert via anon key). No public reads.
 
-### 3. Generate Invoice button — staff side (MyHRProfile, 12-Month Pay Forecast)
+### Storage
 
-In each month row of the forecast (existing collapsible), add a **"Generate Invoice"** button next to the Estimated Total.
+Two new private buckets:
+- `candidate-cvs` — PDF uploads
+- `candidate-snapshots` — webcam JPEGs
 
-Clicking opens a dialog pre-filled with:
-- Description (default: "Remote support service" — editable)
-- Amount (defaults to that month's Estimated Total in the staff's currency — editable)
-- Date Requested (defaults to the 1st of the payment month — editable)
-- Account/company details preview (read-only — links to "Edit details" if blank)
+Admin-only read via signed URLs.
 
-Actions:
-- **Preview PDF** — renders the invoice in a modal preview
-- **Download PDF** — saves locally
-- **Email Invoice** — sends to a fixed admin recipient list (uses existing Resend infra) plus optional CC to the staff member; records the invoice as `sent`
+### Open considerations to confirm before build
 
-If contractor details are missing, the button is disabled with a tooltip "Add your company / bank details first" and a shortcut to the new section.
+1. **Integrity score weights** — proposed: blur −5, mouse leave −5, fullscreen exit −10, copy/paste −2, no-face-detected snapshot −5. OK or adjust?
+2. **Snapshot frequency** — every 15s. Acceptable for storage/bandwidth?
+3. **Question randomisation** — shuffle question order and/or option order per candidate? (recommended yes to deter sharing)
+4. **Re-attempts** — block same email from re-taking a test? Or allow with all attempts visible?
+5. **GDPR / retention** — auto-delete CVs and snapshots after X days for rejected candidates? UK GDPR makes this important.
+6. **Notifications** — email admins when a new attempt is submitted? Email candidate a confirmation receipt?
+7. **Mobile** — should the test be desktop-only (anti-cheat is much weaker on mobile)? Recommend blocking mobile.
+8. **Time per test** — overall cap in addition to per-question 20s? E.g., session expires after 30 mins idle.
+9. **CV preview** — inline PDF iframe (same pattern as existing DocumentPreviewDialog) — confirm acceptable.
+10. **Branding** — public pages should follow care-cuddle.co.uk style (purple, Figtree). Confirm.
 
-### 4. Generate Invoice — admin side
+### Technical notes
 
-Two entry points:
+- Webcam: `navigator.mediaDevices.getUserMedia({ video: true })`, capture frames to canvas → blob → upload.
+- Fullscreen: `document.documentElement.requestFullscreen()`, listen on `fullscreenchange`.
+- Anti-cheat events batched and flushed every few seconds to reduce write load.
+- Public submission uses the existing anon Supabase client with tightly scoped RLS INSERT policies (no service role exposed).
+- CV upload via signed upload URL generated by an edge function to validate file type/size before issuing.
+- Result PDF preview reuses the `<object data=signedUrl type="application/pdf">` approach already in `DocumentPreviewDialog.tsx`.
+- New routes added to `src/App.tsx`: `/apply/:slug` (public) and admin pages mounted within existing `Index` shell.
 
-a) **Per-staff row in StaffPayManager (current month payroll view)** — a new "Generate Invoice" action in the row actions menu. Same dialog, but admin can generate on behalf of any staff (uses that staff's stored contractor details).
-
-b) **Admin view of any staff's 12-Month Forecast** — add a small "View Forecast" link on each StaffPayManager row that opens the staff's monthly forecast in a side panel/dialog with the same Generate Invoice button per month. (Reuses the calculation logic already in MyHRProfile by extracting it into a shared hook `useMonthlyPayPreviews(userId)`.)
-
-### 5. PDF rendering
-
-Client-side using `jspdf` + `jspdf-autotable` (already lightweight, no server cost). Layout matches the supplied example:
-
-```text
-+--------------------------------------------------+
-|  [CARE CUDDLE LOGO]                              |
-|                                                  |
-|  Contractor Invoice                              |
-|                                                  |
-|  Company Name: KHALE CONSULT LTD                 |
-|  Requested By: Jolayemi Ekpo                     |
-|  Phone:        09071621193                       |
-|  Email:        jolayemiekpo@gmail.com            |
-|  Address:      David Ejoor Crescent, Abuja...    |
-|                                                  |
-|  Bill To:                  Date Requested:       |
-|  Care Cuddle Ltd           Friday, May 1, 2026   |
-|  Company No: 14893276      Invoice Number: 19    |
-|  71-75 Shelton Street                            |
-|  Covent Garden, London                           |
-|  WC2H 9JQ, United Kingdom                        |
-|                                                  |
-|  Account Details to be paid                      |
-|  NAME:    Jolayemi Uchenna Ekpo                  |
-|  ACCOUNT: 0122152204                             |
-|  BANK:    Ecobank                                |
-|                                                  |
-|  +-------------------------+----------------+    |
-|  | Description of Job      | Amount         |    |
-|  +-------------------------+----------------+    |
-|  | Remote support service  | ₦ 367,500      |    |
-|  +-------------------------+----------------+    |
-|                                                  |
-|                              Total: ₦ 367,500    |
-+--------------------------------------------------+
-```
-
-Branded with Care Cuddle Academy purple (#5F17EB) accents, Figtree-equivalent font, company logo. Currency symbol matches the staff's pay currency (₦, £, etc.).
-
-### 6. Emailing the invoice
-
-New edge function `send-invoice-email`:
-- Inputs: invoice id
-- Loads invoice + contractor details + staff profile
-- Generates PDF (server-side using same template via `pdf-lib` or accepts a base64 PDF generated client-side and forwards as attachment — we'll go with **client generates PDF, edge function attaches & sends** to keep one rendering pipeline)
-- Sends via Resend from `hello@care-cuddle-academy.co.uk` to the admin alert recipients (re-uses existing recipient resolution logic) with the staff member CC'd
-- Subject: `Invoice #{number} — {Company Name} — {Month Year}`
-- Body: branded HTML matching existing email styling (purple #5F17EB, logo)
-
-### 7. Admin: invoice log
-
-A simple "Submitted Invoices" tab inside Pay Forecast / Payroll admin area listing all `staff_invoices` rows with filters (staff, month, status), download PDF link, and "Mark as paid" toggle (status: draft / sent / paid).
-
-## Database changes
-
-```sql
--- Contractor invoicing details
-create table contractor_invoice_details (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null unique,
-  company_name text,
-  contact_name text,
-  phone text,
-  email text,
-  company_address text,
-  bank_account_name text,
-  bank_account_number text,
-  bank_name text,
-  sort_code text,
-  iban text,
-  swift text,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
--- RLS: user can manage own; admin can manage all
-
--- Generated invoices
-create sequence staff_invoice_number_seq start 1;
-create table staff_invoices (
-  id uuid primary key default gen_random_uuid(),
-  invoice_number int not null unique default nextval('staff_invoice_number_seq'),
-  user_id uuid not null,
-  month date not null,
-  description text not null,
-  amount numeric not null,
-  currency text not null default 'GBP',
-  status text not null default 'draft', -- draft | sent | paid
-  sent_at timestamptz,
-  sent_to_emails text[],
-  created_by uuid not null,
-  created_at timestamptz default now()
-);
--- RLS: user can view/insert own; admin can manage all
-
--- Bill-to settings (single row, admin only)
-create table invoice_bill_to_settings (
-  id uuid primary key default gen_random_uuid(),
-  company_name text not null default 'Care Cuddle Ltd',
-  company_number text default '14893276',
-  address_lines text[] default array['71-75 Shelton Street','Covent Garden','London','WC2H 9JQ','United Kingdom'],
-  updated_at timestamptz default now()
-);
-```
-
-## Files added / changed
-
-- `supabase/migrations/...` — tables above
-- `src/components/hr/ContractorInvoiceDetailsForm.tsx` — new
-- `src/components/hr/InvoiceGeneratorDialog.tsx` — new (shared by staff + admin)
-- `src/components/hr/StaffInvoicesAdmin.tsx` — new (admin invoice log)
-- `src/lib/invoice/generatePdf.ts` — new (jspdf renderer)
-- `src/hooks/useMonthlyPayPreviews.ts` — extract forecast calc from MyHRProfile so admin can re-use
-- `src/components/hr/MyHRProfile.tsx` — add Generate Invoice button per month + Contractor Details section
-- `src/components/hr/StaffPayManager.tsx` — add Generate Invoice action + link to per-staff forecast
-- `supabase/functions/send-invoice-email/index.ts` — new edge function
-
-## Out of scope (confirm if you want any added)
-
-- Multi-line invoice items (current example is single line — we'll keep one editable line, but architecture supports adding more later)
-- VAT handling
-- Payment tracking/reconciliation beyond a manual "Mark as paid" toggle
-- Auto-generating invoices on a schedule (will remain manual on-demand)
-
-Approve and I'll build it.
+Once you've answered the open considerations I'll proceed with the migration + build in a single pass.
