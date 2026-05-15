@@ -284,7 +284,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
             </Card>
             <Card className="p-6">
               <p className="text-xs text-muted-foreground uppercase">Integrity Score</p>
-              <p className="text-4xl font-bold mt-1">{attempt.integrity_score}</p>
+              <p className="text-4xl font-bold mt-1">{calcIntegrityScore(events)}</p>
               <p className="text-xs text-muted-foreground mt-1">Lower means more flags</p>
             </Card>
           </div>
