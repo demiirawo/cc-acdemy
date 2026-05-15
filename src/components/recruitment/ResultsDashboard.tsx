@@ -82,7 +82,9 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
 
   const pct = (a: RecruitmentAttempt) => {
     const max = effectiveMax(a);
-    return max > 0 ? Math.round((Number(a.total_score) / max) * 100) : 0;
+    if (max <= 0) return 0;
+    const total = Math.min(Number(a.total_score), max);
+    return Math.min(100, Math.round((total / max) * 100));
   };
 
   const statusOf = (a: RecruitmentAttempt): {
