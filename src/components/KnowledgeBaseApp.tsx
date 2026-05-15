@@ -1144,6 +1144,7 @@ export function KnowledgeBaseApp() {
             navigate('/view/hr');
           }}
         />}
+        {currentView === 'recruitment' && <RecruitmentSection />}
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePageSaved} />}
         
