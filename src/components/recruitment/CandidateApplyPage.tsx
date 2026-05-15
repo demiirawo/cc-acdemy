@@ -440,7 +440,8 @@ export function CandidateApplyPage() {
       phone: form.phone || null,
       user_agent: navigator.userAgent,
       cv_path: cvPath,
-    });
+      ip_address: clientIp,
+    } as any);
 
     if (aErr) {
       toast({ title: "Could not start test", description: aErr.message, variant: "destructive" });
