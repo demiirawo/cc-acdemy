@@ -156,7 +156,13 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={deleteAllEntries} disabled={deleting}>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                void deleteAllEntries();
+              }}
+              disabled={deleting}
+            >
               {deleting ? "Deleting..." : "Delete all"}
             </AlertDialogAction>
           </AlertDialogFooter>
