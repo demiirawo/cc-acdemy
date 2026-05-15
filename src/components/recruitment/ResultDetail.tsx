@@ -22,7 +22,7 @@ import {
   Download,
 } from "lucide-react";
 import { format } from "date-fns";
-import { INTEGRITY_PENALTIES } from "./types";
+import { INTEGRITY_PENALTIES, calcIntegrityScore } from "./types";
 
 interface Props {
   attemptId: string;
