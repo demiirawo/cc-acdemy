@@ -50,6 +50,10 @@ export const INTEGRITY_PENALTIES: Record<string, number> = {
   copy_attempt: 2,
   paste_attempt: 2,
   contextmenu: 2,
+  started: 0,
+  submitted: 0,
+  snapshot: 0,
+  client_error: 0,
 };
 
 export function calcIntegrityScore(events: { event_type: string }[]): number {
