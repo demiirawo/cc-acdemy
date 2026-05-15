@@ -41,7 +41,7 @@ interface SnapRow {
   taken_at: string;
 }
 
-export function ResultDetail({ attemptId, onBack }: Props) {
+export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
   const [attempt, setAttempt] = useState<any>(null);
   const [test, setTest] = useState<any>(null);
   const [answers, setAnswers] = useState<AnswerRow[]>([]);
@@ -52,6 +52,7 @@ export function ResultDetail({ attemptId, onBack }: Props) {
   const [cvUrl, setCvUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [enlarged, setEnlarged] = useState<string | null>(null);
+  const [siblings, setSiblings] = useState<string[]>([]);
 
   useEffect(() => {
     (async () => {
