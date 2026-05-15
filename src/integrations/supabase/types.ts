@@ -2363,6 +2363,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_recruitment_test_live: { Args: { _test_id: string }; Returns: boolean }
       is_scheduling_editor: { Args: { _user_id: string }; Returns: boolean }
       log_page_operation: {
         Args: {
