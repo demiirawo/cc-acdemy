@@ -567,11 +567,7 @@ export function CandidateApplyPage() {
   const VideoTile = (
     <video
       ref={videoRef}
-      className={
-        stage === "test"
-          ? "fixed bottom-4 right-4 w-32 h-24 rounded border-2 border-primary shadow-lg object-cover z-50 bg-black"
-          : "hidden"
-      }
+      className="hidden"
       muted
       playsInline
       autoPlay
