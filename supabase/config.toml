@@ -60,3 +60,6 @@ verify_jwt = true
 
 [functions.recruitment-finalize]
 verify_jwt = false
+
+[functions.recruitment-precheck]
+verify_jwt = false

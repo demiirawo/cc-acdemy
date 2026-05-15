@@ -313,6 +313,8 @@ export function CandidateApplyPage() {
     };
   }, [stage]);
 
+  const [clientIp, setClientIp] = useState<string | null>(null);
+
   const startPermissions = async () => {
     if (!form.name.trim() || !form.email.trim() || !cvFile) {
       toast({ title: "Please fill all fields and upload a CV.", variant: "destructive" });
@@ -326,6 +328,33 @@ export function CandidateApplyPage() {
       toast({ title: "CV must be under 10MB.", variant: "destructive" });
       return;
     }
+
+    // Pre-check: block duplicate attempts by email or IP
+    if (test) {
+      try {
+        const { data, error } = await supabase.functions.invoke("recruitment-precheck", {
+          body: { test_id: test.id, email: form.email.trim() },
+        });
+        if (error) throw error;
+        if (data && data.allowed === false) {
+          toast({
+            title: "You can only take this test once",
+            description: data.message || "A previous attempt was found.",
+            variant: "destructive",
+          });
+          return;
+        }
+        setClientIp(data?.ip ?? null);
+      } catch (e: any) {
+        toast({
+          title: "Could not verify eligibility",
+          description: e?.message || "Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     setStage("permissions");
   };
 
@@ -411,7 +440,8 @@ export function CandidateApplyPage() {
       phone: form.phone || null,
       user_agent: navigator.userAgent,
       cv_path: cvPath,
-    });
+      ip_address: clientIp,
+    } as any);
 
     if (aErr) {
       toast({ title: "Could not start test", description: aErr.message, variant: "destructive" });
