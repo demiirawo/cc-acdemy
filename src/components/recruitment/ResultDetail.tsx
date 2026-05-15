@@ -310,13 +310,16 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
             )}
           </Card>
 
+          {(() => {
+            const antiCheatEvents = events.filter((e) => e.event_type !== "snapshot");
+            return (
           <Card className="p-6">
-            <h2 className="font-semibold mb-3">Events timeline ({events.length})</h2>
-            {events.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No events captured.</p>
+            <h2 className="font-semibold mb-3">Events timeline ({antiCheatEvents.length})</h2>
+            {antiCheatEvents.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No anti-cheat events captured.</p>
             ) : (
               <div className="space-y-1 text-xs max-h-64 overflow-y-auto">
-                {events.map((e) => {
+                {antiCheatEvents.map((e) => {
                   const penalty = INTEGRITY_PENALTIES[e.event_type] ?? 0;
                   return (
                     <div
