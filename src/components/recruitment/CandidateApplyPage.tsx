@@ -520,30 +520,42 @@ export function CandidateApplyPage() {
   const finalize = async () => {
     const id = attemptIdRef.current;
     if (!id) return;
-    setStage("done");
 
-    const total = totalScoreRef.current;
-    const max = questions.reduce((s, q) => s + q.weight, 0);
     const integrity = integrityScoreRef.current;
 
-    const { error } = await supabase
-      .from("recruitment_attempts")
-      .update({
-        total_score: total,
-        max_score: max,
-        integrity_score: integrity,
-        submitted_at: new Date().toISOString(),
-        status: "submitted",
-      })
-      .eq("id", id);
-
-    if (error) {
-      console.error("[recruitment] finalize update failed", error);
-    } else {
-      void supabase
-        .from("recruitment_events")
-        .insert({ attempt_id: id, event_type: "submitted", metadata: { total, max, integrity } });
+    // Use the edge function (service role) so the score/status update is reliable.
+    // The anon UPDATE policy can silently affect 0 rows under some conditions; the
+    // edge function recomputes total/max from recruitment_answers + recruitment_questions
+    // and writes the row with elevated privileges, then logs a 'submitted' event.
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/recruitment-finalize`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_ANON,
+          Authorization: `Bearer ${SUPABASE_ANON}`,
+        },
+        body: JSON.stringify({ attempt_id: id, integrity_score: integrity }),
+      });
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        console.error("[recruitment] finalize failed", res.status, txt);
+        toast({
+          title: "We could not save your final score",
+          description: "Your answers were saved. Please contact us if this persists.",
+          variant: "destructive",
+        });
+      }
+    } catch (err: any) {
+      console.error("[recruitment] finalize network error", err);
+      toast({
+        title: "Network error submitting test",
+        description: err?.message ?? "Your answers were saved.",
+        variant: "destructive",
+      });
     }
+
+    setStage("done");
 
     // Cleanup
     streamRef.current?.getTracks().forEach((t) => t.stop());
