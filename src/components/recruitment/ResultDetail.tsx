@@ -238,8 +238,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
       })()}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: scores + breakdown */}
-        <div className="lg:col-span-2 space-y-4">
+      <div className="space-y-4">
           <Card className="p-6">
             <h2 className="font-semibold mb-3">Candidate</h2>
             <div className="grid grid-cols-2 gap-3 text-sm">
@@ -335,49 +334,67 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
           </Card>
 
           <Card className="p-6">
-            <h2 className="font-semibold mb-3">Question breakdown</h2>
-            {answers.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No answers were recorded.</p>
-            ) : (
-              <div className="space-y-3">
-                {answers.map((a) => {
-                  const q = qById[a.question_id];
-                  if (!q) return null;
-                  return (
-                    <div key={a.id} className="border rounded p-3">
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <p className="text-sm font-medium flex-1">{q.question_text}</p>
-                        {a.is_correct ? (
-                          <Check className="h-4 w-4 text-green-600 shrink-0" />
-                        ) : (
-                          <X className="h-4 w-4 text-destructive shrink-0" />
-                        )}
-                      </div>
-                      <div className="text-xs space-y-1">
-                        {q.options.map((opt, i) => {
-                          const isCorrect = q.correct_answers.includes(i);
-                          const isPicked = (a.answer as number[]).includes(i);
-                          return (
-                            <div
-                              key={i}
-                              className={`flex items-center gap-2 ${
-                                isCorrect
-                                  ? "text-green-700"
-                                  : isPicked
-                                  ? "text-destructive"
-                                  : "text-muted-foreground"
-                              }`}
-                            >
-                              <span>{isPicked ? "●" : "○"}</span>
-                              <span>{opt}</span>
-                              {isCorrect && <span className="text-[10px] uppercase">correct</span>}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
+            <button
+              type="button"
+              onClick={() => setBreakdownOpen((v) => !v)}
+              className="w-full flex items-center justify-between gap-2 text-left"
+              aria-expanded={breakdownOpen}
+            >
+              <h2 className="font-semibold">Question breakdown ({answers.length})</h2>
+              <ChevronDown
+                className={`h-4 w-4 text-muted-foreground transition-transform ${
+                  breakdownOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+            {breakdownOpen && (
+              <div className="mt-3">
+                {answers.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No answers were recorded.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {answers.map((a) => {
+                      const q = qById[a.question_id];
+                      if (!q) return null;
+                      return (
+                        <div key={a.id} className="border rounded p-3">
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <p className="text-sm font-medium flex-1">{q.question_text}</p>
+                            {a.is_correct ? (
+                              <Check className="h-4 w-4 text-green-600 shrink-0" />
+                            ) : (
+                              <X className="h-4 w-4 text-destructive shrink-0" />
+                            )}
+                          </div>
+                          <div className="text-xs space-y-1">
+                            {q.options.map((opt, i) => {
+                              const isCorrect = q.correct_answers.includes(i);
+                              const isPicked = (a.answer as number[]).includes(i);
+                              return (
+                                <div
+                                  key={i}
+                                  className={`flex items-center gap-2 ${
+                                    isCorrect
+                                      ? "text-green-700"
+                                      : isPicked
+                                      ? "text-destructive"
+                                      : "text-muted-foreground"
+                                  }`}
+                                >
+                                  <span>{isPicked ? "●" : "○"}</span>
+                                  <span>{opt}</span>
+                                  {isCorrect && (
+                                    <span className="text-[10px] uppercase">correct</span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </Card>
@@ -412,10 +429,8 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
               </div>
             )}
           </Card>
-        </div>
 
-        {/* Right: CV preview */}
-        <div className="space-y-4">
+          {/* CV preview at bottom, full width */}
           <Card className="p-4">
             <div className="flex items-center justify-between mb-3 gap-2">
               <h2 className="font-semibold flex items-center gap-2">
@@ -454,12 +469,11 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
               <iframe
                 src={`${cvUrl}#toolbar=0&navpanes=0`}
                 title="CV"
-                className="w-full h-[800px] border rounded"
+                className="w-full h-[900px] border rounded"
                 onError={() => setCvError(true)}
               />
             )}
           </Card>
-        </div>
       </div>
 
       {enlarged !== null && snapshots[enlarged] && (
