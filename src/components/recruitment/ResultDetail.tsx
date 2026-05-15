@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Check, X, FileText, ExternalLink } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, X, FileText, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import { INTEGRITY_PENALTIES } from "./types";
 
