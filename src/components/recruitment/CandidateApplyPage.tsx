@@ -57,6 +57,9 @@ export function CandidateApplyPage() {
   const attemptIdRef = useRef<string | null>(null);
   const integritySaveTimerRef = useRef<number | null>(null);
   const errorToastShownRef = useRef<Set<string>>(new Set());
+  const [qualifyAnswers, setQualifyAnswers] = useState<(boolean | null)[]>(
+    () => QUALIFYING_QUESTIONS.map(() => null)
+  );
 
   // Block mobile
   useEffect(() => {
