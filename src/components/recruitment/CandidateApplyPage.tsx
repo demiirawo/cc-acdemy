@@ -868,9 +868,11 @@ export function CandidateApplyPage() {
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
         <Card className="max-w-md w-full p-8 text-center">
           <ShieldCheck className="h-12 w-12 mx-auto text-primary mb-3" />
-          <h1 className="text-2xl font-bold mb-2">Thank you!</h1>
+          <h1 className="text-2xl font-bold mb-2">Thank you for completing the assessment</h1>
           <p className="text-muted-foreground">
-            Your responses have been submitted. The Care Cuddle team will be in touch soon.
+            Your responses have been submitted. If you have performed well enough, you will be
+            invited for an interview. Due to the volume of applications, we are unable to get
+            back to unsuccessful candidates.
           </p>
         </Card>
       </div>
