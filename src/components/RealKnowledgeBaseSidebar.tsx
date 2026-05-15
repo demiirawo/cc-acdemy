@@ -712,7 +712,8 @@ export function RealKnowledgeBaseSidebar({
       item.id === 'recycling-bin' ||
       item.id === 'hr' ||
       item.id === 'clients' ||
-      item.id === 'schedule'
+      item.id === 'schedule' ||
+      item.id === 'recruitment'
     ) {
       onItemSelect(item);
     } else if (item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
