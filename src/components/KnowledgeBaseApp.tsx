@@ -23,6 +23,7 @@ import { RecommendedReadingSection } from "./RecommendedReadingSection";
 import { GlossaryPage } from "./GlossaryPage";
 import { RecyclingBin } from "./RecyclingBin";
 import { HRSection } from "./hr/HRSection";
+import { RecruitmentSection } from "./recruitment/RecruitmentSection";
 import { ClientsSection } from "./clients/ClientsSection";
 import { SchedulePage } from "./SchedulePage";
 import { useGlossary } from "@/hooks/useGlossary";
