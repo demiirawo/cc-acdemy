@@ -8,11 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, ShieldCheck, Camera, Maximize, AlertCircle } from "lucide-react";
+import { INTEGRITY_PENALTIES } from "./types";
 import type { RecruitmentTest, RecruitmentQuestion } from "./types";
 
 type Stage = "loading" | "intro" | "form" | "permissions" | "test" | "done" | "blocked";
 
 const SNAPSHOT_INTERVAL_MS = 15000;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
@@ -45,6 +48,8 @@ export function CandidateApplyPage() {
   const tickRef = useRef<number | null>(null);
   const qStartRef = useRef<number>(0);
   const attemptIdRef = useRef<string | null>(null);
+  const integritySaveTimerRef = useRef<number | null>(null);
+  const errorToastShownRef = useRef<Set<string>>(new Set());
 
   // Block mobile
   useEffect(() => {
@@ -80,30 +85,59 @@ export function CandidateApplyPage() {
     })();
   }, [slug]);
 
-  const logEvent = useCallback(async (event_type: string, metadata: any = {}) => {
-    const id = attemptIdRef.current;
-    if (!id) return;
-    const penalties: Record<string, number> = {
-      tab_blur: 5,
-      tab_hidden: 5,
-      mouse_leave: 5,
-      fullscreen_exit: 10,
-      copy_attempt: 2,
-      paste_attempt: 2,
-      contextmenu: 2,
-    };
-    integrityScoreRef.current = Math.max(0, integrityScoreRef.current - (penalties[event_type] ?? 0));
-    const { error } = await supabase
-      .from("recruitment_events")
-      .insert({ attempt_id: id, event_type, metadata });
-    if (error) console.warn("[recruitment] event insert failed", event_type, error);
+  // Helpers
+  const showErrorOnce = useCallback(
+    (key: string, title: string, description?: string) => {
+      if (errorToastShownRef.current.has(key)) return;
+      errorToastShownRef.current.add(key);
+      toast({ title, description, variant: "destructive" });
+    },
+    [toast],
+  );
+
+  const persistIntegrity = useCallback(() => {
+    if (integritySaveTimerRef.current) return;
+    integritySaveTimerRef.current = window.setTimeout(async () => {
+      integritySaveTimerRef.current = null;
+      const id = attemptIdRef.current;
+      if (!id) return;
+      const { error } = await supabase
+        .from("recruitment_attempts")
+        .update({ integrity_score: integrityScoreRef.current })
+        .eq("id", id);
+      if (error) console.error("[recruitment] integrity update failed", error);
+    }, 1000);
   }, []);
+
+  const logEvent = useCallback(
+    async (event_type: string, metadata: any = {}) => {
+      const id = attemptIdRef.current;
+      if (!id) return;
+      const penalty = INTEGRITY_PENALTIES[event_type] ?? 0;
+      if (penalty > 0) {
+        integrityScoreRef.current = Math.max(0, integrityScoreRef.current - penalty);
+        persistIntegrity();
+      }
+      const { error } = await supabase
+        .from("recruitment_events")
+        .insert({ attempt_id: id, event_type, metadata });
+      if (error) {
+        console.error("[recruitment] event insert failed", event_type, error);
+        showErrorOnce(
+          "event_insert",
+          "Connection issue",
+          "Some events could not be saved. Please stay on this page.",
+        );
+      }
+    },
+    [persistIntegrity, showErrorOnce],
+  );
 
   // Anti-cheat listeners (active during test stage)
   useEffect(() => {
     if (stage !== "test") return;
 
-    let lastEventAt: Record<string, number> = {};
+    const lastEventAt: Record<string, number> = {};
     const throttle = (key: string, ms = 1500) => {
       const now = Date.now();
       if ((lastEventAt[key] ?? 0) + ms > now) return false;
@@ -115,13 +149,14 @@ export function CandidateApplyPage() {
     const onVisibility = () => {
       if (document.hidden && throttle("tab_hidden")) logEvent("tab_hidden");
     };
-    // mouseleave doesn't bubble reliably from document — use mouseout on documentElement
-    const onMouseOut = (e: MouseEvent) => {
-      const to = (e as any).relatedTarget || (e as any).toElement;
-      if (!to && throttle("mouse_leave", 2500)) logEvent("mouse_leave");
+    // Real "cursor left the viewport" — fires on document, not on every child boundary.
+    const onMouseLeave = () => {
+      if (throttle("mouse_leave", 2500)) logEvent("mouse_leave");
     };
     const onFsChange = () => {
-      if (!document.fullscreenElement && throttle("fullscreen_exit")) logEvent("fullscreen_exit");
+      if (!document.fullscreenElement && throttle("fullscreen_exit")) {
+        logEvent("fullscreen_exit");
+      }
     };
     const onContext = (e: MouseEvent) => {
       e.preventDefault();
@@ -138,7 +173,7 @@ export function CandidateApplyPage() {
 
     window.addEventListener("blur", onBlur);
     document.addEventListener("visibilitychange", onVisibility);
-    document.documentElement.addEventListener("mouseout", onMouseOut);
+    document.addEventListener("mouseleave", onMouseLeave);
     document.addEventListener("fullscreenchange", onFsChange);
     document.addEventListener("contextmenu", onContext);
     document.addEventListener("copy", onCopy);
@@ -146,7 +181,7 @@ export function CandidateApplyPage() {
     return () => {
       window.removeEventListener("blur", onBlur);
       document.removeEventListener("visibilitychange", onVisibility);
-      document.documentElement.removeEventListener("mouseout", onMouseOut);
+      document.removeEventListener("mouseleave", onMouseLeave);
       document.removeEventListener("fullscreenchange", onFsChange);
       document.removeEventListener("contextmenu", onContext);
       document.removeEventListener("copy", onCopy);
@@ -154,31 +189,41 @@ export function CandidateApplyPage() {
     };
   }, [stage, logEvent]);
 
-  // Snapshot loop
+  // Snapshot helper — fixed 320×240 to keep file size small
   const takeSnapshot = useCallback(async () => {
     const video = videoRef.current;
     const id = attemptIdRef.current;
-    if (!id) return;
-    if (!video || video.readyState < 2 || !video.videoWidth) {
-      console.warn("[recruitment] snapshot skipped — video not ready");
+    if (!id || !video) return;
+
+    // Wait briefly for video to be ready
+    let tries = 0;
+    while ((video.readyState < 2 || !video.videoWidth) && tries < 10) {
+      await new Promise((r) => setTimeout(r, 200));
+      tries++;
+    }
+    if (video.readyState < 2 || !video.videoWidth) {
+      console.warn("[recruitment] snapshot skipped — video not ready after wait");
       return;
     }
-    const w = video.videoWidth || 320;
-    const h = video.videoHeight || 240;
+
+    const W = 320;
+    const H = 240;
     const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
+    canvas.width = W;
+    canvas.height = H;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     try {
-      ctx.drawImage(video, 0, 0, w, h);
+      ctx.drawImage(video, 0, 0, W, H);
     } catch (err) {
-      console.warn("[recruitment] drawImage failed", err);
+      console.error("[recruitment] drawImage failed", err);
       return;
     }
-    const blob: Blob | null = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.7));
+    const blob: Blob | null = await new Promise((res) =>
+      canvas.toBlob(res, "image/jpeg", 0.7),
+    );
     if (!blob) {
-      console.warn("[recruitment] toBlob returned null");
+      console.error("[recruitment] toBlob returned null");
       return;
     }
     const path = `${id}/${Date.now()}.jpg`;
@@ -186,28 +231,36 @@ export function CandidateApplyPage() {
       .from("candidate-snapshots")
       .upload(path, blob, { contentType: "image/jpeg", upsert: false });
     if (upErr) {
-      console.warn("[recruitment] snapshot upload failed", upErr);
+      console.error("[recruitment] snapshot upload failed", upErr);
+      showErrorOnce("snap_upload", "Webcam capture issue", upErr.message);
       return;
     }
     const { error: insErr } = await supabase
       .from("recruitment_snapshots")
       .insert({ attempt_id: id, storage_path: path });
-    if (insErr) console.warn("[recruitment] snapshot row insert failed", insErr);
+    if (insErr) {
+      console.error("[recruitment] snapshot row insert failed", insErr);
+      return;
+    }
+    // Audit event (no penalty)
     await supabase
       .from("recruitment_events")
       .insert({ attempt_id: id, event_type: "snapshot" });
-  }, []);
+  }, [showErrorOnce]);
 
+  // Snapshot loop
   useEffect(() => {
     if (stage !== "test") return;
+    // First snap as soon as the video is ready, then every interval
+    void takeSnapshot();
     snapshotTimerRef.current = window.setInterval(takeSnapshot, SNAPSHOT_INTERVAL_MS);
-    // first snap shortly after start (give the video a moment to attach)
-    const first = window.setTimeout(takeSnapshot, 3000);
     return () => {
       if (snapshotTimerRef.current) clearInterval(snapshotTimerRef.current);
-      clearTimeout(first);
     };
   }, [stage, takeSnapshot]);
+
+  // Stable advance via ref to avoid stale closures inside the interval
+  const advanceRef = useRef<() => void>(() => {});
 
   // Question timer
   useEffect(() => {
@@ -219,8 +272,8 @@ export function CandidateApplyPage() {
     tickRef.current = window.setInterval(() => {
       setTimeLeft((s) => {
         if (s <= 1) {
-          clearInterval(tickRef.current!);
-          handleAdvance();
+          if (tickRef.current) clearInterval(tickRef.current);
+          advanceRef.current();
           return 0;
         }
         return s - 1;
@@ -231,6 +284,34 @@ export function CandidateApplyPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage, qIndex]);
+
+  // Partial finalize on unload (sendBeacon → edge function)
+  useEffect(() => {
+    if (stage !== "test") return;
+    const onBeforeUnload = () => {
+      const id = attemptIdRef.current;
+      if (!id) return;
+      try {
+        const url = `${SUPABASE_URL}/functions/v1/recruitment-finalize`;
+        const payload = JSON.stringify({
+          attempt_id: id,
+          partial: true,
+          integrity_score: integrityScoreRef.current,
+        });
+        const blob = new Blob([payload], { type: "application/json" });
+        // sendBeacon doesn't allow custom headers, but the function accepts anon
+        navigator.sendBeacon(url + `?apikey=${SUPABASE_ANON}`, blob);
+      } catch (err) {
+        console.error("[recruitment] beacon failed", err);
+      }
+    };
+    window.addEventListener("pagehide", onBeforeUnload);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("pagehide", onBeforeUnload);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [stage]);
 
   const startPermissions = async () => {
     if (!form.name.trim() || !form.email.trim() || !cvFile) {
@@ -250,50 +331,95 @@ export function CandidateApplyPage() {
 
   const requestAccess = async () => {
     if (!test) return;
+    setSubmitting(true);
+
+    // 1) Camera
+    let stream: MediaStream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => {});
-      }
-      await document.documentElement.requestFullscreen();
-    } catch (err: any) {
-      toast({ title: "Access required", description: "Please allow camera and fullscreen to continue.", variant: "destructive" });
+      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    } catch {
+      toast({
+        title: "Camera access required",
+        description: "Please allow your webcam to continue.",
+        variant: "destructive",
+      });
+      setSubmitting(false);
       return;
     }
+    streamRef.current = stream;
 
-    // Create attempt + upload CV
-    setSubmitting(true);
-    const newAttemptId = crypto.randomUUID();
-    const { error: aErr } = await supabase
-      .from("recruitment_attempts")
-      .insert({
-        id: newAttemptId,
-        test_id: test.id,
-        candidate_name: form.name,
-        email: form.email,
-        phone: form.phone || null,
-        user_agent: navigator.userAgent,
-      })
-;
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      await new Promise<void>((res) => {
+        const v = videoRef.current!;
+        if (v.readyState >= 2 && v.videoWidth) return res();
+        const onReady = () => {
+          v.removeEventListener("loadedmetadata", onReady);
+          res();
+        };
+        v.addEventListener("loadedmetadata", onReady);
+        v.play().catch(() => {});
+        // hard fallback so we don't hang forever
+        setTimeout(res, 3000);
+      });
+    }
 
-    if (aErr) {
-      toast({ title: "Could not start test", description: aErr?.message, variant: "destructive" });
+    // 2) Fullscreen
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch {
+      stream.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      toast({
+        title: "Fullscreen required",
+        description: "Please allow fullscreen to continue.",
+        variant: "destructive",
+      });
       setSubmitting(false);
       return;
     }
 
+    // 3) Upload CV first (so we have a path before inserting the attempt)
+    const newAttemptId = crypto.randomUUID();
     let cvPath: string | null = null;
     if (cvFile) {
       const path = `${newAttemptId}/cv.pdf`;
       const { error: upErr } = await supabase.storage
         .from("candidate-cvs")
         .upload(path, cvFile, { contentType: "application/pdf", upsert: true });
-      if (!upErr) {
-        cvPath = path;
-        await supabase.from("recruitment_attempts").update({ cv_path: cvPath }).eq("id", newAttemptId);
+      if (upErr) {
+        toast({
+          title: "CV upload failed",
+          description: upErr.message,
+          variant: "destructive",
+        });
+        stream.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        setSubmitting(false);
+        return;
       }
+      cvPath = path;
+    }
+
+    // 4) Insert attempt with cv_path already set
+    const { error: aErr } = await supabase.from("recruitment_attempts").insert({
+      id: newAttemptId,
+      test_id: test.id,
+      candidate_name: form.name,
+      email: form.email,
+      phone: form.phone || null,
+      user_agent: navigator.userAgent,
+      cv_path: cvPath,
+    });
+
+    if (aErr) {
+      toast({ title: "Could not start test", description: aErr.message, variant: "destructive" });
+      stream.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      setSubmitting(false);
+      return;
     }
 
     totalScoreRef.current = 0;
@@ -302,9 +428,14 @@ export function CandidateApplyPage() {
     attemptIdRef.current = newAttemptId;
     setSubmitting(false);
     setStage("test");
+
+    // First audit event so abandoned attempts aren't invisible
+    void supabase
+      .from("recruitment_events")
+      .insert({ attempt_id: newAttemptId, event_type: "started" });
   };
 
-  const handleAdvance = async () => {
+  const handleAdvance = useCallback(async () => {
     const id = attemptIdRef.current;
     const q = questions[qIndex];
     if (!id || !q) return;
@@ -326,17 +457,16 @@ export function CandidateApplyPage() {
     });
 
     if (error) {
-      console.warn("[recruitment] answer insert failed", {
-        attemptId: id,
-        questionId: q.id,
-        selected,
-        isCorrect,
-        points,
-        error,
+      console.error("[recruitment] answer insert failed", error);
+      // Best-effort audit so admins can see what broke
+      void supabase.from("recruitment_events").insert({
+        attempt_id: id,
+        event_type: "client_error",
+        metadata: { stage: "answer_insert", message: error.message },
       });
       toast({
         title: "Answer could not be saved",
-        description: "Please stay on this page and try again.",
+        description: error.message,
         variant: "destructive",
       });
       return;
@@ -349,7 +479,13 @@ export function CandidateApplyPage() {
     } else {
       await finalize();
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qIndex, questions, selected, toast]);
+
+  // Keep advance ref in sync
+  useEffect(() => {
+    advanceRef.current = handleAdvance;
+  }, [handleAdvance]);
 
   const finalize = async () => {
     const id = attemptIdRef.current;
@@ -360,7 +496,7 @@ export function CandidateApplyPage() {
     const max = questions.reduce((s, q) => s + q.weight, 0);
     const integrity = integrityScoreRef.current;
 
-    await supabase
+    const { error } = await supabase
       .from("recruitment_attempts")
       .update({
         total_score: total,
@@ -371,8 +507,17 @@ export function CandidateApplyPage() {
       })
       .eq("id", id);
 
+    if (error) {
+      console.error("[recruitment] finalize update failed", error);
+    } else {
+      void supabase
+        .from("recruitment_events")
+        .insert({ attempt_id: id, event_type: "submitted", metadata: { total, max, integrity } });
+    }
+
     // Cleanup
     streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   };
 
@@ -387,18 +532,41 @@ export function CandidateApplyPage() {
   };
 
   // ───────── Render ─────────
+
+  // Mounted always so videoRef exists before requestAccess runs
+  const VideoTile = (
+    <video
+      ref={videoRef}
+      className={
+        stage === "test"
+          ? "fixed bottom-4 right-4 w-32 h-24 rounded border-2 border-primary shadow-lg object-cover z-50 bg-black"
+          : "hidden"
+      }
+      muted
+      playsInline
+      autoPlay
+    />
+  );
+
   if (stage === "loading") {
-    return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        {VideoTile}
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
   }
 
   if (stage === "blocked") {
     return (
       <div className="min-h-screen flex items-center justify-center p-6 bg-background">
+        {VideoTile}
         <Card className="p-8 max-w-md text-center">
           <AlertCircle className="h-10 w-10 mx-auto text-destructive mb-3" />
           <h1 className="text-xl font-bold mb-2">Unavailable</h1>
           <p className="text-muted-foreground text-sm">
-            This test is not currently available, or your device is not supported. Please open this link on a desktop or laptop computer.
+            This test is not currently available, or your device is not supported. Please open
+            this link on a desktop or laptop computer.
           </p>
         </Card>
       </div>
@@ -408,6 +576,7 @@ export function CandidateApplyPage() {
   if (stage === "intro" && test) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        {VideoTile}
         <Card className="max-w-2xl w-full p-8">
           <div className="text-center mb-6">
             <div className="inline-block px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium mb-3">
@@ -416,13 +585,24 @@ export function CandidateApplyPage() {
             <h1 className="text-3xl font-bold">{test.title}</h1>
             {test.role && <p className="text-muted-foreground mt-1">{test.role}</p>}
           </div>
-          {test.description && <p className="text-sm mb-6 whitespace-pre-wrap">{test.description}</p>}
+          {test.description && (
+            <p className="text-sm mb-6 whitespace-pre-wrap">{test.description}</p>
+          )}
           <div className="space-y-2 text-sm border rounded-lg p-4 bg-muted/30 mb-6">
-            <p className="flex items-center gap-2"><Camera className="h-4 w-4" /> Webcam access required (snapshots taken regularly)</p>
-            <p className="flex items-center gap-2"><Maximize className="h-4 w-4" /> Test runs in fullscreen — exiting will be flagged</p>
-            <p className="flex items-center gap-2"><ShieldCheck className="h-4 w-4" /> {questions.length} questions • {test.seconds_per_question}s per question</p>
+            <p className="flex items-center gap-2">
+              <Camera className="h-4 w-4" /> Webcam access required (snapshots taken regularly)
+            </p>
+            <p className="flex items-center gap-2">
+              <Maximize className="h-4 w-4" /> Test runs in fullscreen — exiting will be flagged
+            </p>
+            <p className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4" /> {questions.length} questions •{" "}
+              {test.seconds_per_question}s per question
+            </p>
           </div>
-          <Button className="w-full" size="lg" onClick={() => setStage("form")}>Get started</Button>
+          <Button className="w-full" size="lg" onClick={() => setStage("form")}>
+            Get started
+          </Button>
         </Card>
       </div>
     );
@@ -431,25 +611,47 @@ export function CandidateApplyPage() {
   if (stage === "form") {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        {VideoTile}
         <Card className="max-w-lg w-full p-8 space-y-4">
           <h1 className="text-2xl font-bold">Your details</h1>
           <div>
             <Label>Full name *</Label>
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <Input
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
           </div>
           <div>
             <Label>Email *</Label>
-            <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <Input
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
           </div>
           <div>
             <Label>Phone</Label>
-            <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            <Input
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            />
           </div>
           <div>
             <Label>CV (PDF, max 10MB) *</Label>
-            <Input type="file" accept="application/pdf" onChange={(e) => setCvFile(e.target.files?.[0] || null)} />
+            <Input
+              type="file"
+              accept="application/pdf"
+              onChange={(e) => setCvFile(e.target.files?.[0] || null)}
+            />
+            {cvFile && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {cvFile.name} • {(cvFile.size / 1024).toFixed(0)} KB
+              </p>
+            )}
           </div>
-          <Button className="w-full" onClick={startPermissions}>Continue</Button>
+          <Button className="w-full" onClick={startPermissions}>
+            Continue
+          </Button>
         </Card>
       </div>
     );
@@ -458,11 +660,13 @@ export function CandidateApplyPage() {
   if (stage === "permissions") {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        {VideoTile}
         <Card className="max-w-md w-full p-8 text-center space-y-4">
           <ShieldCheck className="h-12 w-12 mx-auto text-primary" />
           <h1 className="text-2xl font-bold">Almost ready</h1>
           <p className="text-sm text-muted-foreground">
-            Click below to enable your webcam and enter fullscreen. The test will start immediately.
+            Click below to enable your webcam and enter fullscreen. The test will start
+            immediately.
           </p>
           <Button className="w-full" size="lg" onClick={requestAccess} disabled={submitting}>
             {submitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
@@ -479,10 +683,12 @@ export function CandidateApplyPage() {
     const secs = test?.seconds_per_question ?? 20;
     return (
       <div className="min-h-screen bg-background select-none">
-        <video ref={videoRef} className="fixed bottom-4 right-4 w-32 h-24 rounded border-2 border-primary shadow-lg object-cover z-50" muted playsInline />
+        {VideoTile}
         <div className="max-w-3xl mx-auto p-8">
           <div className="flex items-center justify-between mb-4 text-sm text-muted-foreground">
-            <span>Question {qIndex + 1} of {total}</span>
+            <span>
+              Question {qIndex + 1} of {total}
+            </span>
             <span className={timeLeft <= 5 ? "text-destructive font-bold" : ""}>{timeLeft}s</span>
           </div>
           <Progress value={(timeLeft / secs) * 100} className="mb-8" />
@@ -495,7 +701,9 @@ export function CandidateApplyPage() {
                     key={i}
                     onClick={() => toggleOption(i)}
                     className={`w-full text-left border rounded-lg px-4 py-3 transition ${
-                      selected.includes(i) ? "border-primary bg-primary/10" : "hover:bg-muted/50"
+                      selected.includes(i)
+                        ? "border-primary bg-primary/10"
+                        : "hover:bg-muted/50"
                     }`}
                   >
                     {opt}
@@ -520,7 +728,9 @@ export function CandidateApplyPage() {
         <Card className="max-w-md w-full p-8 text-center">
           <ShieldCheck className="h-12 w-12 mx-auto text-primary mb-3" />
           <h1 className="text-2xl font-bold mb-2">Thank you!</h1>
-          <p className="text-muted-foreground">Your responses have been submitted. The Care Cuddle team will be in touch soon.</p>
+          <p className="text-muted-foreground">
+            Your responses have been submitted. The Care Cuddle team will be in touch soon.
+          </p>
         </Card>
       </div>
     );
