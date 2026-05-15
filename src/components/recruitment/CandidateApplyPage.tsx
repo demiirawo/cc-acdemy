@@ -206,13 +206,20 @@ export function CandidateApplyPage() {
       return;
     }
 
-    const W = 320;
-    const H = 240;
+    // Capture at native video resolution (capped at 1280px wide) for clearer snapshots
+    const MAX_W = 1280;
+    const vw = video.videoWidth || 640;
+    const vh = video.videoHeight || 480;
+    const scale = Math.min(1, MAX_W / vw);
+    const W = Math.round(vw * scale);
+    const H = Math.round(vh * scale);
     const canvas = document.createElement("canvas");
     canvas.width = W;
     canvas.height = H;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
     try {
       ctx.drawImage(video, 0, 0, W, H);
     } catch (err) {
@@ -220,7 +227,7 @@ export function CandidateApplyPage() {
       return;
     }
     const blob: Blob | null = await new Promise((res) =>
-      canvas.toBlob(res, "image/jpeg", 0.7),
+      canvas.toBlob(res, "image/jpeg", 0.9),
     );
     if (!blob) {
       console.error("[recruitment] toBlob returned null");
@@ -365,7 +372,10 @@ export function CandidateApplyPage() {
     // 1) Camera
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      });
     } catch {
       toast({
         title: "Camera access required",
