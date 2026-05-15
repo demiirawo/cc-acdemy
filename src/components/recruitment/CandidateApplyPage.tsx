@@ -316,7 +316,7 @@ export function CandidateApplyPage() {
       [...correctSet].every((v) => pickedSet.has(v));
     const points = isCorrect ? q.weight : 0;
 
-    await supabase.from("recruitment_answers").insert({
+    const { error } = await supabase.from("recruitment_answers").insert({
       attempt_id: id,
       question_id: q.id,
       answer: selected,
@@ -324,6 +324,24 @@ export function CandidateApplyPage() {
       points_awarded: points,
       time_taken_ms: Date.now() - qStartRef.current,
     });
+
+    if (error) {
+      console.warn("[recruitment] answer insert failed", {
+        attemptId: id,
+        questionId: q.id,
+        selected,
+        isCorrect,
+        points,
+        error,
+      });
+      toast({
+        title: "Answer could not be saved",
+        description: "Please stay on this page and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     totalScoreRef.current += points;
 
     if (qIndex + 1 < questions.length) {
