@@ -11,7 +11,14 @@ import { Loader2, ShieldCheck, Camera, Maximize, AlertCircle } from "lucide-reac
 import { INTEGRITY_PENALTIES } from "./types";
 import type { RecruitmentTest, RecruitmentQuestion } from "./types";
 
-type Stage = "loading" | "intro" | "form" | "permissions" | "test" | "done" | "blocked";
+type Stage = "loading" | "intro" | "form" | "qualify" | "permissions" | "test" | "done" | "blocked";
+
+const QUALIFYING_QUESTIONS = [
+  "This role requires a stable internet connection and a reliable power supply. Are you able to meet this requirement?",
+  "This role requires a working and reliable laptop. Are you able to meet this requirement?",
+  "This role requires you to work in a quiet, noise-free environment. Are you able to meet this requirement?",
+  "This role may involve working on weekends due to client requirements. Are you able to meet this requirement?",
+];
 
 const SNAPSHOT_INTERVAL_MS = 15000;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
