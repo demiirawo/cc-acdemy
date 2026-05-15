@@ -1,0 +1,2 @@
+CREATE POLICY "Anyone can update candidate CV" ON storage.objects FOR UPDATE TO anon, authenticated USING (bucket_id = 'candidate-cvs') WITH CHECK (bucket_id = 'candidate-cvs');
+CREATE POLICY "Anyone can update candidate snapshot" ON storage.objects FOR UPDATE TO anon, authenticated USING (bucket_id = 'candidate-snapshots') WITH CHECK (bucket_id = 'candidate-snapshots');
