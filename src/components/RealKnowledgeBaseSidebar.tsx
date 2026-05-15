@@ -88,6 +88,15 @@ const navigationItems = [{
       </svg>,
   href: '/clients'
 }, {
+  id: 'recruitment',
+  title: 'Recruitment',
+  adminOnly: true,
+  icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M20 7h-4V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
+        <path d="M10 5h4v2h-4z"/>
+      </svg>,
+  href: '/recruitment'
+}, {
   id: 'whiteboard',
   title: 'Whiteboard',
   icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -703,7 +712,8 @@ export function RealKnowledgeBaseSidebar({
       item.id === 'recycling-bin' ||
       item.id === 'hr' ||
       item.id === 'clients' ||
-      item.id === 'schedule'
+      item.id === 'schedule' ||
+      item.id === 'recruitment'
     ) {
       onItemSelect(item);
     } else if (item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
@@ -868,7 +878,7 @@ export function RealKnowledgeBaseSidebar({
       <div className="p-4 border-b border-sidebar-border">
         <div className="space-y-1">
           {navigationItems
-            .filter(item => item.id !== 'clients' || isAdmin)
+            .filter(item => (item.id !== 'clients' || isAdmin) && (!('adminOnly' in item) || !item.adminOnly || isAdmin))
             .map((item) => {
             const Icon = item.icon;
             const isSelected = selectedId === item.id;

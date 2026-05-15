@@ -1354,6 +1354,266 @@ export type Database = {
         }
         Relationships: []
       }
+      recruitment_answers: {
+        Row: {
+          answer: Json
+          attempt_id: string
+          created_at: string
+          id: string
+          is_correct: boolean
+          points_awarded: number
+          question_id: string
+          time_taken_ms: number | null
+        }
+        Insert: {
+          answer?: Json
+          attempt_id: string
+          created_at?: string
+          id?: string
+          is_correct?: boolean
+          points_awarded?: number
+          question_id: string
+          time_taken_ms?: number | null
+        }
+        Update: {
+          answer?: Json
+          attempt_id?: string
+          created_at?: string
+          id?: string
+          is_correct?: boolean
+          points_awarded?: number
+          question_id?: string
+          time_taken_ms?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recruitment_answers_attempt_id_fkey"
+            columns: ["attempt_id"]
+            isOneToOne: false
+            referencedRelation: "recruitment_attempts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recruitment_answers_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "recruitment_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recruitment_attempts: {
+        Row: {
+          candidate_name: string
+          created_at: string
+          cv_path: string | null
+          email: string
+          id: string
+          integrity_score: number
+          max_score: number
+          phone: string | null
+          started_at: string
+          status: string
+          submitted_at: string | null
+          test_id: string
+          total_score: number
+          user_agent: string | null
+        }
+        Insert: {
+          candidate_name: string
+          created_at?: string
+          cv_path?: string | null
+          email: string
+          id?: string
+          integrity_score?: number
+          max_score?: number
+          phone?: string | null
+          started_at?: string
+          status?: string
+          submitted_at?: string | null
+          test_id: string
+          total_score?: number
+          user_agent?: string | null
+        }
+        Update: {
+          candidate_name?: string
+          created_at?: string
+          cv_path?: string | null
+          email?: string
+          id?: string
+          integrity_score?: number
+          max_score?: number
+          phone?: string | null
+          started_at?: string
+          status?: string
+          submitted_at?: string | null
+          test_id?: string
+          total_score?: number
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recruitment_attempts_test_id_fkey"
+            columns: ["test_id"]
+            isOneToOne: false
+            referencedRelation: "recruitment_tests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recruitment_events: {
+        Row: {
+          attempt_id: string
+          event_type: string
+          id: string
+          metadata: Json | null
+          occurred_at: string
+        }
+        Insert: {
+          attempt_id: string
+          event_type: string
+          id?: string
+          metadata?: Json | null
+          occurred_at?: string
+        }
+        Update: {
+          attempt_id?: string
+          event_type?: string
+          id?: string
+          metadata?: Json | null
+          occurred_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recruitment_events_attempt_id_fkey"
+            columns: ["attempt_id"]
+            isOneToOne: false
+            referencedRelation: "recruitment_attempts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recruitment_questions: {
+        Row: {
+          correct_answers: Json
+          created_at: string
+          id: string
+          options: Json
+          position: number
+          question_text: string
+          question_type: string
+          test_id: string
+          updated_at: string
+          weight: number
+        }
+        Insert: {
+          correct_answers?: Json
+          created_at?: string
+          id?: string
+          options?: Json
+          position?: number
+          question_text: string
+          question_type?: string
+          test_id: string
+          updated_at?: string
+          weight?: number
+        }
+        Update: {
+          correct_answers?: Json
+          created_at?: string
+          id?: string
+          options?: Json
+          position?: number
+          question_text?: string
+          question_type?: string
+          test_id?: string
+          updated_at?: string
+          weight?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recruitment_questions_test_id_fkey"
+            columns: ["test_id"]
+            isOneToOne: false
+            referencedRelation: "recruitment_tests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recruitment_snapshots: {
+        Row: {
+          attempt_id: string
+          id: string
+          storage_path: string
+          taken_at: string
+        }
+        Insert: {
+          attempt_id: string
+          id?: string
+          storage_path: string
+          taken_at?: string
+        }
+        Update: {
+          attempt_id?: string
+          id?: string
+          storage_path?: string
+          taken_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recruitment_snapshots_attempt_id_fkey"
+            columns: ["attempt_id"]
+            isOneToOne: false
+            referencedRelation: "recruitment_attempts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      recruitment_tests: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          pass_threshold: number
+          role: string | null
+          seconds_per_question: number
+          shuffle_questions: boolean
+          slug: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          pass_threshold?: number
+          role?: string | null
+          seconds_per_question?: number
+          shuffle_questions?: boolean
+          slug: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          pass_threshold?: number
+          role?: string | null
+          seconds_per_question?: number
+          shuffle_questions?: boolean
+          slug?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       recurring_bonuses: {
         Row: {
           amount: number

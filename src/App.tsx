@@ -11,6 +11,7 @@ import ProjectView from "./components/ProjectView";
 import { PublicPageView } from "./components/PublicPageView";
 import { PublicClientSchedule } from "./components/PublicClientSchedule";
 import { PublicLiveView } from "./components/PublicLiveView";
+import { CandidateApplyPage } from "./components/recruitment/CandidateApplyPage";
 
 const queryClient = new QueryClient();
 
@@ -28,6 +29,7 @@ const App = () => (
           <Route path="/public/schedule/:clientName" element={<PublicClientSchedule />} />
           <Route path="/public/schedule-only/:clientName" element={<PublicClientSchedule scheduleOnly />} />
           <Route path="/embed/live-view" element={<PublicLiveView />} />
+          <Route path="/apply/:slug" element={<CandidateApplyPage />} />
           <Route path="/public/:token" element={<PublicPageView />} />
           <Route path="/project/:projectId" element={<ProjectView />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

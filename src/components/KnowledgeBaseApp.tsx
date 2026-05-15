@@ -23,6 +23,7 @@ import { RecommendedReadingSection } from "./RecommendedReadingSection";
 import { GlossaryPage } from "./GlossaryPage";
 import { RecyclingBin } from "./RecyclingBin";
 import { HRSection } from "./hr/HRSection";
+import { RecruitmentSection } from "./recruitment/RecruitmentSection";
 import { ClientsSection } from "./clients/ClientsSection";
 import { SchedulePage } from "./SchedulePage";
 import { useGlossary } from "@/hooks/useGlossary";
@@ -429,7 +430,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'clients' | 'schedule';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'clients' | 'schedule' | 'recruitment';
 interface SidebarItem {
   id: string;
   title: string;
@@ -547,7 +548,8 @@ export function KnowledgeBaseApp() {
         'recycling-bin': 'recycling-bin',
         'hr': 'hr',
         'clients': 'clients',
-        'schedule': 'schedule'
+        'schedule': 'schedule',
+        'recruitment': 'recruitment'
       };
         
         if (viewMap[viewName]) {
@@ -1143,6 +1145,7 @@ export function KnowledgeBaseApp() {
             navigate('/view/hr');
           }}
         />}
+        {currentView === 'recruitment' && <RecruitmentSection />}
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePageSaved} />}
         
