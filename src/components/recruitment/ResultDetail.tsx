@@ -10,6 +10,7 @@ import { INTEGRITY_PENALTIES } from "./types";
 interface Props {
   attemptId: string;
   onBack: () => void;
+  onNavigate?: (attemptId: string) => void;
 }
 
 interface AnswerRow {
