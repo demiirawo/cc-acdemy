@@ -11,6 +11,7 @@ import ProjectView from "./components/ProjectView";
 import { PublicPageView } from "./components/PublicPageView";
 import { PublicClientSchedule } from "./components/PublicClientSchedule";
 import { PublicLiveView } from "./components/PublicLiveView";
+import { CandidateApplyPage } from "./components/recruitment/CandidateApplyPage";
 
 const queryClient = new QueryClient();
 
