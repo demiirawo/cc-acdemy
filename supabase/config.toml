@@ -57,3 +57,6 @@ verify_jwt = false
 
 [functions.send-invoice-email]
 verify_jwt = true
+
+[functions.recruitment-finalize]
+verify_jwt = false

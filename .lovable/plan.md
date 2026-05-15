@@ -1,77 +1,110 @@
-## Candidate Evaluation Module
+## Why this needs another pass
 
-A public assessment tool for Care Cuddle job applicants. Admins build tests with custom questions, share a single public link, candidates complete the timed test under anti-cheat monitoring, and admins review ranked results with webcam evidence and CV preview.
+Database snapshot from right now:
 
-### Candidate experience (public, no login)
+- 2 most recent attempts → both `status: in_progress`, `total_score 0`, `max_score 0`, `cv_path NULL`
+- `recruitment_answers`, `recruitment_events`, `recruitment_snapshots` → **0 rows total, ever**
 
-Route: `/apply/:testSlug`
+So no candidate has ever made it past question 1, no event has ever been logged, no snapshot has ever been saved, and no CV has been linked to an attempt. The earlier RLS migration unblocked the policies, but several independent bugs in `CandidateApplyPage.tsx` and the result screens still prevent anything from being captured or shown. This plan fixes them all and adds real diagnostics so silent failures stop happening.
 
-1. Landing page — role description, instructions, "Start" button.
-2. Pre-test form — full name, email, phone, PDF CV upload (required, max 10MB).
-3. Permissions step — request webcam access + enter fullscreen; cannot proceed without both granted.
-4. Test runs question-by-question with a 20-second countdown per question. Auto-advance on timeout (unanswered = 0 points).
-5. Question types: multiple choice, multi-select, true/false (all auto-scored).
-6. Anti-cheat running in background:
-   - Webcam snapshot every ~15s, uploaded to private storage
-   - Tab blur / window focus loss → flag + counter
-   - Mouseleave window → flag + counter
-   - Fullscreen exit → flag + counter
-   - Copy / paste / right-click blocked → flag on attempt
-7. Submission screen — "Thanks, we'll be in touch." No score shown to candidate.
+## Scope (only what you flagged)
 
-### Admin experience (inside existing app)
+- Webcam preview + periodic snapshots
+- Anti‑cheat detection + integrity score
+- Admin tooling: Results Dashboard + Result Detail (CV preview, snapshot gallery, scores)
 
-New "Recruitment" section in the sidebar (admin-only). Pages:
+I will **not** touch the Test Builder UI, the rich text editor, or any unrelated area. Scoring logic stays as-is (correct answer = full weight, wrong = 0); only the persistence path is fixed.
 
-- **Tests list** — create / edit / archive tests. Each test has: title, role, description, pass threshold %, status (draft/live/closed), public link with copy button.
-- **Test builder** — add/reorder questions, set type, options, correct answer(s), weight per question.
-- **Results dashboard** for a test — table of candidates ranked by total score (highest first), columns: name, email, score %, integrity score %, flags count, submitted date, CV link, "View" action.
-- **Result detail page** — split layout:
-  - Left: candidate info, total score breakdown per question (correct/incorrect), integrity score breakdown (counts of each flag type), timeline of events
-  - Right: inline PDF CV preview
-  - Below: gallery of webcam snapshots in chronological order, click to enlarge
-  - Anti-cheat score formula: starts at 100, subtracts weighted penalties (e.g., −5 per tab blur, −5 per mouse leave, −10 per fullscreen exit, −2 per blocked copy/paste). Floors at 0.
+---
 
-### Database (new tables)
+## 1. Candidate page — webcam + snapshots
 
-- `recruitment_tests` — title, slug, description, role, pass_threshold, status, created_by
-- `recruitment_questions` — test_id, position, question_text, question_type, options (jsonb), correct_answers (jsonb), weight
-- `recruitment_attempts` — test_id, candidate_name, email, phone, cv_path, started_at, submitted_at, total_score, max_score, integrity_score, status
-- `recruitment_answers` — attempt_id, question_id, answer (jsonb), is_correct, points_awarded, time_taken_ms
-- `recruitment_events` — attempt_id, event_type (tab_blur, mouse_leave, fullscreen_exit, copy_attempt, paste_attempt, contextmenu, snapshot), occurred_at, metadata
-- `recruitment_snapshots` — attempt_id, storage_path, taken_at
+Problem: the `<video>` element only mounts inside the `stage === "test"` branch, but `requestAccess()` tries to attach the stream **while still on the `permissions` stage**, so `videoRef.current` is `null`, the stream never renders, and `takeSnapshot` later sees `videoWidth === 0` and bails out forever.
 
-RLS: admins read all; public role can INSERT into attempts/answers/events/snapshots scoped to a valid live test (anonymous insert via anon key). No public reads.
+Fix:
+- Render the `<video>` element once at the top of the component (visually shown only during the test stage), so the ref exists before we request the camera.
+- After `getUserMedia` resolves, attach the stream and `await` `loadedmetadata` before moving to `stage: "test"`. Toast + abort if the user denies access.
+- In `takeSnapshot`, wait for `videoWidth > 0` with a short retry loop instead of giving up immediately. Use a fixed 320×240 canvas to avoid huge JPEGs.
+- Run the first snapshot from a `loadedmetadata` callback, not a 3 s timeout, then continue every 15 s.
+- Surface upload/insert errors as a one‑time toast + `console.error` (not `console.warn`) so failures are visible.
 
-### Storage
+## 2. Candidate page — anti‑cheat + integrity
 
-Two new private buckets:
-- `candidate-cvs` — PDF uploads
-- `candidate-snapshots` — webcam JPEGs
+Problem: penalties are computed but never written back to the attempt row, so the dashboard always shows integrity 100 even when events fire. Also `mouseout` on `documentElement` fires constantly while moving between child elements, producing false positives that get throttled away — net result feels like “nothing is detected”.
 
-Admin-only read via signed URLs.
+Fix:
+- Replace the `documentElement.mouseout` listener with `document.addEventListener("mouseleave", …)` on `document` (fires only when the cursor actually leaves the viewport). Keep the 2.5 s throttle.
+- After each `logEvent`, also `update recruitment_attempts.integrity_score` so the live value persists (debounced to 1/s). Today integrity is only written in `finalize()`, which never runs for abandoned attempts.
+- Always log a `started` event the moment the attempt is created so the dashboard can show “began but never finished”.
+- Log a `submitted` event in `finalize()`.
 
-### Open considerations to confirm before build
+## 3. Candidate page — score + finalise
 
-1. **Integrity score weights** — proposed: blur −5, mouse leave −5, fullscreen exit −10, copy/paste −2, no-face-detected snapshot −5. OK or adjust?
-2. **Snapshot frequency** — every 15s. Acceptable for storage/bandwidth?
-3. **Question randomisation** — shuffle question order and/or option order per candidate? (recommended yes to deter sharing)
-4. **Re-attempts** — block same email from re-taking a test? Or allow with all attempts visible?
-5. **GDPR / retention** — auto-delete CVs and snapshots after X days for rejected candidates? UK GDPR makes this important.
-6. **Notifications** — email admins when a new attempt is submitted? Email candidate a confirmation receipt?
-7. **Mobile** — should the test be desktop-only (anti-cheat is much weaker on mobile)? Recommend blocking mobile.
-8. **Time per test** — overall cap in addition to per-question 20s? E.g., session expires after 30 mins idle.
-9. **CV preview** — inline PDF iframe (same pattern as existing DocumentPreviewDialog) — confirm acceptable.
-10. **Branding** — public pages should follow care-cuddle.co.uk style (purple, Figtree). Confirm.
+Problem: `handleAdvance` is referenced by the `setInterval` timer via stale closure (`qIndex`/`selected` captured at effect mount), so the auto‑advance on timeout inserts the wrong question’s answer. Also `finalize` is only called on the last question; if the candidate closes the tab on Q3 of 5, the attempt stays `in_progress` forever with no answers visible.
 
-### Technical notes
+Fix:
+- Move `handleAdvance` into a `useRef` updated on every render, and have the timer call `advanceRef.current()`. This kills the stale‑closure bug.
+- Add a `beforeunload` / `visibilitychange(hidden + pagehide)` handler that calls a lightweight `finalize({ partial: true })` using `navigator.sendBeacon` against a tiny edge function (`recruitment-finalize`) so partial attempts get a real submitted_at + computed score even when the candidate bails.
+- Edge function path is needed because the anon client cannot reliably fire-and-forget on unload.
 
-- Webcam: `navigator.mediaDevices.getUserMedia({ video: true })`, capture frames to canvas → blob → upload.
-- Fullscreen: `document.documentElement.requestFullscreen()`, listen on `fullscreenchange`.
-- Anti-cheat events batched and flushed every few seconds to reduce write load.
-- Public submission uses the existing anon Supabase client with tightly scoped RLS INSERT policies (no service role exposed).
-- CV upload via signed upload URL generated by an edge function to validate file type/size before issuing.
-- Result PDF preview reuses the `<object data=signedUrl type="application/pdf">` approach already in `DocumentPreviewDialog.tsx`.
-- New routes added to `src/App.tsx`: `/apply/:slug` (public) and admin pages mounted within existing `Index` shell.
+## 4. Candidate page — CV upload
 
-Once you've answered the open considerations I'll proceed with the migration + build in a single pass.
+Problem: CV upload happens **after** the attempt insert; if the upload fails (large file, network, CORS) we silently skip and `cv_path` stays NULL — which is exactly what both existing rows show.
+
+Fix:
+- Upload the CV first (to a temp path keyed by a generated UUID), then insert the attempt with `cv_path` already set. If upload fails, show a destructive toast and keep the user on the form — no orphaned attempt rows.
+- Display the chosen filename + size under the file input so the user knows it’s attached.
+
+## 5. Results Dashboard
+
+Problem: the table only shows `status` and a percentage, with no way to tell apart “submitted but failed”, “in progress”, “abandoned”, or “score still 0 because no answers”. The “Open” button next to each row is decorative — only the row click works.
+
+Fix:
+- Compute `max_score` as a fallback from the test’s questions when the row’s `max_score` is 0 (handles in‑progress rows so % isn’t a nonsense 0%).
+- Replace the “—” for in‑progress with a clearer status pill: **In progress**, **Abandoned** (started >30 min ago, never submitted), **Submitted**, **Closed**.
+- Make the right‑side icon button actually navigate (`onOpen(a.id)`) and stop event‑propagating from the delete dialog.
+- Add a “Refresh” button + auto‑refetch every 30 s while the page is open so new submissions appear without a manual reload.
+
+## 6. Result Detail
+
+Problem: CV preview uses `<object data=...>` which silently fails in Chrome when the signed URL’s `Content-Disposition` is `attachment` (Supabase default) — that’s why the inline preview is blank. Snapshot gallery shows nothing because no snapshots exist yet, but once #1 is fixed it also has a layout bug where `snapUrls[s.id]` may not be ready before render.
+
+Fix:
+- For the CV: request a signed URL with `download: false` and add `?download=` removal; render in `<iframe src={cvUrl + "#toolbar=0"}>` with an explicit `Open in new tab` and `Download` button. Fall back to a “Preview unavailable, open in new tab” card if the iframe `onError` fires.
+- For snapshots: load signed URLs in a `useEffect` separate from the main fetch so they stream in; show a small skeleton while loading. Click → lightbox (already there) with prev/next arrow keys.
+- Add an **Events timeline** card (we already fetch `events`) listing each anti‑cheat event with timestamp + penalty so the integrity score is explainable.
+- Keep the prev/next attempt navigation that’s already there; have it preserve the sort order from the dashboard.
+
+## 7. Diagnostics
+
+- Wrap every Supabase call in the candidate page with try/catch + `console.error` and a one‑shot toast keyed by error type, so the next time something silently fails you see it immediately.
+- Add a `recruitment_events` row of type `client_error` with the error message in metadata whenever an insert/upload fails — visible in the result detail timeline.
+
+---
+
+## Files I expect to change
+
+- `src/components/recruitment/CandidateApplyPage.tsx` — sections 1–4, 7
+- `src/components/recruitment/ResultsDashboard.tsx` — section 5
+- `src/components/recruitment/ResultDetail.tsx` — section 6
+- `src/components/recruitment/types.ts` — add `client_error` to penalty map (= 0)
+- New edge function `supabase/functions/recruitment-finalize/index.ts` — section 3 (partial finalise on unload)
+- Supabase migration: none required — schema already supports everything.
+
+## Out of scope (will not touch)
+
+- Test Builder UI/UX
+- Rich text editor
+- Scoring algorithm (still binary correct-or-not × weight)
+- Authentication / RLS (already correct after the prior migration)
+- Mobile candidate experience (still blocked)
+
+## How we’ll verify
+
+After implementation, run a fresh attempt end‑to‑end on the public link:
+1. Webcam tile appears bottom‑right during the test.
+2. After ~15 s a row appears in `recruitment_snapshots`; thumbnail visible in Result Detail.
+3. Switching tabs / right‑clicking decrements the live integrity score and creates a `recruitment_events` row.
+4. Answering both questions correctly produces `total_score = max_score` and a `submitted` row in the dashboard.
+5. CV uploaded on the form is downloadable + previewable from Result Detail.
+6. Closing the tab mid‑test marks the attempt as `submitted` (partial) within a few seconds.

@@ -3,7 +3,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, ArrowRight, Check, X, FileText, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  X,
+  FileText,
+  ExternalLink,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+} from "lucide-react";
 import { format } from "date-fns";
 import { INTEGRITY_PENALTIES } from "./types";
 
@@ -50,11 +59,17 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
   const [snapshots, setSnapshots] = useState<SnapRow[]>([]);
   const [snapUrls, setSnapUrls] = useState<Record<string, string>>({});
   const [cvUrl, setCvUrl] = useState<string | null>(null);
+  const [cvError, setCvError] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [enlarged, setEnlarged] = useState<string | null>(null);
+  const [enlarged, setEnlarged] = useState<number | null>(null);
   const [siblings, setSiblings] = useState<string[]>([]);
 
+  // Main fetch
   useEffect(() => {
+    setLoading(true);
+    setCvUrl(null);
+    setCvError(false);
+    setSnapUrls({});
     (async () => {
       const { data: a } = await supabase
         .from("recruitment_attempts")
@@ -66,13 +81,27 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
         return;
       }
       setAttempt(a);
-      const [{ data: t }, { data: ans }, { data: ev }, { data: sn }, { data: sib }] = await Promise.all([
-        supabase.from("recruitment_tests").select("*").eq("id", a.test_id).maybeSingle(),
-        supabase.from("recruitment_answers").select("*").eq("attempt_id", attemptId),
-        supabase.from("recruitment_events").select("*").eq("attempt_id", attemptId).order("occurred_at"),
-        supabase.from("recruitment_snapshots").select("*").eq("attempt_id", attemptId).order("taken_at"),
-        supabase.from("recruitment_attempts").select("id").eq("test_id", a.test_id).order("total_score", { ascending: false }),
-      ]);
+      const [{ data: t }, { data: ans }, { data: ev }, { data: sn }, { data: sib }] =
+        await Promise.all([
+          supabase.from("recruitment_tests").select("*").eq("id", a.test_id).maybeSingle(),
+          supabase.from("recruitment_answers").select("*").eq("attempt_id", attemptId),
+          supabase
+            .from("recruitment_events")
+            .select("*")
+            .eq("attempt_id", attemptId)
+            .order("occurred_at"),
+          supabase
+            .from("recruitment_snapshots")
+            .select("*")
+            .eq("attempt_id", attemptId)
+            .order("taken_at"),
+          supabase
+            .from("recruitment_attempts")
+            .select("id")
+            .eq("test_id", a.test_id)
+            .order("total_score", { ascending: false })
+            .order("created_at", { ascending: false }),
+        ]);
       setTest(t);
       setAnswers((ans as AnswerRow[]) || []);
       setEvents((ev as EventRow[]) || []);
@@ -86,30 +115,57 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
           .select("*")
           .in("id", qIds);
         setQuestions((qs as QuestionRow[]) || []);
-      }
-
-      // Signed URLs for snapshots and CV
-      if (sn && sn.length) {
-        const urls: Record<string, string> = {};
-        await Promise.all(
-          (sn as SnapRow[]).map(async (s) => {
-            const { data } = await supabase.storage
-              .from("candidate-snapshots")
-              .createSignedUrl(s.storage_path, 3600);
-            if (data?.signedUrl) urls[s.id] = data.signedUrl;
-          })
-        );
-        setSnapUrls(urls);
-      }
-      if (a.cv_path) {
-        const { data: cv } = await supabase.storage
-          .from("candidate-cvs")
-          .createSignedUrl(a.cv_path, 3600);
-        if (cv?.signedUrl) setCvUrl(cv.signedUrl);
+      } else {
+        setQuestions([]);
       }
       setLoading(false);
     })();
   }, [attemptId]);
+
+  // Snapshot signed URLs (separate effect so they stream in)
+  useEffect(() => {
+    if (snapshots.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const next: Record<string, string> = {};
+      await Promise.all(
+        snapshots.map(async (s) => {
+          const { data } = await supabase.storage
+            .from("candidate-snapshots")
+            .createSignedUrl(s.storage_path, 3600);
+          if (data?.signedUrl) next[s.id] = data.signedUrl;
+        }),
+      );
+      if (!cancelled) setSnapUrls(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshots]);
+
+  // CV signed URL
+  useEffect(() => {
+    if (!attempt?.cv_path) return;
+    (async () => {
+      const { data } = await supabase.storage
+        .from("candidate-cvs")
+        .createSignedUrl(attempt.cv_path, 3600);
+      if (data?.signedUrl) setCvUrl(data.signedUrl);
+    })();
+  }, [attempt?.cv_path]);
+
+  // Lightbox keyboard navigation
+  useEffect(() => {
+    if (enlarged === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setEnlarged(null);
+      else if (e.key === "ArrowLeft") setEnlarged((i) => (i === null ? null : Math.max(0, i - 1)));
+      else if (e.key === "ArrowRight")
+        setEnlarged((i) => (i === null ? null : Math.min(snapshots.length - 1, i + 1)));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [enlarged, snapshots.length]);
 
   const qById = useMemo(() => {
     const m: Record<string, QuestionRow> = {};
@@ -119,14 +175,21 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
 
   const eventCounts = useMemo(() => {
     const c: Record<string, number> = {};
-    events.forEach((e) => (c[e.event_type] = (c[e.event_type] ?? 0) + 1));
+    events.forEach((e) => {
+      if ((INTEGRITY_PENALTIES[e.event_type] ?? 0) > 0) {
+        c[e.event_type] = (c[e.event_type] ?? 0) + 1;
+      }
+    });
     return c;
   }, [events]);
 
   if (loading) return <p className="text-muted-foreground">Loading...</p>;
   if (!attempt) return <p className="text-muted-foreground">Not found.</p>;
 
-  const scorePct = attempt.max_score > 0 ? Math.round((Number(attempt.total_score) / Number(attempt.max_score)) * 100) : 0;
+  const scorePct =
+    attempt.max_score > 0
+      ? Math.round((Number(attempt.total_score) / Number(attempt.max_score)) * 100)
+      : 0;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -136,19 +199,36 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
         const nextId = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
         return (
           <div className="flex items-center justify-between gap-3">
-            <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" />Back</Button>
+            <Button variant="ghost" onClick={onBack}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back
+            </Button>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold">{attempt.candidate_name}</h1>
               {idx >= 0 && siblings.length > 1 && (
-                <span className="text-xs text-muted-foreground">({idx + 1} of {siblings.length})</span>
+                <span className="text-xs text-muted-foreground">
+                  ({idx + 1} of {siblings.length})
+                </span>
               )}
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled={!prevId} onClick={() => prevId && onNavigate?.(prevId)}>
-                <ChevronLeft className="h-4 w-4 mr-1" />Prev
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!prevId}
+                onClick={() => prevId && onNavigate?.(prevId)}
+              >
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                Prev
               </Button>
-              <Button variant="outline" size="sm" disabled={!nextId} onClick={() => nextId && onNavigate?.(nextId)}>
-                Next<ChevronRight className="h-4 w-4 ml-1" />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!nextId}
+                onClick={() => nextId && onNavigate?.(nextId)}
+              >
+                Next
+                <ChevronRight className="h-4 w-4 ml-1" />
               </Button>
             </div>
           </div>
@@ -161,10 +241,21 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
           <Card className="p-6">
             <h2 className="font-semibold mb-3">Candidate</h2>
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <div><span className="text-muted-foreground">Name:</span> {attempt.candidate_name}</div>
-              <div><span className="text-muted-foreground">Email:</span> {attempt.email}</div>
-              <div><span className="text-muted-foreground">Phone:</span> {attempt.phone || "—"}</div>
-              <div><span className="text-muted-foreground">Submitted:</span> {attempt.submitted_at ? format(new Date(attempt.submitted_at), "d MMM yyyy HH:mm") : "—"}</div>
+              <div>
+                <span className="text-muted-foreground">Name:</span> {attempt.candidate_name}
+              </div>
+              <div>
+                <span className="text-muted-foreground">Email:</span> {attempt.email}
+              </div>
+              <div>
+                <span className="text-muted-foreground">Phone:</span> {attempt.phone || "—"}
+              </div>
+              <div>
+                <span className="text-muted-foreground">Submitted:</span>{" "}
+                {attempt.submitted_at
+                  ? format(new Date(attempt.submitted_at), "d MMM yyyy HH:mm")
+                  : "—"}
+              </div>
             </div>
           </Card>
 
@@ -176,7 +267,10 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
                 {Number(attempt.total_score)} / {Number(attempt.max_score)} points
               </p>
               {test && (
-                <Badge className="mt-2" variant={scorePct >= test.pass_threshold ? "default" : "secondary"}>
+                <Badge
+                  className="mt-2"
+                  variant={scorePct >= test.pass_threshold ? "default" : "secondary"}
+                >
                   {scorePct >= test.pass_threshold ? "Passed" : "Below threshold"}
                 </Badge>
               )}
@@ -198,7 +292,10 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
                   <div key={k} className="flex justify-between border rounded px-3 py-2">
                     <span className="capitalize">{k.replace(/_/g, " ")}</span>
                     <span className="font-mono">
-                      {n}× <span className="text-muted-foreground">(−{(INTEGRITY_PENALTIES[k] ?? 0) * n})</span>
+                      {n}×{" "}
+                      <span className="text-muted-foreground">
+                        (−{(INTEGRITY_PENALTIES[k] ?? 0) * n})
+                      </span>
                     </span>
                   </div>
                 ))}
@@ -207,43 +304,80 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
           </Card>
 
           <Card className="p-6">
-            <h2 className="font-semibold mb-3">Question breakdown</h2>
-            <div className="space-y-3">
-              {answers.map((a) => {
-                const q = qById[a.question_id];
-                if (!q) return null;
-                return (
-                  <div key={a.id} className="border rounded p-3">
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <p className="text-sm font-medium flex-1">{q.question_text}</p>
-                      {a.is_correct ? (
-                        <Check className="h-4 w-4 text-green-600 shrink-0" />
+            <h2 className="font-semibold mb-3">Events timeline ({events.length})</h2>
+            {events.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No events captured.</p>
+            ) : (
+              <div className="space-y-1 text-xs max-h-64 overflow-y-auto">
+                {events.map((e) => {
+                  const penalty = INTEGRITY_PENALTIES[e.event_type] ?? 0;
+                  return (
+                    <div
+                      key={e.id}
+                      className="flex items-center justify-between gap-3 border-b py-1.5 last:border-0"
+                    >
+                      <span className="text-muted-foreground font-mono">
+                        {format(new Date(e.occurred_at), "HH:mm:ss")}
+                      </span>
+                      <span className="capitalize flex-1">{e.event_type.replace(/_/g, " ")}</span>
+                      {penalty > 0 ? (
+                        <span className="font-mono text-destructive">−{penalty}</span>
                       ) : (
-                        <X className="h-4 w-4 text-destructive shrink-0" />
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </div>
-                    <div className="text-xs space-y-1">
-                      {q.options.map((opt, i) => {
-                        const isCorrect = q.correct_answers.includes(i);
-                        const isPicked = (a.answer as number[]).includes(i);
-                        return (
-                          <div
-                            key={i}
-                            className={`flex items-center gap-2 ${
-                              isCorrect ? "text-green-700" : isPicked ? "text-destructive" : "text-muted-foreground"
-                            }`}
-                          >
-                            <span>{isPicked ? "●" : "○"}</span>
-                            <span>{opt}</span>
-                            {isCorrect && <span className="text-[10px] uppercase">correct</span>}
-                          </div>
-                        );
-                      })}
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-6">
+            <h2 className="font-semibold mb-3">Question breakdown</h2>
+            {answers.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No answers were recorded.</p>
+            ) : (
+              <div className="space-y-3">
+                {answers.map((a) => {
+                  const q = qById[a.question_id];
+                  if (!q) return null;
+                  return (
+                    <div key={a.id} className="border rounded p-3">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <p className="text-sm font-medium flex-1">{q.question_text}</p>
+                        {a.is_correct ? (
+                          <Check className="h-4 w-4 text-green-600 shrink-0" />
+                        ) : (
+                          <X className="h-4 w-4 text-destructive shrink-0" />
+                        )}
+                      </div>
+                      <div className="text-xs space-y-1">
+                        {q.options.map((opt, i) => {
+                          const isCorrect = q.correct_answers.includes(i);
+                          const isPicked = (a.answer as number[]).includes(i);
+                          return (
+                            <div
+                              key={i}
+                              className={`flex items-center gap-2 ${
+                                isCorrect
+                                  ? "text-green-700"
+                                  : isPicked
+                                  ? "text-destructive"
+                                  : "text-muted-foreground"
+                              }`}
+                            >
+                              <span>{isPicked ? "●" : "○"}</span>
+                              <span>{opt}</span>
+                              {isCorrect && <span className="text-[10px] uppercase">correct</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </Card>
 
           <Card className="p-6">
@@ -252,16 +386,21 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
               <p className="text-sm text-muted-foreground">No snapshots captured.</p>
             ) : (
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                {snapshots.map((s) => (
+                {snapshots.map((s, idx) => (
                   <button
                     key={s.id}
-                    onClick={() => setEnlarged(snapUrls[s.id])}
+                    onClick={() => setEnlarged(idx)}
                     className="border rounded overflow-hidden hover:ring-2 hover:ring-primary"
                   >
                     {snapUrls[s.id] ? (
-                      <img src={snapUrls[s.id]} alt="snap" className="w-full h-24 object-cover" />
+                      <img
+                        src={snapUrls[s.id]}
+                        alt="snap"
+                        className="w-full h-24 object-cover"
+                        loading="lazy"
+                      />
                     ) : (
-                      <div className="w-full h-24 bg-muted" />
+                      <div className="w-full h-24 bg-muted animate-pulse" />
                     )}
                     <p className="text-[10px] text-muted-foreground p-1 truncate">
                       {format(new Date(s.taken_at), "HH:mm:ss")}
@@ -276,35 +415,84 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
         {/* Right: CV preview */}
         <div className="space-y-4">
           <Card className="p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold flex items-center gap-2"><FileText className="h-4 w-4" />CV</h2>
+            <div className="flex items-center justify-between mb-3 gap-2">
+              <h2 className="font-semibold flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                CV
+              </h2>
               {cvUrl && (
-                <Button size="sm" variant="outline" asChild>
-                  <a href={cvUrl} target="_blank" rel="noreferrer">
-                    <ExternalLink className="h-3.5 w-3.5 mr-1" />Open
-                  </a>
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button size="sm" variant="outline" asChild>
+                    <a href={cvUrl} target="_blank" rel="noreferrer">
+                      <ExternalLink className="h-3.5 w-3.5 mr-1" />
+                      Open
+                    </a>
+                  </Button>
+                  <Button size="sm" variant="outline" asChild>
+                    <a href={cvUrl} download="cv.pdf">
+                      <Download className="h-3.5 w-3.5 mr-1" />
+                      Download
+                    </a>
+                  </Button>
+                </div>
               )}
             </div>
-            {cvUrl ? (
-              <object data={cvUrl} type="application/pdf" className="w-full h-[800px] border rounded">
-                <p className="p-4 text-sm text-muted-foreground">
-                  PDF preview unavailable. <a className="underline" href={cvUrl} target="_blank" rel="noreferrer">Open in new tab</a>
-                </p>
-              </object>
-            ) : (
+            {!attempt.cv_path ? (
               <p className="text-sm text-muted-foreground">No CV uploaded.</p>
+            ) : !cvUrl ? (
+              <p className="text-sm text-muted-foreground">Loading CV…</p>
+            ) : cvError ? (
+              <div className="text-sm text-muted-foreground space-y-2">
+                <p>Inline preview unavailable in this browser.</p>
+                <a className="underline" href={cvUrl} target="_blank" rel="noreferrer">
+                  Open the CV in a new tab
+                </a>
+              </div>
+            ) : (
+              <iframe
+                src={`${cvUrl}#toolbar=0&navpanes=0`}
+                title="CV"
+                className="w-full h-[800px] border rounded"
+                onError={() => setCvError(true)}
+              />
             )}
           </Card>
         </div>
       </div>
 
-      {enlarged && (
+      {enlarged !== null && snapshots[enlarged] && (
         <div
           className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
           onClick={() => setEnlarged(null)}
         >
-          <img src={enlarged} alt="snap" className="max-w-full max-h-full" />
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setEnlarged((i) => (i === null ? null : Math.max(0, i - 1)));
+            }}
+            disabled={enlarged === 0}
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-white p-2 disabled:opacity-30"
+          >
+            <ChevronLeft className="h-8 w-8" />
+          </button>
+          <img
+            src={snapUrls[snapshots[enlarged].id]}
+            alt="snap"
+            className="max-w-full max-h-full"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setEnlarged((i) =>
+                i === null ? null : Math.min(snapshots.length - 1, i + 1),
+              );
+            }}
+            disabled={enlarged === snapshots.length - 1}
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-white p-2 disabled:opacity-30"
+          >
+            <ChevronRight className="h-8 w-8" />
+          </button>
         </div>
       )}
     </div>
