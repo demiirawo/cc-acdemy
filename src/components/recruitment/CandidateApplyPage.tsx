@@ -714,7 +714,83 @@ export function CandidateApplyPage() {
               </p>
             )}
           </div>
-          <Button className="w-full" onClick={startPermissions}>
+          <Button
+            className="w-full"
+            onClick={() => {
+              if (!form.name.trim() || !form.email.trim() || !cvFile) {
+                toast({ title: "Please complete all required fields", variant: "destructive" });
+                return;
+              }
+              setStage("qualify");
+            }}
+          >
+            Continue
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  if (stage === "qualify") {
+    const allAnswered = qualifyAnswers.every((a) => a !== null);
+    const anyNo = qualifyAnswers.some((a) => a === false);
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        {VideoTile}
+        <Card className="max-w-2xl w-full p-8 space-y-6">
+          <div>
+            <h1 className="text-2xl font-bold">A few quick questions</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Please answer honestly — these requirements are essential for the role.
+            </p>
+          </div>
+          <div className="space-y-5">
+            {QUALIFYING_QUESTIONS.map((q, i) => (
+              <div key={i} className="space-y-2">
+                <p className="text-sm font-medium">
+                  {i + 1}. {q}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={qualifyAnswers[i] === true ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      const next = [...qualifyAnswers];
+                      next[i] = true;
+                      setQualifyAnswers(next);
+                    }}
+                  >
+                    Yes
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={qualifyAnswers[i] === false ? "destructive" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      const next = [...qualifyAnswers];
+                      next[i] = false;
+                      setQualifyAnswers(next);
+                    }}
+                  >
+                    No
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+          {anyNo && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+              Unfortunately you do not meet the minimum requirements for this role and cannot
+              proceed with the assessment.
+            </div>
+          )}
+          <Button
+            className="w-full"
+            size="lg"
+            disabled={!allAnswered || anyNo}
+            onClick={() => setStage("permissions")}
+          >
             Continue
           </Button>
         </Card>
