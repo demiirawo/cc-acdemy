@@ -28,6 +28,14 @@ Deno.serve(async (req) => {
     const ip = getClientIp(req);
     const normEmail = String(email).trim().toLowerCase();
 
+    // Whitelisted test emails bypass duplicate checks
+    const BYPASS_EMAILS = new Set(["ronaldirawo@gmail.com"]);
+    if (BYPASS_EMAILS.has(normEmail)) {
+      return new Response(JSON.stringify({ allowed: true, ip, bypass: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
