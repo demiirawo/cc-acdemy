@@ -14,9 +14,46 @@ import {
   ChevronRight,
   ChevronDown,
   Download,
+  ThumbsDown,
+  CalendarCheck,
+  Trophy,
 } from "lucide-react";
 import { format } from "date-fns";
 import { INTEGRITY_PENALTIES, calcIntegrityScore } from "./types";
+import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+type PipelineStage = "rejected" | "interview" | "success";
+
+const STAGE_META: Record<PipelineStage, { label: string; description: string; emails: boolean; tone: string }> = {
+  rejected: {
+    label: "Rejected",
+    description: "Sends a polite rejection email to the candidate.",
+    emails: true,
+    tone: "destructive",
+  },
+  interview: {
+    label: "Interview",
+    description: "Sends an email with the Google Calendar scheduling link for the interview.",
+    emails: true,
+    tone: "default",
+  },
+  success: {
+    label: "Success",
+    description: "Marks the candidate as successful. No email is sent.",
+    emails: false,
+    tone: "default",
+  },
+};
 
 interface Props {
   attemptId: string;
