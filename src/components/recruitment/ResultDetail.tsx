@@ -571,11 +571,12 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
               <iframe
                 src={`${cvUrl}#toolbar=0&navpanes=0`}
                 title="CV"
-                className="w-full h-[900px] border rounded"
+                className="w-full h-[640px] border rounded"
                 onError={() => setCvError(true)}
               />
             )}
           </Card>
+        </div>
       </div>
 
       {enlarged !== null && snapshots[enlarged] && (
