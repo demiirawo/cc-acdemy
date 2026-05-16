@@ -549,6 +549,10 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
                       Open
                     </a>
                   </Button>
+                  <Button size="sm" variant="outline" onClick={() => setCvExpanded(true)}>
+                    <Maximize2 className="h-3.5 w-3.5 mr-1" />
+                    Expand
+                  </Button>
                   <Button size="sm" variant="outline" asChild>
                     <a href={cvUrl} download="cv.pdf">
                       <Download className="h-3.5 w-3.5 mr-1" />
