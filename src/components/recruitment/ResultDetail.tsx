@@ -358,6 +358,54 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
           </div>
 
           <Card className="p-6">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <h2 className="font-semibold">Candidate stage</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Move this candidate through the recruitment pipeline. The status reflects the outcome.
+                </p>
+                {currentStage && (
+                  <Badge
+                    className="mt-2"
+                    variant={currentStage === "rejected" ? "destructive" : "default"}
+                  >
+                    Current: {STAGE_META[currentStage].label}
+                  </Badge>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant={currentStage === "rejected" ? "destructive" : "outline"}
+                  size="sm"
+                  onClick={() => setPendingStage("rejected")}
+                  disabled={stageSaving}
+                >
+                  <ThumbsDown className="h-4 w-4 mr-2" />
+                  Reject
+                </Button>
+                <Button
+                  variant={currentStage === "interview" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setPendingStage("interview")}
+                  disabled={stageSaving}
+                >
+                  <CalendarCheck className="h-4 w-4 mr-2" />
+                  Invite to interview
+                </Button>
+                <Button
+                  variant={currentStage === "success" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setPendingStage("success")}
+                  disabled={stageSaving}
+                >
+                  <Trophy className="h-4 w-4 mr-2" />
+                  Mark as success
+                </Button>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
             <h2 className="font-semibold mb-3">Anti-cheat timeline ({events.filter((e) => (INTEGRITY_PENALTIES[e.event_type] ?? 0) > 0).length})</h2>
             {events.filter((e) => (INTEGRITY_PENALTIES[e.event_type] ?? 0) > 0).length === 0 ? (
               <p className="text-sm text-muted-foreground">No flags raised. ✅</p>
