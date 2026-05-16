@@ -60,6 +60,7 @@ interface Props {
   attemptId: string;
   onBack: () => void;
   onNavigate?: (attemptId: string) => void;
+  siblingIds?: string[];
 }
 
 interface AnswerRow {
