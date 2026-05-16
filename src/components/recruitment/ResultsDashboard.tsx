@@ -221,7 +221,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
                       </Badge>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={st.variant}>{st.label}</Badge>
+                      <Badge variant={st.variant} className={st.className}>{st.label}</Badge>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {a.submitted_at ? (
