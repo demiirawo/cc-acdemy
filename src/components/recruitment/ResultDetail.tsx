@@ -104,6 +104,41 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
   const [enlarged, setEnlarged] = useState<number | null>(null);
   const [siblings, setSiblings] = useState<string[]>([]);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
+  const [pendingStage, setPendingStage] = useState<PipelineStage | null>(null);
+  const [stageSaving, setStageSaving] = useState(false);
+  const { toast } = useToast();
+
+  const currentStage: PipelineStage | null =
+    attempt && ["rejected", "interview", "success"].includes(attempt.status)
+      ? (attempt.status as PipelineStage)
+      : null;
+
+  const applyStage = async (stage: PipelineStage) => {
+    setStageSaving(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("recruitment-set-stage", {
+        body: { attempt_id: attemptId, stage },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      setAttempt((a: any) => ({ ...a, status: stage }));
+      toast({
+        title: `Marked as ${STAGE_META[stage].label}`,
+        description: STAGE_META[stage].emails
+          ? "Status updated and email sent to the candidate."
+          : "Status updated.",
+      });
+      setPendingStage(null);
+    } catch (e: any) {
+      toast({
+        title: "Could not update stage",
+        description: e?.message ?? String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setStageSaving(false);
+    }
+  };
 
   // Main fetch
   useEffect(() => {
