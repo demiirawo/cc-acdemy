@@ -21,7 +21,7 @@ import type { RecruitmentAttempt, RecruitmentTest } from "./types";
 interface Props {
   testId: string;
   onBack: () => void;
-  onOpen: (attemptId: string) => void;
+  onOpen: (attemptId: string, siblingIds: string[]) => void;
 }
 
 const ABANDON_AFTER_MS = 30 * 60 * 1000; // 30 min
@@ -276,7 +276,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
                   <tr
                     key={a.id}
                     className="border-t hover:bg-muted/30 cursor-pointer"
-                    onClick={() => onOpen(a.id)}
+                    onClick={() => onOpen(a.id, sortedRows.map((r) => r.id))}
                   >
                     <td className="px-4 py-3 font-semibold">{i + 1}</td>
                     <td className="px-4 py-3 font-medium">{a.candidate_name}</td>
@@ -327,7 +327,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
                         variant="ghost"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onOpen(a.id);
+                          onOpen(a.id, sortedRows.map((r) => r.id));
                         }}
                       >
                         <ExternalLink className="h-3.5 w-3.5" />

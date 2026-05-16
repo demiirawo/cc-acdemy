@@ -60,6 +60,7 @@ interface Props {
   attemptId: string;
   onBack: () => void;
   onNavigate?: (attemptId: string) => void;
+  siblingIds?: string[];
 }
 
 interface AnswerRow {
@@ -90,7 +91,7 @@ interface SnapRow {
   taken_at: string;
 }
 
-export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
+export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Props) {
   const [attempt, setAttempt] = useState<any>(null);
   const [test, setTest] = useState<any>(null);
   const [answers, setAnswers] = useState<AnswerRow[]>([]);
@@ -159,6 +160,14 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
         return;
       }
       setAttempt(a);
+      const sibFetch = siblingIds && siblingIds.length > 0
+        ? Promise.resolve({ data: siblingIds.map((id) => ({ id })) })
+        : supabase
+            .from("recruitment_attempts")
+            .select("id")
+            .eq("test_id", a.test_id)
+            .order("total_score", { ascending: false })
+            .order("created_at", { ascending: false });
       const [{ data: t }, { data: ans }, { data: ev }, { data: sn }, { data: sib }] =
         await Promise.all([
           supabase.from("recruitment_tests").select("*").eq("id", a.test_id).maybeSingle(),
@@ -173,12 +182,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
             .select("*")
             .eq("attempt_id", attemptId)
             .order("taken_at"),
-          supabase
-            .from("recruitment_attempts")
-            .select("id")
-            .eq("test_id", a.test_id)
-            .order("total_score", { ascending: false })
-            .order("created_at", { ascending: false }),
+          sibFetch,
         ]);
       setTest(t);
       setAnswers((ans as AnswerRow[]) || []);
@@ -198,7 +202,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
       }
       setLoading(false);
     })();
-  }, [attemptId]);
+  }, [attemptId, siblingIds]);
 
   // Snapshot signed URLs (separate effect so they stream in)
   useEffect(() => {
@@ -378,7 +382,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
                   variant={scorePct >= test.pass_threshold ? "default" : "secondary"}
                   className="text-[10px]"
                 >
-                  {scorePct >= test.pass_threshold ? "Passed" : "Below"}
+                  {scorePct >= test.pass_threshold ? "Completed" : "Below"}
                 </Badge>
               )}
             </div>

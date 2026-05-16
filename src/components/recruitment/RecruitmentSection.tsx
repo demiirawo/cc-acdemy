@@ -8,7 +8,7 @@ type View =
   | { name: "list" }
   | { name: "builder"; testId: string | null }
   | { name: "results"; testId: string }
-  | { name: "detail"; attemptId: string; testId: string };
+  | { name: "detail"; attemptId: string; testId: string; siblingIds?: string[] };
 
 export function RecruitmentSection() {
   const [view, setView] = useState<View>({ name: "list" });
@@ -32,16 +32,19 @@ export function RecruitmentSection() {
         <ResultsDashboard
           testId={view.testId}
           onBack={() => setView({ name: "list" })}
-          onOpen={(attemptId) =>
-            setView({ name: "detail", attemptId, testId: view.testId })
+          onOpen={(attemptId, siblingIds) =>
+            setView({ name: "detail", attemptId, testId: view.testId, siblingIds })
           }
         />
       )}
       {view.name === "detail" && (
         <ResultDetail
           attemptId={view.attemptId}
+          siblingIds={view.siblingIds}
           onBack={() => setView({ name: "results", testId: view.testId })}
-          onNavigate={(attemptId) => setView({ name: "detail", attemptId, testId: view.testId })}
+          onNavigate={(attemptId) =>
+            setView({ name: "detail", attemptId, testId: view.testId, siblingIds: view.siblingIds })
+          }
         />
       )}
     </div>
