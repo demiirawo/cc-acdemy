@@ -211,6 +211,30 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
         </div>
       </div>
 
+      {!loading && attempts.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-muted-foreground mr-1">Filter by status:</span>
+          {(() => {
+            const options = ["all", ...Object.keys(statusCounts).sort()];
+            return options.map((opt) => {
+              const active = statusFilter === opt;
+              const count = opt === "all" ? attempts.length : statusCounts[opt] ?? 0;
+              return (
+                <Button
+                  key={opt}
+                  size="sm"
+                  variant={active ? "default" : "outline"}
+                  onClick={() => setStatusFilter(opt)}
+                >
+                  {opt === "all" ? "All" : opt}
+                  <span className="ml-1.5 opacity-70">({count})</span>
+                </Button>
+              );
+            });
+          })()}
+        </div>
+      )}
+
       {loading ? (
         <p className="text-muted-foreground">Loading...</p>
       ) : sortedRows.length === 0 ? (
