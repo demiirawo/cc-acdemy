@@ -202,7 +202,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
       }
       setLoading(false);
     })();
-  }, [attemptId]);
+  }, [attemptId, siblingIds]);
 
   // Snapshot signed URLs (separate effect so they stream in)
   useEffect(() => {
