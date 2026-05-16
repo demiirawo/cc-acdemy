@@ -701,6 +701,19 @@ export function CandidateApplyPage() {
             <h1 className="text-3xl font-bold">{test.title}</h1>
             {test.role && <p className="text-muted-foreground mt-1">{test.role}</p>}
           </div>
+          <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 mb-4">
+            <h2 className="text-sm font-semibold text-primary mb-2">About this assessment</h2>
+            <p className="text-sm text-foreground/90 mb-2">
+              This is a structured assessment designed to evaluate your{" "}
+              <strong>communication</strong>, <strong>problem solving</strong>, and{" "}
+              <strong>professionalism</strong> — the core skills we look for in every
+              member of the Care Cuddle team.
+            </p>
+            <p className="text-sm text-foreground/90">
+              Please set aside <strong>30–40 minutes</strong> of uninterrupted time to
+              complete it in one sitting. Answer honestly and to the best of your ability.
+            </p>
+          </div>
           {test.description && (
             <p className="text-sm mb-6 whitespace-pre-wrap">{test.description}</p>
           )}
@@ -713,7 +726,7 @@ export function CandidateApplyPage() {
             </p>
             <p className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4" /> {questions.length} questions •{" "}
-              {test.seconds_per_question}s per question
+              {test.seconds_per_question}s per question • ~30–40 minutes total
             </p>
           </div>
           <div className="border border-destructive/30 bg-destructive/5 rounded-lg p-4 mb-6">
