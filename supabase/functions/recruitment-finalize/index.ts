@@ -99,15 +99,21 @@ Deno.serve(async (req) => {
     const integrity =
       typeof integrityOverride === "number" ? integrityOverride : computedIntegrity;
 
+    // For partial saves (sendBeacon on unload), keep the attempt in_progress so the
+    // candidate can resume / keep answering. Only a real finalize marks it submitted.
+    const updatePayload: Record<string, unknown> = {
+      total_score: total,
+      max_score: max,
+      integrity_score: integrity,
+    };
+    if (!partial) {
+      updatePayload.submitted_at = new Date().toISOString();
+      updatePayload.status = "submitted";
+    }
+
     const { error: updErr } = await supabase
       .from("recruitment_attempts")
-      .update({
-        total_score: total,
-        max_score: max,
-        integrity_score: integrity,
-        submitted_at: new Date().toISOString(),
-        status: "submitted",
-      })
+      .update(updatePayload)
       .eq("id", attemptId);
 
     if (updErr) {
