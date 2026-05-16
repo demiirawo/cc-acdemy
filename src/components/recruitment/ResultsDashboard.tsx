@@ -72,17 +72,29 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
     );
     setQuestionCount((qs ?? []).length);
 
-    // Fetch answer counts per attempt to detect fully completed submissions
+    // Fetch answer counts per attempt to detect fully completed submissions.
+    // Paginate to avoid Supabase's default 1000-row cap (a single test can
+    // easily have thousands of answer rows across all attempts).
     const attemptIds = attemptsArr.map((x) => x.id);
     if (attemptIds.length > 0) {
-      const { data: ans } = await supabase
-        .from("recruitment_answers")
-        .select("attempt_id")
-        .in("attempt_id", attemptIds);
       const counts: Record<string, number> = {};
-      (ans ?? []).forEach((r: any) => {
-        counts[r.attempt_id] = (counts[r.attempt_id] ?? 0) + 1;
-      });
+      const PAGE = 1000;
+      let from = 0;
+      // Cap loop to a safe upper bound (e.g. 100k rows) just in case.
+      for (let i = 0; i < 100; i++) {
+        const { data: ans, error: ansErr } = await supabase
+          .from("recruitment_answers")
+          .select("attempt_id")
+          .in("attempt_id", attemptIds)
+          .range(from, from + PAGE - 1);
+        if (ansErr) break;
+        const batch = ans ?? [];
+        batch.forEach((r: any) => {
+          counts[r.attempt_id] = (counts[r.attempt_id] ?? 0) + 1;
+        });
+        if (batch.length < PAGE) break;
+        from += PAGE;
+      }
       setAnswerCounts(counts);
     } else {
       setAnswerCounts({});
