@@ -485,6 +485,7 @@ export function KnowledgeBaseApp() {
   const {
     toast
   } = useToast();
+  const { isAdmin } = useUserRole();
 
   // Handle URL parameters for email confirmation and password reset on component mount
   useEffect(() => {
