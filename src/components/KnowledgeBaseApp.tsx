@@ -1150,7 +1150,12 @@ export function KnowledgeBaseApp() {
             navigate('/view/hr');
           }}
         />}
-        {currentView === 'recruitment' && <RecruitmentSection />}
+        {currentView === 'recruitment' && isAdmin && <RecruitmentSection />}
+        {currentView === 'recruitment' && !isAdmin && (
+          <div className="p-8 text-center text-muted-foreground">
+            You do not have permission to view this page.
+          </div>
+        )}
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePageSaved} />}
         
