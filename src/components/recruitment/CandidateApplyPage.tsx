@@ -504,14 +504,17 @@ export function CandidateApplyPage() {
       [...correctSet].every((v) => pickedSet.has(v));
     const points = isCorrect ? q.weight : 0;
 
-    const { error } = await supabase.from("recruitment_answers").insert({
-      attempt_id: id,
-      question_id: q.id,
-      answer: selected,
-      is_correct: isCorrect,
-      points_awarded: points,
-      time_taken_ms: Date.now() - qStartRef.current,
-    });
+    const { error } = await supabase.from("recruitment_answers").upsert(
+      {
+        attempt_id: id,
+        question_id: q.id,
+        answer: selected,
+        is_correct: isCorrect,
+        points_awarded: points,
+        time_taken_ms: Date.now() - qStartRef.current,
+      },
+      { onConflict: "attempt_id,question_id" }
+    );
 
     if (error) {
       console.error("[recruitment] answer insert failed", error);
