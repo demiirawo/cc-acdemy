@@ -41,12 +41,17 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Check email duplicate for this test
+    // Only block re-takes if a previous attempt was actually COMPLETED.
+    // In-progress or abandoned attempts should not prevent a fresh try.
+    const COMPLETED_STATUSES = ["submitted", "completed"];
+
+    // Check email duplicate (completed only) for this test
     const { data: emailMatch, error: emailErr } = await supabase
       .from("recruitment_attempts")
       .select("id, status")
       .eq("test_id", test_id)
       .ilike("email", normEmail)
+      .in("status", COMPLETED_STATUSES)
       .limit(1);
 
     if (emailErr) throw emailErr;
@@ -55,19 +60,20 @@ Deno.serve(async (req) => {
         JSON.stringify({
           allowed: false,
           reason: "email",
-          message: "This email address has already been used to take this test.",
+          message: "This email address has already been used to complete this test.",
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Check IP duplicate for this test
+    // Check IP duplicate (completed only) for this test
     if (ip) {
       const { data: ipMatch, error: ipErr } = await supabase
         .from("recruitment_attempts")
-        .select("id")
+        .select("id, status")
         .eq("test_id", test_id)
         .eq("ip_address", ip)
+        .in("status", COMPLETED_STATUSES)
         .limit(1);
 
       if (ipErr) throw ipErr;
@@ -76,7 +82,7 @@ Deno.serve(async (req) => {
           JSON.stringify({
             allowed: false,
             reason: "ip",
-            message: "A test has already been submitted from this device/network.",
+            message: "A completed test has already been submitted from this device/network.",
           }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
