@@ -60,6 +60,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [snapshots, setSnapshots] = useState<SnapRow[]>([]);
   const [snapUrls, setSnapUrls] = useState<Record<string, string>>({});
+  const [snapIdx, setSnapIdx] = useState(0);
   const [cvUrl, setCvUrl] = useState<string | null>(null);
   const [cvError, setCvError] = useState(false);
   const [loading, setLoading] = useState(true);
