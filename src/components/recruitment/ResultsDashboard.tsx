@@ -276,7 +276,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
                   <tr
                     key={a.id}
                     className="border-t hover:bg-muted/30 cursor-pointer"
-                    onClick={() => onOpen(a.id)}
+                    onClick={() => onOpen(a.id, sortedRows.map((r) => r.id))}
                   >
                     <td className="px-4 py-3 font-semibold">{i + 1}</td>
                     <td className="px-4 py-3 font-medium">{a.candidate_name}</td>
