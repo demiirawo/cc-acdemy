@@ -380,33 +380,44 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
             <h2 className="font-semibold mb-3">Webcam snapshots ({snapshots.length})</h2>
             {snapshots.length === 0 ? (
               <p className="text-sm text-muted-foreground">No snapshots captured.</p>
-            ) : (
-              <div className="w-full overflow-x-auto pb-3 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-muted [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-thumb]:rounded-full">
-                <div className="flex gap-3 min-w-min">
-                  {snapshots.map((s, idx) => (
-                    <button
-                      key={s.id}
-                      onClick={() => setEnlarged(idx)}
-                      className="shrink-0 w-40 border rounded overflow-hidden hover:ring-2 hover:ring-primary"
-                    >
-                      {snapUrls[s.id] ? (
-                        <img
-                          src={snapUrls[s.id]}
-                          alt="snap"
-                          className="w-full h-32 object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <div className="w-full h-32 bg-muted animate-pulse" />
-                      )}
-                      <p className="text-[10px] text-muted-foreground p-1 truncate">
-                        {format(new Date(s.taken_at), "HH:mm:ss")}
-                      </p>
-                    </button>
-                  ))}
+            ) : (() => {
+              const safeIdx = Math.min(snapIdx, snapshots.length - 1);
+              const current = snapshots[safeIdx];
+              return (
+                <div className="space-y-4">
+                  <button
+                    type="button"
+                    onClick={() => setEnlarged(safeIdx)}
+                    className="block w-full bg-muted rounded overflow-hidden border hover:ring-2 hover:ring-primary"
+                  >
+                    {snapUrls[current.id] ? (
+                      <img
+                        src={snapUrls[current.id]}
+                        alt={`snapshot ${safeIdx + 1}`}
+                        className="w-full max-h-[480px] object-contain bg-black/5"
+                      />
+                    ) : (
+                      <div className="w-full h-[360px] bg-muted animate-pulse" />
+                    )}
+                  </button>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                      {safeIdx + 1} / {snapshots.length}
+                    </span>
+                    <span>{format(new Date(current.taken_at), "HH:mm:ss")}</span>
+                  </div>
+                  {snapshots.length > 1 && (
+                    <Slider
+                      min={0}
+                      max={snapshots.length - 1}
+                      step={1}
+                      value={[safeIdx]}
+                      onValueChange={(v) => setSnapIdx(v[0] ?? 0)}
+                    />
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </Card>
 
           {/* CV preview at bottom, full width */}
