@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ShieldCheck, Camera, Maximize, AlertCircle } from "lucide-react";
+import { Loader2, ShieldCheck, Camera, Maximize, AlertCircle, Laptop } from "lucide-react";
 import { INTEGRITY_PENALTIES } from "./types";
 import type { RecruitmentTest, RecruitmentQuestion } from "./types";
 
