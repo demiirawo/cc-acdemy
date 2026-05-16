@@ -164,7 +164,28 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
     toast({ title: "All entries deleted" });
   };
 
-  const sortedRows = useMemo(() => attempts, [attempts]);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  const rowsWithStatus = useMemo(
+    () => attempts.map((a) => ({ a, label: statusOf(a).label })),
+    [attempts, answerCounts, questionCount],
+  );
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    rowsWithStatus.forEach(({ label }) => {
+      counts[label] = (counts[label] ?? 0) + 1;
+    });
+    return counts;
+  }, [rowsWithStatus]);
+
+  const sortedRows = useMemo(
+    () =>
+      statusFilter === "all"
+        ? rowsWithStatus.map((r) => r.a)
+        : rowsWithStatus.filter((r) => r.label === statusFilter).map((r) => r.a),
+    [rowsWithStatus, statusFilter],
+  );
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -189,6 +210,30 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
           </Button>
         </div>
       </div>
+
+      {!loading && attempts.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-muted-foreground mr-1">Filter by status:</span>
+          {(() => {
+            const options = ["all", ...Object.keys(statusCounts).sort()];
+            return options.map((opt) => {
+              const active = statusFilter === opt;
+              const count = opt === "all" ? attempts.length : statusCounts[opt] ?? 0;
+              return (
+                <Button
+                  key={opt}
+                  size="sm"
+                  variant={active ? "default" : "outline"}
+                  onClick={() => setStatusFilter(opt)}
+                >
+                  {opt === "all" ? "All" : opt}
+                  <span className="ml-1.5 opacity-70">({count})</span>
+                </Button>
+              );
+            });
+          })()}
+        </div>
+      )}
 
       {loading ? (
         <p className="text-muted-foreground">Loading...</p>
