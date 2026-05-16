@@ -896,31 +896,68 @@ export function CandidateApplyPage() {
             <span className={timeLeft <= 5 ? "text-destructive font-bold" : ""}>{timeLeft}s</span>
           </div>
           <Progress value={(timeLeft / secs) * 100} className="mb-8" />
-          {q && (
-            <Card className="p-8">
-              <h2 className="text-xl font-semibold mb-6">{q.question_text}</h2>
-              <div className="space-y-2">
-                {q.options.map((opt, i) => (
-                  <button
-                    key={i}
-                    onClick={() => toggleOption(i)}
-                    className={`w-full text-left border rounded-lg px-4 py-3 transition ${
-                      selected.includes(i)
-                        ? "border-primary bg-primary/10"
-                        : "hover:bg-muted/50"
+          {q && (() => {
+            const isMulti = q.question_type === "multi_select";
+            return (
+              <Card className="p-8">
+                <div className="mb-4">
+                  <span
+                    className={`inline-block text-xs font-medium px-2.5 py-1 rounded-full ${
+                      isMulti
+                        ? "bg-primary/10 text-primary"
+                        : "bg-muted text-muted-foreground"
                     }`}
                   >
-                    {opt}
-                  </button>
-                ))}
-              </div>
-              <div className="mt-6 flex justify-end">
-                <Button onClick={handleAdvance} disabled={selected.length === 0}>
-                  {qIndex + 1 === total ? "Submit" : "Next"}
-                </Button>
-              </div>
-            </Card>
-          )}
+                    {isMulti ? "Select all that apply" : "Select one answer"}
+                  </span>
+                </div>
+                <h2 className="text-xl font-semibold mb-2">{q.question_text}</h2>
+                <p className="text-sm text-muted-foreground mb-6">
+                  {isMulti
+                    ? "Choose every option you think is correct."
+                    : "Choose the single best answer."}
+                </p>
+                <div className="space-y-2" role={isMulti ? "group" : "radiogroup"}>
+                  {q.options.map((opt, i) => {
+                    const checked = selected.includes(i);
+                    return (
+                      <button
+                        key={i}
+                        type="button"
+                        role={isMulti ? "checkbox" : "radio"}
+                        aria-checked={checked}
+                        onClick={() => toggleOption(i)}
+                        className={`w-full text-left border rounded-lg px-4 py-3 transition flex items-center gap-3 ${
+                          checked
+                            ? "border-primary bg-primary/10"
+                            : "hover:bg-muted/50"
+                        }`}
+                      >
+                        <span
+                          className={`shrink-0 flex items-center justify-center w-5 h-5 border-2 ${
+                            isMulti ? "rounded" : "rounded-full"
+                          } ${
+                            checked
+                              ? "border-primary bg-primary text-primary-foreground"
+                              : "border-muted-foreground/40"
+                          }`}
+                          aria-hidden
+                        >
+                          {checked && (isMulti ? "✓" : <span className="w-2 h-2 rounded-full bg-primary-foreground" />)}
+                        </span>
+                        <span>{opt}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-6 flex justify-end">
+                  <Button onClick={handleAdvance} disabled={selected.length === 0}>
+                    {qIndex + 1 === total ? "Submit" : "Next"}
+                  </Button>
+                </div>
+              </Card>
+            );
+          })()}
         </div>
       </div>
     );
