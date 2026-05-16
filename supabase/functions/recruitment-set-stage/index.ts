@@ -159,6 +159,7 @@ Deno.serve(async (req) => {
         emailResult = await resend.emails.send({
           from: FROM,
           to: [attempt.email],
+          cc: stage === "interview" ? ["demi.irawo@care-cuddle.co.uk"] : undefined,
           subject,
           html,
         });
