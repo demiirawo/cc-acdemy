@@ -504,17 +504,36 @@ export function CandidateApplyPage() {
       [...correctSet].every((v) => pickedSet.has(v));
     const points = isCorrect ? q.weight : 0;
 
-    const { error } = await supabase.from("recruitment_answers").upsert(
-      {
-        attempt_id: id,
-        question_id: q.id,
-        answer: selected,
-        is_correct: isCorrect,
-        points_awarded: points,
-        time_taken_ms: Date.now() - qStartRef.current,
-      },
-      { onConflict: "attempt_id,question_id" }
-    );
+    // NOTE: we deliberately avoid Supabase's `.upsert(..., { onConflict })`
+    // here because PostgREST translates it into `INSERT ... ON CONFLICT DO
+    // UPDATE`, which trips RLS on this table (the INSERT WITH CHECK passes,
+    // but the combined ON CONFLICT path is rejected by Postgres even when no
+    // conflict actually occurs). Do a plain INSERT; on the unique-violation
+    // (23505) fall back to a targeted UPDATE.
+    const payload = {
+      attempt_id: id,
+      question_id: q.id,
+      answer: selected,
+      is_correct: isCorrect,
+      points_awarded: points,
+      time_taken_ms: Date.now() - qStartRef.current,
+    };
+    let { error } = await supabase
+      .from("recruitment_answers")
+      .insert(payload);
+    if (error && (error as any).code === "23505") {
+      const upd = await supabase
+        .from("recruitment_answers")
+        .update({
+          answer: payload.answer,
+          is_correct: payload.is_correct,
+          points_awarded: payload.points_awarded,
+          time_taken_ms: payload.time_taken_ms,
+        })
+        .eq("attempt_id", id)
+        .eq("question_id", q.id);
+      error = upd.error;
+    }
 
     if (error) {
       console.error("[recruitment] answer insert failed", error);
