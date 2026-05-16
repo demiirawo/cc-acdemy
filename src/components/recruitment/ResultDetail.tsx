@@ -103,6 +103,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
   const [cvError, setCvError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [enlarged, setEnlarged] = useState<number | null>(null);
+  const [cvExpanded, setCvExpanded] = useState(false);
   const [siblings, setSiblings] = useState<string[]>([]);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [pendingStage, setPendingStage] = useState<PipelineStage | null>(null);
