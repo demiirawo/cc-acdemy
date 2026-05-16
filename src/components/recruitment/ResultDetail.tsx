@@ -91,7 +91,7 @@ interface SnapRow {
   taken_at: string;
 }
 
-export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
+export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Props) {
   const [attempt, setAttempt] = useState<any>(null);
   const [test, setTest] = useState<any>(null);
   const [answers, setAnswers] = useState<AnswerRow[]>([]);
