@@ -485,6 +485,7 @@ export function KnowledgeBaseApp() {
   const {
     toast
   } = useToast();
+  const { isAdmin } = useUserRole();
 
   // Handle URL parameters for email confirmation and password reset on component mount
   useEffect(() => {
@@ -685,6 +686,7 @@ export function KnowledgeBaseApp() {
       setBreadcrumbs([]);
       navigate('/view/schedule');
     } else if (item.id === 'recruitment') {
+      if (!isAdmin) return;
       setCurrentView('recruitment');
       setCurrentPage(null);
       setBreadcrumbs([]);
@@ -1150,7 +1152,12 @@ export function KnowledgeBaseApp() {
             navigate('/view/hr');
           }}
         />}
-        {currentView === 'recruitment' && <RecruitmentSection />}
+        {currentView === 'recruitment' && isAdmin && <RecruitmentSection />}
+        {currentView === 'recruitment' && !isAdmin && (
+          <div className="p-8 text-center text-muted-foreground">
+            You do not have permission to view this page.
+          </div>
+        )}
         
         {currentView === 'editor' && currentPage && <EnhancedContentEditor title={currentPage.title} content={currentPage.content} onSave={handleSavePage} onPreview={handlePreview} isEditing={isEditing} pageId={currentPage.id} onPageSaved={handlePageSaved} />}
         
