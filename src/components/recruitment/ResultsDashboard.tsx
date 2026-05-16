@@ -164,7 +164,28 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
     toast({ title: "All entries deleted" });
   };
 
-  const sortedRows = useMemo(() => attempts, [attempts]);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  const rowsWithStatus = useMemo(
+    () => attempts.map((a) => ({ a, label: statusOf(a).label })),
+    [attempts, answerCounts, questionCount],
+  );
+
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    rowsWithStatus.forEach(({ label }) => {
+      counts[label] = (counts[label] ?? 0) + 1;
+    });
+    return counts;
+  }, [rowsWithStatus]);
+
+  const sortedRows = useMemo(
+    () =>
+      statusFilter === "all"
+        ? rowsWithStatus.map((r) => r.a)
+        : rowsWithStatus.filter((r) => r.label === statusFilter).map((r) => r.a),
+    [rowsWithStatus, statusFilter],
+  );
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
