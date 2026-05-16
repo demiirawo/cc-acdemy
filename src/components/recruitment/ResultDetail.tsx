@@ -382,7 +382,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
                   variant={scorePct >= test.pass_threshold ? "default" : "secondary"}
                   className="text-[10px]"
                 >
-                  {scorePct >= test.pass_threshold ? "Passed" : "Below"}
+                  {scorePct >= test.pass_threshold ? "Completed" : "Below"}
                 </Badge>
               )}
             </div>
