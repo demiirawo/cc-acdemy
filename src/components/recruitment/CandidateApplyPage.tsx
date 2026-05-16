@@ -653,7 +653,7 @@ export function CandidateApplyPage() {
           {test.description && (
             <p className="text-sm mb-6 whitespace-pre-wrap">{test.description}</p>
           )}
-          <div className="space-y-2 text-sm border rounded-lg p-4 bg-muted/30 mb-6">
+          <div className="space-y-2 text-sm border rounded-lg p-4 bg-muted/30 mb-4">
             <p className="flex items-center gap-2">
               <Camera className="h-4 w-4" /> Webcam access required (snapshots taken regularly)
             </p>
@@ -663,6 +663,18 @@ export function CandidateApplyPage() {
             <p className="flex items-center gap-2">
               <ShieldCheck className="h-4 w-4" /> {questions.length} questions •{" "}
               {test.seconds_per_question}s per question
+            </p>
+          </div>
+          <div className="border border-destructive/30 bg-destructive/5 rounded-lg p-4 mb-6">
+            <p className="flex items-start gap-2 text-sm">
+              <ShieldCheck className="h-4 w-4 mt-0.5 text-destructive shrink-0" />
+              <span>
+                <strong className="text-destructive">Anti-cheat notice:</strong> This
+                assessment is monitored by active anti-cheat software. We track tab
+                switches, fullscreen exits, copy/paste attempts, and capture periodic
+                webcam snapshots. Any test flagged for suspected cheating will be{" "}
+                <strong>automatically rejected</strong> without review.
+              </span>
             </p>
           </div>
           <Button className="w-full" size="lg" onClick={() => setStage("form")}>
