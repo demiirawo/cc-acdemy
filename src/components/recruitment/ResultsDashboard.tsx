@@ -327,7 +327,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
                         variant="ghost"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onOpen(a.id);
+                          onOpen(a.id, sortedRows.map((r) => r.id));
                         }}
                       >
                         <ExternalLink className="h-3.5 w-3.5" />
