@@ -17,6 +17,7 @@ import {
   ThumbsDown,
   CalendarCheck,
   Trophy,
+  Maximize2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { INTEGRITY_PENALTIES, calcIntegrityScore } from "./types";
@@ -102,6 +103,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
   const [cvError, setCvError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [enlarged, setEnlarged] = useState<number | null>(null);
+  const [cvExpanded, setCvExpanded] = useState(false);
   const [siblings, setSiblings] = useState<string[]>([]);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
   const [pendingStage, setPendingStage] = useState<PipelineStage | null>(null);
@@ -547,6 +549,10 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
                       Open
                     </a>
                   </Button>
+                  <Button size="sm" variant="outline" onClick={() => setCvExpanded(true)}>
+                    <Maximize2 className="h-3.5 w-3.5 mr-1" />
+                    Expand
+                  </Button>
                   <Button size="sm" variant="outline" asChild>
                     <a href={cvUrl} download="cv.pdf">
                       <Download className="h-3.5 w-3.5 mr-1" />
@@ -644,6 +650,34 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {cvExpanded && cvUrl && (
+        <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold flex items-center gap-2">
+              <FileText className="h-4 w-4" />
+              {attempt.candidate_name} — CV
+            </h2>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" asChild>
+                <a href={cvUrl} target="_blank" rel="noreferrer">
+                  <ExternalLink className="h-3.5 w-3.5 mr-1" />
+                  Open in new tab
+                </a>
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setCvExpanded(false)}>
+                <X className="h-3.5 w-3.5 mr-1" />
+                Close
+              </Button>
+            </div>
+          </div>
+          <iframe
+            src={`${cvUrl}#toolbar=0&navpanes=0`}
+            title="CV expanded"
+            className="flex-1 w-full border rounded bg-white"
+          />
+        </div>
+      )}
     </div>
   );
 }
