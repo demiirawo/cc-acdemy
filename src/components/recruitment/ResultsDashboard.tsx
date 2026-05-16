@@ -226,7 +226,22 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
                     <td className="px-4 py-3 text-muted-foreground">{a.email}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <Badge variant={passed ? "default" : "secondary"}>{score}%</Badge>
+                        {(() => {
+                          const clamped = Math.max(0, Math.min(100, score));
+                          const hue = clamped <= 50
+                            ? (clamped / 50) * 45
+                            : 45 + ((clamped - 50) / 50) * 95;
+                          const bg = `hsl(${hue}, 75%, 45%)`;
+                          return (
+                            <span
+                              className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold text-white"
+                              style={{ backgroundColor: bg }}
+                              title={passed ? "Passed" : undefined}
+                            >
+                              {score}%
+                            </span>
+                          );
+                        })()}
                         <span className="text-xs text-muted-foreground">
                           {Number(a.total_score)}/{max || "—"}
                         </span>
