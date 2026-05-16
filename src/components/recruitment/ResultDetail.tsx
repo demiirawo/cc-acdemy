@@ -17,6 +17,7 @@ import {
   ThumbsDown,
   CalendarCheck,
   Trophy,
+  Maximize2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { INTEGRITY_PENALTIES, calcIntegrityScore } from "./types";
