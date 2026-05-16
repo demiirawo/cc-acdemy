@@ -21,7 +21,7 @@ import type { RecruitmentAttempt, RecruitmentTest } from "./types";
 interface Props {
   testId: string;
   onBack: () => void;
-  onOpen: (attemptId: string) => void;
+  onOpen: (attemptId: string, siblingIds: string[]) => void;
 }
 
 const ABANDON_AFTER_MS = 30 * 60 * 1000; // 30 min
