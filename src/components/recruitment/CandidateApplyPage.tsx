@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, ShieldCheck, Camera, Maximize, AlertCircle } from "lucide-react";
+import { Loader2, ShieldCheck, Camera, Maximize, AlertCircle, Laptop } from "lucide-react";
 import { INTEGRITY_PENALTIES } from "./types";
 import type { RecruitmentTest, RecruitmentQuestion } from "./types";
 
@@ -612,6 +612,35 @@ export function CandidateApplyPage() {
       autoPlay
     />
   );
+
+  // Block mobile/tablet devices — test requires a laptop or desktop
+  const isMobileDevice = (() => {
+    if (typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent || "";
+    const uaMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i.test(ua);
+    const coarsePointer = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
+    const smallScreen = typeof window !== "undefined" && window.innerWidth < 1024;
+    return uaMobile || (coarsePointer && smallScreen);
+  })();
+
+  if (isMobileDevice) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6 bg-background">
+        <Card className="p-8 max-w-md text-center space-y-4">
+          <Laptop className="h-12 w-12 mx-auto text-destructive" />
+          <h1 className="text-xl font-bold">Laptop or desktop required</h1>
+          <p className="text-sm text-muted-foreground">
+            This assessment can only be completed on a laptop or desktop computer. Mobile phones
+            and tablets are not supported because the test requires fullscreen, a webcam, and a
+            stable keyboard for accurate anti-cheat monitoring.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Please reopen this link on a laptop or desktop to continue.
+          </p>
+        </Card>
+      </div>
+    );
+  }
 
   if (stage === "loading") {
     return (
