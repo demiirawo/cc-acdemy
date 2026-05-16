@@ -30,6 +30,8 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
   const [test, setTest] = useState<RecruitmentTest | null>(null);
   const [attempts, setAttempts] = useState<RecruitmentAttempt[]>([]);
   const [questionMaxScore, setQuestionMaxScore] = useState<number>(0);
+  const [questionCount, setQuestionCount] = useState<number>(0);
+  const [answerCounts, setAnswerCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -63,10 +65,29 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
     }
 
     setTest((t as RecruitmentTest) || null);
-    setAttempts((a as RecruitmentAttempt[]) || []);
+    const attemptsArr = (a as RecruitmentAttempt[]) || [];
+    setAttempts(attemptsArr);
     setQuestionMaxScore(
       (qs ?? []).reduce((s: number, q: any) => s + Number(q.weight ?? 0), 0),
     );
+    setQuestionCount((qs ?? []).length);
+
+    // Fetch answer counts per attempt to detect fully completed submissions
+    const attemptIds = attemptsArr.map((x) => x.id);
+    if (attemptIds.length > 0) {
+      const { data: ans } = await supabase
+        .from("recruitment_answers")
+        .select("attempt_id")
+        .in("attempt_id", attemptIds);
+      const counts: Record<string, number> = {};
+      (ans ?? []).forEach((r: any) => {
+        counts[r.attempt_id] = (counts[r.attempt_id] ?? 0) + 1;
+      });
+      setAnswerCounts(counts);
+    } else {
+      setAnswerCounts({});
+    }
+
     setLoading(false);
     setRefreshing(false);
   };
@@ -90,8 +111,19 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
   const statusOf = (a: RecruitmentAttempt): {
     label: string;
     variant: "default" | "secondary" | "outline" | "destructive";
+    className?: string;
   } => {
-    if (a.status === "submitted") return { label: "Submitted", variant: "default" };
+    if (a.status === "submitted") {
+      const answered = answerCounts[a.id] ?? 0;
+      if (questionCount > 0 && answered >= questionCount) {
+        return {
+          label: "Completed",
+          variant: "default",
+          className: "bg-green-600 hover:bg-green-600 text-white",
+        };
+      }
+      return { label: "Submitted", variant: "default" };
+    }
     if (a.status === "abandoned") return { label: "Abandoned", variant: "destructive" };
     // In progress: stale = abandoned
     const startedAt = new Date(a.started_at).getTime();
@@ -189,7 +221,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
                       </Badge>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={st.variant}>{st.label}</Badge>
+                      <Badge variant={st.variant} className={st.className}>{st.label}</Badge>
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {a.submitted_at ? (
