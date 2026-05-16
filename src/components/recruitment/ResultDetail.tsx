@@ -268,145 +268,135 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
       ? Math.min(100, Math.round((cappedTotal / Number(attempt.max_score)) * 100))
       : 0;
 
+  const idx = siblings.indexOf(attemptId);
+  const prevId = idx > 0 ? siblings[idx - 1] : null;
+  const nextId = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
+
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      {(() => {
-        const idx = siblings.indexOf(attemptId);
-        const prevId = idx > 0 ? siblings[idx - 1] : null;
-        const nextId = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
-        return (
-          <div className="flex items-center justify-between gap-3">
-            <Button variant="ghost" onClick={onBack}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold">{attempt.candidate_name}</h1>
-              {idx >= 0 && siblings.length > 1 && (
-                <span className="text-xs text-muted-foreground">
-                  ({idx + 1} of {siblings.length})
-                </span>
-              )}
+    <div className="max-w-[1600px] mx-auto space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
+          </Button>
+          <div className="flex items-baseline gap-2">
+            <h1 className="text-xl font-bold">{attempt.candidate_name}</h1>
+            {idx >= 0 && siblings.length > 1 && (
+              <span className="text-xs text-muted-foreground">
+                ({idx + 1} of {siblings.length})
+              </span>
+            )}
+            {currentStage && (
+              <Badge
+                variant={currentStage === "rejected" ? "destructive" : "default"}
+              >
+                {STAGE_META[currentStage].label}
+              </Badge>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant={currentStage === "rejected" ? "destructive" : "outline"}
+            size="sm"
+            onClick={() => setPendingStage("rejected")}
+            disabled={stageSaving}
+          >
+            <ThumbsDown className="h-4 w-4 mr-1.5" />
+            Reject
+          </Button>
+          <Button
+            variant={currentStage === "interview" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setPendingStage("interview")}
+            disabled={stageSaving}
+          >
+            <CalendarCheck className="h-4 w-4 mr-1.5" />
+            Interview
+          </Button>
+          <Button
+            variant={currentStage === "success" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setPendingStage("success")}
+            disabled={stageSaving}
+          >
+            <Trophy className="h-4 w-4 mr-1.5" />
+            Success
+          </Button>
+          <div className="w-px h-6 bg-border mx-1" />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!prevId}
+            onClick={() => prevId && onNavigate?.(prevId)}
+          >
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Prev
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!nextId}
+            onClick={() => nextId && onNavigate?.(nextId)}
+          >
+            Next
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Compact summary strip: candidate info + scores in one row */}
+      <Card className="p-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
+          <div className="md:col-span-2 grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+            <div className="truncate">
+              <span className="text-muted-foreground">Name:</span> {attempt.candidate_name}
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!prevId}
-                onClick={() => prevId && onNavigate?.(prevId)}
-              >
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                Prev
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={!nextId}
-                onClick={() => nextId && onNavigate?.(nextId)}
-              >
-                Next
-                <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
+            <div className="truncate">
+              <span className="text-muted-foreground">Email:</span>{" "}
+              <a className="underline" href={`mailto:${attempt.email}`}>{attempt.email}</a>
+            </div>
+            <div className="truncate">
+              <span className="text-muted-foreground">Phone:</span> {attempt.phone || "—"}
+            </div>
+            <div className="truncate">
+              <span className="text-muted-foreground">Submitted:</span>{" "}
+              {attempt.submitted_at
+                ? format(new Date(attempt.submitted_at), "d MMM yyyy HH:mm")
+                : "—"}
             </div>
           </div>
-        );
-      })()}
-
-      <div className="space-y-4">
-          <Card className="p-6">
-            <h2 className="font-semibold mb-3">Candidate</h2>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <span className="text-muted-foreground">Name:</span> {attempt.candidate_name}
-              </div>
-              <div>
-                <span className="text-muted-foreground">Email:</span> {attempt.email}
-              </div>
-              <div>
-                <span className="text-muted-foreground">Phone:</span> {attempt.phone || "—"}
-              </div>
-              <div>
-                <span className="text-muted-foreground">Submitted:</span>{" "}
-                {attempt.submitted_at
-                  ? format(new Date(attempt.submitted_at), "d MMM yyyy HH:mm")
-                  : "—"}
-              </div>
-            </div>
-          </Card>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Card className="p-6">
-              <p className="text-xs text-muted-foreground uppercase">Test Score</p>
-              <p className="text-4xl font-bold mt-1">{scorePct}%</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {Number(attempt.total_score)} / {Number(attempt.max_score)} points
-              </p>
+          <div className="border-l pl-4">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Test Score</p>
+            <div className="flex items-baseline gap-2 mt-0.5">
+              <p className="text-2xl font-bold leading-none">{scorePct}%</p>
               {test && (
                 <Badge
-                  className="mt-2"
                   variant={scorePct >= test.pass_threshold ? "default" : "secondary"}
+                  className="text-[10px]"
                 >
-                  {scorePct >= test.pass_threshold ? "Passed" : "Below threshold"}
+                  {scorePct >= test.pass_threshold ? "Passed" : "Below"}
                 </Badge>
               )}
-            </Card>
-            <Card className="p-6">
-              <p className="text-xs text-muted-foreground uppercase">Integrity Score</p>
-              <p className="text-4xl font-bold mt-1">{calcIntegrityScore(events)}</p>
-              <p className="text-xs text-muted-foreground mt-1">Lower means more flags</p>
-            </Card>
-          </div>
-
-          <Card className="p-6">
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div>
-                <h2 className="font-semibold">Candidate stage</h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Move this candidate through the recruitment pipeline. The status reflects the outcome.
-                </p>
-                {currentStage && (
-                  <Badge
-                    className="mt-2"
-                    variant={currentStage === "rejected" ? "destructive" : "default"}
-                  >
-                    Current: {STAGE_META[currentStage].label}
-                  </Badge>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant={currentStage === "rejected" ? "destructive" : "outline"}
-                  size="sm"
-                  onClick={() => setPendingStage("rejected")}
-                  disabled={stageSaving}
-                >
-                  <ThumbsDown className="h-4 w-4 mr-2" />
-                  Reject
-                </Button>
-                <Button
-                  variant={currentStage === "interview" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setPendingStage("interview")}
-                  disabled={stageSaving}
-                >
-                  <CalendarCheck className="h-4 w-4 mr-2" />
-                  Invite to interview
-                </Button>
-                <Button
-                  variant={currentStage === "success" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setPendingStage("success")}
-                  disabled={stageSaving}
-                >
-                  <Trophy className="h-4 w-4 mr-2" />
-                  Mark as success
-                </Button>
-              </div>
             </div>
-          </Card>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              {Number(attempt.total_score)} / {Number(attempt.max_score)} pts
+            </p>
+          </div>
+          <div className="border-l pl-4">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Integrity</p>
+            <p className="text-2xl font-bold leading-none mt-0.5">{calcIntegrityScore(events)}</p>
+            <p className="text-[11px] text-muted-foreground mt-1">Lower = more flags</p>
+          </div>
+        </div>
+      </Card>
 
-          <Card className="p-6">
-            <h2 className="font-semibold mb-3">Anti-cheat timeline ({events.filter((e) => (INTEGRITY_PENALTIES[e.event_type] ?? 0) > 0).length})</h2>
+      {/* Two-column main grid: left detail, right CV */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="space-y-4">
+          <Card className="p-4">
+            <h2 className="font-semibold mb-2 text-sm">Anti-cheat timeline ({events.filter((e) => (INTEGRITY_PENALTIES[e.event_type] ?? 0) > 0).length})</h2>
             {events.filter((e) => (INTEGRITY_PENALTIES[e.event_type] ?? 0) > 0).length === 0 ? (
               <p className="text-sm text-muted-foreground">No flags raised. ✅</p>
             ) : (
