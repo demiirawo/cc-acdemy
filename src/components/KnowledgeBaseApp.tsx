@@ -686,6 +686,7 @@ export function KnowledgeBaseApp() {
       setBreadcrumbs([]);
       navigate('/view/schedule');
     } else if (item.id === 'recruitment') {
+      if (!isAdmin) return;
       setCurrentView('recruitment');
       setCurrentPage(null);
       setBreadcrumbs([]);
