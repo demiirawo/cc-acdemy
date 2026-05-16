@@ -14,9 +14,46 @@ import {
   ChevronRight,
   ChevronDown,
   Download,
+  ThumbsDown,
+  CalendarCheck,
+  Trophy,
 } from "lucide-react";
 import { format } from "date-fns";
 import { INTEGRITY_PENALTIES, calcIntegrityScore } from "./types";
+import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+
+type PipelineStage = "rejected" | "interview" | "success";
+
+const STAGE_META: Record<PipelineStage, { label: string; description: string; emails: boolean; tone: string }> = {
+  rejected: {
+    label: "Rejected",
+    description: "Sends a polite rejection email to the candidate.",
+    emails: true,
+    tone: "destructive",
+  },
+  interview: {
+    label: "Interview",
+    description: "Sends an email with the Google Calendar scheduling link for the interview.",
+    emails: true,
+    tone: "default",
+  },
+  success: {
+    label: "Success",
+    description: "Marks the candidate as successful. No email is sent.",
+    emails: false,
+    tone: "default",
+  },
+};
 
 interface Props {
   attemptId: string;
@@ -67,6 +104,41 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
   const [enlarged, setEnlarged] = useState<number | null>(null);
   const [siblings, setSiblings] = useState<string[]>([]);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
+  const [pendingStage, setPendingStage] = useState<PipelineStage | null>(null);
+  const [stageSaving, setStageSaving] = useState(false);
+  const { toast } = useToast();
+
+  const currentStage: PipelineStage | null =
+    attempt && ["rejected", "interview", "success"].includes(attempt.status)
+      ? (attempt.status as PipelineStage)
+      : null;
+
+  const applyStage = async (stage: PipelineStage) => {
+    setStageSaving(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("recruitment-set-stage", {
+        body: { attempt_id: attemptId, stage },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      setAttempt((a: any) => ({ ...a, status: stage }));
+      toast({
+        title: `Marked as ${STAGE_META[stage].label}`,
+        description: STAGE_META[stage].emails
+          ? "Status updated and email sent to the candidate."
+          : "Status updated.",
+      });
+      setPendingStage(null);
+    } catch (e: any) {
+      toast({
+        title: "Could not update stage",
+        description: e?.message ?? String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setStageSaving(false);
+    }
+  };
 
   // Main fetch
   useEffect(() => {
@@ -286,6 +358,54 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
           </div>
 
           <Card className="p-6">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <h2 className="font-semibold">Candidate stage</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Move this candidate through the recruitment pipeline. The status reflects the outcome.
+                </p>
+                {currentStage && (
+                  <Badge
+                    className="mt-2"
+                    variant={currentStage === "rejected" ? "destructive" : "default"}
+                  >
+                    Current: {STAGE_META[currentStage].label}
+                  </Badge>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant={currentStage === "rejected" ? "destructive" : "outline"}
+                  size="sm"
+                  onClick={() => setPendingStage("rejected")}
+                  disabled={stageSaving}
+                >
+                  <ThumbsDown className="h-4 w-4 mr-2" />
+                  Reject
+                </Button>
+                <Button
+                  variant={currentStage === "interview" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setPendingStage("interview")}
+                  disabled={stageSaving}
+                >
+                  <CalendarCheck className="h-4 w-4 mr-2" />
+                  Invite to interview
+                </Button>
+                <Button
+                  variant={currentStage === "success" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setPendingStage("success")}
+                  disabled={stageSaving}
+                >
+                  <Trophy className="h-4 w-4 mr-2" />
+                  Mark as success
+                </Button>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
             <h2 className="font-semibold mb-3">Anti-cheat timeline ({events.filter((e) => (INTEGRITY_PENALTIES[e.event_type] ?? 0) > 0).length})</h2>
             {events.filter((e) => (INTEGRITY_PENALTIES[e.event_type] ?? 0) > 0).length === 0 ? (
               <p className="text-sm text-muted-foreground">No flags raised. ✅</p>
@@ -501,6 +621,36 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
           </button>
         </div>
       )}
+
+      <AlertDialog open={pendingStage !== null} onOpenChange={(o) => !o && setPendingStage(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingStage ? `Mark ${attempt.candidate_name} as ${STAGE_META[pendingStage].label}?` : ""}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingStage ? STAGE_META[pendingStage].description : ""}
+              {pendingStage && STAGE_META[pendingStage].emails && (
+                <span className="block mt-2">
+                  Email will be sent to <strong>{attempt.email}</strong>.
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={stageSaving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={stageSaving}
+              onClick={(e) => {
+                e.preventDefault();
+                if (pendingStage) applyStage(pendingStage);
+              }}
+            >
+              {stageSaving ? "Saving…" : "Confirm"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

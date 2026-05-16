@@ -113,6 +113,23 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
     variant: "default" | "secondary" | "outline" | "destructive";
     className?: string;
   } => {
+    if (a.status === "rejected") {
+      return { label: "Rejected", variant: "destructive" };
+    }
+    if (a.status === "interview") {
+      return {
+        label: "Interview",
+        variant: "default",
+        className: "bg-blue-600 hover:bg-blue-600 text-white",
+      };
+    }
+    if (a.status === "success") {
+      return {
+        label: "Success",
+        variant: "default",
+        className: "bg-emerald-600 hover:bg-emerald-600 text-white",
+      };
+    }
     if (a.status === "submitted") {
       const answered = answerCounts[a.id] ?? 0;
       if (questionCount > 0 && answered >= questionCount) {
