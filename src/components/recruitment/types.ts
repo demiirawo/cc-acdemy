@@ -1,6 +1,6 @@
 export type QuestionType = "multiple_choice" | "multi_select" | "true_false";
 export type TestStatus = "draft" | "live" | "closed";
-export type AttemptStatus = "in_progress" | "submitted" | "abandoned";
+export type AttemptStatus = "in_progress" | "submitted" | "abandoned" | "rejected" | "interview" | "success";
 
 export interface RecruitmentTest {
   id: string;
