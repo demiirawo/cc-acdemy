@@ -485,9 +485,11 @@ export function ResultDetail({ attemptId, onBack, onNavigate }: Props) {
               </div>
             )}
           </Card>
+        </div>
 
-          <Card className="p-6">
-            <h2 className="font-semibold mb-3">Webcam snapshots ({snapshots.length})</h2>
+        <div className="space-y-4">
+          <Card className="p-4">
+            <h2 className="font-semibold mb-3 text-sm">Webcam snapshots ({snapshots.length})</h2>
             {snapshots.length === 0 ? (
               <p className="text-sm text-muted-foreground">No snapshots captured.</p>
             ) : (() => {
