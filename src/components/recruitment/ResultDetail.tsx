@@ -322,6 +322,25 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <Button
+            variant="outline"
+            size="sm"
+            disabled={!prevId}
+            onClick={() => prevId && onNavigate?.(prevId)}
+          >
+            <ChevronLeft className="h-4 w-4 mr-1" />
+            Prev
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!nextId}
+            onClick={() => nextId && onNavigate?.(nextId)}
+          >
+            Next
+            <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+          <div className="w-px h-6 bg-border mx-1" />
+          <Button
             variant={currentStage === "rejected" ? "destructive" : "outline"}
             size="sm"
             onClick={() => applyStage("rejected")}
@@ -347,25 +366,6 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
           >
             <Trophy className="h-4 w-4 mr-1.5" />
             Success
-          </Button>
-          <div className="w-px h-6 bg-border mx-1" />
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!prevId}
-            onClick={() => prevId && onNavigate?.(prevId)}
-          >
-            <ChevronLeft className="h-4 w-4 mr-1" />
-            Prev
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!nextId}
-            onClick={() => nextId && onNavigate?.(nextId)}
-          >
-            Next
-            <ChevronRight className="h-4 w-4 ml-1" />
           </Button>
         </div>
       </div>
