@@ -108,7 +108,6 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
   const [cvExpanded, setCvExpanded] = useState(false);
   const [siblings, setSiblings] = useState<string[]>([]);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
-  const [pendingStage, setPendingStage] = useState<PipelineStage | null>(null);
   const [stageSaving, setStageSaving] = useState(false);
   const { toast } = useToast();
 
