@@ -101,6 +101,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
   const [snapUrls, setSnapUrls] = useState<Record<string, string>>({});
   const [snapIdx, setSnapIdx] = useState(0);
   const [cvUrl, setCvUrl] = useState<string | null>(null);
+  const [cvSignedUrl, setCvSignedUrl] = useState<string | null>(null);
   const [cvError, setCvError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [enlarged, setEnlarged] = useState<number | null>(null);
@@ -225,15 +226,43 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
     };
   }, [snapshots]);
 
-  // CV signed URL
+  // CV signed URL — download as blob with correct MIME so Safari previews inline
   useEffect(() => {
     if (!attempt?.cv_path) return;
+    let revoked: string | null = null;
+    let cancelled = false;
     (async () => {
       const { data } = await supabase.storage
         .from("candidate-cvs")
         .createSignedUrl(attempt.cv_path, 3600);
-      if (data?.signedUrl) setCvUrl(data.signedUrl);
+      if (!data?.signedUrl || cancelled) return;
+      setCvSignedUrl(data.signedUrl);
+      try {
+        const res = await fetch(data.signedUrl);
+        const buf = await res.arrayBuffer();
+        const ext = (attempt.cv_path.split(".").pop() || "").toLowerCase();
+        const mime =
+          ext === "pdf" ? "application/pdf"
+          : ext === "doc" ? "application/msword"
+          : ext === "docx" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          : ext === "rtf" ? "application/rtf"
+          : ext === "odt" ? "application/vnd.oasis.opendocument.text"
+          : ext === "xls" ? "application/vnd.ms-excel"
+          : ext === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          : ext === "ppt" ? "application/vnd.ms-powerpoint"
+          : ext === "pptx" ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+          : res.headers.get("content-type") || "application/octet-stream";
+        const url = URL.createObjectURL(new Blob([buf], { type: mime }));
+        revoked = url;
+        if (!cancelled) setCvUrl(url);
+      } catch {
+        if (!cancelled) setCvUrl(data.signedUrl);
+      }
     })();
+    return () => {
+      cancelled = true;
+      if (revoked) URL.revokeObjectURL(revoked);
+    };
   }, [attempt?.cv_path]);
 
   // Lightbox keyboard navigation
@@ -545,10 +574,10 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
                 <FileText className="h-4 w-4" />
                 CV
               </h2>
-              {cvUrl && (
+              {(cvSignedUrl || cvUrl) && (
                 <div className="flex items-center gap-1">
                   <Button size="sm" variant="outline" asChild>
-                    <a href={cvUrl} target="_blank" rel="noreferrer">
+                    <a href={cvSignedUrl || cvUrl!} target="_blank" rel="noreferrer">
                       <ExternalLink className="h-3.5 w-3.5 mr-1" />
                       Open
                     </a>
@@ -558,7 +587,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
                     Expand
                   </Button>
                   <Button size="sm" variant="outline" asChild>
-                    <a href={cvUrl} download="cv.pdf">
+                    <a href={cvSignedUrl || cvUrl!} download="cv.pdf">
                       <Download className="h-3.5 w-3.5 mr-1" />
                       Download
                     </a>
@@ -580,8 +609,8 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
             ) : (
               <iframe
                 src={
-                  /\.(docx?|rtf|odt|pptx?|xlsx?)$/i.test(attempt.cv_path || "")
-                    ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(cvUrl)}`
+                  /\.(docx?|rtf|odt|pptx?|xlsx?)$/i.test(attempt.cv_path || "") && cvSignedUrl
+                    ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(cvSignedUrl)}`
                     : `${cvUrl}#toolbar=0&navpanes=0`
                 }
                 title="CV"
@@ -668,7 +697,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
             </h2>
             <div className="flex items-center gap-2">
               <Button size="sm" variant="outline" asChild>
-                <a href={cvUrl} target="_blank" rel="noreferrer">
+                <a href={cvSignedUrl || cvUrl} target="_blank" rel="noreferrer">
                   <ExternalLink className="h-3.5 w-3.5 mr-1" />
                   Open in new tab
                 </a>
@@ -681,8 +710,8 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
           </div>
           <iframe
             src={
-              /\.(docx?|rtf|odt|pptx?|xlsx?)$/i.test(attempt.cv_path || "")
-                ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(cvUrl)}`
+              /\.(docx?|rtf|odt|pptx?|xlsx?)$/i.test(attempt.cv_path || "") && cvSignedUrl
+                ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(cvSignedUrl)}`
                 : `${cvUrl}#toolbar=0&navpanes=0`
             }
             title="CV expanded"
