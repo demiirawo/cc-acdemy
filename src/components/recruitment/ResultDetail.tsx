@@ -344,7 +344,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
           <Button
             variant={currentStage === "interview" ? "default" : "outline"}
             size="sm"
-            onClick={() => setPendingStage("interview")}
+            onClick={() => applyStage("interview")}
             disabled={stageSaving}
           >
             <CalendarCheck className="h-4 w-4 mr-1.5" />
@@ -353,7 +353,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
           <Button
             variant={currentStage === "success" ? "default" : "outline"}
             size="sm"
-            onClick={() => setPendingStage("success")}
+            onClick={() => applyStage("success")}
             disabled={stageSaving}
           >
             <Trophy className="h-4 w-4 mr-1.5" />
