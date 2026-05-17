@@ -22,16 +22,6 @@ import {
 import { format } from "date-fns";
 import { INTEGRITY_PENALTIES, calcIntegrityScore } from "./types";
 import { useToast } from "@/hooks/use-toast";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 
 type PipelineStage = "rejected" | "interview" | "success";
 
@@ -108,7 +98,6 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
   const [cvExpanded, setCvExpanded] = useState(false);
   const [siblings, setSiblings] = useState<string[]>([]);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
-  const [pendingStage, setPendingStage] = useState<PipelineStage | null>(null);
   const [stageSaving, setStageSaving] = useState(false);
   const { toast } = useToast();
 
@@ -132,7 +121,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
           ? "Status updated and email sent to the candidate."
           : "Status updated.",
       });
-      setPendingStage(null);
+      
     } catch (e: any) {
       toast({
         title: "Could not update stage",
@@ -344,7 +333,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
           <Button
             variant={currentStage === "interview" ? "default" : "outline"}
             size="sm"
-            onClick={() => setPendingStage("interview")}
+            onClick={() => applyStage("interview")}
             disabled={stageSaving}
           >
             <CalendarCheck className="h-4 w-4 mr-1.5" />
@@ -353,7 +342,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
           <Button
             variant={currentStage === "success" ? "default" : "outline"}
             size="sm"
-            onClick={() => setPendingStage("success")}
+            onClick={() => applyStage("success")}
             disabled={stageSaving}
           >
             <Trophy className="h-4 w-4 mr-1.5" />
@@ -658,35 +647,6 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
         </div>
       )}
 
-      <AlertDialog open={pendingStage !== null} onOpenChange={(o) => !o && setPendingStage(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {pendingStage ? `Mark ${attempt.candidate_name} as ${STAGE_META[pendingStage].label}?` : ""}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingStage ? STAGE_META[pendingStage].description : ""}
-              {pendingStage && STAGE_META[pendingStage].emails && (
-                <span className="block mt-2">
-                  Email will be sent to <strong>{attempt.email}</strong>.
-                </span>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={stageSaving}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={stageSaving}
-              onClick={(e) => {
-                e.preventDefault();
-                if (pendingStage) applyStage(pendingStage);
-              }}
-            >
-              {stageSaving ? "Saving…" : "Confirm"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {cvExpanded && cvUrl && (
         <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col p-4">
