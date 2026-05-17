@@ -236,6 +236,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
         .from("candidate-cvs")
         .createSignedUrl(attempt.cv_path, 3600);
       if (!data?.signedUrl || cancelled) return;
+      setCvSignedUrl(data.signedUrl);
       try {
         const res = await fetch(data.signedUrl);
         const buf = await res.arrayBuffer();
