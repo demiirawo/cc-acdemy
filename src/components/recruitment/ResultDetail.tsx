@@ -22,16 +22,6 @@ import {
 import { format } from "date-fns";
 import { INTEGRITY_PENALTIES, calcIntegrityScore } from "./types";
 import { useToast } from "@/hooks/use-toast";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 
 type PipelineStage = "rejected" | "interview" | "success";
 
