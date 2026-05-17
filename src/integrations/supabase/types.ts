@@ -1083,6 +1083,39 @@ export type Database = {
         }
         Relationships: []
       }
+      pending_rejection_emails: {
+        Row: {
+          attempt_id: string
+          cancelled_at: string | null
+          candidate_name: string
+          created_at: string
+          email: string
+          id: string
+          send_after: string
+          sent_at: string | null
+        }
+        Insert: {
+          attempt_id: string
+          cancelled_at?: string | null
+          candidate_name: string
+          created_at?: string
+          email: string
+          id?: string
+          send_after: string
+          sent_at?: string | null
+        }
+        Update: {
+          attempt_id?: string
+          cancelled_at?: string | null
+          candidate_name?: string
+          created_at?: string
+          email?: string
+          id?: string
+          send_after?: string
+          sent_at?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
