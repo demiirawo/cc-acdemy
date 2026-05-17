@@ -609,8 +609,8 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
             ) : (
               <iframe
                 src={
-                  /\.(docx?|rtf|odt|pptx?|xlsx?)$/i.test(attempt.cv_path || "")
-                    ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(cvUrl)}`
+                  /\.(docx?|rtf|odt|pptx?|xlsx?)$/i.test(attempt.cv_path || "") && cvSignedUrl
+                    ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(cvSignedUrl)}`
                     : `${cvUrl}#toolbar=0&navpanes=0`
                 }
                 title="CV"
