@@ -101,6 +101,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
   const [snapUrls, setSnapUrls] = useState<Record<string, string>>({});
   const [snapIdx, setSnapIdx] = useState(0);
   const [cvUrl, setCvUrl] = useState<string | null>(null);
+  const [cvSignedUrl, setCvSignedUrl] = useState<string | null>(null);
   const [cvError, setCvError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [enlarged, setEnlarged] = useState<number | null>(null);
