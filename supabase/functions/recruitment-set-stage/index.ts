@@ -143,32 +143,52 @@ Deno.serve(async (req) => {
       metadata: { stage, by: userId },
     });
 
-    let emailResult: any = null;
-    if (stage !== "success") {
-      const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
-      const html =
-        stage === "rejected"
-          ? rejectionEmail(attempt.candidate_name)
-          : interviewEmail(attempt.candidate_name);
-      const subject =
-        stage === "rejected"
-          ? "Update on your Care Cuddle application"
-          : "Interview invitation — Care Cuddle Consultant role";
+    // Cancel any pending rejection emails when stage moves away from "rejected"
+    if (stage !== "rejected") {
+      await supabase
+        .from("pending_rejection_emails")
+        .update({ cancelled_at: new Date().toISOString() })
+        .eq("attempt_id", attemptId)
+        .is("sent_at", null)
+        .is("cancelled_at", null);
+    }
 
+    let emailResult: any = null;
+    let queued = false;
+
+    if (stage === "rejected") {
+      // Delay rejection by 12 hours — queue it instead of sending now
+      const sendAfter = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+      const { error: qErr } = await supabase
+        .from("pending_rejection_emails")
+        .insert({
+          attempt_id: attemptId,
+          candidate_name: attempt.candidate_name,
+          email: attempt.email,
+          send_after: sendAfter,
+        });
+      if (qErr) {
+        emailResult = { error: qErr.message };
+      } else {
+        queued = true;
+        emailResult = { queued: true, send_after: sendAfter };
+      }
+    } else if (stage === "interview") {
+      const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
       try {
         emailResult = await resend.emails.send({
           from: FROM,
           to: [attempt.email],
-          cc: stage === "interview" ? ["demi.irawo@care-cuddle.co.uk"] : undefined,
-          subject,
-          html,
+          cc: ["demi.irawo@care-cuddle.co.uk"],
+          subject: "Interview invitation — Care Cuddle Consultant role",
+          html: interviewEmail(attempt.candidate_name),
         });
       } catch (e: any) {
         emailResult = { error: e?.message ?? String(e) };
       }
     }
 
-    return new Response(JSON.stringify({ ok: true, stage, emailResult }), {
+    return new Response(JSON.stringify({ ok: true, stage, queued, emailResult }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e: any) {
