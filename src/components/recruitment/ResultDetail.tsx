@@ -657,35 +657,6 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
         </div>
       )}
 
-      <AlertDialog open={pendingStage !== null} onOpenChange={(o) => !o && setPendingStage(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {pendingStage ? `Mark ${attempt.candidate_name} as ${STAGE_META[pendingStage].label}?` : ""}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingStage ? STAGE_META[pendingStage].description : ""}
-              {pendingStage && STAGE_META[pendingStage].emails && (
-                <span className="block mt-2">
-                  Email will be sent to <strong>{attempt.email}</strong>.
-                </span>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={stageSaving}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={stageSaving}
-              onClick={(e) => {
-                e.preventDefault();
-                if (pendingStage) applyStage(pendingStage);
-              }}
-            >
-              {stageSaving ? "Saving…" : "Confirm"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {cvExpanded && cvUrl && (
         <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur-sm flex flex-col p-4">
