@@ -225,15 +225,42 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
     };
   }, [snapshots]);
 
-  // CV signed URL
+  // CV signed URL — download as blob with correct MIME so Safari previews inline
   useEffect(() => {
     if (!attempt?.cv_path) return;
+    let revoked: string | null = null;
+    let cancelled = false;
     (async () => {
       const { data } = await supabase.storage
         .from("candidate-cvs")
         .createSignedUrl(attempt.cv_path, 3600);
-      if (data?.signedUrl) setCvUrl(data.signedUrl);
+      if (!data?.signedUrl || cancelled) return;
+      try {
+        const res = await fetch(data.signedUrl);
+        const buf = await res.arrayBuffer();
+        const ext = (attempt.cv_path.split(".").pop() || "").toLowerCase();
+        const mime =
+          ext === "pdf" ? "application/pdf"
+          : ext === "doc" ? "application/msword"
+          : ext === "docx" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          : ext === "rtf" ? "application/rtf"
+          : ext === "odt" ? "application/vnd.oasis.opendocument.text"
+          : ext === "xls" ? "application/vnd.ms-excel"
+          : ext === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          : ext === "ppt" ? "application/vnd.ms-powerpoint"
+          : ext === "pptx" ? "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+          : res.headers.get("content-type") || "application/octet-stream";
+        const url = URL.createObjectURL(new Blob([buf], { type: mime }));
+        revoked = url;
+        if (!cancelled) setCvUrl(url);
+      } catch {
+        if (!cancelled) setCvUrl(data.signedUrl);
+      }
     })();
+    return () => {
+      cancelled = true;
+      if (revoked) URL.revokeObjectURL(revoked);
+    };
   }, [attempt?.cv_path]);
 
   // Lightbox keyboard navigation
