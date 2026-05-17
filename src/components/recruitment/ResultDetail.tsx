@@ -579,9 +579,13 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
               </div>
             ) : (
               <iframe
-                src={`${cvUrl}#toolbar=0&navpanes=0`}
+                src={
+                  /\.(docx?|rtf|odt|pptx?|xlsx?)$/i.test(attempt.cv_path || "")
+                    ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(cvUrl)}`
+                    : `${cvUrl}#toolbar=0&navpanes=0`
+                }
                 title="CV"
-                className="w-full h-[640px] border rounded"
+                className="w-full h-[640px] border rounded bg-white"
                 onError={() => setCvError(true)}
               />
             )}
@@ -676,7 +680,11 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
             </div>
           </div>
           <iframe
-            src={`${cvUrl}#toolbar=0&navpanes=0`}
+            src={
+              /\.(docx?|rtf|odt|pptx?|xlsx?)$/i.test(attempt.cv_path || "")
+                ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(cvUrl)}`
+                : `${cvUrl}#toolbar=0&navpanes=0`
+            }
             title="CV expanded"
             className="flex-1 w-full border rounded bg-white"
           />
