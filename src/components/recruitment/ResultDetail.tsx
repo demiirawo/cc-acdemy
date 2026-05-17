@@ -697,7 +697,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
             </h2>
             <div className="flex items-center gap-2">
               <Button size="sm" variant="outline" asChild>
-                <a href={cvUrl} target="_blank" rel="noreferrer">
+                <a href={cvSignedUrl || cvUrl} target="_blank" rel="noreferrer">
                   <ExternalLink className="h-3.5 w-3.5 mr-1" />
                   Open in new tab
                 </a>
@@ -710,8 +710,8 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
           </div>
           <iframe
             src={
-              /\.(docx?|rtf|odt|pptx?|xlsx?)$/i.test(attempt.cv_path || "")
-                ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(cvUrl)}`
+              /\.(docx?|rtf|odt|pptx?|xlsx?)$/i.test(attempt.cv_path || "") && cvSignedUrl
+                ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(cvSignedUrl)}`
                 : `${cvUrl}#toolbar=0&navpanes=0`
             }
             title="CV expanded"
