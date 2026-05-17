@@ -574,10 +574,10 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
                 <FileText className="h-4 w-4" />
                 CV
               </h2>
-              {cvUrl && (
+              {(cvSignedUrl || cvUrl) && (
                 <div className="flex items-center gap-1">
                   <Button size="sm" variant="outline" asChild>
-                    <a href={cvUrl} target="_blank" rel="noreferrer">
+                    <a href={cvSignedUrl || cvUrl!} target="_blank" rel="noreferrer">
                       <ExternalLink className="h-3.5 w-3.5 mr-1" />
                       Open
                     </a>
@@ -587,7 +587,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
                     Expand
                   </Button>
                   <Button size="sm" variant="outline" asChild>
-                    <a href={cvUrl} download="cv.pdf">
+                    <a href={cvSignedUrl || cvUrl!} download="cv.pdf">
                       <Download className="h-3.5 w-3.5 mr-1" />
                       Download
                     </a>
