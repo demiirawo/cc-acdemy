@@ -131,7 +131,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
           ? "Status updated and email sent to the candidate."
           : "Status updated.",
       });
-      setPendingStage(null);
+      
     } catch (e: any) {
       toast({
         title: "Could not update stage",
