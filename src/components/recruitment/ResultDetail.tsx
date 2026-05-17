@@ -335,7 +335,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
           <Button
             variant={currentStage === "rejected" ? "destructive" : "outline"}
             size="sm"
-            onClick={() => setPendingStage("rejected")}
+            onClick={() => applyStage("rejected")}
             disabled={stageSaving}
           >
             <ThumbsDown className="h-4 w-4 mr-1.5" />
