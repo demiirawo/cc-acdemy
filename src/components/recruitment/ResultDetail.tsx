@@ -509,6 +509,12 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
               </div>
             )}
           </Card>
+
+          <NotesCard
+            attemptId={attemptId}
+            initialNotes={attempt.admin_notes ?? ""}
+            onSaved={(v) => setAttempt((a: any) => ({ ...a, admin_notes: v }))}
+          />
         </div>
 
         <div className="space-y-4">
