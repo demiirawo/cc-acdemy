@@ -689,3 +689,56 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
     </div>
   );
 }
+
+function NotesCard({
+  attemptId,
+  initialNotes,
+  onSaved,
+}: {
+  attemptId: string;
+  initialNotes: string;
+  onSaved: (v: string) => void;
+}) {
+  const [value, setValue] = useState(initialNotes);
+  const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    setValue(initialNotes);
+  }, [initialNotes, attemptId]);
+
+  const dirty = value !== initialNotes;
+
+  const save = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from("recruitment_attempts")
+      .update({ admin_notes: value })
+      .eq("id", attemptId);
+    setSaving(false);
+    if (error) {
+      toast({ title: "Could not save notes", description: error.message, variant: "destructive" });
+      return;
+    }
+    onSaved(value);
+    toast({ title: "Notes saved" });
+  };
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="font-semibold text-sm">Candidate notes</h2>
+        <Button size="sm" onClick={save} disabled={!dirty || saving}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+      <Textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="Add notes about this candidate — interview impressions, follow-ups, decisions…"
+        className="min-h-[140px] text-sm"
+      />
+    </Card>
+  );
+}
+
