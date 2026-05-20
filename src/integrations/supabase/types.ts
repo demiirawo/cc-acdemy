@@ -1437,6 +1437,7 @@ export type Database = {
       }
       recruitment_attempts: {
         Row: {
+          admin_notes: string | null
           candidate_name: string
           created_at: string
           cv_path: string | null
@@ -1454,6 +1455,7 @@ export type Database = {
           user_agent: string | null
         }
         Insert: {
+          admin_notes?: string | null
           candidate_name: string
           created_at?: string
           cv_path?: string | null
@@ -1471,6 +1473,7 @@ export type Database = {
           user_agent?: string | null
         }
         Update: {
+          admin_notes?: string | null
           candidate_name?: string
           created_at?: string
           cv_path?: string | null
