@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
+import { Textarea } from "@/components/ui/textarea";
 import {
   ArrowLeft,
   Check,
@@ -509,6 +510,12 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
               </div>
             )}
           </Card>
+
+          <NotesCard
+            attemptId={attemptId}
+            initialNotes={attempt.admin_notes ?? ""}
+            onSaved={(v) => setAttempt((a: any) => ({ ...a, admin_notes: v }))}
+          />
         </div>
 
         <div className="space-y-4">
@@ -682,3 +689,56 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
     </div>
   );
 }
+
+function NotesCard({
+  attemptId,
+  initialNotes,
+  onSaved,
+}: {
+  attemptId: string;
+  initialNotes: string;
+  onSaved: (v: string) => void;
+}) {
+  const [value, setValue] = useState(initialNotes);
+  const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    setValue(initialNotes);
+  }, [initialNotes, attemptId]);
+
+  const dirty = value !== initialNotes;
+
+  const save = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from("recruitment_attempts")
+      .update({ admin_notes: value })
+      .eq("id", attemptId);
+    setSaving(false);
+    if (error) {
+      toast({ title: "Could not save notes", description: error.message, variant: "destructive" });
+      return;
+    }
+    onSaved(value);
+    toast({ title: "Notes saved" });
+  };
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="font-semibold text-sm">Candidate notes</h2>
+        <Button size="sm" onClick={save} disabled={!dirty || saving}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+      <Textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder="Add notes about this candidate — interview impressions, follow-ups, decisions…"
+        className="min-h-[140px] text-sm"
+      />
+    </Card>
+  );
+}
+
