@@ -125,18 +125,29 @@ export function WhiteboardCanvas() {
     if (!canvas) return;
     skipHistoryRef.current = true;
     try {
-      await new Promise<void>((resolve) => {
-        canvas.loadFromJSON(JSON.parse(snapshot), () => {
-          canvas.renderAll();
-          resolve();
-        });
+      canvas.discardActiveObject();
+      // Fabric v6: loadFromJSON returns a Promise. The 2nd arg is a reviver,
+      // NOT a "done" callback — the previous version resolved too early and
+      // let trailing object:added events pollute the history.
+      await canvas.loadFromJSON(JSON.parse(snapshot));
+      // Re-apply current tool's lock state to restored objects.
+      const tool = activeToolRef.current;
+      canvas.forEachObject((o: FabricObject) => {
+        const locked = tool !== "select";
+        o.selectable = !locked;
+        o.evented = tool === "select" || tool === "eraser";
       });
+      canvas.renderAll();
+      // Defer clearing the flag past the current microtask so any trailing
+      // events from loading don't get recorded as new history entries.
+      await new Promise<void>((r) => setTimeout(r, 0));
     } finally {
       skipHistoryRef.current = false;
     }
   }, []);
 
   const undo = useCallback(async () => {
+    if (skipHistoryRef.current) return;
     if (historyIndexRef.current <= 0) return;
     historyIndexRef.current -= 1;
     await loadFromSnapshot(historyRef.current[historyIndexRef.current]);
@@ -145,6 +156,7 @@ export function WhiteboardCanvas() {
   }, [loadFromSnapshot, scheduleSave]);
 
   const redo = useCallback(async () => {
+    if (skipHistoryRef.current) return;
     if (historyIndexRef.current >= historyRef.current.length - 1) return;
     historyIndexRef.current += 1;
     await loadFromSnapshot(historyRef.current[historyIndexRef.current]);
