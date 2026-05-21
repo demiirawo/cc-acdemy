@@ -1,110 +1,64 @@
-## Why this needs another pass
+## Whiteboard improvements
 
-Database snapshot from right now:
+The current `WhiteboardCanvas` has several reliability and usability issues. The plan below fixes them while keeping the same visual toolbar layout so it still feels familiar.
 
-- 2 most recent attempts → both `status: in_progress`, `total_score 0`, `max_score 0`, `cv_path NULL`
-- `recruitment_answers`, `recruitment_events`, `recruitment_snapshots` → **0 rows total, ever**
+### Problems in the current implementation
 
-So no candidate has ever made it past question 1, no event has ever been logged, no snapshot has ever been saved, and no CV has been linked to an attempt. The earlier RLS migration unblocked the policies, but several independent bugs in `CandidateApplyPage.tsx` and the result screens still prevent anything from being captured or shown. This plan fixes them all and adds real diagnostics so silent failures stop happening.
+1. **Loses work on resize.** The canvas is recreated whenever the container size changes (the init effect depends on `canvasSize`), so any drawing disappears when the window resizes or the sidebar toggles.
+2. **No persistence.** Reloading the page wipes the board. Nothing is saved per user or shared.
+3. **No undo / redo.** No way to recover from a mistake.
+4. **No delete / keyboard shortcuts.** Selected objects can't be removed with Delete/Backspace; no Ctrl+Z, Ctrl+C/V, Ctrl+A.
+5. **No pan or zoom.** Large drawings are unusable.
+6. **No eraser.** Only "Clear all" exists.
+7. **Shape tool UX bug.** Clicking Rectangle/Circle/Text/Line sets `activeTool` to that shape and adds one shape, but the tool then stays "stuck" in a non-select, non-draw mode where nothing else works until you click Select.
+8. **No image support.** Can't paste or drop images onto the board.
+9. **Brush size only visible in draw mode** and there's no stroke width control for shapes.
+10. **Download only supports PNG** and uses the on-screen size, not a clean export.
 
-## Scope (only what you flagged)
+### What I'll build
 
-- Webcam preview + periodic snapshots
-- Anti‑cheat detection + integrity score
-- Admin tooling: Results Dashboard + Result Detail (CV preview, snapshot gallery, scores)
+**Reliability**
+- Initialise the Fabric canvas **once** and use `canvas.setDimensions()` on container resize via `ResizeObserver`, preserving all objects.
+- Wrap Fabric operations in a small `useWhiteboard` hook so state, history and persistence live in one place.
+- Debounced autosave to Supabase (`whiteboard_boards` table, one row per user, JSON of `canvas.toJSON()`); restore on mount.
+- Loading + "Saved · just now" status indicator so users know their work is safe.
 
-I will **not** touch the Test Builder UI, the rich text editor, or any unrelated area. Scoring logic stays as-is (correct answer = full weight, wrong = 0); only the persistence path is fixed.
+**Editing**
+- Undo / redo stack (cap ~50 steps) wired to toolbar buttons and Ctrl+Z / Ctrl+Shift+Z.
+- Delete / Backspace removes the active selection; Ctrl+A selects all; Ctrl+C / Ctrl+V duplicates.
+- Eraser tool (object eraser: click to remove; for free-drawn strokes uses Fabric's `EraserBrush`).
+- Shape tools no longer leave the canvas in a dead mode — after inserting a shape, tool auto-returns to Select.
+- Stroke width slider applies to both brush and newly drawn shapes; fill toggle for shapes.
 
----
+**Navigation**
+- Pan (Space + drag, or middle-mouse) and zoom (wheel + Ctrl, plus +/- buttons and "Fit to screen").
+- Zoom percentage displayed in the toolbar.
 
-## 1. Candidate page — webcam + snapshots
+**Content**
+- Paste image from clipboard and drag-and-drop image files onto the canvas.
+- Export as PNG or SVG at a fixed export resolution (independent of viewport).
 
-Problem: the `<video>` element only mounts inside the `stage === "test"` branch, but `requestAccess()` tries to attach the stream **while still on the `permissions` stage**, so `videoRef.current` is `null`, the stream never renders, and `takeSnapshot` later sees `videoWidth === 0` and bails out forever.
+**Visual polish**
+- Move toolbar into a single sticky bar using existing shadcn tokens (no raw colour classes), grouped: Tools · Colour · Stroke · Zoom · History · File.
+- Keep the existing colour palette and overall layout so users recognise it.
 
-Fix:
-- Render the `<video>` element once at the top of the component (visually shown only during the test stage), so the ref exists before we request the camera.
-- After `getUserMedia` resolves, attach the stream and `await` `loadedmetadata` before moving to `stage: "test"`. Toast + abort if the user denies access.
-- In `takeSnapshot`, wait for `videoWidth > 0` with a short retry loop instead of giving up immediately. Use a fixed 320×240 canvas to avoid huge JPEGs.
-- Run the first snapshot from a `loadedmetadata` callback, not a 3 s timeout, then continue every 15 s.
-- Surface upload/insert errors as a one‑time toast + `console.error` (not `console.warn`) so failures are visible.
+### Technical details
 
-## 2. Candidate page — anti‑cheat + integrity
+- File: refactor `src/components/WhiteboardCanvas.tsx`; extract `src/hooks/useWhiteboard.ts` for canvas/history/persistence logic; small `WhiteboardToolbar.tsx` for the toolbar.
+- Fabric: keep dynamic `import('fabric')` to avoid SSR/init issues; init once with a ref guard.
+- Resize: `ResizeObserver` on the container → `canvas.setDimensions({width,height})` + `canvas.renderAll()`. No re-instantiation.
+- History: listen to `object:added`, `object:modified`, `object:removed`, `path:created`; push `canvas.toJSON()` snapshots, throttled.
+- Persistence:
+  - New migration adding `public.whiteboard_boards` ( `user_id uuid pk references auth.users`, `data jsonb`, `updated_at timestamptz` ) with RLS so each user can only read/write their own row.
+  - Debounced (1.5s) `upsert` after history changes.
+  - On mount, `select` row → `canvas.loadFromJSON()` before enabling autosave.
+- Keyboard: a single `useEffect` attaches listeners scoped to when the whiteboard view is active and the canvas isn't in text editing mode.
+- Export: render to an offscreen `StaticCanvas` at chosen multiplier so exports aren't tied to viewport size.
 
-Problem: penalties are computed but never written back to the attempt row, so the dashboard always shows integrity 100 even when events fire. Also `mouseout` on `documentElement` fires constantly while moving between child elements, producing false positives that get throttled away — net result feels like “nothing is detected”.
+### Out of scope (flagging for confirmation)
 
-Fix:
-- Replace the `documentElement.mouseout` listener with `document.addEventListener("mouseleave", …)` on `document` (fires only when the cursor actually leaves the viewport). Keep the 2.5 s throttle.
-- After each `logEvent`, also `update recruitment_attempts.integrity_score` so the live value persists (debounced to 1/s). Today integrity is only written in `finalize()`, which never runs for abandoned attempts.
-- Always log a `started` event the moment the attempt is created so the dashboard can show “began but never finished”.
-- Log a `submitted` event in `finalize()`.
+- **Multi-user realtime collaboration** (cursors, shared board). This is a much bigger build (CRDT or Supabase Realtime broadcast); happy to plan separately if you want it.
+- **Per-page whiteboards / multiple boards per user.** Current scope is one personal board per user, matching today's single `/view/whiteboard` route.
+- No changes to the rich text editor.
 
-## 3. Candidate page — score + finalise
-
-Problem: `handleAdvance` is referenced by the `setInterval` timer via stale closure (`qIndex`/`selected` captured at effect mount), so the auto‑advance on timeout inserts the wrong question’s answer. Also `finalize` is only called on the last question; if the candidate closes the tab on Q3 of 5, the attempt stays `in_progress` forever with no answers visible.
-
-Fix:
-- Move `handleAdvance` into a `useRef` updated on every render, and have the timer call `advanceRef.current()`. This kills the stale‑closure bug.
-- Add a `beforeunload` / `visibilitychange(hidden + pagehide)` handler that calls a lightweight `finalize({ partial: true })` using `navigator.sendBeacon` against a tiny edge function (`recruitment-finalize`) so partial attempts get a real submitted_at + computed score even when the candidate bails.
-- Edge function path is needed because the anon client cannot reliably fire-and-forget on unload.
-
-## 4. Candidate page — CV upload
-
-Problem: CV upload happens **after** the attempt insert; if the upload fails (large file, network, CORS) we silently skip and `cv_path` stays NULL — which is exactly what both existing rows show.
-
-Fix:
-- Upload the CV first (to a temp path keyed by a generated UUID), then insert the attempt with `cv_path` already set. If upload fails, show a destructive toast and keep the user on the form — no orphaned attempt rows.
-- Display the chosen filename + size under the file input so the user knows it’s attached.
-
-## 5. Results Dashboard
-
-Problem: the table only shows `status` and a percentage, with no way to tell apart “submitted but failed”, “in progress”, “abandoned”, or “score still 0 because no answers”. The “Open” button next to each row is decorative — only the row click works.
-
-Fix:
-- Compute `max_score` as a fallback from the test’s questions when the row’s `max_score` is 0 (handles in‑progress rows so % isn’t a nonsense 0%).
-- Replace the “—” for in‑progress with a clearer status pill: **In progress**, **Abandoned** (started >30 min ago, never submitted), **Submitted**, **Closed**.
-- Make the right‑side icon button actually navigate (`onOpen(a.id)`) and stop event‑propagating from the delete dialog.
-- Add a “Refresh” button + auto‑refetch every 30 s while the page is open so new submissions appear without a manual reload.
-
-## 6. Result Detail
-
-Problem: CV preview uses `<object data=...>` which silently fails in Chrome when the signed URL’s `Content-Disposition` is `attachment` (Supabase default) — that’s why the inline preview is blank. Snapshot gallery shows nothing because no snapshots exist yet, but once #1 is fixed it also has a layout bug where `snapUrls[s.id]` may not be ready before render.
-
-Fix:
-- For the CV: request a signed URL with `download: false` and add `?download=` removal; render in `<iframe src={cvUrl + "#toolbar=0"}>` with an explicit `Open in new tab` and `Download` button. Fall back to a “Preview unavailable, open in new tab” card if the iframe `onError` fires.
-- For snapshots: load signed URLs in a `useEffect` separate from the main fetch so they stream in; show a small skeleton while loading. Click → lightbox (already there) with prev/next arrow keys.
-- Add an **Events timeline** card (we already fetch `events`) listing each anti‑cheat event with timestamp + penalty so the integrity score is explainable.
-- Keep the prev/next attempt navigation that’s already there; have it preserve the sort order from the dashboard.
-
-## 7. Diagnostics
-
-- Wrap every Supabase call in the candidate page with try/catch + `console.error` and a one‑shot toast keyed by error type, so the next time something silently fails you see it immediately.
-- Add a `recruitment_events` row of type `client_error` with the error message in metadata whenever an insert/upload fails — visible in the result detail timeline.
-
----
-
-## Files I expect to change
-
-- `src/components/recruitment/CandidateApplyPage.tsx` — sections 1–4, 7
-- `src/components/recruitment/ResultsDashboard.tsx` — section 5
-- `src/components/recruitment/ResultDetail.tsx` — section 6
-- `src/components/recruitment/types.ts` — add `client_error` to penalty map (= 0)
-- New edge function `supabase/functions/recruitment-finalize/index.ts` — section 3 (partial finalise on unload)
-- Supabase migration: none required — schema already supports everything.
-
-## Out of scope (will not touch)
-
-- Test Builder UI/UX
-- Rich text editor
-- Scoring algorithm (still binary correct-or-not × weight)
-- Authentication / RLS (already correct after the prior migration)
-- Mobile candidate experience (still blocked)
-
-## How we’ll verify
-
-After implementation, run a fresh attempt end‑to‑end on the public link:
-1. Webcam tile appears bottom‑right during the test.
-2. After ~15 s a row appears in `recruitment_snapshots`; thumbnail visible in Result Detail.
-3. Switching tabs / right‑clicking decrements the live integrity score and creates a `recruitment_events` row.
-4. Answering both questions correctly produces `total_score = max_score` and a `submitted` row in the dashboard.
-5. CV uploaded on the form is downloadable + previewable from Result Detail.
-6. Closing the tab mid‑test marks the attempt as `submitted` (partial) within a few seconds.
+Confirm and I'll implement; let me know if you want realtime collaboration or multiple boards included.
