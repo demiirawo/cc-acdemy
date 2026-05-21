@@ -271,13 +271,13 @@ export function WhiteboardCanvas() {
           .maybeSingle();
         if (!error && data?.data && Object.keys(data.data).length > 0) {
           skipHistoryRef.current = true;
-          await new Promise<void>((resolve) => {
-            canvas!.loadFromJSON(data.data as any, () => {
-              canvas!.renderAll();
-              resolve();
-            });
-          });
-          skipHistoryRef.current = false;
+          try {
+            await canvas!.loadFromJSON(data.data as any);
+            canvas!.renderAll();
+            await new Promise<void>((r) => setTimeout(r, 0));
+          } finally {
+            skipHistoryRef.current = false;
+          }
         }
       }
 
