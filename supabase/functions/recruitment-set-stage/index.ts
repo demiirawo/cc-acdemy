@@ -52,12 +52,12 @@ const interviewEmail = (name: string) =>
     "You've been shortlisted for an interview",
     `<p>Dear ${name},</p>
      <p>I hope this message finds you well.</p>
-     <p>We are pleased to inform you that you have been shortlisted for an initial interview for the Consultant role at Care Cuddle. We were impressed with your qualifications and experience and are excited to learn more about your potential fit with our team.</p>
+     <p>We are pleased to inform you that you have been shortlisted for an initial interview for the Administrator role at Care Cuddle. We were impressed with your qualifications and experience and are excited to learn more about your potential fit with our team.</p>
      <p>Please use the following link to schedule your interview at a convenient time:</p>
      <p style="text-align:center;margin:24px 0;">
        <a href="${INTERVIEW_LINK}" style="display:inline-block;background:${BRAND_COLOR};color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600;">Schedule your interview</a>
      </p>
-     <p>The interview will be conducted via Google Meet, where we will discuss your background, the Consultant role, and how you can contribute to our mission at Care Cuddle.</p>
+     <p>The interview will be conducted via Google Meet, where we will discuss your background, the Administrator role, and how you can contribute to our mission at Care Cuddle.</p>
      <p>If you have any questions or need further assistance, please do not hesitate to reach out to me directly.</p>
      <p>We look forward to speaking with you soon.</p>
      <p>Kind regards,<br/>The Care Cuddle Team</p>`,
@@ -180,7 +180,7 @@ Deno.serve(async (req) => {
           from: FROM,
           to: [attempt.email],
           cc: ["demi.irawo@care-cuddle.co.uk"],
-          subject: "Interview invitation — Care Cuddle Consultant role",
+          subject: "Interview invitation — Care Cuddle Administrator role",
           html: interviewEmail(attempt.candidate_name),
         });
       } catch (e: any) {
