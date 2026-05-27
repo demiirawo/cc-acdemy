@@ -33,11 +33,15 @@ const BRAND_PURPLE: [number, number, number] = [95, 23, 235]; // #5F17EB
 
 const currencySymbol = (c: string) => {
   switch ((c || "GBP").toUpperCase()) {
-    case "NGN": return "\u20A6"; // ₦
+    // jsPDF's built-in Helvetica uses WinAnsi encoding which does NOT include
+    // the Naira (₦) glyph. Using the unicode symbol renders as a broken "¦"
+    // character with the wrong width, which throws off right-alignment.
+    // Use the ISO code as a safe textual prefix instead.
+    case "NGN": return "NGN";
     case "GBP": return "\u00A3"; // £
     case "USD": return "$";
     case "EUR": return "\u20AC"; // €
-    default: return c + " ";
+    default: return c;
   }
 };
 
@@ -47,8 +51,11 @@ const formatMoney = (amount: number, currency: string) => {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount);
-  return `${sym} ${formatted}`;
+  // Multi-character codes (e.g. "NGN") get a space separator; single-glyph
+  // symbols sit flush against the number.
+  return sym.length > 1 ? `${sym} ${formatted}` : `${sym}${formatted}`;
 };
+
 
 async function loadImageAsDataUrl(url: string): Promise<string | null> {
   try {
