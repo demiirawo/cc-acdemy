@@ -2581,28 +2581,53 @@ export function StaffPayManager() {
                           variant="default"
                           size="sm"
                           className="w-full"
-                          onClick={() => setInvoiceDialog({
-                            open: true,
-                            staffUserId: staff.userId,
-                            staffName: staff.displayName,
-                            staffEmail: staff.email,
-                            amount: staff.totalPay,
-                            currency: staff.currency,
-                          })}
+                          disabled={quickInvoiceBusy === staff.userId}
+                          onClick={() => handleQuickInvoiceDownload(staff)}
                         >
                           <FileBadge className="h-4 w-4 mr-1.5" />
-                          Invoice
+                          {quickInvoiceBusy === staff.userId ? 'Generating…' : 'Invoice'}
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full"
-                          onClick={() => handleOpenAdjustmentDialog(staff)}
-                        >
-                          <Edit2 className="h-4 w-4 mr-1.5" />
-                          Edit
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="w-full">
+                              <Edit2 className="h-4 w-4 mr-1.5" />
+                              Edit
+                              <ChevronDown className="h-3 w-3 ml-1 opacity-70" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuItem onClick={() => handleOpenAdjustmentDialog(staff)}>
+                              <Edit2 className="h-4 w-4 mr-2" />
+                              Edit pay adjustments
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => setDescDialog({
+                                open: true,
+                                userId: staff.userId,
+                                name: staff.displayName,
+                                value: invoiceDescriptions[staff.userId] || `Remote support service - ${format(selectedMonth, "MMMM yyyy")}`,
+                              })}
+                            >
+                              <FileText className="h-4 w-4 mr-2" />
+                              Edit invoice description
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => setInvoiceDialog({
+                                open: true,
+                                staffUserId: staff.userId,
+                                staffName: staff.displayName,
+                                staffEmail: staff.email,
+                                amount: staff.totalPay,
+                                currency: staff.currency,
+                              })}
+                            >
+                              <FileBadge className="h-4 w-4 mr-2" />
+                              Open invoice dialog
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
+
                     </CardContent>
                   </Card>
                 );
