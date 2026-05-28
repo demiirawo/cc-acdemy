@@ -562,8 +562,13 @@ export function StaffRequestForm() {
             .map(s => `${format(s.date, "dd MMM yyyy")} ${s.startTime}-${s.endTime} (${s.clientName})`)
             .join("; ");
           requestDetails = details ? `${details}\n\nShifts: ${shiftDetails}` : `Shifts: ${shiftDetails}`;
-          requestStartDate = swapStartDate;
-          requestEndDate = swapEndDate;
+          // Derive request date range from the actually selected shifts so the request
+          // doesn't claim coverage on days that weren't selected.
+          const sortedShiftDates = selectedShiftObjects
+            .map(s => s.date)
+            .sort((a, b) => a.getTime() - b.getTime());
+          requestStartDate = sortedShiftDates[0] ?? swapStartDate;
+          requestEndDate = sortedShiftDates[sortedShiftDates.length - 1] ?? swapEndDate;
           // Count unique calendar days, not individual shifts (multiple shifts on same day = 1 day)
           const uniqueDays = new Set(selectedShiftObjects.map(s => format(s.date, "yyyy-MM-dd")));
           requestDays = uniqueDays.size;
