@@ -2054,8 +2054,8 @@ export function StaffPayManager() {
         </CardContent>
       </Card>
 
-      {/* Payroll Table */}
-      <Card className="overflow-hidden">
+      {/* Payroll Table — desktop only */}
+      <Card className="overflow-hidden hidden md:block">
         <CardHeader className="bg-muted/40 border-b">
           <CardTitle className="text-lg">Staff Payroll Summary</CardTitle>
           <CardDescription>
