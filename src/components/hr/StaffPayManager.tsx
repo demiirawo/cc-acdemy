@@ -18,6 +18,8 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat, FileBadge, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { downloadInvoicePdf, type InvoiceData } from "@/lib/invoice/generatePdf";
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO, eachDayOfInterval } from "date-fns";
 import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 
@@ -168,6 +170,9 @@ export function StaffPayManager() {
     amount: number;
     currency: string;
   } | null>(null);
+  const [invoiceDescriptions, setInvoiceDescriptions] = useState<Record<string, string>>({});
+  const [descDialog, setDescDialog] = useState<{ open: boolean; userId: string; name: string; value: string } | null>(null);
+  const [quickInvoiceBusy, setQuickInvoiceBusy] = useState<string | null>(null);
   const [exchangeRates, setExchangeRates] = useState<ExchangeRates>(FALLBACK_RATES);
   const [manualRates, setManualRates] = useState<ExchangeRates>({});
   const [ratesDate, setRatesDate] = useState<string | null>(null);
@@ -1502,6 +1507,73 @@ export function StaffPayManager() {
     return RECORD_TYPES.find(t => t.value === type) || RECORD_TYPES[0];
   };
 
+  const handleQuickInvoiceDownload = async (staff: typeof payrollSummary[0]) => {
+    if (!user) return;
+    setQuickInvoiceBusy(staff.userId);
+    try {
+      const [{ data: contractor }, { data: billTo }] = await Promise.all([
+        supabase.from("contractor_invoice_details").select("*").eq("user_id", staff.userId).maybeSingle(),
+        supabase.from("invoice_bill_to_settings").select("*").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      if (!contractor || !contractor.company_name || !contractor.bank_account_name || !contractor.bank_account_number || !contractor.bank_name) {
+        toast({
+          title: "Invoice details missing",
+          description: "Set up contractor invoice details for this staff member first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const description = invoiceDescriptions[staff.userId] || `Remote support service - ${format(selectedMonth, "MMMM yyyy")}`;
+      const dateRequested = format(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 1), "yyyy-MM-dd");
+      const monthStr = format(selectedMonth, "yyyy-MM-01");
+      const { data: row, error } = await supabase
+        .from("staff_invoices")
+        .insert({
+          user_id: staff.userId,
+          month: monthStr,
+          description,
+          amount: staff.totalPay,
+          currency: staff.currency,
+          status: "draft",
+          date_requested: dateRequested,
+          created_by: user.id,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      const invoiceData: InvoiceData = {
+        invoiceNumber: row.invoice_number,
+        dateRequested,
+        description,
+        amount: staff.totalPay,
+        currency: staff.currency,
+        companyName: contractor.company_name || "",
+        contactName: contractor.contact_name || staff.displayName || "",
+        phone: contractor.phone || "",
+        email: contractor.email || staff.email || "",
+        address: contractor.company_address || "",
+        bankAccountName: contractor.bank_account_name || "",
+        bankAccountNumber: contractor.bank_account_number || "",
+        bankName: contractor.bank_name || "",
+        sortCode: contractor.sort_code || "",
+        iban: contractor.iban || "",
+        swift: contractor.swift || "",
+        billTo: {
+          companyName: (billTo as any)?.company_name || "Care Cuddle Ltd",
+          companyNumber: (billTo as any)?.company_number || undefined,
+          addressLines: (billTo as any)?.address_lines || [],
+        },
+      };
+      await downloadInvoicePdf(invoiceData);
+      toast({ title: "Invoice downloaded", description: `Invoice #${row.invoice_number} for ${staff.displayName}.` });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setQuickInvoiceBusy(null);
+    }
+  };
+
+
   // Open adjustment dialog for a staff row
   const handleOpenAdjustmentDialog = (staff: typeof payrollSummary[0]) => {
     const bonusRecord = staff.records.find(r => r.record_type === 'bonus');
@@ -2509,28 +2581,53 @@ export function StaffPayManager() {
                           variant="default"
                           size="sm"
                           className="w-full"
-                          onClick={() => setInvoiceDialog({
-                            open: true,
-                            staffUserId: staff.userId,
-                            staffName: staff.displayName,
-                            staffEmail: staff.email,
-                            amount: staff.totalPay,
-                            currency: staff.currency,
-                          })}
+                          disabled={quickInvoiceBusy === staff.userId}
+                          onClick={() => handleQuickInvoiceDownload(staff)}
                         >
                           <FileBadge className="h-4 w-4 mr-1.5" />
-                          Invoice
+                          {quickInvoiceBusy === staff.userId ? 'Generating…' : 'Invoice'}
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full"
-                          onClick={() => handleOpenAdjustmentDialog(staff)}
-                        >
-                          <Edit2 className="h-4 w-4 mr-1.5" />
-                          Edit
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" className="w-full">
+                              <Edit2 className="h-4 w-4 mr-1.5" />
+                              Edit
+                              <ChevronDown className="h-3 w-3 ml-1 opacity-70" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuItem onClick={() => handleOpenAdjustmentDialog(staff)}>
+                              <Edit2 className="h-4 w-4 mr-2" />
+                              Edit pay adjustments
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => setDescDialog({
+                                open: true,
+                                userId: staff.userId,
+                                name: staff.displayName,
+                                value: invoiceDescriptions[staff.userId] || `Remote support service - ${format(selectedMonth, "MMMM yyyy")}`,
+                              })}
+                            >
+                              <FileText className="h-4 w-4 mr-2" />
+                              Edit invoice description
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => setInvoiceDialog({
+                                open: true,
+                                staffUserId: staff.userId,
+                                staffName: staff.displayName,
+                                staffEmail: staff.email,
+                                amount: staff.totalPay,
+                                currency: staff.currency,
+                              })}
+                            >
+                              <FileBadge className="h-4 w-4 mr-2" />
+                              Open invoice dialog
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
+
                     </CardContent>
                   </Card>
                 );
@@ -2838,6 +2935,38 @@ export function StaffPayManager() {
           defaultCurrency={invoiceDialog.currency}
         />
       )}
+
+      <Dialog open={!!descDialog?.open} onOpenChange={(open) => setDescDialog(prev => prev ? { ...prev, open } : null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Invoice description</DialogTitle>
+            <DialogDescription>
+              Used when downloading the invoice PDF for {descDialog?.name}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label>Description</Label>
+            <Textarea
+              rows={3}
+              value={descDialog?.value || ''}
+              onChange={(e) => setDescDialog(prev => prev ? { ...prev, value: e.target.value } : null)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDescDialog(null)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!descDialog) return;
+                setInvoiceDescriptions(prev => ({ ...prev, [descDialog.userId]: descDialog.value }));
+                setDescDialog(null);
+                toast({ title: 'Description saved', description: 'Used on the next invoice download.' });
+              }}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
