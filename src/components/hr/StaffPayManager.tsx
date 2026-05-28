@@ -1810,29 +1810,29 @@ export function StaffPayManager() {
   return (
     <div className="space-y-4">
       {/* Month Navigation and Actions */}
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
           <h2 className="text-xl font-semibold">Payroll Run</h2>
-          <div className="flex items-center gap-2 bg-muted rounded-lg p-1">
+          <div className="flex items-center gap-1 bg-muted rounded-lg p-1 self-start">
             <Button variant="ghost" size="icon" onClick={() => setSelectedMonth(subMonths(selectedMonth, 1))}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <div className="flex items-center gap-2 px-3 min-w-[160px] justify-center">
+            <div className="flex items-center gap-2 px-2 min-w-[140px] justify-center">
               <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span className="font-medium">{format(selectedMonth, 'MMMM yyyy')}</span>
+              <span className="font-medium text-sm">{format(selectedMonth, 'MMMM yyyy')}</span>
             </div>
             <Button variant="ghost" size="icon" onClick={() => setSelectedMonth(addMonths(selectedMonth, 1))}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handleOpenDialog}>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={handleOpenDialog} className="flex-1 md:flex-none">
             <Plus className="h-4 w-4 mr-2" />
             Add Adjustment
           </Button>
           {readyStaffCount > 0 && (
-            <Button onClick={handleRunAllPayroll}>
+            <Button onClick={handleRunAllPayroll} className="flex-1 md:flex-none">
               <Calculator className="h-4 w-4 mr-2" />
               Run Payroll ({readyStaffCount})
             </Button>
@@ -1855,7 +1855,7 @@ export function StaffPayManager() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="text-sm text-muted-foreground">Total Payroll (GBP)</div>
@@ -2054,8 +2054,8 @@ export function StaffPayManager() {
         </CardContent>
       </Card>
 
-      {/* Payroll Table */}
-      <Card className="overflow-hidden">
+      {/* Payroll Table — desktop only */}
+      <Card className="overflow-hidden hidden md:block">
         <CardHeader className="bg-muted/40 border-b">
           <CardTitle className="text-lg">Staff Payroll Summary</CardTitle>
           <CardDescription>
@@ -2436,6 +2436,110 @@ export function StaffPayManager() {
           </Table>
         </CardContent>
       </Card>
+
+      {/* Mobile Payroll Card List */}
+      <div className="md:hidden space-y-3">
+        <div className="text-sm text-muted-foreground px-1">
+          {format(selectedMonth, 'MMMM yyyy')} · Tap invoice to download or email
+        </div>
+        {payrollSummary.length === 0 ? (
+          <Card><CardContent className="p-6 text-center text-sm text-muted-foreground">
+            No staff with salary configured.
+          </CardContent></Card>
+        ) : (() => {
+          const pendingGroup = payrollSummary.filter(s => !s.hasSalaryRecord && !readyStaff.has(s.userId));
+          const readyGroup = payrollSummary.filter(s => !s.hasSalaryRecord && readyStaff.has(s.userId));
+          const paidGroup = payrollSummary.filter(s => s.hasSalaryRecord);
+          const groups = [
+            { key: 'pending' as const, label: 'Pending', items: sortItems(pendingGroup), accent: 'border-l-amber-500', bg: 'bg-amber-50 dark:bg-amber-950/20', badgeBg: 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200' },
+            { key: 'ready' as const, label: 'Ready', items: sortItems(readyGroup), accent: 'border-l-green-500', bg: 'bg-green-50 dark:bg-green-950/20', badgeBg: 'bg-green-100 text-green-900 dark:bg-green-900/40 dark:text-green-200' },
+            { key: 'paid' as const, label: 'Paid', items: sortItems(paidGroup), accent: 'border-l-blue-500', bg: 'bg-blue-50 dark:bg-blue-950/20', badgeBg: 'bg-blue-100 text-blue-900 dark:bg-blue-900/40 dark:text-blue-200' },
+          ];
+          return groups.filter(g => g.items.length > 0).map(group => (
+            <div key={group.key} className="space-y-2">
+              <div className={`flex items-center justify-between px-3 py-1.5 rounded-md text-xs font-semibold uppercase tracking-wide ${group.badgeBg}`}>
+                <span>{group.label}</span>
+                <span>{group.items.length}</span>
+              </div>
+              {group.items.map(staff => {
+                const isReady = readyStaff.has(staff.userId);
+                return (
+                  <Card key={staff.userId} className={`border-l-4 ${group.accent} ${group.bg}`}>
+                    <CardContent className="p-3 space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold text-sm truncate">{staff.displayName}</div>
+                          <div className="text-xs text-muted-foreground truncate">{staff.email}</div>
+                        </div>
+                        {staff.hasSalaryRecord ? (
+                          <Badge className="bg-blue-500 text-white border-0 gap-1 shrink-0" onClick={() => handleRevertToPending(staff.userId)}>
+                            <RotateCcw className="h-3 w-3" />Paid
+                          </Badge>
+                        ) : isReady ? (
+                          <Badge className="bg-green-600 text-white border-0 gap-1 shrink-0" onClick={() => handleRunPayroll(staff.userId)}>
+                            <CheckCircle className="h-3 w-3" />Ready
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-amber-500 text-amber-700 dark:text-amber-300 bg-amber-100/60 dark:bg-amber-900/30 gap-1 shrink-0" onClick={() => handleToggleReady(staff.userId)}>
+                            <Clock className="h-3 w-3" />Pending
+                          </Badge>
+                        )}
+                      </div>
+
+                      <div className="flex items-end justify-between gap-2 pt-1 border-t">
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Total Pay</div>
+                          <div className="text-xl font-bold">{formatCurrency(staff.totalPay, staff.currency)}</div>
+                          {staff.currency !== 'GBP' && (
+                            <div className="text-[11px] text-muted-foreground">
+                              ≈ £{staff.totalPayInGBP.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                          )}
+                        </div>
+                        <div className="text-right text-[11px] text-muted-foreground space-y-0.5">
+                          <div>Base {formatCurrency(staff.baseSalary, staff.currency)}</div>
+                          {staff.overtime > 0 && <div className="text-success">+OT {formatCurrency(staff.overtime, staff.currency)}</div>}
+                          {staff.bonuses > 0 && <div className="text-success">+Bonus {formatCurrency(staff.bonuses, staff.currency)}</div>}
+                          {staff.deductions > 0 && <div className="text-destructive">-Ded {formatCurrency(staff.deductions, staff.currency)}</div>}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => setInvoiceDialog({
+                            open: true,
+                            staffUserId: staff.userId,
+                            staffName: staff.displayName,
+                            staffEmail: staff.email,
+                            amount: staff.totalPay,
+                            currency: staff.currency,
+                          })}
+                        >
+                          <FileBadge className="h-4 w-4 mr-1.5" />
+                          Invoice
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={() => handleOpenAdjustmentDialog(staff)}
+                        >
+                          <Edit2 className="h-4 w-4 mr-1.5" />
+                          Edit
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          ));
+        })()}
+      </div>
+
 
       {/* Add Adjustment Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
