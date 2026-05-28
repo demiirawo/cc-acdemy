@@ -32,7 +32,13 @@ export function ResizableSidebar({
 }: ResizableSidebarProps) {
   const [width, setWidth] = useState(400);
   const [isResizing, setIsResizing] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const { pathname, search } = window.location;
+    const params = new URLSearchParams(search);
+    const tab = (params.get("tab") || "").toLowerCase();
+    return pathname.startsWith("/view/hr") && (tab === "payroll" || tab === "pay");
+  });
   const sidebarRef = useRef<HTMLDivElement>(null);
   const resizerRef = useRef<HTMLDivElement>(null);
 
