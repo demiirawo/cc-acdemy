@@ -25,6 +25,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/page/:pageId" element={<Index />} />
           <Route path="/view/:viewName" element={<Index />} />
+          <Route path="/payroll" element={<Navigate to="/view/hr?tab=payroll" replace />} />
           
           <Route path="/public/schedule/:clientName" element={<PublicClientSchedule />} />
           <Route path="/public/schedule-only/:clientName" element={<PublicClientSchedule scheduleOnly />} />
