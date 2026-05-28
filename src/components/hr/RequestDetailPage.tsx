@@ -35,6 +35,7 @@ interface StaffRequest {
   linked_holiday_id: string | null;
   overtime_type: 'standard_hours' | 'outside_hours' | null;
   client_informed: boolean;
+  coverage_metadata: Record<string, unknown> | null;
 }
 interface UserProfile {
   user_id: string;
