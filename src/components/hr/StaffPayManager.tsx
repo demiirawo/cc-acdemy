@@ -2935,6 +2935,38 @@ export function StaffPayManager() {
           defaultCurrency={invoiceDialog.currency}
         />
       )}
+
+      <Dialog open={!!descDialog?.open} onOpenChange={(open) => setDescDialog(prev => prev ? { ...prev, open } : null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Invoice description</DialogTitle>
+            <DialogDescription>
+              Used when downloading the invoice PDF for {descDialog?.name}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label>Description</Label>
+            <Textarea
+              rows={3}
+              value={descDialog?.value || ''}
+              onChange={(e) => setDescDialog(prev => prev ? { ...prev, value: e.target.value } : null)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDescDialog(null)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!descDialog) return;
+                setInvoiceDescriptions(prev => ({ ...prev, [descDialog.userId]: descDialog.value }));
+                setDescDialog(null);
+                toast({ title: 'Description saved', description: 'Used on the next invoice download.' });
+              }}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
