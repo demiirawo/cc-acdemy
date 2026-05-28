@@ -35,6 +35,7 @@ interface StaffRequest {
   linked_holiday_id: string | null;
   overtime_type: 'standard_hours' | 'outside_hours' | null;
   client_informed: boolean;
+  coverage_metadata: Record<string, unknown> | null;
 }
 interface UserProfile {
   user_id: string;
@@ -235,7 +236,63 @@ export function RequestDetailPage({
     clientName: string;
     shiftTime: string;
   }[] => {
-    if (!request || shiftPatterns.length === 0) return [];
+    if (!request) return [];
+
+    // For shift_swap (cover) requests, the "affected shifts" are the shifts being
+    // COVERED (i.e. the shifts of the person on leave), NOT the requester's own
+    // pattern. Source these from coverage_metadata.shifts first, then fall back to
+    // parsing the request.details text ("Shifts: 01 May 2026 07:00:00-10:00:00 (Client); ...").
+    if (request.request_type === 'shift_swap') {
+      const result: { date: Date; clientName: string; shiftTime: string }[] = [];
+
+      // 1. Structured coverage_metadata
+      const meta = request.coverage_metadata as {
+        type?: string;
+        shifts?: { date?: string; start_time?: string; end_time?: string; client_name?: string }[];
+      } | null;
+      if (meta && Array.isArray(meta.shifts) && meta.shifts.length > 0) {
+        meta.shifts.forEach(s => {
+          if (!s.date) return;
+          const [y, m, d] = s.date.split('-').map(Number);
+          if (!y || !m || !d) return;
+          const start = (s.start_time || '').substring(0, 5);
+          const end = (s.end_time || '').substring(0, 5);
+          result.push({
+            date: new Date(y, m - 1, d),
+            clientName: s.client_name || 'Cover',
+            shiftTime: start && end ? `${start} - ${end}` : '',
+          });
+        });
+      }
+
+      // 2. Fallback: parse details text
+      if (result.length === 0 && request.details) {
+        const shiftsMatch = request.details.match(/Shifts:\s*(.+)/s);
+        if (shiftsMatch) {
+          const entryRegex = /(\d{2})\s+(\w{3})\s+(\d{4})\s+(\d{2}:\d{2})(?::\d{2})?\s*-\s*(\d{2}:\d{2})(?::\d{2})?(?:\s*\(([^)]+)\))?/g;
+          const monthMap: Record<string, number> = {
+            Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5,
+            Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+          };
+          let match: RegExpExecArray | null;
+          while ((match = entryRegex.exec(shiftsMatch[1])) !== null) {
+            const [, dd, mon, yyyy, st, et, client] = match;
+            const monthIdx = monthMap[mon];
+            if (monthIdx === undefined) continue;
+            result.push({
+              date: new Date(Number(yyyy), monthIdx, Number(dd)),
+              clientName: client || 'Cover',
+              shiftTime: `${st} - ${et}`,
+            });
+          }
+        }
+      }
+
+      result.sort((a, b) => a.date.getTime() - b.date.getTime());
+      return result;
+    }
+
+    if (shiftPatterns.length === 0) return [];
     const startDate = new Date(request.start_date);
     const endDate = new Date(request.end_date);
     const result: {
