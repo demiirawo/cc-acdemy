@@ -170,6 +170,9 @@ export function StaffPayManager() {
     amount: number;
     currency: string;
   } | null>(null);
+  const [invoiceDescriptions, setInvoiceDescriptions] = useState<Record<string, string>>({});
+  const [descDialog, setDescDialog] = useState<{ open: boolean; userId: string; name: string; value: string } | null>(null);
+  const [quickInvoiceBusy, setQuickInvoiceBusy] = useState<string | null>(null);
   const [exchangeRates, setExchangeRates] = useState<ExchangeRates>(FALLBACK_RATES);
   const [manualRates, setManualRates] = useState<ExchangeRates>({});
   const [ratesDate, setRatesDate] = useState<string | null>(null);
