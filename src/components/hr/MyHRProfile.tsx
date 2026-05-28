@@ -1345,7 +1345,10 @@ export function MyHRProfile() {
                               Paid
                             </Badge>;
                 } else if (status === 'ready') {
-                  return;
+                  return <Badge variant="outline" className="bg-primary/15 text-primary border-primary">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Ready
+                            </Badge>;
                 } else {
                   return <Badge variant="outline" className="bg-muted text-muted-foreground border-muted-foreground">
                               <AlertCircle className="h-3 w-3 mr-1" />
