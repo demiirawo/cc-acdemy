@@ -615,17 +615,39 @@ export function MyHRProfile() {
         const payDate = parseISO(r.pay_date);
         return payDate >= monthStart && payDate <= monthEnd;
       });
-      const oneOffBonuses = monthRecords.filter(r => r.record_type === 'bonus').reduce((sum, r) => sum + r.amount, 0);
+      const oneOffBonusRecords = monthRecords.filter(r => r.record_type === 'bonus');
+      const deductionRecords = monthRecords.filter(r => r.record_type === 'deduction');
+      const oneOffBonuses = oneOffBonusRecords.reduce((sum, r) => sum + r.amount, 0);
 
       // Add recurring bonuses that are active for this month
-      const activeRecurringBonuses = recurringBonuses.filter(bonus => {
+      const activeRecurringBonusesList = recurringBonuses.filter(bonus => {
         const bonusStart = parseISO(bonus.start_date);
         const bonusEnd = bonus.end_date ? parseISO(bonus.end_date) : null;
-        // Bonus is active if: started before or during this month AND (no end date OR ends after or during this month)
         return bonusStart <= monthEnd && (!bonusEnd || bonusEnd >= monthStart);
-      }).reduce((sum, bonus) => sum + bonus.amount, 0);
+      });
+      const activeRecurringBonuses = activeRecurringBonusesList.reduce((sum, bonus) => sum + bonus.amount, 0);
       const bonuses = oneOffBonuses + activeRecurringBonuses;
-      const deductions = monthRecords.filter(r => r.record_type === 'deduction').reduce((sum, r) => sum + r.amount, 0);
+      const deductions = deductionRecords.reduce((sum, r) => sum + r.amount, 0);
+
+      const bonusItems = [
+        ...oneOffBonusRecords.map(r => ({
+          label: r.description || 'Bonus',
+          amount: r.amount,
+          description: r.description,
+          recurring: false,
+        })),
+        ...activeRecurringBonusesList.map(b => ({
+          label: b.description || 'Recurring Bonus',
+          amount: b.amount,
+          description: b.description,
+          recurring: true,
+        })),
+      ];
+      const deductionItems = deductionRecords.map(r => ({
+        label: r.description || 'Deduction',
+        amount: r.amount,
+        description: r.description,
+      }));
 
       // Calculate overtime from approved requests and recurring patterns
       // Count by unique date (one overtime day per calendar day)
