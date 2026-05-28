@@ -1,0 +1,1 @@
+UPDATE public.staff_requests SET end_date = '2026-05-04' WHERE id = '9a69b644-f845-4341-852b-93c60ca0bb6c' AND end_date = '2026-05-05';
