@@ -29,6 +29,8 @@ interface MonthlyPayPreview {
   dailyRate: number;
   bonuses: number;
   deductions: number;
+  bonusItems: Array<{ label: string; amount: number; description: string | null; recurring: boolean }>;
+  deductionItems: Array<{ label: string; amount: number; description: string | null }>;
   overtimeDays: number;
   overtimePay: number;
   overtimeShifts: Array<{
