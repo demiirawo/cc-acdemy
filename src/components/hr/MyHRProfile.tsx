@@ -1397,20 +1397,37 @@ export function MyHRProfile() {
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 {/* Left column - Breakdown */}
                                 <div className="space-y-3">
-                                  <div className="flex justify-between items-center py-2 border-b">
-                                    <span className="text-muted-foreground">Base Salary</span>
-                                    <span className="font-medium">{formatCurrency(preview.monthlyBaseSalary, preview.currency)}</span>
+                                  <div className="py-2 border-b">
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-muted-foreground">Base Salary</span>
+                                      <span className="font-medium">{formatCurrency(preview.monthlyBaseSalary, preview.currency)}</span>
+                                    </div>
+                                    <div className="text-xs text-muted-foreground/70 mt-1">
+                                      Daily rate: {formatCurrency(preview.dailyRate, preview.currency)} (base ÷ 20 working days)
+                                    </div>
                                   </div>
                                   
-                                  {preview.bonuses > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Bonuses</span>
-                                      <span className="font-medium text-success">+{formatCurrency(preview.bonuses, preview.currency)}</span>
-                                    </div>}
+                                  {preview.bonusItems.length > 0 && preview.bonusItems.map((item, idx) => (
+                                    <div key={`b-${idx}`} className="py-2 border-b">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground flex items-center gap-2">
+                                          {item.recurring ? 'Recurring Bonus' : 'Bonus'}
+                                          {item.description && (
+                                            <span className="text-xs italic text-muted-foreground/80">— {item.description}</span>
+                                          )}
+                                        </span>
+                                        <span className="font-medium text-success">+{formatCurrency(item.amount, preview.currency)}</span>
+                                      </div>
+                                    </div>
+                                  ))}
                                   
                                   {preview.overtimePay > 0 && <div className="py-2 border-b">
                                       <div className="flex justify-between items-center">
                                         <span className="text-muted-foreground">Overtime Pay ({preview.overtimeDays} days)</span>
                                         <span className="font-medium text-success">+{formatCurrency(preview.overtimePay, preview.currency)}</span>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground/70 mt-1">
+                                        Outside hours: 1.5 × daily rate · Inside hours: 0.5 × daily rate (premium only)
                                       </div>
                                       {preview.overtimeShifts.length > 0 && (
                                         <div className="mt-2 ml-4 space-y-1">
@@ -1427,35 +1444,69 @@ export function MyHRProfile() {
                                       )}
                                     </div>}
                                   
-                                  {preview.holidayOvertimeBonus > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Public Holiday Overtime ({preview.holidayOvertimeDays} days)</span>
-                                      <span className="font-medium text-amber-600">+{formatCurrency(preview.holidayOvertimeBonus, preview.currency)}</span>
+                                  {preview.holidayOvertimeBonus > 0 && <div className="py-2 border-b">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground">Public Holiday Overtime ({preview.holidayOvertimeDays} days)</span>
+                                        <span className="font-medium text-amber-600">+{formatCurrency(preview.holidayOvertimeBonus, preview.currency)}</span>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground/70 mt-1">
+                                        {preview.holidayOvertimeDays} × {formatCurrency(preview.dailyRate, preview.currency)} × 0.5 (premium only — base day already in salary)
+                                      </div>
                                     </div>}
                                   
-                                  {preview.unusedHolidayPayout > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Unused Holiday Payout ({preview.unusedHolidayDays.toFixed(1)} days)</span>
-                                      <span className="font-medium text-success">+{formatCurrency(preview.unusedHolidayPayout, preview.currency)}</span>
+                                  {preview.unusedHolidayPayout > 0 && <div className="py-2 border-b">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground">Unused Holiday Payout ({preview.unusedHolidayDays.toFixed(1)} days)</span>
+                                        <span className="font-medium text-success">+{formatCurrency(preview.unusedHolidayPayout, preview.currency)}</span>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground/70 mt-1">
+                                        {preview.unusedHolidayDays.toFixed(1)} × ({formatCurrency(preview.monthlyBaseSalary, preview.currency)} ÷ 20) — end-of-holiday-year payout
+                                      </div>
                                     </div>}
                                   
-                                  {preview.excessHolidayDeduction > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Excess Holiday Deduction ({preview.excessHolidayDays.toFixed(1)} days over allowance)</span>
-                                      <span className="font-medium text-destructive">-{formatCurrency(preview.excessHolidayDeduction, preview.currency)}</span>
+                                  {preview.excessHolidayDeduction > 0 && <div className="py-2 border-b">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground">Excess Holiday Deduction ({preview.excessHolidayDays.toFixed(1)} days over allowance)</span>
+                                        <span className="font-medium text-destructive">-{formatCurrency(preview.excessHolidayDeduction, preview.currency)}</span>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground/70 mt-1">
+                                        {preview.excessHolidayDays.toFixed(1)} × ({formatCurrency(preview.monthlyBaseSalary, preview.currency)} ÷ 20)
+                                      </div>
                                     </div>}
                                   
-                                  {preview.unpaidHolidayDeduction > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Unpaid Holiday ({preview.unpaidHolidayDays} days)</span>
-                                      <span className="font-medium text-destructive">-{formatCurrency(preview.unpaidHolidayDeduction, preview.currency)}</span>
+                                  {preview.unpaidHolidayDeduction > 0 && <div className="py-2 border-b">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground">Unpaid Holiday ({preview.unpaidHolidayDays} days)</span>
+                                        <span className="font-medium text-destructive">-{formatCurrency(preview.unpaidHolidayDeduction, preview.currency)}</span>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground/70 mt-1">
+                                        {preview.unpaidHolidayDays} × ({formatCurrency(preview.monthlyBaseSalary, preview.currency)} ÷ 20)
+                                      </div>
                                     </div>}
                                   
-                                  {preview.proRataDeduction > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Pro-Rata Deduction ({preview.proRataWorkingDays}/{preview.proRataTotalWorkingDays} days worked)</span>
-                                      <span className="font-medium text-destructive">-{formatCurrency(preview.proRataDeduction, preview.currency)}</span>
+                                  {preview.proRataDeduction > 0 && <div className="py-2 border-b">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground">Pro-Rata Deduction ({preview.proRataWorkingDays}/{preview.proRataTotalWorkingDays} days worked)</span>
+                                        <span className="font-medium text-destructive">-{formatCurrency(preview.proRataDeduction, preview.currency)}</span>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground/70 mt-1">
+                                        ({preview.proRataTotalWorkingDays - preview.proRataWorkingDays} days not worked) × ({formatCurrency(preview.monthlyBaseSalary, preview.currency)} ÷ {preview.proRataTotalWorkingDays})
+                                      </div>
                                     </div>}
 
-                                  {preview.deductions > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Deductions</span>
-                                      <span className="font-medium text-destructive">-{formatCurrency(preview.deductions, preview.currency)}</span>
-                                    </div>}
+                                  {preview.deductionItems.length > 0 && preview.deductionItems.map((item, idx) => (
+                                    <div key={`d-${idx}`} className="py-2 border-b">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground flex items-center gap-2">
+                                          Deduction
+                                          {item.description && (
+                                            <span className="text-xs italic text-muted-foreground/80">— {item.description}</span>
+                                          )}
+                                        </span>
+                                        <span className="font-medium text-destructive">-{formatCurrency(item.amount, preview.currency)}</span>
+                                      </div>
+                                    </div>
+                                  ))}
                                   
                                   <div className="flex justify-between items-center py-3 bg-primary/5 rounded-lg px-3 mt-2">
                                     <span className="font-semibold">Estimated Total</span>
