@@ -1507,6 +1507,73 @@ export function StaffPayManager() {
     return RECORD_TYPES.find(t => t.value === type) || RECORD_TYPES[0];
   };
 
+  const handleQuickInvoiceDownload = async (staff: typeof payrollSummary[0]) => {
+    if (!user) return;
+    setQuickInvoiceBusy(staff.userId);
+    try {
+      const [{ data: contractor }, { data: billTo }] = await Promise.all([
+        supabase.from("contractor_invoice_details").select("*").eq("user_id", staff.userId).maybeSingle(),
+        supabase.from("invoice_bill_to_settings").select("*").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      if (!contractor || !contractor.company_name || !contractor.bank_account_name || !contractor.bank_account_number || !contractor.bank_name) {
+        toast({
+          title: "Invoice details missing",
+          description: "Set up contractor invoice details for this staff member first.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const description = invoiceDescriptions[staff.userId] || `Remote support service - ${format(selectedMonth, "MMMM yyyy")}`;
+      const dateRequested = format(new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 1), "yyyy-MM-dd");
+      const monthStr = format(selectedMonth, "yyyy-MM-01");
+      const { data: row, error } = await supabase
+        .from("staff_invoices")
+        .insert({
+          user_id: staff.userId,
+          month: monthStr,
+          description,
+          amount: staff.totalPay,
+          currency: staff.currency,
+          status: "draft",
+          date_requested: dateRequested,
+          created_by: user.id,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      const invoiceData: InvoiceData = {
+        invoiceNumber: row.invoice_number,
+        dateRequested,
+        description,
+        amount: staff.totalPay,
+        currency: staff.currency,
+        companyName: contractor.company_name || "",
+        contactName: contractor.contact_name || staff.displayName || "",
+        phone: contractor.phone || "",
+        email: contractor.email || staff.email || "",
+        address: contractor.company_address || "",
+        bankAccountName: contractor.bank_account_name || "",
+        bankAccountNumber: contractor.bank_account_number || "",
+        bankName: contractor.bank_name || "",
+        sortCode: contractor.sort_code || "",
+        iban: contractor.iban || "",
+        swift: contractor.swift || "",
+        billTo: {
+          companyName: (billTo as any)?.company_name || "Care Cuddle Ltd",
+          companyNumber: (billTo as any)?.company_number || undefined,
+          addressLines: (billTo as any)?.address_lines || [],
+        },
+      };
+      await downloadInvoicePdf(invoiceData);
+      toast({ title: "Invoice downloaded", description: `Invoice #${row.invoice_number} for ${staff.displayName}.` });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setQuickInvoiceBusy(null);
+    }
+  };
+
+
   // Open adjustment dialog for a staff row
   const handleOpenAdjustmentDialog = (staff: typeof payrollSummary[0]) => {
     const bonusRecord = staff.records.find(r => r.record_type === 'bonus');
