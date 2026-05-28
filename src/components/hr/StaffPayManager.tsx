@@ -1810,29 +1810,29 @@ export function StaffPayManager() {
   return (
     <div className="space-y-4">
       {/* Month Navigation and Actions */}
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col gap-3 md:flex-row md:justify-between md:items-center">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
           <h2 className="text-xl font-semibold">Payroll Run</h2>
-          <div className="flex items-center gap-2 bg-muted rounded-lg p-1">
+          <div className="flex items-center gap-1 bg-muted rounded-lg p-1 self-start">
             <Button variant="ghost" size="icon" onClick={() => setSelectedMonth(subMonths(selectedMonth, 1))}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <div className="flex items-center gap-2 px-3 min-w-[160px] justify-center">
+            <div className="flex items-center gap-2 px-2 min-w-[140px] justify-center">
               <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span className="font-medium">{format(selectedMonth, 'MMMM yyyy')}</span>
+              <span className="font-medium text-sm">{format(selectedMonth, 'MMMM yyyy')}</span>
             </div>
             <Button variant="ghost" size="icon" onClick={() => setSelectedMonth(addMonths(selectedMonth, 1))}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={handleOpenDialog}>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={handleOpenDialog} className="flex-1 md:flex-none">
             <Plus className="h-4 w-4 mr-2" />
             Add Adjustment
           </Button>
           {readyStaffCount > 0 && (
-            <Button onClick={handleRunAllPayroll}>
+            <Button onClick={handleRunAllPayroll} className="flex-1 md:flex-none">
               <Calculator className="h-4 w-4 mr-2" />
               Run Payroll ({readyStaffCount})
             </Button>
