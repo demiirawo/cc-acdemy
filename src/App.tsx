@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import ProjectView from "./components/ProjectView";
@@ -25,6 +25,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/page/:pageId" element={<Index />} />
           <Route path="/view/:viewName" element={<Index />} />
+          <Route path="/payroll" element={<Navigate to="/view/hr?tab=payroll" replace />} />
           
           <Route path="/public/schedule/:clientName" element={<PublicClientSchedule />} />
           <Route path="/public/schedule-only/:clientName" element={<PublicClientSchedule scheduleOnly />} />

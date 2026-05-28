@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useUserRole } from "@/hooks/useUserRole";
 import { StaffPayManager } from "./StaffPayManager";
 import { HRProfileManager } from "./HRProfileManager";
@@ -13,13 +15,26 @@ interface HRSectionProps {
   onProfileClosed?: () => void;
 }
 
+const TAB_ALIASES: Record<string, string> = {
+  payroll: "pay",
+  pay: "pay",
+  profiles: "profiles",
+  staff: "profiles",
+  onboarding: "onboarding",
+  "onboarding-form": "onboarding-form",
+  "my-profile": "my-profile",
+  me: "my-profile",
+};
+
 export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {}) {
   const { isAdmin } = useUserRole();
-  // If initialUserId is provided and user is admin, force "profiles" tab
-  const [activeTab, setActiveTab] = useState(() => {
-    if (initialUserId && isAdmin) return "profiles";
-    return isAdmin ? "profiles" : "my-profile";
-  });
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const initialTab =
+    (tabParam && TAB_ALIASES[tabParam.toLowerCase()]) ||
+    (initialUserId && isAdmin ? "profiles" : isAdmin ? "profiles" : "my-profile");
+
+  const [activeTab, setActiveTab] = useState<string>(initialTab);
 
   // Switch to profiles tab when initialUserId changes
   useEffect(() => {
@@ -28,57 +43,96 @@ export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {
     }
   }, [initialUserId, isAdmin]);
 
+  // React to ?tab= param changes
+  useEffect(() => {
+    if (tabParam) {
+      const mapped = TAB_ALIASES[tabParam.toLowerCase()];
+      if (mapped) setActiveTab(mapped);
+    }
+  }, [tabParam]);
+
+  const handleTabChange = (next: string) => {
+    setActiveTab(next);
+    const params = new URLSearchParams(searchParams);
+    params.set("tab", next === "pay" ? "payroll" : next);
+    setSearchParams(params, { replace: true });
+  };
+
+  const adminTabs = [
+    { value: "profiles", label: "Staff Profiles", icon: Users },
+    { value: "pay", label: "Payroll", icon: DollarSign },
+    { value: "onboarding", label: "Onboarding Steps", icon: GraduationCap },
+    { value: "onboarding-form", label: "Onboarding Form", icon: FileText },
+    { value: "my-profile", label: "My Profile", icon: User },
+  ];
+  const staffTabs = [
+    { value: "my-profile", label: "My Profile", icon: User },
+    { value: "onboarding-form", label: "Onboarding Form", icon: FileText },
+    { value: "onboarding", label: "Onboarding Steps", icon: GraduationCap },
+  ];
+  const tabs = isAdmin ? adminTabs : staffTabs;
+  const activeMeta = tabs.find(t => t.value === activeTab) ?? tabs[0];
+  const ActiveIcon = activeMeta.icon;
+
   return (
-    <div className="flex-1 overflow-auto p-6">
+    <div className="flex-1 overflow-auto p-4 md:p-6">
       <div className={`${activeTab === 'pay' ? 'w-full' : 'max-w-7xl mx-auto'}`}>
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-foreground">HR Management</h1>
-          <p className="text-muted-foreground mt-1">
+        <div className="mb-4 md:mb-6">
+          <h1 className="text-2xl md:text-3xl font-bold text-foreground">HR Management</h1>
+          <p className="text-sm md:text-base text-muted-foreground mt-1">
             {isAdmin ? "Manage staff pay and profiles" : "View your HR profile and onboarding"}
           </p>
+          {isAdmin && activeTab !== 'pay' && (
+            <a
+              href="/view/hr?tab=payroll"
+              onClick={(e) => { e.preventDefault(); handleTabChange('pay'); }}
+              className="inline-flex md:hidden mt-3 items-center gap-2 text-sm font-medium text-primary underline-offset-2 underline"
+            >
+              <DollarSign className="h-4 w-4" /> Jump to Payroll
+            </a>
+          )}
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className={`grid w-full mb-6`} style={{ gridTemplateColumns: isAdmin ? 'repeat(5, 1fr)' : 'repeat(3, 1fr)' }}>
-            {isAdmin ? (
-              <>
-                <TabsTrigger value="profiles" className="flex items-center gap-2">
-                  <Users className="h-4 w-4" />
-                  Staff Profiles
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+          {/* Mobile: dropdown selector */}
+          <div className="md:hidden mb-4">
+            <Select value={activeTab} onValueChange={handleTabChange}>
+              <SelectTrigger className="w-full h-11">
+                <div className="flex items-center gap-2">
+                  <ActiveIcon className="h-4 w-4" />
+                  <SelectValue />
+                </div>
+              </SelectTrigger>
+              <SelectContent>
+                {tabs.map(t => {
+                  const Icon = t.icon;
+                  return (
+                    <SelectItem key={t.value} value={t.value}>
+                      <div className="flex items-center gap-2">
+                        <Icon className="h-4 w-4" />
+                        {t.label}
+                      </div>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Desktop: classic tab grid */}
+          <TabsList
+            className="hidden md:grid w-full mb-6"
+            style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}
+          >
+            {tabs.map(t => {
+              const Icon = t.icon;
+              return (
+                <TabsTrigger key={t.value} value={t.value} className="flex items-center gap-2">
+                  <Icon className="h-4 w-4" />
+                  {t.label}
                 </TabsTrigger>
-                <TabsTrigger value="pay" className="flex items-center gap-2">
-                  <DollarSign className="h-4 w-4" />
-                  Payroll
-                </TabsTrigger>
-                <TabsTrigger value="onboarding" className="flex items-center gap-2">
-                  <GraduationCap className="h-4 w-4" />
-                  Onboarding Steps
-                </TabsTrigger>
-                <TabsTrigger value="onboarding-form" className="flex items-center gap-2">
-                  <FileText className="h-4 w-4" />
-                  Onboarding Form
-                </TabsTrigger>
-                <TabsTrigger value="my-profile" className="flex items-center gap-2">
-                  <User className="h-4 w-4" />
-                  My Profile
-                </TabsTrigger>
-              </>
-            ) : (
-            <>
-                <TabsTrigger value="my-profile" className="flex items-center gap-2">
-                  <User className="h-4 w-4" />
-                  My Profile
-                </TabsTrigger>
-                <TabsTrigger value="onboarding-form" className="flex items-center gap-2">
-                  <FileText className="h-4 w-4" />
-                  Onboarding Form
-                </TabsTrigger>
-                <TabsTrigger value="onboarding" className="flex items-center gap-2">
-                  <GraduationCap className="h-4 w-4" />
-                  Onboarding Steps
-                </TabsTrigger>
-              </>
-            )}
+              );
+            })}
           </TabsList>
 
           {isAdmin && (
@@ -91,15 +145,15 @@ export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {
               </TabsContent>
             </>
           )}
-          
+
           <TabsContent value="onboarding" className="mt-0">
             <OnboardingManager />
           </TabsContent>
-          
+
           <TabsContent value="onboarding-form" className="mt-0">
             <StaffOnboardingForm />
           </TabsContent>
-          
+
           <TabsContent value="my-profile" className="mt-0">
             <MyHRProfile />
           </TabsContent>
