@@ -1,0 +1,2 @@
+UPDATE auth.users SET email = 'Tom@care-cuddle.co.uk', email_change = NULL, email_change_token_new = '', email_change_confirm_status = 0 WHERE id = '1fbc98a0-4a35-4f38-8695-af4532dde4f3';
+UPDATE public.profiles SET email = 'Tom@care-cuddle.co.uk' WHERE user_id = '1fbc98a0-4a35-4f38-8695-af4532dde4f3';
