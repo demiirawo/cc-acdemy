@@ -891,6 +891,8 @@ export function MyHRProfile() {
         dailyRate,
         bonuses,
         deductions,
+        bonusItems,
+        deductionItems,
         overtimeDays,
         overtimePay,
         overtimeShifts: overtimeShifts.sort((a, b) => a.date.localeCompare(b.date)),
