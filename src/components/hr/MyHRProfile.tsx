@@ -29,6 +29,8 @@ interface MonthlyPayPreview {
   dailyRate: number;
   bonuses: number;
   deductions: number;
+  bonusItems: Array<{ label: string; amount: number; description: string | null; recurring: boolean }>;
+  deductionItems: Array<{ label: string; amount: number; description: string | null }>;
   overtimeDays: number;
   overtimePay: number;
   overtimeShifts: Array<{
@@ -613,17 +615,39 @@ export function MyHRProfile() {
         const payDate = parseISO(r.pay_date);
         return payDate >= monthStart && payDate <= monthEnd;
       });
-      const oneOffBonuses = monthRecords.filter(r => r.record_type === 'bonus').reduce((sum, r) => sum + r.amount, 0);
+      const oneOffBonusRecords = monthRecords.filter(r => r.record_type === 'bonus');
+      const deductionRecords = monthRecords.filter(r => r.record_type === 'deduction');
+      const oneOffBonuses = oneOffBonusRecords.reduce((sum, r) => sum + r.amount, 0);
 
       // Add recurring bonuses that are active for this month
-      const activeRecurringBonuses = recurringBonuses.filter(bonus => {
+      const activeRecurringBonusesList = recurringBonuses.filter(bonus => {
         const bonusStart = parseISO(bonus.start_date);
         const bonusEnd = bonus.end_date ? parseISO(bonus.end_date) : null;
-        // Bonus is active if: started before or during this month AND (no end date OR ends after or during this month)
         return bonusStart <= monthEnd && (!bonusEnd || bonusEnd >= monthStart);
-      }).reduce((sum, bonus) => sum + bonus.amount, 0);
+      });
+      const activeRecurringBonuses = activeRecurringBonusesList.reduce((sum, bonus) => sum + bonus.amount, 0);
       const bonuses = oneOffBonuses + activeRecurringBonuses;
-      const deductions = monthRecords.filter(r => r.record_type === 'deduction').reduce((sum, r) => sum + r.amount, 0);
+      const deductions = deductionRecords.reduce((sum, r) => sum + r.amount, 0);
+
+      const bonusItems = [
+        ...oneOffBonusRecords.map(r => ({
+          label: r.description || 'Bonus',
+          amount: r.amount,
+          description: r.description,
+          recurring: false,
+        })),
+        ...activeRecurringBonusesList.map(b => ({
+          label: b.description || 'Recurring Bonus',
+          amount: b.amount,
+          description: b.description,
+          recurring: true,
+        })),
+      ];
+      const deductionItems = deductionRecords.map(r => ({
+        label: r.description || 'Deduction',
+        amount: r.amount,
+        description: r.description,
+      }));
 
       // Calculate overtime from approved requests and recurring patterns
       // Count by unique date (one overtime day per calendar day)
@@ -867,6 +891,8 @@ export function MyHRProfile() {
         dailyRate,
         bonuses,
         deductions,
+        bonusItems,
+        deductionItems,
         overtimeDays,
         overtimePay,
         overtimeShifts: overtimeShifts.sort((a, b) => a.date.localeCompare(b.date)),
@@ -1371,20 +1397,37 @@ export function MyHRProfile() {
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 {/* Left column - Breakdown */}
                                 <div className="space-y-3">
-                                  <div className="flex justify-between items-center py-2 border-b">
-                                    <span className="text-muted-foreground">Base Salary</span>
-                                    <span className="font-medium">{formatCurrency(preview.monthlyBaseSalary, preview.currency)}</span>
+                                  <div className="py-2 border-b">
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-muted-foreground">Base Salary</span>
+                                      <span className="font-medium">{formatCurrency(preview.monthlyBaseSalary, preview.currency)}</span>
+                                    </div>
+                                    <div className="text-xs text-muted-foreground/70 mt-1">
+                                      Daily rate: {formatCurrency(preview.dailyRate, preview.currency)} (base ÷ 20 working days)
+                                    </div>
                                   </div>
                                   
-                                  {preview.bonuses > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Bonuses</span>
-                                      <span className="font-medium text-success">+{formatCurrency(preview.bonuses, preview.currency)}</span>
-                                    </div>}
+                                  {preview.bonusItems.length > 0 && preview.bonusItems.map((item, idx) => (
+                                    <div key={`b-${idx}`} className="py-2 border-b">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground flex items-center gap-2">
+                                          {item.recurring ? 'Recurring Bonus' : 'Bonus'}
+                                          {item.description && (
+                                            <span className="text-xs italic text-muted-foreground/80">— {item.description}</span>
+                                          )}
+                                        </span>
+                                        <span className="font-medium text-success">+{formatCurrency(item.amount, preview.currency)}</span>
+                                      </div>
+                                    </div>
+                                  ))}
                                   
                                   {preview.overtimePay > 0 && <div className="py-2 border-b">
                                       <div className="flex justify-between items-center">
                                         <span className="text-muted-foreground">Overtime Pay ({preview.overtimeDays} days)</span>
                                         <span className="font-medium text-success">+{formatCurrency(preview.overtimePay, preview.currency)}</span>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground/70 mt-1">
+                                        Outside hours: 1.5 × daily rate · Inside hours: 0.5 × daily rate (premium only)
                                       </div>
                                       {preview.overtimeShifts.length > 0 && (
                                         <div className="mt-2 ml-4 space-y-1">
@@ -1401,35 +1444,69 @@ export function MyHRProfile() {
                                       )}
                                     </div>}
                                   
-                                  {preview.holidayOvertimeBonus > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Public Holiday Overtime ({preview.holidayOvertimeDays} days)</span>
-                                      <span className="font-medium text-amber-600">+{formatCurrency(preview.holidayOvertimeBonus, preview.currency)}</span>
+                                  {preview.holidayOvertimeBonus > 0 && <div className="py-2 border-b">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground">Public Holiday Overtime ({preview.holidayOvertimeDays} days)</span>
+                                        <span className="font-medium text-amber-600">+{formatCurrency(preview.holidayOvertimeBonus, preview.currency)}</span>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground/70 mt-1">
+                                        {preview.holidayOvertimeDays} × {formatCurrency(preview.dailyRate, preview.currency)} × 0.5 (premium only — base day already in salary)
+                                      </div>
                                     </div>}
                                   
-                                  {preview.unusedHolidayPayout > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Unused Holiday Payout ({preview.unusedHolidayDays.toFixed(1)} days)</span>
-                                      <span className="font-medium text-success">+{formatCurrency(preview.unusedHolidayPayout, preview.currency)}</span>
+                                  {preview.unusedHolidayPayout > 0 && <div className="py-2 border-b">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground">Unused Holiday Payout ({preview.unusedHolidayDays.toFixed(1)} days)</span>
+                                        <span className="font-medium text-success">+{formatCurrency(preview.unusedHolidayPayout, preview.currency)}</span>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground/70 mt-1">
+                                        {preview.unusedHolidayDays.toFixed(1)} × ({formatCurrency(preview.monthlyBaseSalary, preview.currency)} ÷ 20) — end-of-holiday-year payout
+                                      </div>
                                     </div>}
                                   
-                                  {preview.excessHolidayDeduction > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Excess Holiday Deduction ({preview.excessHolidayDays.toFixed(1)} days over allowance)</span>
-                                      <span className="font-medium text-destructive">-{formatCurrency(preview.excessHolidayDeduction, preview.currency)}</span>
+                                  {preview.excessHolidayDeduction > 0 && <div className="py-2 border-b">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground">Excess Holiday Deduction ({preview.excessHolidayDays.toFixed(1)} days over allowance)</span>
+                                        <span className="font-medium text-destructive">-{formatCurrency(preview.excessHolidayDeduction, preview.currency)}</span>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground/70 mt-1">
+                                        {preview.excessHolidayDays.toFixed(1)} × ({formatCurrency(preview.monthlyBaseSalary, preview.currency)} ÷ 20)
+                                      </div>
                                     </div>}
                                   
-                                  {preview.unpaidHolidayDeduction > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Unpaid Holiday ({preview.unpaidHolidayDays} days)</span>
-                                      <span className="font-medium text-destructive">-{formatCurrency(preview.unpaidHolidayDeduction, preview.currency)}</span>
+                                  {preview.unpaidHolidayDeduction > 0 && <div className="py-2 border-b">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground">Unpaid Holiday ({preview.unpaidHolidayDays} days)</span>
+                                        <span className="font-medium text-destructive">-{formatCurrency(preview.unpaidHolidayDeduction, preview.currency)}</span>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground/70 mt-1">
+                                        {preview.unpaidHolidayDays} × ({formatCurrency(preview.monthlyBaseSalary, preview.currency)} ÷ 20)
+                                      </div>
                                     </div>}
                                   
-                                  {preview.proRataDeduction > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Pro-Rata Deduction ({preview.proRataWorkingDays}/{preview.proRataTotalWorkingDays} days worked)</span>
-                                      <span className="font-medium text-destructive">-{formatCurrency(preview.proRataDeduction, preview.currency)}</span>
+                                  {preview.proRataDeduction > 0 && <div className="py-2 border-b">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground">Pro-Rata Deduction ({preview.proRataWorkingDays}/{preview.proRataTotalWorkingDays} days worked)</span>
+                                        <span className="font-medium text-destructive">-{formatCurrency(preview.proRataDeduction, preview.currency)}</span>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground/70 mt-1">
+                                        ({preview.proRataTotalWorkingDays - preview.proRataWorkingDays} days not worked) × ({formatCurrency(preview.monthlyBaseSalary, preview.currency)} ÷ {preview.proRataTotalWorkingDays})
+                                      </div>
                                     </div>}
 
-                                  {preview.deductions > 0 && <div className="flex justify-between items-center py-2 border-b">
-                                      <span className="text-muted-foreground">Deductions</span>
-                                      <span className="font-medium text-destructive">-{formatCurrency(preview.deductions, preview.currency)}</span>
-                                    </div>}
+                                  {preview.deductionItems.length > 0 && preview.deductionItems.map((item, idx) => (
+                                    <div key={`d-${idx}`} className="py-2 border-b">
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-muted-foreground flex items-center gap-2">
+                                          Deduction
+                                          {item.description && (
+                                            <span className="text-xs italic text-muted-foreground/80">— {item.description}</span>
+                                          )}
+                                        </span>
+                                        <span className="font-medium text-destructive">-{formatCurrency(item.amount, preview.currency)}</span>
+                                      </div>
+                                    </div>
+                                  ))}
                                   
                                   <div className="flex justify-between items-center py-3 bg-primary/5 rounded-lg px-3 mt-2">
                                     <span className="font-semibold">Estimated Total</span>
