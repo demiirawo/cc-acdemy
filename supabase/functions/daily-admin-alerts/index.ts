@@ -474,6 +474,154 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
+    // ===== 5b. 3-DAY HOLIDAY COUNTDOWN REMINDERS =====
+    // Sends daily reminders 3, 2, and 1 days before each approved holiday
+    // to: all admins, the staff member on holiday, and any assigned cover staff.
+    if (!testType || testType === "holiday_countdown") {
+      const isCountdownTest = testType === "holiday_countdown";
+
+      const targetDates: string[] = [];
+      for (const offset of [1, 2, 3]) {
+        const d = new Date(today);
+        d.setDate(d.getDate() + offset);
+        targetDates.push(d.toISOString().split("T")[0]);
+      }
+
+      const { data: upcoming } = await supabaseClient
+        .from("staff_requests")
+        .select("id, user_id, start_date, end_date, request_type")
+        .in("request_type", ["holiday_paid", "holiday_unpaid", "holiday"])
+        .eq("status", "approved")
+        .in("start_date", targetDates);
+
+      const holidays = upcoming || [];
+
+      if (isCountdownTest && holidays.length === 0) {
+        const daysUntil = 1;
+        const sampleItems = [
+          `👤 [TEST] John Smith is on holiday: ${formatShortDate(targetDates[0])}`,
+          `⏳ Starts in ${daysUntil} day`,
+          `🤝 Cover assigned: [TEST] Jane Doe`,
+        ];
+        const result = await sendIndividualAlert(
+          resend, adminEmails,
+          `[TEST] 📅 Holiday starts in ${daysUntil} day: John Smith`,
+          "📅 Upcoming Holiday Reminder", "#0ea5e9",
+          sampleItems, todayStr
+        );
+        results.push({
+          type: "holiday_countdown",
+          title: "Holiday Countdown (test)",
+          items: sampleItems,
+          emailSent: result.success,
+          error: result.error,
+        });
+      }
+
+      if (holidays.length > 0) {
+        const holidayUserIds = [...new Set(holidays.map(h => h.user_id))];
+
+        const { data: covers } = await supabaseClient
+          .from("staff_requests")
+          .select("user_id, swap_with_user_id, coverage_metadata, start_date, end_date")
+          .eq("request_type", "shift_swap")
+          .eq("status", "approved")
+          .in("swap_with_user_id", holidayUserIds);
+
+        const { data: emailProfiles } = await supabaseClient
+          .from("profiles")
+          .select("user_id, email, display_name");
+        const emailMap = new Map(
+          emailProfiles?.map(p => [p.user_id, { email: p.email, name: p.display_name }]) || []
+        );
+
+        for (const h of holidays) {
+          const daysUntil = Math.round(
+            (new Date(h.start_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+          );
+          const takerInfo = emailMap.get(h.user_id);
+          const takerName = takerInfo?.name || "Unknown";
+          const holidayStart = h.start_date;
+          const holidayEnd = h.end_date;
+
+          const matchingCovers = (covers || []).filter(c => {
+            if (c.swap_with_user_id !== h.user_id) return false;
+            const dates: string[] = (c.coverage_metadata as any)?.covered_dates || [];
+            if (dates.length === 0) {
+              return !(c.end_date < holidayStart || c.start_date > holidayEnd);
+            }
+            return dates.some(d => d >= holidayStart && d <= holidayEnd);
+          });
+
+          const coverPeople = matchingCovers
+            .map(c => ({ id: c.user_id, ...emailMap.get(c.user_id) }))
+            .filter(c => c.email);
+          const coverNames = coverPeople.map(c => c.name || "Unknown");
+
+          const dateRange = holidayStart === holidayEnd
+            ? formatShortDate(holidayStart)
+            : `${formatShortDate(holidayStart)} - ${formatShortDate(holidayEnd)}`;
+
+          const dayWord = daysUntil === 1 ? "day" : "days";
+          const subjectBase = `📅 Holiday starts in ${daysUntil} ${dayWord}: ${takerName}`;
+
+          const adminItems = [
+            `👤 ${takerName} is on holiday: ${dateRange}`,
+            `⏳ Starts in ${daysUntil} ${dayWord}`,
+            coverNames.length > 0
+              ? `🤝 Cover assigned: ${coverNames.join(", ")}`
+              : `⚠️ No cover assigned`,
+          ];
+
+          if (adminEmails.length > 0) {
+            await sendIndividualAlert(
+              resend, adminEmails, subjectBase,
+              "📅 Upcoming Holiday Reminder", "#0ea5e9",
+              adminItems, todayStr
+            );
+          }
+
+          if (takerInfo?.email) {
+            const takerItems = [
+              `Your holiday starts in ${daysUntil} ${dayWord}.`,
+              `🗓️ ${dateRange}`,
+              coverNames.length > 0
+                ? `🤝 Your cover: ${coverNames.join(", ")}`
+                : `⚠️ No cover has been assigned yet — please check with the admin team.`,
+              `Have a great break! 🌴`,
+            ];
+            await sendIndividualAlert(
+              resend, [takerInfo.email as string],
+              `📅 Your holiday starts in ${daysUntil} ${dayWord}`,
+              "📅 Your Holiday is Coming Up", "#0ea5e9",
+              takerItems, todayStr
+            );
+          }
+
+          for (const cover of coverPeople) {
+            const coverItems = [
+              `You're covering ${takerName}'s holiday in ${daysUntil} ${dayWord}.`,
+              `🗓️ Holiday dates: ${dateRange}`,
+              `Please review your schedule for the covered shifts.`,
+            ];
+            await sendIndividualAlert(
+              resend, [cover.email as string],
+              `🤝 Covering ${takerName} in ${daysUntil} ${dayWord}`,
+              "🤝 Upcoming Cover Reminder", "#0ea5e9",
+              coverItems, todayStr
+            );
+          }
+
+          results.push({
+            type: "holiday_countdown",
+            title: `Holiday T-${daysUntil}: ${takerName}`,
+            items: adminItems,
+            emailSent: true,
+          });
+        }
+      }
+    }
+
     // ===== 6. UK CLOCK CHANGE REMINDERS (Always on, sent to all staff) =====
     if (!testType || testType === "clock_change") {
       // Calculate UK clock change dates for this year and next
