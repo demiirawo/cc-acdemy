@@ -331,6 +331,40 @@ export function AdminNotificationSettings() {
 
         <div className="space-y-4">
           <div className="flex items-start gap-3">
+            <div className="mt-0.5 text-sky-500">
+              <Calendar className="h-5 w-5" />
+            </div>
+            <div className="space-y-1 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">Holiday 3-Day Countdown</span>
+                <Badge variant="default">Always On</Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Daily reminder sent 3, 2, and 1 days before each approved holiday — to admins, the staff member on holiday, and any assigned cover staff.
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleTestNotification("holiday_countdown")}
+                  disabled={isTesting === "holiday_countdown"}
+                >
+                  {isTesting === "holiday_countdown" ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <Play className="h-4 w-4 mr-1" />
+                  )}
+                  Test
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <Separator />
+
+        <div className="space-y-4">
+          <div className="flex items-start gap-3">
             <div className="mt-0.5 text-indigo-500">
               <Bell className="h-5 w-5" />
             </div>
@@ -360,6 +394,7 @@ export function AdminNotificationSettings() {
             </div>
           </div>
         </div>
+
 
         <Separator />
         
