@@ -1073,10 +1073,33 @@ export function StaffPayManager() {
         }).reduce((sum, h) => sum + Number(h.days_taken), 0);
         
         const employeeStartDateStr = userHRFull?.start_date || null;
-        
-        // Calculate accrued allowance using the same logic as StaffHolidaysManager
-        const { accruedAllowance } = calculateHolidayAllowance(employeeStartDateStr);
-        
+
+        // June payroll reconciles the holiday year that JUST ENDED (June prev year → May current year).
+        // Use the FULL annual allowance for that completed year, pro-rated only if the
+        // employee started mid-year.
+        const DEFAULT_ALLOWANCE = 15;
+        const INCREASED_ALLOWANCE = 18;
+        const totalDaysInYear = Math.ceil((holidayYearEnd.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
+
+        let accruedAllowance = 0;
+        if (employeeStartDateStr) {
+          const start = parseISO(employeeStartDateStr);
+          // Years employed as of the end of the completed holiday year (May 31)
+          const yearsEmployedAtYearEnd = (holidayYearEnd.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
+          const annualAllowance = yearsEmployedAtYearEnd >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
+
+          if (start > holidayYearEnd) {
+            accruedAllowance = 0;
+          } else {
+            const accrualStart = start > holidayYearStart ? start : holidayYearStart;
+            const daysAccruing = Math.max(0, Math.ceil((holidayYearEnd.getTime() - accrualStart.getTime()) / (1000 * 60 * 60 * 24)));
+            const fraction = Math.min(daysAccruing / totalDaysInYear, 1);
+            accruedAllowance = Math.round(annualAllowance * fraction * 10) / 10;
+          }
+        } else {
+          accruedAllowance = DEFAULT_ALLOWANCE;
+        }
+
         const holidayBalance = accruedAllowance - userHolidaysTaken;
         
         if (holidayBalance >= 0) {
