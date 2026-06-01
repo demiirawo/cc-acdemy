@@ -3017,6 +3017,102 @@ export function StaffPayManager() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Bank Details Dialog */}
+      <Dialog open={bankDetailsDialog.open} onOpenChange={(open) => setBankDetailsDialog(prev => ({ ...prev, open }))}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Landmark className="h-5 w-5 text-primary" />
+              Bank Details
+            </DialogTitle>
+            <DialogDescription>
+              {bankDetailsDialog.staffName || 'Staff member'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {bankDetailsDialog.details ? (
+              <>
+                {bankDetailsDialog.details.company_name && (
+                  <div>
+                    <Label className="text-muted-foreground text-xs">Company Name</Label>
+                    <p className="text-sm font-medium">{bankDetailsDialog.details.company_name}</p>
+                  </div>
+                )}
+                {bankDetailsDialog.details.contact_name && (
+                  <div>
+                    <Label className="text-muted-foreground text-xs">Contact Name</Label>
+                    <p className="text-sm font-medium">{bankDetailsDialog.details.contact_name}</p>
+                  </div>
+                )}
+                {bankDetailsDialog.details.phone && (
+                  <div>
+                    <Label className="text-muted-foreground text-xs">Phone</Label>
+                    <p className="text-sm font-medium">{bankDetailsDialog.details.phone}</p>
+                  </div>
+                )}
+                {bankDetailsDialog.details.email && (
+                  <div>
+                    <Label className="text-muted-foreground text-xs">Email</Label>
+                    <p className="text-sm font-medium">{bankDetailsDialog.details.email}</p>
+                  </div>
+                )}
+                <div className="border-t pt-3 space-y-3">
+                  {bankDetailsDialog.details.bank_account_name && (
+                    <div>
+                      <Label className="text-muted-foreground text-xs">Account Name</Label>
+                      <p className="text-sm font-medium">{bankDetailsDialog.details.bank_account_name}</p>
+                    </div>
+                  )}
+                  {bankDetailsDialog.details.bank_account_number && (
+                    <div>
+                      <Label className="text-muted-foreground text-xs">Account Number</Label>
+                      <p className="text-sm font-medium">{bankDetailsDialog.details.bank_account_number}</p>
+                    </div>
+                  )}
+                  {bankDetailsDialog.details.bank_name && (
+                    <div>
+                      <Label className="text-muted-foreground text-xs">Bank Name</Label>
+                      <p className="text-sm font-medium">{bankDetailsDialog.details.bank_name}</p>
+                    </div>
+                  )}
+                  {bankDetailsDialog.details.sort_code && (
+                    <div>
+                      <Label className="text-muted-foreground text-xs">Sort Code</Label>
+                      <p className="text-sm font-medium">{bankDetailsDialog.details.sort_code}</p>
+                    </div>
+                  )}
+                  {bankDetailsDialog.details.iban && (
+                    <div>
+                      <Label className="text-muted-foreground text-xs">IBAN</Label>
+                      <p className="text-sm font-medium">{bankDetailsDialog.details.iban}</p>
+                    </div>
+                  )}
+                  {bankDetailsDialog.details.swift && (
+                    <div>
+                      <Label className="text-muted-foreground text-xs">SWIFT / BIC</Label>
+                      <p className="text-sm font-medium">{bankDetailsDialog.details.swift}</p>
+                    </div>
+                  )}
+                </div>
+                {bankDetailsDialog.details.company_address && (
+                  <div className="border-t pt-3">
+                    <Label className="text-muted-foreground text-xs">Company Address</Label>
+                    <p className="text-sm font-medium whitespace-pre-line">{bankDetailsDialog.details.company_address}</p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">No contractor / bank details saved for this staff member.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBankDetailsDialog(prev => ({ ...prev, open: false }))}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
