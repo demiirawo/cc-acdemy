@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat, FileBadge, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat, FileBadge, ArrowUp, ArrowDown, ArrowUpDown, Landmark } from "lucide-react";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { downloadInvoicePdf, type InvoiceData } from "@/lib/invoice/generatePdf";
@@ -182,6 +182,11 @@ export function StaffPayManager() {
   const [savingAdjustment, setSavingAdjustment] = useState(false);
   const [readyStaff, setReadyStaff] = useState<Set<string>>(new Set());
   const [expandedOvertimeStaff, setExpandedOvertimeStaff] = useState<Set<string>>(new Set());
+  const [bankDetailsDialog, setBankDetailsDialog] = useState<{
+    open: boolean;
+    staffName: string;
+    details: Record<string, string> | null;
+  }>({ open: false, staffName: '', details: null });
   type SortKey = 'displayName' | 'baseSalary' | 'bonuses' | 'overtime' | 'holidayOvertimeBonus' | 'unusedHolidayPayout' | 'unpaidHolidayDeduction' | 'proRataDeduction' | 'deductions' | 'totalPay' | 'totalPayInGBP';
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -1530,6 +1535,19 @@ export function StaffPayManager() {
     return RECORD_TYPES.find(t => t.value === type) || RECORD_TYPES[0];
   };
 
+  const handleShowBankDetails = async (staff: typeof payrollSummary[0]) => {
+    const { data } = await supabase
+      .from("contractor_invoice_details")
+      .select("*")
+      .eq("user_id", staff.userId)
+      .maybeSingle();
+    setBankDetailsDialog({
+      open: true,
+      staffName: staff.displayName,
+      details: data as Record<string, string> | null,
+    });
+  };
+
   const handleQuickInvoiceDownload = async (staff: typeof payrollSummary[0]) => {
     if (!user) return;
     setQuickInvoiceBusy(staff.userId);
@@ -2395,6 +2413,15 @@ export function StaffPayManager() {
                           >
                             <FileBadge className="h-4 w-4" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleShowBankDetails(staff)}
+                            className="h-8 w-8 p-0"
+                            title="View bank details"
+                          >
+                            <Landmark className="h-4 w-4" />
+                          </Button>
                           {staff.hasSalaryRecord ? (
                             <Button 
                               variant="ghost" 
@@ -2986,6 +3013,102 @@ export function StaffPayManager() {
               }}
             >
               Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bank Details Dialog */}
+      <Dialog open={bankDetailsDialog.open} onOpenChange={(open) => setBankDetailsDialog(prev => ({ ...prev, open }))}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Landmark className="h-5 w-5 text-primary" />
+              Bank Details
+            </DialogTitle>
+            <DialogDescription>
+              {bankDetailsDialog.staffName || 'Staff member'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {bankDetailsDialog.details ? (
+              <>
+                {bankDetailsDialog.details.company_name && (
+                  <div>
+                    <Label className="text-muted-foreground text-xs">Company Name</Label>
+                    <p className="text-sm font-medium">{bankDetailsDialog.details.company_name}</p>
+                  </div>
+                )}
+                {bankDetailsDialog.details.contact_name && (
+                  <div>
+                    <Label className="text-muted-foreground text-xs">Contact Name</Label>
+                    <p className="text-sm font-medium">{bankDetailsDialog.details.contact_name}</p>
+                  </div>
+                )}
+                {bankDetailsDialog.details.phone && (
+                  <div>
+                    <Label className="text-muted-foreground text-xs">Phone</Label>
+                    <p className="text-sm font-medium">{bankDetailsDialog.details.phone}</p>
+                  </div>
+                )}
+                {bankDetailsDialog.details.email && (
+                  <div>
+                    <Label className="text-muted-foreground text-xs">Email</Label>
+                    <p className="text-sm font-medium">{bankDetailsDialog.details.email}</p>
+                  </div>
+                )}
+                <div className="border-t pt-3 space-y-3">
+                  {bankDetailsDialog.details.bank_account_name && (
+                    <div>
+                      <Label className="text-muted-foreground text-xs">Account Name</Label>
+                      <p className="text-sm font-medium">{bankDetailsDialog.details.bank_account_name}</p>
+                    </div>
+                  )}
+                  {bankDetailsDialog.details.bank_account_number && (
+                    <div>
+                      <Label className="text-muted-foreground text-xs">Account Number</Label>
+                      <p className="text-sm font-medium">{bankDetailsDialog.details.bank_account_number}</p>
+                    </div>
+                  )}
+                  {bankDetailsDialog.details.bank_name && (
+                    <div>
+                      <Label className="text-muted-foreground text-xs">Bank Name</Label>
+                      <p className="text-sm font-medium">{bankDetailsDialog.details.bank_name}</p>
+                    </div>
+                  )}
+                  {bankDetailsDialog.details.sort_code && (
+                    <div>
+                      <Label className="text-muted-foreground text-xs">Sort Code</Label>
+                      <p className="text-sm font-medium">{bankDetailsDialog.details.sort_code}</p>
+                    </div>
+                  )}
+                  {bankDetailsDialog.details.iban && (
+                    <div>
+                      <Label className="text-muted-foreground text-xs">IBAN</Label>
+                      <p className="text-sm font-medium">{bankDetailsDialog.details.iban}</p>
+                    </div>
+                  )}
+                  {bankDetailsDialog.details.swift && (
+                    <div>
+                      <Label className="text-muted-foreground text-xs">SWIFT / BIC</Label>
+                      <p className="text-sm font-medium">{bankDetailsDialog.details.swift}</p>
+                    </div>
+                  )}
+                </div>
+                {bankDetailsDialog.details.company_address && (
+                  <div className="border-t pt-3">
+                    <Label className="text-muted-foreground text-xs">Company Address</Label>
+                    <p className="text-sm font-medium whitespace-pre-line">{bankDetailsDialog.details.company_address}</p>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">No contractor / bank details saved for this staff member.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBankDetailsDialog(prev => ({ ...prev, open: false }))}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
