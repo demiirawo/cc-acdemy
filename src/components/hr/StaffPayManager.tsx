@@ -2413,6 +2413,15 @@ export function StaffPayManager() {
                           >
                             <FileBadge className="h-4 w-4" />
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleShowBankDetails(staff)}
+                            className="h-8 w-8 p-0"
+                            title="View bank details"
+                          >
+                            <Landmark className="h-4 w-4" />
+                          </Button>
                           {staff.hasSalaryRecord ? (
                             <Button 
                               variant="ghost" 
