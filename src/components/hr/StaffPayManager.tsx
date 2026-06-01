@@ -1535,6 +1535,19 @@ export function StaffPayManager() {
     return RECORD_TYPES.find(t => t.value === type) || RECORD_TYPES[0];
   };
 
+  const handleShowBankDetails = async (staff: typeof payrollSummary[0]) => {
+    const { data } = await supabase
+      .from("contractor_invoice_details")
+      .select("*")
+      .eq("user_id", staff.userId)
+      .maybeSingle();
+    setBankDetailsDialog({
+      open: true,
+      staffName: staff.displayName,
+      details: data as Record<string, string> | null,
+    });
+  };
+
   const handleQuickInvoiceDownload = async (staff: typeof payrollSummary[0]) => {
     if (!user) return;
     setQuickInvoiceBusy(staff.userId);
