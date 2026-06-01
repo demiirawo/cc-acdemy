@@ -182,6 +182,11 @@ export function StaffPayManager() {
   const [savingAdjustment, setSavingAdjustment] = useState(false);
   const [readyStaff, setReadyStaff] = useState<Set<string>>(new Set());
   const [expandedOvertimeStaff, setExpandedOvertimeStaff] = useState<Set<string>>(new Set());
+  const [bankDetailsDialog, setBankDetailsDialog] = useState<{
+    open: boolean;
+    staffName: string;
+    details: Record<string, string> | null;
+  }>({ open: false, staffName: '', details: null });
   type SortKey = 'displayName' | 'baseSalary' | 'bonuses' | 'overtime' | 'holidayOvertimeBonus' | 'unusedHolidayPayout' | 'unpaidHolidayDeduction' | 'proRataDeduction' | 'deductions' | 'totalPay' | 'totalPayInGBP';
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
