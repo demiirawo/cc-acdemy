@@ -1648,22 +1648,35 @@ export function MyHRProfile() {
                   shiftTime: string;
                 }[] = [];
                 let currentDate = new Date(startDate);
+                const exceptionSet = new Set(
+                  patternExceptions.map(e => `${e.pattern_id}:${e.exception_date}`)
+                );
                 while (currentDate <= endDate) {
                   const dayOfWeek = currentDate.getDay();
+                  const currentDateStr = format(currentDate, 'yyyy-MM-dd');
                   recurringPatterns.forEach(pattern => {
                     const patternStart = new Date(pattern.start_date);
                     const patternEnd = pattern.end_date ? new Date(pattern.end_date) : null;
-                    if (currentDate >= patternStart && (!patternEnd || currentDate <= patternEnd)) {
-                      if (pattern.days_of_week.includes(dayOfWeek)) {
-                        const startTime = pattern.start_time.substring(0, 5);
-                        const endTime = pattern.end_time.substring(0, 5);
-                        const shiftTime = `${startTime} - ${endTime}`;
-                        result.push({
-                          date: new Date(currentDate),
-                          shiftTime
-                        });
-                      }
+                    if (currentDate < patternStart) return;
+                    if (patternEnd && currentDate > patternEnd) return;
+                    if (!pattern.days_of_week.includes(dayOfWeek)) return;
+                    // Honor recurrence interval (weekly/biweekly/monthly)
+                    const interval = (pattern as any).recurrence_interval || 'weekly';
+                    if (interval !== 'weekly') {
+                      const diffDays = Math.floor((currentDate.getTime() - patternStart.getTime()) / (1000 * 60 * 60 * 24));
+                      const diffWeeks = Math.floor(diffDays / 7);
+                      if (interval === 'biweekly' && diffWeeks % 2 !== 0) return;
+                      if (interval === 'monthly' && diffWeeks % 4 !== 0) return;
                     }
+                    // Skip exceptions (cancelled shifts)
+                    if (exceptionSet.has(`${pattern.id}:${currentDateStr}`)) return;
+                    const startTime = pattern.start_time.substring(0, 5);
+                    const endTime = pattern.end_time.substring(0, 5);
+                    const shiftTime = `${startTime} - ${endTime}`;
+                    result.push({
+                      date: new Date(currentDate),
+                      shiftTime
+                    });
                   });
                   currentDate.setDate(currentDate.getDate() + 1);
                 }
