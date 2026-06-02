@@ -356,7 +356,7 @@ export function MyHRProfile() {
       // Fetch recurring patterns for this user
       const {
         data: patterns
-      } = await supabase.from('recurring_shift_patterns').select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, is_overtime, overtime_subtype').eq('user_id', targetUserId);
+      } = await supabase.from('recurring_shift_patterns').select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, is_overtime, overtime_subtype, recurrence_interval').eq('user_id', targetUserId);
       setRecurringPatterns(patterns || []);
 
       // Fetch pattern exceptions
