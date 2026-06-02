@@ -449,18 +449,31 @@ export function StaffRequestForm() {
       const daysInRange = eachDayOfInterval({ start: startDate, end: endDate });
       let workingDays = 0;
 
+      const exceptionSet = new Set(
+        (shiftExceptions as any[]).map(e => `${e.pattern_id}:${e.exception_date}`)
+      );
+
       daysInRange.forEach(day => {
         const dayOfWeek = getDay(day);
         const dateStr = format(day, "yyyy-MM-dd");
 
-        // Only count non-overtime patterns (holidays don't cover overtime shifts)
-        const hasRecurringShift = shiftPatterns.some(pattern => {
-          if (pattern.is_overtime) return false; // Exclude overtime patterns from holiday day calculation
+        // Only count non-overtime patterns; honor recurrence_interval and exceptions
+        const hasRecurringShift = shiftPatterns.some((pattern: any) => {
+          if (pattern.is_overtime) return false;
           const patternStart = parseISO(pattern.start_date);
           const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-          const inDateRange = day >= patternStart && (!patternEnd || day <= patternEnd);
-          const dayMatches = pattern.days_of_week?.includes(dayOfWeek);
-          return inDateRange && dayMatches;
+          if (day < patternStart) return false;
+          if (patternEnd && day > patternEnd) return false;
+          if (!pattern.days_of_week?.includes(dayOfWeek)) return false;
+          const interval = pattern.recurrence_interval || 'weekly';
+          if (interval !== 'weekly') {
+            const diffDays = Math.floor((day.getTime() - patternStart.getTime()) / (1000 * 60 * 60 * 24));
+            const diffWeeks = Math.floor(diffDays / 7);
+            if (interval === 'biweekly' && diffWeeks % 2 !== 0) return false;
+            if (interval === 'monthly' && diffWeeks % 4 !== 0) return false;
+          }
+          if (exceptionSet.has(`${pattern.id}:${dateStr}`)) return false;
+          return true;
         });
 
         const hasIndividualShift = individualSchedules.some(schedule => {
@@ -477,7 +490,7 @@ export function StaffRequestForm() {
 
       setDaysRequested(workingDays.toString());
     }
-  }, [requestType, startDate, endDate, shiftPatterns, individualSchedules, selectedStaffId]);
+  }, [requestType, startDate, endDate, shiftPatterns, shiftExceptions, individualSchedules, selectedStaffId]);
 
   // Auto-populate dates from selected holiday for overtime requests
   useEffect(() => {
