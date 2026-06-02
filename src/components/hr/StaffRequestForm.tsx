@@ -174,6 +174,22 @@ export function StaffRequestForm() {
     enabled: !!targetUserId
   });
 
+  // Fetch shift pattern exceptions for target user (to skip cancelled shift dates)
+  const { data: shiftExceptions = [] } = useQuery({
+    queryKey: ["target-shift-exceptions", shiftPatterns.map((p: any) => p.id).join(",")],
+    queryFn: async () => {
+      const ids = (shiftPatterns as any[]).map(p => p.id);
+      if (ids.length === 0) return [];
+      const { data, error } = await supabase
+        .from("shift_pattern_exceptions")
+        .select("pattern_id, exception_date")
+        .in("pattern_id", ids);
+      if (error) throw error;
+      return data;
+    },
+    enabled: shiftPatterns.length > 0,
+  });
+
   // Fetch target user's individual schedules
   const { data: individualSchedules = [] } = useQuery({
     queryKey: ["target-schedules", targetUserId],
