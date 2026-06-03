@@ -465,6 +465,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
       toast.info(`"${t.name}" is already in this tracker.`);
       return;
     }
+    const last = tasks[tasks.length - 1];
     createMutation.mutate({
       ...newDraft(),
       template_id: t.id,
@@ -472,6 +473,8 @@ export function ClientHandoverTracker({ clientName }: Props) {
       task_name: t.name,
       task_description: t.description || "",
       link: t.link || "",
+      handed_over_by: last?.handed_over_by || "",
+      handed_over_to: last?.handed_over_to || "",
     });
   };
 
