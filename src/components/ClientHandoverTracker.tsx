@@ -482,12 +482,13 @@ export function ClientHandoverTracker({ clientName }: Props) {
         />
       </div>
       {/* Due date */}
-      <div className="border-r border-border/60 flex items-center justify-center px-2 py-1">
+      <div className={`border-r border-border/60 flex items-center justify-center overflow-hidden ${targetDateCellTone(t.target_date)}`}>
         <TargetDateChip
           value={t.target_date}
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { target_date: v || null } })}
         />
       </div>
+
       {/* Delete */}
       <div className="flex items-center justify-center">
         <button
