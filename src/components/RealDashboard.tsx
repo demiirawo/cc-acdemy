@@ -14,6 +14,7 @@ import { UpcomingRequestsPreview } from "./UpcomingRequestsPreview";
 import { UpcomingBirthdaysCard } from "./UpcomingBirthdaysCard";
 import { UpcomingAnniversariesCard } from "./UpcomingAnniversariesCard";
 import { DashboardLiveViewWrapper } from "./DashboardLiveViewWrapper";
+import { HandoverTrackerSummaryCard } from "./HandoverTrackerSummaryCard";
 interface Page {
   id: string;
   title: string;
