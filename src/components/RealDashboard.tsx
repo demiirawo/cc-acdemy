@@ -329,8 +329,6 @@ export function RealDashboard({
         {/* Active Handover Trackers - Admin only */}
         {isAdmin && <HandoverTrackerSummaryCard />}
 
-        {/* Company Noticeboard */}
-        <CompanyNoticeboard />
 
         {/* Live View - Admin only */}
         {isAdmin && <DashboardLiveViewWrapper />}
