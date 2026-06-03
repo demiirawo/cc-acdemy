@@ -14,6 +14,7 @@ import { UpcomingRequestsPreview } from "./UpcomingRequestsPreview";
 import { UpcomingBirthdaysCard } from "./UpcomingBirthdaysCard";
 import { UpcomingAnniversariesCard } from "./UpcomingAnniversariesCard";
 import { DashboardLiveViewWrapper } from "./DashboardLiveViewWrapper";
+import { HandoverTrackerSummaryCard } from "./HandoverTrackerSummaryCard";
 interface Page {
   id: string;
   title: string;
@@ -330,6 +331,9 @@ export function RealDashboard({
 
         {/* Live View - Admin only */}
         {isAdmin && <DashboardLiveViewWrapper />}
+
+        {/* Active Handover Trackers - Admin only */}
+        {isAdmin && <HandoverTrackerSummaryCard />}
 
         {/* Upcoming Approved Requests - Admin only */}
         {isAdmin && <UpcomingRequestsPreview onViewRequest={onViewRequest} />}
