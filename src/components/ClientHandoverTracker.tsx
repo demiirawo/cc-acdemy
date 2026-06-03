@@ -153,14 +153,6 @@ export function ClientHandoverTracker({ clientName }: Props) {
     },
   });
 
-  const filteredTemplates = useMemo(() => {
-    const q = templateSearch.trim().toLowerCase();
-    if (!q) return templates;
-    return templates.filter(t =>
-      t.name.toLowerCase().includes(q) || (t.description || "").toLowerCase().includes(q)
-    );
-  }, [templates, templateSearch]);
-
   // Group tasks by category, preserving first-seen order
   const groupedTasks = useMemo(() => {
     const groups = new Map<string, HandoverTask[]>();
@@ -170,6 +162,24 @@ export function ClientHandoverTracker({ clientName }: Props) {
       groups.get(cat)!.push(t);
     }
     return Array.from(groups.entries());
+  }, [tasks]);
+
+  // Group templates by category for the library accordion
+  const groupedTemplates = useMemo(() => {
+    const groups = new Map<string, HandoverTemplate[]>();
+    for (const t of templates) {
+      const cat = (t.category || "").trim() || UNCATEGORIZED;
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat)!.push(t);
+    }
+    return Array.from(groups.entries());
+  }, [templates]);
+
+  // Track which templates are already added to this client's tracker
+  const usedTemplateIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const t of tasks) if (t.template_id) s.add(t.template_id);
+    return s;
   }, [tasks]);
 
   const createMutation = useMutation({
