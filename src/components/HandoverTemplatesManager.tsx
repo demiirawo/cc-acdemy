@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,10 +16,12 @@ interface Template {
   name: string;
   description: string | null;
   link: string | null;
+  category: string | null;
   sort_order: number | null;
 }
 
-const empty = { name: "", description: "", link: "" };
+const UNCATEGORIZED = "Uncategorized";
+const empty = { name: "", description: "", link: "", category: "" };
 
 export function HandoverTemplatesManager() {
   const qc = useQueryClient();
@@ -41,12 +43,23 @@ export function HandoverTemplatesManager() {
     },
   });
 
+  const grouped = useMemo(() => {
+    const map = new Map<string, Template[]>();
+    for (const t of templates) {
+      const cat = (t.category || "").trim() || UNCATEGORIZED;
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(t);
+    }
+    return Array.from(map.entries());
+  }, [templates]);
+
   const save = useMutation({
     mutationFn: async () => {
       const payload = {
         name: form.name.trim(),
         description: form.description.trim() || null,
         link: form.link.trim() || null,
+        category: form.category.trim() || null,
       };
       if (editingId) {
         const { error } = await supabase.from("handover_task_templates").update(payload).eq("id", editingId);
@@ -79,9 +92,16 @@ export function HandoverTemplatesManager() {
   const openCreate = () => { setEditingId(null); setForm(empty); setOpen(true); };
   const openEdit = (t: Template) => {
     setEditingId(t.id);
-    setForm({ name: t.name, description: t.description || "", link: t.link || "" });
+    setForm({
+      name: t.name,
+      description: t.description || "",
+      link: t.link || "",
+      category: t.category || "",
+    });
     setOpen(true);
   };
+
+  const cellCls = "px-2 py-2 align-top border-r border-border";
 
   return (
     <Card>
@@ -96,32 +116,75 @@ export function HandoverTemplatesManager() {
         </div>
         <Button size="sm" onClick={openCreate}><Plus className="h-4 w-4 mr-1" /> Add Template</Button>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-0 sm:p-0">
         {isLoading ? (
-          <div className="text-sm text-muted-foreground py-4">Loading…</div>
+          <div className="text-sm text-muted-foreground py-6 px-4">Loading…</div>
         ) : templates.length === 0 ? (
           <div className="text-sm text-muted-foreground py-6 text-center">No templates yet.</div>
         ) : (
-          <div className="divide-y border rounded-md">
-            {templates.map(t => (
-              <div key={t.id} className="flex items-start justify-between gap-3 p-3">
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium">{t.name}</div>
-                  {t.description && <div className="text-sm text-muted-foreground">{t.description}</div>}
-                  {t.link && (
-                    <a href={t.link} target="_blank" rel="noopener noreferrer" className="text-xs text-primary inline-flex items-center gap-1 mt-1 hover:underline">
-                      <ExternalLink className="h-3 w-3" /> {t.link}
-                    </a>
-                  )}
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button variant="ghost" size="icon" onClick={() => openEdit(t)}><Pencil className="h-4 w-4" /></Button>
-                  <Button variant="ghost" size="icon" onClick={() => {
-                    if (confirm(`Delete template "${t.name}"?`)) remove.mutate(t.id);
-                  }}><Trash2 className="h-4 w-4 text-destructive" /></Button>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto border-t border-b">
+            <table className="w-full text-sm border-collapse">
+              <colgroup>
+                <col style={{ width: "22%" }} />
+                <col style={{ width: "44%" }} />
+                <col style={{ width: "24%" }} />
+                <col style={{ width: "10%" }} />
+              </colgroup>
+              <thead>
+                <tr className="bg-muted/50 text-xs uppercase text-muted-foreground">
+                  <th className="text-left font-medium px-2 py-2 border-r border-border">Task</th>
+                  <th className="text-left font-medium px-2 py-2 border-r border-border">Description</th>
+                  <th className="text-left font-medium px-2 py-2 border-r border-border">Link</th>
+                  <th className="px-2 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {grouped.map(([category, rows]) => (
+                  <Fragment key={`grp-${category}`}>
+                    <tr className="bg-muted/30 border-t border-border">
+                      <td colSpan={4} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {category}
+                      </td>
+                    </tr>
+                    {rows.map((t) => (
+                      <tr key={t.id} className="border-t border-border hover:bg-muted/20">
+                        <td className={`${cellCls} font-medium`}>{t.name}</td>
+                        <td className={`${cellCls} text-muted-foreground`}>{t.description || "—"}</td>
+                        <td className={cellCls}>
+                          {t.link ? (
+                            <a
+                              href={t.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-primary inline-flex items-center gap-1 hover:underline break-all"
+                            >
+                              <ExternalLink className="h-3 w-3 shrink-0" />
+                              <span className="truncate max-w-[200px]">{t.link}</span>
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-1 py-1 text-right whitespace-nowrap">
+                          <Button variant="ghost" size="icon" onClick={() => openEdit(t)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              if (confirm(`Delete template "${t.name}"?`)) remove.mutate(t.id);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </CardContent>
@@ -133,6 +196,14 @@ export function HandoverTemplatesManager() {
             <DialogDescription>Define a reusable handover task.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            <div>
+              <Label>Category</Label>
+              <Input
+                value={form.category}
+                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                placeholder="e.g. Rota & Scheduling"
+              />
+            </div>
             <div>
               <Label>Task Name *</Label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
