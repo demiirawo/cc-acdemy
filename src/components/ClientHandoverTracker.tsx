@@ -585,7 +585,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
             <Plus className="h-3.5 w-3.5 text-muted-foreground" />
           </div>
           <div className="col-span-7 px-3 py-2 text-xs text-muted-foreground">
-            {allowCategoryEdit ? "Add a task (new category)…" : "Add a task…"}
+            Add a task…
           </div>
         </button>
       );
@@ -842,7 +842,6 @@ export function ClientHandoverTracker({ clientName }: Props) {
                             rowCounter += 1;
                             return renderTaskRow(r, rowCounter);
                           })}
-                          <InlineAddRow defaultCategory={category} />
                         </>
                       )}
                     </div>
