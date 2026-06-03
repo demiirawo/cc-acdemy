@@ -452,7 +452,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
   };
 
   function targetDateClasses(targetDate: string | null, progress: number = 0) {
-    if (progress >= 100) return "bg-background text-foreground";
+    if (progress >= 100) return "bg-success/10 text-success";
     if (!targetDate) return "";
     const days = Math.ceil((new Date(targetDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
     if (days > 14) return "bg-success/10 text-success";
@@ -552,7 +552,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
   }
 
   const targetDateCellTone = (value: string | null, progress: number = 0) =>
-    value ? targetDateClasses(value, progress) : progress >= 100 ? "bg-background text-foreground" : "";
+    value ? targetDateClasses(value, progress) : progress >= 100 ? "bg-success/10 text-success" : "";
 
 
 
