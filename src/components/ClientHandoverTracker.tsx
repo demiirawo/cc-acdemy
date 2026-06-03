@@ -7,6 +7,7 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Trash2, ExternalLink, Plus, Check, X } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
 
 interface HandoverTemplate {
