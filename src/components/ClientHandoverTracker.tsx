@@ -226,6 +226,61 @@ export function ClientHandoverTracker({ clientName }: Props) {
   };
 
   const cellClasses = "border-r border-border last:border-r-0 align-middle";
+  const cellClassesTop = "border-r border-border last:border-r-0 align-top";
+
+  function LinkCell({
+    value,
+    onCommit,
+  }: {
+    value: string | null;
+    onCommit: (v: string) => void;
+  }) {
+    const [editing, setEditing] = useState(false);
+    const initial = value ?? "";
+    const [local, setLocal] = useState(initial);
+    useEffect(() => { setLocal(initial); }, [initial]);
+
+    if (!editing && value) {
+      return (
+        <div
+          className="flex items-center justify-center h-full px-2 cursor-pointer"
+          onClick={() => setEditing(true)}
+        >
+          <a
+            href={value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:text-primary/80"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        </div>
+      );
+    }
+
+    return (
+      <input
+        type="text"
+        value={local}
+        autoFocus={editing}
+        placeholder="https://…"
+        onChange={(e) => setLocal(e.target.value)}
+        onBlur={() => {
+          setEditing(false);
+          if (local !== initial) onCommit(local);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") {
+            setLocal(initial);
+            setEditing(false);
+          }
+        }}
+        className="w-full h-full bg-transparent border-0 px-2 py-1.5 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
+      />
+    );
+  }
 
   return (
     <Card className="mt-4 sm:mt-6">
