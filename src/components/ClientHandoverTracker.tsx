@@ -252,7 +252,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
       return (
         <div
           className="flex items-center justify-center h-full px-2 cursor-pointer"
-          onClick={() => setEditing(true)}
+          onDoubleClick={() => setEditing(true)}
         >
           <a
             href={value}
