@@ -872,7 +872,10 @@ export function ClientHandoverTracker({ clientName }: Props) {
               allowCategoryEdit
               defaultFrom={tasks[tasks.length - 1]?.handed_over_by || ""}
               defaultTo={tasks[tasks.length - 1]?.handed_over_to || ""}
+              onCreate={(d, onDone) => createMutation.mutate(d, { onSuccess: () => onDone() })}
+              isPending={createMutation.isPending}
             />
+
 
           </div>
         </div>
