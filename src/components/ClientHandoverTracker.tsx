@@ -223,6 +223,19 @@ export function ClientHandoverTracker({ clientName }: Props) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["client-handover-tasks", clientName] }),
   });
 
+  const clearAllMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("client_handover_tasks").delete().eq("client_name", clientName);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["client-handover-tasks", clientName] });
+      setDraft(newDraft());
+      toast.success("Handover tracker cleared");
+    },
+    onError: (e: any) => toast.error(e.message || "Failed to clear tracker"),
+  });
+
   const draftHasContent = (d: DraftRow) =>
     !!(d.task_name.trim() || d.task_description.trim() || d.link.trim() ||
        d.handed_over_by.trim() || d.handed_over_to.trim() || d.category.trim() ||
