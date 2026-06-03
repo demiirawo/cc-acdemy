@@ -151,6 +151,62 @@ export type Database = {
           },
         ]
       }
+      client_handover_tasks: {
+        Row: {
+          client_name: string
+          created_at: string
+          handed_over_by: string | null
+          handed_over_to: string | null
+          id: string
+          link: string | null
+          progress: number
+          sort_order: number | null
+          target_date: string | null
+          task_description: string | null
+          task_name: string
+          template_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_name: string
+          created_at?: string
+          handed_over_by?: string | null
+          handed_over_to?: string | null
+          id?: string
+          link?: string | null
+          progress?: number
+          sort_order?: number | null
+          target_date?: string | null
+          task_description?: string | null
+          task_name: string
+          template_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_name?: string
+          created_at?: string
+          handed_over_by?: string | null
+          handed_over_to?: string | null
+          id?: string
+          link?: string | null
+          progress?: number
+          sort_order?: number | null
+          target_date?: string | null
+          task_description?: string | null
+          task_name?: string
+          template_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_handover_tasks_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "handover_task_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_notices: {
         Row: {
           author_name: string
@@ -519,6 +575,39 @@ export type Database = {
           term?: string
           updated_at?: string
           variations?: string[]
+        }
+        Relationships: []
+      }
+      handover_task_templates: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          link: string | null
+          name: string
+          sort_order: number | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          link?: string | null
+          name: string
+          sort_order?: number | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          link?: string | null
+          name?: string
+          sort_order?: number | null
+          updated_at?: string
         }
         Relationships: []
       }
