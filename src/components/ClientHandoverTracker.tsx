@@ -443,56 +443,13 @@ export function ClientHandoverTracker({ clientName }: Props) {
                   />
                 </td>
                 <td className={cellClassesTop}>
-                  <div className="flex items-stretch">
-                    <Cell
-                      value={draft.task_name}
-                      placeholder="Type a task name…"
-                      onCommit={(v) => commitDraftIfFilled({ ...draft, task_name: v })}
-                      className="font-medium"
-                      multiline
-                    />
-                    <Popover open={templatePopoverOpen} onOpenChange={setTemplatePopoverOpen}>
-                      <PopoverTrigger asChild>
-                        <button
-                          type="button"
-                          className="px-2 text-muted-foreground hover:text-primary shrink-0"
-                          title="Use predefined task"
-                        >
-                          <Search className="h-3.5 w-3.5" />
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[340px] p-0" align="start">
-                        <div className="p-2 border-b">
-                          <Input
-                            autoFocus
-                            placeholder="Search predefined tasks…"
-                            value={templateSearch}
-                            onChange={(e) => setTemplateSearch(e.target.value)}
-                            className="h-8"
-                          />
-                        </div>
-                        <div className="max-h-64 overflow-auto">
-                          {filteredTemplates.length === 0 ? (
-                            <div className="text-sm text-muted-foreground p-4 text-center">
-                              No templates found.
-                            </div>
-                          ) : filteredTemplates.map(t => (
-                            <button
-                              key={t.id}
-                              type="button"
-                              onClick={() => applyTemplateToDraft(t)}
-                              className="w-full text-left px-3 py-2 hover:bg-muted border-b last:border-0"
-                            >
-                              <div className="font-medium text-sm">{t.name}</div>
-                              {t.description && (
-                                <div className="text-xs text-muted-foreground line-clamp-2">{t.description}</div>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
+                  <Cell
+                    value={draft.task_name}
+                    placeholder="Type a task name…"
+                    onCommit={(v) => commitDraftIfFilled({ ...draft, task_name: v })}
+                    className="font-medium"
+                    multiline
+                  />
                 </td>
                 <td className={cellClassesTop}>
                   <Cell
