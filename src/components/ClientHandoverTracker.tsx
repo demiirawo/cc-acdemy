@@ -551,8 +551,8 @@ export function ClientHandoverTracker({ clientName }: Props) {
     );
   }
 
-  const targetDateCellTone = (value: string | null) =>
-    value ? targetDateClasses(value) : "";
+  const targetDateCellTone = (value: string | null, progress: number = 0) =>
+    value ? targetDateClasses(value, progress) : progress >= 100 ? "bg-background text-foreground" : "";
 
 
 
