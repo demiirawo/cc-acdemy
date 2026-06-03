@@ -294,7 +294,6 @@ export function ClientHandoverTracker({ clientName }: Props) {
     <Card className="mt-4 sm:mt-6">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
-          <ClipboardList className="h-5 w-5 text-primary" />
           Handover Tracker
         </CardTitle>
       </CardHeader>
