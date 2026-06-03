@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,9 +60,9 @@ const newDraft = (): DraftRow => ({
   template_id: null,
 });
 
-// Spreadsheet-style cell (text/date/number). Saves on blur/Enter.
+// Spreadsheet-style cell (text/date/number/textarea). Saves on blur/Enter.
 function Cell({
-  value, onCommit, type = "text", placeholder, className = "", min, max,
+  value, onCommit, type = "text", placeholder, className = "", min, max, multiline,
 }: {
   value: string | number | null;
   onCommit: (v: string) => void;
@@ -71,10 +71,34 @@ function Cell({
   className?: string;
   min?: number;
   max?: number;
+  multiline?: boolean;
 }) {
   const initial = value === null || value === undefined ? "" : String(value);
   const [local, setLocal] = useState<string>(initial);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { setLocal(initial); }, [initial]);
+  useEffect(() => {
+    if (multiline && textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
+    }
+  }, [local, multiline]);
+  if (multiline) {
+    return (
+      <textarea
+        ref={textareaRef}
+        value={local}
+        placeholder={placeholder}
+        rows={1}
+        onChange={(e) => setLocal(e.target.value)}
+        onBlur={() => { if (local !== initial) onCommit(local); }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") { setLocal(initial); (e.target as HTMLTextAreaElement).blur(); }
+        }}
+        className={`w-full bg-transparent border-0 px-2 py-1.5 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset resize-none min-h-[36px] ${className}`}
+      />
+    );
+  }
   return (
     <input
       type={type}
@@ -202,6 +226,61 @@ export function ClientHandoverTracker({ clientName }: Props) {
   };
 
   const cellClasses = "border-r border-border last:border-r-0 align-middle";
+  const cellClassesTop = "border-r border-border last:border-r-0 align-top";
+
+  function LinkCell({
+    value,
+    onCommit,
+  }: {
+    value: string | null;
+    onCommit: (v: string) => void;
+  }) {
+    const [editing, setEditing] = useState(false);
+    const initial = value ?? "";
+    const [local, setLocal] = useState(initial);
+    useEffect(() => { setLocal(initial); }, [initial]);
+
+    if (!editing && value) {
+      return (
+        <div
+          className="flex items-center justify-center h-full px-2 cursor-pointer"
+          onClick={() => setEditing(true)}
+        >
+          <a
+            href={value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary hover:text-primary/80"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        </div>
+      );
+    }
+
+    return (
+      <input
+        type="text"
+        value={local}
+        autoFocus={editing}
+        placeholder="https://…"
+        onChange={(e) => setLocal(e.target.value)}
+        onBlur={() => {
+          setEditing(false);
+          if (local !== initial) onCommit(local);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+          if (e.key === "Escape") {
+            setLocal(initial);
+            setEditing(false);
+          }
+        }}
+        className="w-full h-full bg-transparent border-0 px-2 py-1.5 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
+      />
+    );
+  }
 
   return (
     <Card className="mt-4 sm:mt-6">
@@ -239,33 +318,27 @@ export function ClientHandoverTracker({ clientName }: Props) {
             <tbody>
               {tasks.map((t) => (
                 <tr key={t.id} className="border-t border-border hover:bg-muted/20 group">
-                  <td className={cellClasses}>
+                  <td className={cellClassesTop}>
                     <Cell
                       value={t.task_name}
                       onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_name: v.trim() || t.task_name } })}
                       className="font-medium"
+                      multiline
                     />
                   </td>
-                  <td className={cellClasses}>
+                  <td className={cellClassesTop}>
                     <Cell
                       value={t.task_description}
                       placeholder="—"
                       onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_description: v.trim() || null } })}
+                      multiline
                     />
                   </td>
                   <td className={cellClasses}>
-                    <div className="flex items-center">
-                      <Cell
-                        value={t.link}
-                        placeholder="https://…"
-                        onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { link: v.trim() || null } })}
-                      />
-                      {t.link && (
-                        <a href={t.link} target="_blank" rel="noopener noreferrer" className="px-2 text-primary shrink-0">
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                      )}
-                    </div>
+                    <LinkCell
+                      value={t.link}
+                      onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { link: v.trim() || null } })}
+                    />
                   </td>
                   <td className={cellClasses}>
                     <Cell
@@ -319,13 +392,14 @@ export function ClientHandoverTracker({ clientName }: Props) {
 
               {/* Inline draft / "new row" — Airtable style */}
               <tr key={draft.key} className="border-t border-border bg-background/50">
-                <td className={cellClasses}>
+                <td className={cellClassesTop}>
                   <div className="flex items-stretch">
                     <Cell
                       value={draft.task_name}
                       placeholder="Type a task name…"
                       onCommit={(v) => commitDraftIfFilled({ ...draft, task_name: v })}
                       className="font-medium"
+                      multiline
                     />
                     <Popover open={templatePopoverOpen} onOpenChange={setTemplatePopoverOpen}>
                       <PopoverTrigger asChild>
@@ -370,17 +444,17 @@ export function ClientHandoverTracker({ clientName }: Props) {
                     </Popover>
                   </div>
                 </td>
-                <td className={cellClasses}>
+                <td className={cellClassesTop}>
                   <Cell
                     value={draft.task_description}
                     placeholder="—"
                     onCommit={(v) => commitDraftIfFilled({ ...draft, task_description: v })}
+                    multiline
                   />
                 </td>
                 <td className={cellClasses}>
-                  <Cell
+                  <LinkCell
                     value={draft.link}
-                    placeholder="https://…"
                     onCommit={(v) => commitDraftIfFilled({ ...draft, link: v })}
                   />
                 </td>
