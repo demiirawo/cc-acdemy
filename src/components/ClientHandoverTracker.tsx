@@ -243,18 +243,19 @@ export function ClientHandoverTracker({ clientName }: Props) {
     return "bg-destructive/10 text-destructive";
   }
 
-  const applyTemplateToDraft = (t: HandoverTemplate) => {
-    const next: DraftRow = {
-      ...draft,
+  const addTemplateAsTask = (t: HandoverTemplate) => {
+    if (usedTemplateIds.has(t.id)) {
+      toast.info(`"${t.name}" is already in this tracker.`);
+      return;
+    }
+    createMutation.mutate({
+      ...newDraft(),
       template_id: t.id,
-      category: draft.category || t.category || "",
+      category: t.category || "",
       task_name: t.name,
       task_description: t.description || "",
       link: t.link || "",
-    };
-    setTemplatePopoverOpen(false);
-    setTemplateSearch("");
-    commitDraftIfFilled(next);
+    });
   };
 
   const cellClasses = "border-r border-border last:border-r-0 align-middle";
