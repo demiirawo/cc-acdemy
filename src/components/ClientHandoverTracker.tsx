@@ -7,6 +7,7 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Trash2, ExternalLink, Plus, Check, X } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
 
 interface HandoverTemplate {
@@ -331,38 +332,35 @@ export function ClientHandoverTracker({ clientName }: Props) {
     );
   }
 
-  // Progress chip — small, consistent, inline editable
-  function ProgressChip({
+  // Progress slider — compact, inline, drag to update
+  function ProgressSlider({
     value,
     onCommit,
   }: { value: number; onCommit: (v: number) => void }) {
-    const [local, setLocal] = useState(String(value));
-    useEffect(() => { setLocal(String(value)); }, [value]);
-    const pct = Math.max(0, Math.min(100, Number(local) || 0));
-    const tone =
-      pct >= 100 ? "bg-success/15 text-success border-success/30"
-      : pct >= 50 ? "bg-primary/10 text-primary border-primary/20"
-      : pct > 0   ? "bg-warning/10 text-warning border-warning/30"
-      :             "bg-muted text-muted-foreground border-border";
+    const [local, setLocal] = useState(value);
+    useEffect(() => { setLocal(value); }, [value]);
+    const pct = Math.max(0, Math.min(100, local || 0));
+    const pctColor =
+      pct >= 100 ? "text-success"
+      : pct >= 50 ? "text-primary"
+      : pct > 0 ? "text-warning"
+      : "text-muted-foreground";
     return (
-      <div className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 ${tone}`}>
-        <div className="relative w-16 h-1.5 bg-current/20 rounded-full overflow-hidden opacity-60">
-          <div className="absolute inset-y-0 left-0 bg-current rounded-full" style={{ width: `${pct}%` }} />
+      <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-2.5 py-1">
+        <div className="w-20 sm:w-24">
+          <Slider
+            value={[pct]}
+            min={0}
+            max={100}
+            step={5}
+            onValueChange={([v]) => setLocal(v)}
+            onValueCommit={([v]) => { if (v !== value) onCommit(v); }}
+            className="[&_[role=slider]]:h-3.5 [&_[role=slider]]:w-3.5 [&_[role=slider]]:border-2 [&_[role=slider]]:border-primary [&_[role=slider]]:bg-background [&_[role=slider]]:ring-0"
+          />
         </div>
-        <input
-          type="number"
-          min={0}
-          max={100}
-          value={local}
-          onChange={(e) => setLocal(e.target.value)}
-          onBlur={() => {
-            const v = Math.max(0, Math.min(100, Number(local) || 0));
-            setLocal(String(v));
-            if (v !== value) onCommit(v);
-          }}
-          className="w-8 bg-transparent text-xs font-semibold text-right outline-none"
-        />
-        <span className="text-xs font-semibold">%</span>
+        <span className={`text-xs font-semibold min-w-[2.5ch] text-right ${pctColor}`}>
+          {pct}%
+        </span>
       </div>
     );
   }
@@ -432,7 +430,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
 
       {/* Right: progress + target + delete */}
       <div className="col-span-12 md:col-span-6 flex flex-wrap items-start md:items-center justify-start md:justify-end gap-2">
-        <ProgressChip
+        <ProgressSlider
           value={t.progress}
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { progress: v } })}
         />
