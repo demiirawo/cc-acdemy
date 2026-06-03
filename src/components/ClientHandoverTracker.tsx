@@ -379,7 +379,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
                       <span className="text-xs text-muted-foreground">%</span>
                     </div>
                   </td>
-                  <td className={cellClasses}>
+                  <td className={`${cellClasses} ${targetDateClasses(t.target_date)}`}>
                     <Cell
                       value={t.target_date}
                       type="date"
