@@ -271,15 +271,14 @@ export function ClientHandoverTracker({ clientName }: Props) {
     });
   };
 
-  const cellClasses = "border-r border-border last:border-r-0 align-middle";
-  const cellClassesTop = "border-r border-border last:border-r-0 align-top";
-
   function LinkCell({
     value,
     onCommit,
+    compact = false,
   }: {
     value: string | null;
     onCommit: (v: string) => void;
+    compact?: boolean;
   }) {
     const [editing, setEditing] = useState(false);
     const initial = value ?? "";
@@ -288,20 +287,30 @@ export function ClientHandoverTracker({ clientName }: Props) {
 
     if (!editing && value) {
       return (
-        <div
-          className="flex items-center justify-center h-full px-2 cursor-pointer"
-          onDoubleClick={() => setEditing(true)}
+        <a
+          href={value}
+          target="_blank"
+          rel="noopener noreferrer"
+          onDoubleClick={(e) => { e.preventDefault(); setEditing(true); }}
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80 hover:underline"
+          title={value}
         >
-          <a
-            href={value}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary hover:text-primary/80"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <ExternalLink className="h-4 w-4" />
-          </a>
-        </div>
+          <ExternalLink className="h-3.5 w-3.5" />
+          {!compact && <span className="truncate max-w-[140px]">Link</span>}
+        </a>
+      );
+    }
+
+    if (!editing) {
+      return (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+        >
+          <ExternalLink className="h-3.5 w-3.5" /> Add link
+        </button>
       );
     }
 
@@ -309,361 +318,320 @@ export function ClientHandoverTracker({ clientName }: Props) {
       <input
         type="text"
         value={local}
-        autoFocus={editing}
+        autoFocus
         placeholder="https://…"
         onChange={(e) => setLocal(e.target.value)}
-        onBlur={() => {
-          setEditing(false);
-          if (local !== initial) onCommit(local);
-        }}
+        onBlur={() => { setEditing(false); if (local !== initial) onCommit(local); }}
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          if (e.key === "Escape") {
-            setLocal(initial);
-            setEditing(false);
-          }
+          if (e.key === "Escape") { setLocal(initial); setEditing(false); }
         }}
-        className="w-full h-full bg-transparent border-0 px-2 py-1.5 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
+        className="w-full bg-background border border-input rounded px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-ring"
       />
     );
   }
 
-  const renderTaskRow = (t: HandoverTask) => (
-    <tr key={t.id} className="border-t border-border hover:bg-muted/20 group">
-      <td className={cellClassesTop}>
-        <Cell
-          value={t.category}
-          placeholder="—"
-          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { category: v.trim() || null } })}
-          multiline
+  // Progress chip — small, consistent, inline editable
+  function ProgressChip({
+    value,
+    onCommit,
+  }: { value: number; onCommit: (v: number) => void }) {
+    const [local, setLocal] = useState(String(value));
+    useEffect(() => { setLocal(String(value)); }, [value]);
+    const pct = Math.max(0, Math.min(100, Number(local) || 0));
+    const tone =
+      pct >= 100 ? "bg-success/15 text-success border-success/30"
+      : pct >= 50 ? "bg-primary/10 text-primary border-primary/20"
+      : pct > 0   ? "bg-warning/10 text-warning border-warning/30"
+      :             "bg-muted text-muted-foreground border-border";
+    return (
+      <div className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 ${tone}`}>
+        <div className="relative w-16 h-1.5 bg-current/20 rounded-full overflow-hidden opacity-60">
+          <div className="absolute inset-y-0 left-0 bg-current rounded-full" style={{ width: `${pct}%` }} />
+        </div>
+        <input
+          type="number"
+          min={0}
+          max={100}
+          value={local}
+          onChange={(e) => setLocal(e.target.value)}
+          onBlur={() => {
+            const v = Math.max(0, Math.min(100, Number(local) || 0));
+            setLocal(String(v));
+            if (v !== value) onCommit(v);
+          }}
+          className="w-8 bg-transparent text-xs font-semibold text-right outline-none"
         />
-      </td>
-      <td className={cellClassesTop}>
+        <span className="text-xs font-semibold">%</span>
+      </div>
+    );
+  }
+
+  function TargetDateChip({
+    value, onCommit,
+  }: { value: string | null; onCommit: (v: string) => void }) {
+    const tone = value ? targetDateClasses(value) : "bg-muted text-muted-foreground";
+    return (
+      <label className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium cursor-text ${tone}`}>
+        <span className="opacity-70">Due</span>
+        <input
+          type="date"
+          value={value ?? ""}
+          onChange={(e) => onCommit(e.target.value)}
+          className="bg-transparent border-0 outline-none text-xs font-medium [color-scheme:light] dark:[color-scheme:dark]"
+        />
+      </label>
+    );
+  }
+
+  const renderTaskRow = (t: HandoverTask) => (
+    <div
+      key={t.id}
+      className="group grid grid-cols-12 gap-x-4 gap-y-1 px-4 py-3 border-t border-border hover:bg-muted/30 transition-colors"
+    >
+      {/* Left: task + description */}
+      <div className="col-span-12 md:col-span-6 min-w-0">
         <Cell
           value={t.task_name}
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_name: v.trim() || t.task_name } })}
-          className="font-medium"
+          className="!px-0 !py-0 font-semibold text-sm text-foreground"
           multiline
         />
-      </td>
-      <td className={cellClassesTop}>
         <Cell
           value={t.task_description}
-          placeholder="—"
+          placeholder="Add description…"
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_description: v.trim() || null } })}
+          className="!px-0 !py-0 text-xs text-muted-foreground"
           multiline
         />
-      </td>
-      <td className={cellClasses}>
-        <LinkCell
-          value={t.link}
-          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { link: v.trim() || null } })}
-        />
-      </td>
-      <td className={cellClassesTop}>
-        <Cell
-          value={t.handed_over_by}
-          placeholder="—"
-          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_by: v.trim() || null } })}
-          multiline
-        />
-      </td>
-      <td className={cellClassesTop}>
-        <Cell
-          value={t.handed_over_to}
-          placeholder="—"
-          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_to: v.trim() || null } })}
-          multiline
-        />
-      </td>
-      <td className={cellClasses}>
-        <div className="flex items-center gap-2 px-2">
-          <Progress value={t.progress} className="h-2 flex-1" />
-          <input
-            type="number"
-            min={0}
-            max={100}
-            value={t.progress}
-            onChange={(e) => {
-              const v = Math.max(0, Math.min(100, Number(e.target.value) || 0));
-              updateMutation.mutate({ id: t.id, patch: { progress: v } });
-            }}
-            className="w-12 h-6 text-xs bg-transparent border border-transparent hover:border-input rounded px-1 outline-none focus:border-ring focus:bg-background"
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-muted-foreground">
+          <div className="inline-flex items-center gap-1">
+            <span className="opacity-70">From</span>
+            <Cell
+              value={t.handed_over_by}
+              placeholder="—"
+              onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_by: v.trim() || null } })}
+              className="!px-1 !py-0 !min-h-0 text-xs text-foreground"
+            />
+          </div>
+          <div className="inline-flex items-center gap-1">
+            <span className="opacity-70">To</span>
+            <Cell
+              value={t.handed_over_to}
+              placeholder="—"
+              onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_to: v.trim() || null } })}
+              className="!px-1 !py-0 !min-h-0 text-xs text-foreground"
+            />
+          </div>
+          <LinkCell
+            value={t.link}
+            onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { link: v.trim() || null } })}
           />
-          <span className="text-xs text-muted-foreground">%</span>
         </div>
-      </td>
-      <td className={`${cellClasses} ${targetDateClasses(t.target_date)}`}>
-        <Cell
+      </div>
+
+      {/* Right: progress + target + delete */}
+      <div className="col-span-12 md:col-span-6 flex flex-wrap items-start md:items-center justify-start md:justify-end gap-2">
+        <ProgressChip
+          value={t.progress}
+          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { progress: v } })}
+        />
+        <TargetDateChip
           value={t.target_date}
-          type="date"
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { target_date: v || null } })}
         />
-      </td>
-      <td className="px-1 text-right">
         <button
           onClick={() => { if (confirm("Delete this task?")) deleteMutation.mutate(t.id); }}
-          className="opacity-0 group-hover:opacity-100 transition p-1 hover:text-destructive"
+          className="opacity-0 group-hover:opacity-100 transition p-1.5 rounded hover:bg-destructive/10 hover:text-destructive"
           title="Delete"
         >
           <Trash2 className="h-3.5 w-3.5" />
         </button>
-      </td>
-    </tr>
+      </div>
+    </div>
   );
+
+  // Summary stats
+  const totalTasks = tasks.length;
+  const completedTasks = tasks.filter((t) => t.progress >= 100).length;
+  const overallProgress = totalTasks
+    ? Math.round(tasks.reduce((s, t) => s + (t.progress || 0), 0) / totalTasks)
+    : 0;
 
   return (
     <Card className="mt-4 sm:mt-6">
-      <CardHeader className="pb-2 px-3 sm:px-6">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-            Handover Tracker
-          </CardTitle>
-          {tasks.length > 0 && (
-            <button
-              onClick={() => {
-                if (confirm("Are you sure you want to clear all tasks from this handover tracker?")) {
-                  clearAllMutation.mutate();
-                }
-              }}
-              disabled={clearAllMutation.isPending}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 rounded-md px-2.5 py-1.5 transition disabled:opacity-50"
-              title="Clear all tasks"
-            >
-              <X className="h-3.5 w-3.5" /> Clear
-            </button>
-          )}
+      <CardHeader className="px-4 sm:px-6 pt-4 pb-3 border-b">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <CardTitle className="text-lg sm:text-xl">Handover Tracker</CardTitle>
+            {totalTasks > 0 && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {completedTasks} of {totalTasks} tasks complete · {overallProgress}% overall
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {totalTasks > 0 && (
+              <div className="hidden sm:flex items-center gap-2 min-w-[180px]">
+                <Progress value={overallProgress} className="h-2 w-32" />
+                <span className="text-xs font-semibold text-muted-foreground">{overallProgress}%</span>
+              </div>
+            )}
+            {tasks.length > 0 && (
+              <button
+                onClick={() => {
+                  if (confirm("Are you sure you want to clear all tasks from this handover tracker?")) {
+                    clearAllMutation.mutate();
+                  }
+                }}
+                disabled={clearAllMutation.isPending}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 rounded-md px-2.5 py-1.5 transition disabled:opacity-50"
+                title="Clear all tasks"
+              >
+                <X className="h-3.5 w-3.5" /> Clear
+              </button>
+            )}
+          </div>
         </div>
       </CardHeader>
-      <CardContent className="p-0 sm:p-0">
+
+      <CardContent className="p-0">
+        {/* Task Library */}
         {groupedTemplates.length > 0 && (
-          <div className="border-t bg-muted/10 px-3 sm:px-6 py-3">
+          <div className="bg-muted/20 px-4 sm:px-6 py-2 border-b">
             <Accordion type="single" collapsible className="w-full">
               <AccordionItem value="library" className="border-0">
                 <AccordionTrigger className="py-2 hover:no-underline">
                   <span className="flex items-center gap-2 text-sm font-semibold">
                     Task Library
                     <span className="text-xs font-normal text-muted-foreground">
-                      ({templates.length} tasks across {groupedTemplates.length} categories)
+                      ({templates.length} tasks · {groupedTemplates.length} categories)
                     </span>
                   </span>
                 </AccordionTrigger>
                 <AccordionContent>
-                  <div className="overflow-x-auto border rounded-md bg-background">
-                    <table className="w-full text-sm border-collapse">
-                      <colgroup>
-                        <col style={{ width: "26%" }} />
-                        <col style={{ width: "54%" }} />
-                        <col style={{ width: "12%" }} />
-                        <col style={{ width: "8%" }} />
-                      </colgroup>
-                      <thead>
-                        <tr className="bg-muted/50 text-xs uppercase text-muted-foreground">
-                          <th className="text-left font-medium px-2 py-2 border-r border-border">Task</th>
-                          <th className="text-left font-medium px-2 py-2 border-r border-border">Description</th>
-                          <th className="text-left font-medium px-2 py-2 border-r border-border">Link</th>
-                          <th className="px-2 py-2"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {groupedTemplates.map(([category, items]) => (
-                          <Fragment key={`lib-${category}`}>
-                            <tr className="bg-muted/30 border-t border-border">
-                              <td colSpan={4} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                                {category}
-                              </td>
-                            </tr>
-                            {items.map((t) => {
-                              const added = usedTemplateIds.has(t.id);
-                              return (
-                                <tr
-                                  key={t.id}
-                                  className={`border-t border-border ${added ? "bg-success/5" : "hover:bg-muted/20"}`}
-                                >
-                                  <td className="px-2 py-2 align-top border-r border-border font-medium">
-                                    {t.name}
-                                  </td>
-                                  <td className="px-2 py-2 align-top border-r border-border text-muted-foreground">
-                                    {t.description || "—"}
-                                  </td>
-                                  <td className="px-2 py-2 align-top border-r border-border">
-                                    {t.link ? (
-                                      <a
-                                        href={t.link}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-primary hover:text-primary/80 inline-flex items-center gap-1"
-                                        onClick={(e) => e.stopPropagation()}
-                                      >
-                                        <ExternalLink className="h-3.5 w-3.5" />
-                                      </a>
-                                    ) : (
-                                      <span className="text-muted-foreground">—</span>
-                                    )}
-                                  </td>
-                                  <td className="px-1 py-1 text-right align-top">
-                                    {added ? (
-                                      <span className="inline-flex items-center gap-1 text-xs text-success px-2 py-1">
-                                        <Check className="h-3.5 w-3.5" /> Added
-                                      </span>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        onClick={() => addTemplateAsTask(t)}
-                                        className="inline-flex items-center gap-1 text-xs text-primary hover:bg-primary/10 rounded px-2 py-1 transition"
-                                        title="Add to tracker"
-                                      >
-                                        <Plus className="h-3.5 w-3.5" /> Add
-                                      </button>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </Fragment>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="space-y-3 pb-2">
+                    {groupedTemplates.map(([category, items]) => (
+                      <div key={`lib-${category}`} className="rounded-lg border bg-background overflow-hidden">
+                        <div className="px-3 py-2 bg-muted/40 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {category}
+                        </div>
+                        <div className="divide-y divide-border">
+                          {items.map((t) => {
+                            const added = usedTemplateIds.has(t.id);
+                            return (
+                              <div
+                                key={t.id}
+                                className={`flex items-center justify-between gap-3 px-3 py-2 ${added ? "bg-success/5" : "hover:bg-muted/30"}`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-medium truncate">{t.name}</div>
+                                  {t.description && (
+                                    <div className="text-xs text-muted-foreground line-clamp-2">{t.description}</div>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {t.link && (
+                                    <a
+                                      href={t.link}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-muted-foreground hover:text-primary"
+                                      onClick={(e) => e.stopPropagation()}
+                                      title="Open link"
+                                    >
+                                      <ExternalLink className="h-3.5 w-3.5" />
+                                    </a>
+                                  )}
+                                  {added ? (
+                                    <span className="inline-flex items-center gap-1 text-xs text-success px-2 py-1">
+                                      <Check className="h-3.5 w-3.5" /> Added
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => addTemplateAsTask(t)}
+                                      className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:bg-primary/10 rounded px-2 py-1 transition"
+                                    >
+                                      <Plus className="h-3.5 w-3.5" /> Add
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Or scroll down and use the empty row to add your own custom task.
-                  </p>
                 </AccordionContent>
               </AccordionItem>
             </Accordion>
           </div>
         )}
-        <div className="overflow-x-auto border-t border-b">
-          <table className="w-full text-sm border-collapse">
-            <colgroup>
-              <col style={{ width: "12%" }} />
-              <col style={{ width: "16%" }} />
-              <col style={{ width: "20%" }} />
-              <col style={{ width: "8%" }} />
-              <col style={{ width: "9%" }} />
-              <col style={{ width: "9%" }} />
-              <col style={{ width: "13%" }} />
-              <col style={{ width: "9%" }} />
-              <col style={{ width: "4%" }} />
-            </colgroup>
-            <thead>
-              <tr className="bg-muted/50 text-xs uppercase text-muted-foreground">
-                <th className="text-left font-medium px-2 py-2 border-r border-border">Category</th>
-                <th className="text-left font-medium px-2 py-2 border-r border-border">Task</th>
-                <th className="text-left font-medium px-2 py-2 border-r border-border">Description</th>
-                <th className="text-left font-medium px-2 py-2 border-r border-border">Link</th>
-                <th className="text-left font-medium px-2 py-2 border-r border-border">From</th>
-                <th className="text-left font-medium px-2 py-2 border-r border-border">To</th>
-                <th className="text-left font-medium px-2 py-2 border-r border-border">Progress</th>
-                <th className="text-left font-medium px-2 py-2 border-r border-border">Target</th>
-                <th className="px-2 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {groupedTasks.map(([category, rows]) => (
-                <Fragment key={`grp-${category}`}>
-                  <tr className="bg-muted/30 border-t border-border">
-                    <td colSpan={9} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      {category}
-                    </td>
-                  </tr>
-                  {rows.map(renderTaskRow)}
-                </Fragment>
-              ))}
 
-              {/* Inline draft / "new row" — Airtable style */}
-              <tr key={draft.key} className="border-t-2 border-border bg-background/50">
-                <td className={cellClassesTop}>
-                  <Cell
-                    value={draft.category}
-                    placeholder="Category"
-                    onCommit={(v) => commitDraftIfFilled({ ...draft, category: v })}
-                    multiline
-                  />
-                </td>
-                <td className={cellClassesTop}>
-                  <Cell
-                    value={draft.task_name}
-                    placeholder="Type a task name…"
-                    onCommit={(v) => commitDraftIfFilled({ ...draft, task_name: v })}
-                    className="font-medium"
-                    multiline
-                  />
-                </td>
-                <td className={cellClassesTop}>
-                  <Cell
-                    value={draft.task_description}
-                    placeholder="—"
-                    onCommit={(v) => commitDraftIfFilled({ ...draft, task_description: v })}
-                    multiline
-                  />
-                </td>
-                <td className={cellClasses}>
-                  <LinkCell
-                    value={draft.link}
-                    onCommit={(v) => commitDraftIfFilled({ ...draft, link: v })}
-                  />
-                </td>
-                <td className={cellClassesTop}>
-                  <Cell
-                    value={draft.handed_over_by}
-                    placeholder="—"
-                    onCommit={(v) => commitDraftIfFilled({ ...draft, handed_over_by: v })}
-                    multiline
-                  />
-                </td>
-                <td className={cellClassesTop}>
-                  <Cell
-                    value={draft.handed_over_to}
-                    placeholder="—"
-                    onCommit={(v) => commitDraftIfFilled({ ...draft, handed_over_to: v })}
-                    multiline
-                  />
-                </td>
-                <td className={cellClasses}>
-                  <div className="flex items-center gap-2 px-2">
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={draft.progress}
-                      onChange={(e) => setDraft({ ...draft, progress: Number(e.target.value) || 0 })}
-                      onBlur={(e) => commitDraftIfFilled({ ...draft, progress: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })}
-                      className="w-14 h-6 text-xs bg-transparent border border-transparent hover:border-input rounded px-1 outline-none focus:border-ring focus:bg-background"
-                    />
-                    <span className="text-xs text-muted-foreground">%</span>
-                  </div>
-                </td>
-                <td className={cellClasses}>
-                  <Cell
-                    value={draft.target_date}
-                    type="date"
-                    onCommit={(v) => commitDraftIfFilled({ ...draft, target_date: v })}
-                  />
-                </td>
-                <td className="px-1"></td>
-              </tr>
-
-              {/* "+" footer row to manually queue another draft row (Airtable style) */}
-              <tr className="border-t border-border">
-                <td
-                  colSpan={9}
-                  className="px-3 py-2 text-muted-foreground hover:bg-muted/40 cursor-pointer"
-                  onClick={() => {
-                    if (draft.task_name.trim()) {
-                      createMutation.mutate(draft);
-                    } else {
-                      setDraft(newDraft());
-                    }
-                  }}
-                >
-                  <span className="inline-flex items-center gap-2 text-sm">
-                    <Plus className="h-4 w-4" /> Add row
+        {/* Active tasks grouped by category */}
+        <div>
+          {groupedTasks.length === 0 ? (
+            <div className="px-6 py-12 text-center">
+              <p className="text-sm font-medium text-foreground">No handover tasks yet</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Add tasks from the Task Library above, or create a custom one below.
+              </p>
+            </div>
+          ) : (
+            groupedTasks.map(([category, rows]) => (
+              <div key={`grp-${category}`} className="border-t border-border first:border-t-0">
+                <div className="px-4 sm:px-6 py-2 bg-muted/30 flex items-center justify-between">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {category}
                   </span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+                  <span className="text-xs text-muted-foreground">
+                    {rows.filter((r) => r.progress >= 100).length}/{rows.length}
+                  </span>
+                </div>
+                <div className="px-2 sm:px-2">
+                  {rows.map(renderTaskRow)}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Add custom task */}
+        <div className="border-t border-border bg-muted/10 px-4 sm:px-6 py-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+            Add a custom task
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+            <input
+              type="text"
+              value={draft.category}
+              placeholder="Category"
+              onChange={(e) => setDraft({ ...draft, category: e.target.value })}
+              className="md:col-span-3 bg-background border border-input rounded-md px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring"
+            />
+            <input
+              type="text"
+              value={draft.task_name}
+              placeholder="Task name"
+              onChange={(e) => setDraft({ ...draft, task_name: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && draft.task_name.trim()) {
+                  createMutation.mutate(draft);
+                }
+              }}
+              className="md:col-span-6 bg-background border border-input rounded-md px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring"
+            />
+            <button
+              type="button"
+              disabled={!draft.task_name.trim() || createMutation.isPending}
+              onClick={() => createMutation.mutate(draft)}
+              className="md:col-span-3 inline-flex items-center justify-center gap-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-md px-3 py-1.5 hover:bg-primary/90 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Plus className="h-4 w-4" /> Add task
+            </button>
+          </div>
         </div>
       </CardContent>
     </Card>
