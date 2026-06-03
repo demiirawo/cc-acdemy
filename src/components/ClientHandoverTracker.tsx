@@ -4,10 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
-  Popover, PopoverContent, PopoverTrigger,
-} from "@/components/ui/popover";
-import { Input } from "@/components/ui/input";
-import { Trash2, ExternalLink, Search, Plus } from "lucide-react";
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Trash2, ExternalLink, Plus, Check, ClipboardList } from "lucide-react";
 import { toast } from "sonner";
 
 interface HandoverTemplate {
@@ -126,8 +125,6 @@ function Cell({
 export function ClientHandoverTracker({ clientName }: Props) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<DraftRow>(newDraft());
-  const [templateSearch, setTemplateSearch] = useState("");
-  const [templatePopoverOpen, setTemplatePopoverOpen] = useState(false);
 
   const { data: tasks = [] } = useQuery({
     queryKey: ["client-handover-tasks", clientName],
@@ -156,14 +153,6 @@ export function ClientHandoverTracker({ clientName }: Props) {
     },
   });
 
-  const filteredTemplates = useMemo(() => {
-    const q = templateSearch.trim().toLowerCase();
-    if (!q) return templates;
-    return templates.filter(t =>
-      t.name.toLowerCase().includes(q) || (t.description || "").toLowerCase().includes(q)
-    );
-  }, [templates, templateSearch]);
-
   // Group tasks by category, preserving first-seen order
   const groupedTasks = useMemo(() => {
     const groups = new Map<string, HandoverTask[]>();
@@ -173,6 +162,24 @@ export function ClientHandoverTracker({ clientName }: Props) {
       groups.get(cat)!.push(t);
     }
     return Array.from(groups.entries());
+  }, [tasks]);
+
+  // Group templates by category for the library accordion
+  const groupedTemplates = useMemo(() => {
+    const groups = new Map<string, HandoverTemplate[]>();
+    for (const t of templates) {
+      const cat = (t.category || "").trim() || UNCATEGORIZED;
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat)!.push(t);
+    }
+    return Array.from(groups.entries());
+  }, [templates]);
+
+  // Track which templates are already added to this client's tracker
+  const usedTemplateIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const t of tasks) if (t.template_id) s.add(t.template_id);
+    return s;
   }, [tasks]);
 
   const createMutation = useMutation({
@@ -236,18 +243,19 @@ export function ClientHandoverTracker({ clientName }: Props) {
     return "bg-destructive/10 text-destructive";
   }
 
-  const applyTemplateToDraft = (t: HandoverTemplate) => {
-    const next: DraftRow = {
-      ...draft,
+  const addTemplateAsTask = (t: HandoverTemplate) => {
+    if (usedTemplateIds.has(t.id)) {
+      toast.info(`"${t.name}" is already in this tracker.`);
+      return;
+    }
+    createMutation.mutate({
+      ...newDraft(),
       template_id: t.id,
-      category: draft.category || t.category || "",
+      category: t.category || "",
       task_name: t.name,
       task_description: t.description || "",
       link: t.link || "",
-    };
-    setTemplatePopoverOpen(false);
-    setTemplateSearch("");
-    commitDraftIfFilled(next);
+    });
   };
 
   const cellClasses = "border-r border-border last:border-r-0 align-middle";
@@ -396,6 +404,72 @@ export function ClientHandoverTracker({ clientName }: Props) {
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0 sm:p-0">
+        {groupedTemplates.length > 0 && (
+          <div className="border-t bg-muted/10 px-3 sm:px-6 py-3">
+            <Accordion type="single" collapsible className="w-full">
+              <AccordionItem value="library" className="border-0">
+                <AccordionTrigger className="py-2 hover:no-underline">
+                  <span className="flex items-center gap-2 text-sm font-semibold">
+                    <ClipboardList className="h-4 w-4" />
+                    Predefined Task Library
+                    <span className="text-xs font-normal text-muted-foreground">
+                      ({templates.length} tasks across {groupedTemplates.length} categories)
+                    </span>
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="rounded-md border bg-background divide-y">
+                    {groupedTemplates.map(([category, items]) => (
+                      <div key={`lib-${category}`} className="p-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                          {category}
+                        </div>
+                        <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                          {items.map((t) => {
+                            const added = usedTemplateIds.has(t.id);
+                            return (
+                              <button
+                                key={t.id}
+                                type="button"
+                                disabled={added}
+                                onClick={() => addTemplateAsTask(t)}
+                                className={`group flex items-start justify-between gap-2 text-left p-2 rounded border transition ${
+                                  added
+                                    ? "bg-success/5 border-success/30 cursor-not-allowed"
+                                    : "hover:bg-muted/40 border-border"
+                                }`}
+                                title={added ? "Already added" : "Add to tracker"}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-medium truncate">{t.name}</div>
+                                  {t.description && (
+                                    <div className="text-xs text-muted-foreground line-clamp-2">
+                                      {t.description}
+                                    </div>
+                                  )}
+                                </div>
+                                <span className="shrink-0 text-muted-foreground group-hover:text-primary">
+                                  {added ? (
+                                    <Check className="h-4 w-4 text-success" />
+                                  ) : (
+                                    <Plus className="h-4 w-4" />
+                                  )}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Or scroll down and use the empty row to add your own custom task.
+                  </p>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </div>
+        )}
         <div className="overflow-x-auto border-t border-b">
           <table className="w-full text-sm border-collapse">
             <colgroup>
@@ -444,56 +518,13 @@ export function ClientHandoverTracker({ clientName }: Props) {
                   />
                 </td>
                 <td className={cellClassesTop}>
-                  <div className="flex items-stretch">
-                    <Cell
-                      value={draft.task_name}
-                      placeholder="Type a task name…"
-                      onCommit={(v) => commitDraftIfFilled({ ...draft, task_name: v })}
-                      className="font-medium"
-                      multiline
-                    />
-                    <Popover open={templatePopoverOpen} onOpenChange={setTemplatePopoverOpen}>
-                      <PopoverTrigger asChild>
-                        <button
-                          type="button"
-                          className="px-2 text-muted-foreground hover:text-primary shrink-0"
-                          title="Use predefined task"
-                        >
-                          <Search className="h-3.5 w-3.5" />
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-[340px] p-0" align="start">
-                        <div className="p-2 border-b">
-                          <Input
-                            autoFocus
-                            placeholder="Search predefined tasks…"
-                            value={templateSearch}
-                            onChange={(e) => setTemplateSearch(e.target.value)}
-                            className="h-8"
-                          />
-                        </div>
-                        <div className="max-h-64 overflow-auto">
-                          {filteredTemplates.length === 0 ? (
-                            <div className="text-sm text-muted-foreground p-4 text-center">
-                              No templates found.
-                            </div>
-                          ) : filteredTemplates.map(t => (
-                            <button
-                              key={t.id}
-                              type="button"
-                              onClick={() => applyTemplateToDraft(t)}
-                              className="w-full text-left px-3 py-2 hover:bg-muted border-b last:border-0"
-                            >
-                              <div className="font-medium text-sm">{t.name}</div>
-                              {t.description && (
-                                <div className="text-xs text-muted-foreground line-clamp-2">{t.description}</div>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
+                  <Cell
+                    value={draft.task_name}
+                    placeholder="Type a task name…"
+                    onCommit={(v) => commitDraftIfFilled({ ...draft, task_name: v })}
+                    className="font-medium"
+                    multiline
+                  />
                 </td>
                 <td className={cellClassesTop}>
                   <Cell
