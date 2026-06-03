@@ -550,6 +550,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
                     value={draft.category}
                     placeholder="Category"
                     onCommit={(v) => commitDraftIfFilled({ ...draft, category: v })}
+                    multiline
                   />
                 </td>
                 <td className={cellClassesTop}>
@@ -575,18 +576,20 @@ export function ClientHandoverTracker({ clientName }: Props) {
                     onCommit={(v) => commitDraftIfFilled({ ...draft, link: v })}
                   />
                 </td>
-                <td className={cellClasses}>
+                <td className={cellClassesTop}>
                   <Cell
                     value={draft.handed_over_by}
                     placeholder="—"
                     onCommit={(v) => commitDraftIfFilled({ ...draft, handed_over_by: v })}
+                    multiline
                   />
                 </td>
-                <td className={cellClasses}>
+                <td className={cellClassesTop}>
                   <Cell
                     value={draft.handed_over_to}
                     placeholder="—"
                     onCommit={(v) => commitDraftIfFilled({ ...draft, handed_over_to: v })}
+                    multiline
                   />
                 </td>
                 <td className={cellClasses}>
