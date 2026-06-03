@@ -531,39 +531,6 @@ export function ClientHandoverTracker({ clientName }: Props) {
     );
   }
 
-  // Progress slider — compact, inline, drag to update
-  function ProgressSlider({
-    value,
-    onCommit,
-  }: { value: number; onCommit: (v: number) => void }) {
-    const [local, setLocal] = useState(value);
-    useEffect(() => { setLocal(value); }, [value]);
-    const pct = Math.max(0, Math.min(100, local || 0));
-    const pctColor =
-      pct >= 100 ? "text-success"
-      : pct >= 50 ? "text-primary"
-      : pct > 0 ? "text-warning"
-      : "text-muted-foreground";
-    return (
-      <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-2.5 py-1">
-        <div className="w-20 sm:w-24">
-          <Slider
-            value={[pct]}
-            min={0}
-            max={100}
-            step={5}
-            onValueChange={([v]) => setLocal(v)}
-            onValueCommit={([v]) => { if (v !== value) onCommit(v); }}
-            className="[&_[role=slider]]:h-3.5 [&_[role=slider]]:w-3.5 [&_[role=slider]]:border-2 [&_[role=slider]]:border-primary [&_[role=slider]]:bg-background [&_[role=slider]]:ring-0"
-          />
-        </div>
-        <span className={`text-xs font-semibold min-w-[2.5ch] text-right ${pctColor}`}>
-          {pct}%
-        </span>
-      </div>
-    );
-  }
-
   function TargetDateChip({
     value, onCommit,
   }: { value: string | null; onCommit: (v: string) => void }) {
@@ -584,9 +551,6 @@ export function ClientHandoverTracker({ clientName }: Props) {
     value ? targetDateClasses(value) : "";
 
 
-  // Airtable-style column template: row-# gutter + columns
-  const GRID_COLS =
-    "grid grid-cols-[44px_minmax(240px,2.4fr)_minmax(120px,1fr)_minmax(120px,1fr)_88px_180px_140px_36px]";
 
   // Deterministic category pill color (Airtable-like soft pastels)
   const CATEGORY_PALETTE = [
