@@ -6,7 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Trash2, ExternalLink, Plus, Check, ClipboardList } from "lucide-react";
+import { Trash2, ExternalLink, Plus, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
 interface HandoverTemplate {
