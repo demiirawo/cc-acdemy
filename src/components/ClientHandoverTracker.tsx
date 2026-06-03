@@ -6,7 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Trash2, ExternalLink, Plus, Check, X } from "lucide-react";
+import { Trash2, ExternalLink, Plus, Check, X, ChevronDown, ChevronRight, Type, Link2, BarChart3, Calendar, User, Hash } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
 
@@ -126,6 +126,13 @@ function Cell({
 export function ClientHandoverTracker({ clientName }: Props) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<DraftRow>(newDraft());
+  const [collapsedCats, setCollapsedCats] = useState<Set<string>>(new Set());
+  const toggleCat = (c: string) =>
+    setCollapsedCats((prev) => {
+      const next = new Set(prev);
+      next.has(c) ? next.delete(c) : next.add(c);
+      return next;
+    });
 
   const { data: tasks = [] } = useQuery({
     queryKey: ["client-handover-tasks", clientName],
@@ -382,33 +389,64 @@ export function ClientHandoverTracker({ clientName }: Props) {
     );
   }
 
-  // Spreadsheet column template — shared by header and rows
+  // Airtable-style column template: row-# gutter + columns
   const GRID_COLS =
-    "grid grid-cols-[minmax(220px,2.4fr)_minmax(110px,1fr)_minmax(110px,1fr)_90px_180px_140px_40px]";
+    "grid grid-cols-[44px_minmax(240px,2.4fr)_minmax(120px,1fr)_minmax(120px,1fr)_88px_180px_140px_36px]";
 
-  const renderTaskRow = (t: HandoverTask) => (
+  // Deterministic category pill color (Airtable-like soft pastels)
+  const CATEGORY_PALETTE = [
+    "bg-rose-100 text-rose-800",
+    "bg-amber-100 text-amber-800",
+    "bg-emerald-100 text-emerald-800",
+    "bg-sky-100 text-sky-800",
+    "bg-violet-100 text-violet-800",
+    "bg-pink-100 text-pink-800",
+    "bg-teal-100 text-teal-800",
+    "bg-orange-100 text-orange-800",
+  ];
+  const catColor = (cat: string) => {
+    let h = 0;
+    for (let i = 0; i < cat.length; i++) h = (h * 31 + cat.charCodeAt(i)) >>> 0;
+    return CATEGORY_PALETTE[h % CATEGORY_PALETTE.length];
+  };
+
+  const renderTaskRow = (t: HandoverTask, rowNumber: number) => (
     <div
       key={t.id}
-      className={`group ${GRID_COLS} items-stretch border-t border-border hover:bg-muted/30 transition-colors`}
+      className={`group ${GRID_COLS} items-stretch border-b border-border/60 bg-background hover:bg-muted/40 transition-colors`}
     >
+      {/* Row number gutter */}
+      <div className="border-r border-border/60 flex items-center justify-center text-[11px] text-muted-foreground/70 font-mono select-none">
+        {rowNumber}
+      </div>
       {/* Task name + description */}
-      <div className="border-r border-border px-1 py-1 min-w-0">
+      <div className="border-r border-border/60 px-1 py-0.5 min-w-0">
         <Cell
           value={t.task_name}
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_name: v.trim() || t.task_name } })}
           className="font-medium text-sm text-foreground"
           multiline
         />
-        <Cell
-          value={t.task_description}
-          placeholder="Add description…"
-          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_description: v.trim() || null } })}
-          className="text-xs text-muted-foreground"
-          multiline
-        />
+        {t.task_description !== null && t.task_description !== "" ? (
+          <Cell
+            value={t.task_description}
+            placeholder="Add description…"
+            onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_description: v.trim() || null } })}
+            className="text-xs text-muted-foreground"
+            multiline
+          />
+        ) : (
+          <Cell
+            value=""
+            placeholder="Add description…"
+            onCommit={(v) => v.trim() && updateMutation.mutate({ id: t.id, patch: { task_description: v.trim() } })}
+            className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition"
+            multiline
+          />
+        )}
       </div>
       {/* From */}
-      <div className="border-r border-border flex items-center min-w-0">
+      <div className="border-r border-border/60 flex items-center min-w-0">
         <Cell
           value={t.handed_over_by}
           placeholder="—"
@@ -417,7 +455,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
         />
       </div>
       {/* To */}
-      <div className="border-r border-border flex items-center min-w-0">
+      <div className="border-r border-border/60 flex items-center min-w-0">
         <Cell
           value={t.handed_over_to}
           placeholder="—"
@@ -426,7 +464,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
         />
       </div>
       {/* Link */}
-      <div className="border-r border-border flex items-center justify-center px-2">
+      <div className="border-r border-border/60 flex items-center justify-center px-2">
         <LinkCell
           value={t.link}
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { link: v.trim() || null } })}
@@ -434,14 +472,14 @@ export function ClientHandoverTracker({ clientName }: Props) {
         />
       </div>
       {/* Progress */}
-      <div className="border-r border-border flex items-center justify-center px-2 py-1">
+      <div className="border-r border-border/60 flex items-center justify-center px-2 py-1">
         <ProgressSlider
           value={t.progress}
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { progress: v } })}
         />
       </div>
       {/* Due date */}
-      <div className="border-r border-border flex items-center justify-center px-2 py-1">
+      <div className="border-r border-border/60 flex items-center justify-center px-2 py-1">
         <TargetDateChip
           value={t.target_date}
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { target_date: v || null } })}
@@ -451,7 +489,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
       <div className="flex items-center justify-center">
         <button
           onClick={() => { if (confirm("Delete this task?")) deleteMutation.mutate(t.id); }}
-          className="opacity-0 group-hover:opacity-100 transition p-1.5 rounded hover:bg-destructive/10 hover:text-destructive"
+          className="opacity-0 group-hover:opacity-100 transition p-1 rounded hover:bg-destructive/10 hover:text-destructive"
           title="Delete"
         >
           <Trash2 className="h-3.5 w-3.5" />
@@ -461,16 +499,77 @@ export function ClientHandoverTracker({ clientName }: Props) {
   );
 
   const ColumnHeader = () => (
-    <div className={`${GRID_COLS} bg-muted/60 border-t border-border text-[11px] font-semibold uppercase tracking-wide text-muted-foreground`}>
-      <div className="px-2 py-2 border-r border-border">Task</div>
-      <div className="px-2 py-2 border-r border-border">From</div>
-      <div className="px-2 py-2 border-r border-border">To</div>
-      <div className="px-2 py-2 border-r border-border text-center">Link</div>
-      <div className="px-2 py-2 border-r border-border text-center">Progress</div>
-      <div className="px-2 py-2 border-r border-border text-center">Due</div>
+    <div className={`${GRID_COLS} bg-muted/40 border-y border-border text-[11px] font-medium text-muted-foreground sticky top-0 z-10`}>
+      <div className="border-r border-border/60" />
+      <div className="px-2 py-2 border-r border-border/60 flex items-center gap-1.5">
+        <Type className="h-3 w-3" /> Task
+      </div>
+      <div className="px-2 py-2 border-r border-border/60 flex items-center gap-1.5">
+        <User className="h-3 w-3" /> From
+      </div>
+      <div className="px-2 py-2 border-r border-border/60 flex items-center gap-1.5">
+        <User className="h-3 w-3" /> To
+      </div>
+      <div className="px-2 py-2 border-r border-border/60 flex items-center justify-center gap-1.5">
+        <Link2 className="h-3 w-3" /> Link
+      </div>
+      <div className="px-2 py-2 border-r border-border/60 flex items-center justify-center gap-1.5">
+        <BarChart3 className="h-3 w-3" /> Progress
+      </div>
+      <div className="px-2 py-2 border-r border-border/60 flex items-center justify-center gap-1.5">
+        <Calendar className="h-3 w-3" /> Due
+      </div>
       <div />
     </div>
   );
+
+  const renderGroupHeader = (category: string, rows: HandoverTask[]) => {
+    const collapsed = collapsedCats.has(category);
+    const completed = rows.filter((r) => r.progress >= 100).length;
+    return (
+      <div
+        className={`${GRID_COLS} bg-muted/20 border-b border-border/60 cursor-pointer hover:bg-muted/30`}
+        onClick={() => toggleCat(category)}
+      >
+        <div className="border-r border-border/60 flex items-center justify-center">
+          {collapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+        </div>
+        <div className="col-span-7 flex items-center gap-3 px-3 py-2">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Category
+          </span>
+          <span className={`inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-medium ${catColor(category)}`}>
+            {category}
+          </span>
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <Hash className="h-3 w-3" /> {rows.length}
+          </span>
+          <span className="text-xs text-muted-foreground ml-auto">
+            {completed}/{rows.length} complete
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  const renderAddRow = (category: string) => (
+    <button
+      type="button"
+      onClick={() => {
+        const name = prompt(`Add a task to "${category}":`);
+        if (name && name.trim()) {
+          createMutation.mutate({ ...newDraft(), category: category === UNCATEGORIZED ? "" : category, task_name: name.trim() });
+        }
+      }}
+      className={`${GRID_COLS} items-center border-b border-border/60 bg-background hover:bg-muted/30 text-left`}
+    >
+      <div className="border-r border-border/60 flex items-center justify-center h-9">
+        <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+      </div>
+      <div className="col-span-7 px-3 py-2 text-xs text-muted-foreground">Add a task…</div>
+    </button>
+  );
+
 
   // Summary stats
   const totalTasks = tasks.length;
@@ -591,8 +690,8 @@ export function ClientHandoverTracker({ clientName }: Props) {
           </div>
         )}
 
-        {/* Active tasks grouped by category — spreadsheet layout */}
-        <div className="overflow-x-auto">
+        {/* Active tasks grouped by category — Airtable-style spreadsheet */}
+        <div className="overflow-x-auto bg-background">
           {groupedTasks.length === 0 ? (
             <div className="px-6 py-12 text-center">
               <p className="text-sm font-medium text-foreground">No handover tasks yet</p>
@@ -601,24 +700,32 @@ export function ClientHandoverTracker({ clientName }: Props) {
               </p>
             </div>
           ) : (
-            <div className="min-w-[900px]">
-              {groupedTasks.map(([category, rows]) => (
-                <div key={`grp-${category}`}>
-                  <div className="px-3 py-1.5 bg-primary/5 border-t border-border flex items-center justify-between">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground">
-                      {category}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {rows.filter((r) => r.progress >= 100).length}/{rows.length} complete
-                    </span>
-                  </div>
-                  <ColumnHeader />
-                  {rows.map(renderTaskRow)}
-                </div>
-              ))}
+            <div className="min-w-[960px]">
+              <ColumnHeader />
+              {(() => {
+                let rowCounter = 0;
+                return groupedTasks.map(([category, rows]) => {
+                  const collapsed = collapsedCats.has(category);
+                  return (
+                    <div key={`grp-${category}`}>
+                      {renderGroupHeader(category, rows)}
+                      {!collapsed && (
+                        <>
+                          {rows.map((r) => {
+                            rowCounter += 1;
+                            return renderTaskRow(r, rowCounter);
+                          })}
+                          {renderAddRow(category)}
+                        </>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
             </div>
           )}
         </div>
+
 
 
         {/* Add custom task */}
