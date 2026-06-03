@@ -347,18 +347,20 @@ export function ClientHandoverTracker({ clientName }: Props) {
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { link: v.trim() || null } })}
         />
       </td>
-      <td className={cellClasses}>
+      <td className={cellClassesTop}>
         <Cell
           value={t.handed_over_by}
           placeholder="—"
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_by: v.trim() || null } })}
+          multiline
         />
       </td>
-      <td className={cellClasses}>
+      <td className={cellClassesTop}>
         <Cell
           value={t.handed_over_to}
           placeholder="—"
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_to: v.trim() || null } })}
+          multiline
         />
       </td>
       <td className={cellClasses}>
