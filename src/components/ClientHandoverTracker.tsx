@@ -322,6 +322,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
           value={t.category}
           placeholder="—"
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { category: v.trim() || null } })}
+          multiline
         />
       </td>
       <td className={cellClassesTop}>
