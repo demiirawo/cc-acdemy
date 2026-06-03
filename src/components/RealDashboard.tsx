@@ -9,7 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useUserRole } from "@/hooks/useUserRole";
-import { CompanyNoticeboard } from "./CompanyNoticeboard";
+
 import { UpcomingRequestsPreview } from "./UpcomingRequestsPreview";
 import { UpcomingBirthdaysCard } from "./UpcomingBirthdaysCard";
 import { UpcomingAnniversariesCard } from "./UpcomingAnniversariesCard";
@@ -329,8 +329,6 @@ export function RealDashboard({
         {/* Active Handover Trackers - Admin only */}
         {isAdmin && <HandoverTrackerSummaryCard />}
 
-        {/* Company Noticeboard */}
-        <CompanyNoticeboard />
 
         {/* Live View - Admin only */}
         {isAdmin && <DashboardLiveViewWrapper />}
