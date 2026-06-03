@@ -6,7 +6,7 @@ import { Progress } from "@/components/ui/progress";
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Trash2, ExternalLink, Plus, Check, ClipboardList } from "lucide-react";
+import { Trash2, ExternalLink, Plus, Check, X } from "lucide-react";
 import { toast } from "sonner";
 
 interface HandoverTemplate {
@@ -223,6 +223,19 @@ export function ClientHandoverTracker({ clientName }: Props) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["client-handover-tasks", clientName] }),
   });
 
+  const clearAllMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("client_handover_tasks").delete().eq("client_name", clientName);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["client-handover-tasks", clientName] });
+      setDraft(newDraft());
+      toast.success("Handover tracker cleared");
+    },
+    onError: (e: any) => toast.error(e.message || "Failed to clear tracker"),
+  });
+
   const draftHasContent = (d: DraftRow) =>
     !!(d.task_name.trim() || d.task_description.trim() || d.link.trim() ||
        d.handed_over_by.trim() || d.handed_over_to.trim() || d.category.trim() ||
@@ -402,9 +415,25 @@ export function ClientHandoverTracker({ clientName }: Props) {
   return (
     <Card className="mt-4 sm:mt-6">
       <CardHeader className="pb-2 px-3 sm:px-6">
-        <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-          Handover Tracker
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+            Handover Tracker
+          </CardTitle>
+          {tasks.length > 0 && (
+            <button
+              onClick={() => {
+                if (confirm("Are you sure you want to clear all tasks from this handover tracker?")) {
+                  clearAllMutation.mutate();
+                }
+              }}
+              disabled={clearAllMutation.isPending}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 rounded-md px-2.5 py-1.5 transition disabled:opacity-50"
+              title="Clear all tasks"
+            >
+              <X className="h-3.5 w-3.5" /> Clear
+            </button>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="p-0 sm:p-0">
         {groupedTemplates.length > 0 && (
