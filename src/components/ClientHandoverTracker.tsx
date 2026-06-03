@@ -211,6 +211,14 @@ export function ClientHandoverTracker({ clientName }: Props) {
     }
   };
 
+  function targetDateClasses(targetDate: string | null) {
+    if (!targetDate) return "";
+    const days = Math.ceil((new Date(targetDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    if (days > 14) return "bg-success/10 text-success";
+    if (days >= 5) return "bg-warning/10 text-warning";
+    return "bg-destructive/10 text-destructive";
+  }
+
   const applyTemplateToDraft = (t: HandoverTemplate) => {
     const next: DraftRow = {
       ...draft,
@@ -371,7 +379,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
                       <span className="text-xs text-muted-foreground">%</span>
                     </div>
                   </td>
-                  <td className={cellClasses}>
+                  <td className={`${cellClasses} ${targetDateClasses(t.target_date)}`}>
                     <Cell
                       value={t.target_date}
                       type="date"
