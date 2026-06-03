@@ -559,16 +559,25 @@ export function ClientHandoverTracker({ clientName }: Props) {
   function InlineAddRow({
     defaultCategory,
     allowCategoryEdit = false,
-  }: { defaultCategory: string; allowCategoryEdit?: boolean }) {
+    defaultFrom = "",
+    defaultTo = "",
+  }: { defaultCategory: string; allowCategoryEdit?: boolean; defaultFrom?: string; defaultTo?: string }) {
     const [open, setOpen] = useState(false);
-    const [d, setD] = useState<DraftRow>(() =>
-      ({ ...newDraft(defaultCategory === UNCATEGORIZED ? "" : defaultCategory) })
-    );
+    const [d, setD] = useState<DraftRow>(() => ({
+      ...newDraft(defaultCategory === UNCATEGORIZED ? "" : defaultCategory),
+      handed_over_by: defaultFrom,
+      handed_over_to: defaultTo,
+    }));
 
     const reset = () => {
-      setD({ ...newDraft(defaultCategory === UNCATEGORIZED ? "" : defaultCategory) });
+      setD({
+        ...newDraft(defaultCategory === UNCATEGORIZED ? "" : defaultCategory),
+        handed_over_by: defaultFrom,
+        handed_over_to: defaultTo,
+      });
       setOpen(false);
     };
+
     const save = () => {
       if (!d.task_name.trim()) return;
       createMutation.mutate(d, { onSuccess: () => reset() });
@@ -850,7 +859,13 @@ export function ClientHandoverTracker({ clientName }: Props) {
               })()
             )}
             {/* Always-available row for creating a task in a new (or any) category */}
-            <InlineAddRow defaultCategory="" allowCategoryEdit />
+            <InlineAddRow
+              defaultCategory=""
+              allowCategoryEdit
+              defaultFrom={tasks[tasks.length - 1]?.handed_over_by || ""}
+              defaultTo={tasks[tasks.length - 1]?.handed_over_to || ""}
+            />
+
           </div>
         </div>
       </CardContent>
