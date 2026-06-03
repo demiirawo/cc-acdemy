@@ -642,7 +642,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
         />
       </div>
       {/* Due date */}
-      <div className={`border-r border-border/60 flex items-center justify-center overflow-hidden ${targetDateCellTone(t.target_date)}`}>
+      <div className={`border-r border-border/60 flex items-center justify-center overflow-hidden ${targetDateCellTone(t.target_date, t.progress)}`}>
         <TargetDateChip
           value={t.target_date}
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { target_date: v || null } })}
