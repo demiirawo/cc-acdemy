@@ -126,6 +126,13 @@ function Cell({
 export function ClientHandoverTracker({ clientName }: Props) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<DraftRow>(newDraft());
+  const [collapsedCats, setCollapsedCats] = useState<Set<string>>(new Set());
+  const toggleCat = (c: string) =>
+    setCollapsedCats((prev) => {
+      const next = new Set(prev);
+      next.has(c) ? next.delete(c) : next.add(c);
+      return next;
+    });
 
   const { data: tasks = [] } = useQuery({
     queryKey: ["client-handover-tasks", clientName],
