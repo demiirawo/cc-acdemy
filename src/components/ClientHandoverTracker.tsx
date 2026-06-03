@@ -413,8 +413,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
               <AccordionItem value="library" className="border-0">
                 <AccordionTrigger className="py-2 hover:no-underline">
                   <span className="flex items-center gap-2 text-sm font-semibold">
-                    <ClipboardList className="h-4 w-4" />
-                    Predefined Task Library
+                    Task Library
                     <span className="text-xs font-normal text-muted-foreground">
                       ({templates.length} tasks across {groupedTemplates.length} categories)
                     </span>
