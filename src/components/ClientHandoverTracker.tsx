@@ -211,6 +211,14 @@ export function ClientHandoverTracker({ clientName }: Props) {
     }
   };
 
+  function targetDateClasses(targetDate: string | null) {
+    if (!targetDate) return "";
+    const days = Math.ceil((new Date(targetDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    if (days > 14) return "bg-success/10 text-success";
+    if (days >= 5) return "bg-warning/10 text-warning";
+    return "bg-destructive/10 text-destructive";
+  }
+
   const applyTemplateToDraft = (t: HandoverTemplate) => {
     const next: DraftRow = {
       ...draft,
