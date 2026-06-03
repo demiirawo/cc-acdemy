@@ -430,7 +430,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
 
       {/* Right: progress + target + delete */}
       <div className="col-span-12 md:col-span-6 flex flex-wrap items-start md:items-center justify-start md:justify-end gap-2">
-        <ProgressChip
+        <ProgressSlider
           value={t.progress}
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { progress: v } })}
         />
