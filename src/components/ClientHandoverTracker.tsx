@@ -859,7 +859,13 @@ export function ClientHandoverTracker({ clientName }: Props) {
               })()
             )}
             {/* Always-available row for creating a task in a new (or any) category */}
-            <InlineAddRow defaultCategory="" allowCategoryEdit />
+            <InlineAddRow
+              defaultCategory=""
+              allowCategoryEdit
+              defaultFrom={tasks[tasks.length - 1]?.handed_over_by || ""}
+              defaultTo={tasks[tasks.length - 1]?.handed_over_to || ""}
+            />
+
           </div>
         </div>
       </CardContent>
