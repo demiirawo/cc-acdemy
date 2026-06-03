@@ -404,6 +404,72 @@ export function ClientHandoverTracker({ clientName }: Props) {
         </CardTitle>
       </CardHeader>
       <CardContent className="p-0 sm:p-0">
+        {groupedTemplates.length > 0 && (
+          <div className="border-t bg-muted/10 px-3 sm:px-6 py-3">
+            <Accordion type="single" collapsible className="w-full">
+              <AccordionItem value="library" className="border-0">
+                <AccordionTrigger className="py-2 hover:no-underline">
+                  <span className="flex items-center gap-2 text-sm font-semibold">
+                    <ClipboardList className="h-4 w-4" />
+                    Predefined Task Library
+                    <span className="text-xs font-normal text-muted-foreground">
+                      ({templates.length} tasks across {groupedTemplates.length} categories)
+                    </span>
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="rounded-md border bg-background divide-y">
+                    {groupedTemplates.map(([category, items]) => (
+                      <div key={`lib-${category}`} className="p-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                          {category}
+                        </div>
+                        <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                          {items.map((t) => {
+                            const added = usedTemplateIds.has(t.id);
+                            return (
+                              <button
+                                key={t.id}
+                                type="button"
+                                disabled={added}
+                                onClick={() => addTemplateAsTask(t)}
+                                className={`group flex items-start justify-between gap-2 text-left p-2 rounded border transition ${
+                                  added
+                                    ? "bg-success/5 border-success/30 cursor-not-allowed"
+                                    : "hover:bg-muted/40 border-border"
+                                }`}
+                                title={added ? "Already added" : "Add to tracker"}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-sm font-medium truncate">{t.name}</div>
+                                  {t.description && (
+                                    <div className="text-xs text-muted-foreground line-clamp-2">
+                                      {t.description}
+                                    </div>
+                                  )}
+                                </div>
+                                <span className="shrink-0 text-muted-foreground group-hover:text-primary">
+                                  {added ? (
+                                    <Check className="h-4 w-4 text-success" />
+                                  ) : (
+                                    <Plus className="h-4 w-4" />
+                                  )}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Or scroll down and use the empty row to add your own custom task.
+                  </p>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </div>
+        )}
         <div className="overflow-x-auto border-t border-b">
           <table className="w-full text-sm border-collapse">
             <colgroup>
