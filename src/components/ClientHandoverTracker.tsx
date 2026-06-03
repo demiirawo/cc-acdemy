@@ -690,8 +690,8 @@ export function ClientHandoverTracker({ clientName }: Props) {
           </div>
         )}
 
-        {/* Active tasks grouped by category — spreadsheet layout */}
-        <div className="overflow-x-auto">
+        {/* Active tasks grouped by category — Airtable-style spreadsheet */}
+        <div className="overflow-x-auto bg-background">
           {groupedTasks.length === 0 ? (
             <div className="px-6 py-12 text-center">
               <p className="text-sm font-medium text-foreground">No handover tasks yet</p>
@@ -700,24 +700,32 @@ export function ClientHandoverTracker({ clientName }: Props) {
               </p>
             </div>
           ) : (
-            <div className="min-w-[900px]">
-              {groupedTasks.map(([category, rows]) => (
-                <div key={`grp-${category}`}>
-                  <div className="px-3 py-1.5 bg-primary/5 border-t border-border flex items-center justify-between">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground">
-                      {category}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {rows.filter((r) => r.progress >= 100).length}/{rows.length} complete
-                    </span>
-                  </div>
-                  <ColumnHeader />
-                  {rows.map(renderTaskRow)}
-                </div>
-              ))}
+            <div className="min-w-[960px]">
+              <ColumnHeader />
+              {(() => {
+                let rowCounter = 0;
+                return groupedTasks.map(([category, rows]) => {
+                  const collapsed = collapsedCats.has(category);
+                  return (
+                    <div key={`grp-${category}`}>
+                      {renderGroupHeader(category, rows)}
+                      {!collapsed && (
+                        <>
+                          {rows.map((r) => {
+                            rowCounter += 1;
+                            return renderTaskRow(r, rowCounter);
+                          })}
+                          {renderAddRow(category)}
+                        </>
+                      )}
+                    </div>
+                  );
+                });
+              })()}
             </div>
           )}
         </div>
+
 
 
         {/* Add custom task */}
