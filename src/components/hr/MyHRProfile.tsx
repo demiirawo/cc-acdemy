@@ -831,6 +831,20 @@ export function MyHRProfile() {
             const daysAccruing = Math.max(0, Math.ceil((holidayYearEnd.getTime() - accrualStart.getTime()) / (1000 * 60 * 60 * 24)));
             const fraction = Math.min(daysAccruing / totalDaysInYear, 1);
             accruedAllowance = Math.round(annualAllowance * fraction * 10) / 10;
+            console.log('[MyHRProfile unused-holiday]', {
+              month: format(targetMonth, 'MMM yyyy'),
+              start_date_raw: hrProfile.start_date,
+              parsed_start: start.toISOString(),
+              holidayYearStart: holidayYearStart.toISOString(),
+              holidayYearEnd: holidayYearEnd.toISOString(),
+              accrualStart: accrualStart.toISOString(),
+              daysAccruing,
+              totalDaysInYear,
+              fraction,
+              annualAllowance,
+              accruedAllowance,
+              holidaysTakenInYear,
+            });
           }
         } else {
           accruedAllowance = DEFAULT_ALLOWANCE;
