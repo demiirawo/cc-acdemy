@@ -451,7 +451,8 @@ export function ClientHandoverTracker({ clientName }: Props) {
     }
   };
 
-  function targetDateClasses(targetDate: string | null) {
+  function targetDateClasses(targetDate: string | null, progress: number = 0) {
+    if (progress >= 100) return "bg-background text-foreground";
     if (!targetDate) return "";
     const days = Math.ceil((new Date(targetDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
     if (days > 14) return "bg-success/10 text-success";
@@ -550,8 +551,8 @@ export function ClientHandoverTracker({ clientName }: Props) {
     );
   }
 
-  const targetDateCellTone = (value: string | null) =>
-    value ? targetDateClasses(value) : "";
+  const targetDateCellTone = (value: string | null, progress: number = 0) =>
+    value ? targetDateClasses(value, progress) : progress >= 100 ? "bg-background text-foreground" : "";
 
 
 
@@ -641,7 +642,7 @@ export function ClientHandoverTracker({ clientName }: Props) {
         />
       </div>
       {/* Due date */}
-      <div className={`border-r border-border/60 flex items-center justify-center overflow-hidden ${targetDateCellTone(t.target_date)}`}>
+      <div className={`border-r border-border/60 flex items-center justify-center overflow-hidden ${targetDateCellTone(t.target_date, t.progress)}`}>
         <TargetDateChip
           value={t.target_date}
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { target_date: v || null } })}
