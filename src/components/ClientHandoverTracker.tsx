@@ -591,8 +591,8 @@ export function ClientHandoverTracker({ clientName }: Props) {
           </div>
         )}
 
-        {/* Active tasks grouped by category */}
-        <div>
+        {/* Active tasks grouped by category — spreadsheet layout */}
+        <div className="overflow-x-auto">
           {groupedTasks.length === 0 ? (
             <div className="px-6 py-12 text-center">
               <p className="text-sm font-medium text-foreground">No handover tasks yet</p>
@@ -601,23 +601,25 @@ export function ClientHandoverTracker({ clientName }: Props) {
               </p>
             </div>
           ) : (
-            groupedTasks.map(([category, rows]) => (
-              <div key={`grp-${category}`} className="border-t border-border first:border-t-0">
-                <div className="px-4 sm:px-6 py-2 bg-muted/30 flex items-center justify-between">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {category}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {rows.filter((r) => r.progress >= 100).length}/{rows.length}
-                  </span>
-                </div>
-                <div className="px-2 sm:px-2">
+            <div className="min-w-[900px]">
+              {groupedTasks.map(([category, rows]) => (
+                <div key={`grp-${category}`}>
+                  <div className="px-3 py-1.5 bg-primary/5 border-t border-border flex items-center justify-between">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-foreground">
+                      {category}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {rows.filter((r) => r.progress >= 100).length}/{rows.length} complete
+                    </span>
+                  </div>
+                  <ColumnHeader />
                   {rows.map(renderTaskRow)}
                 </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
+
 
         {/* Add custom task */}
         <div className="border-t border-border bg-muted/10 px-4 sm:px-6 py-3">
