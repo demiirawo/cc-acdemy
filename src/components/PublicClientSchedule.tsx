@@ -1178,6 +1178,10 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
           getStaffName={getStaffName} 
         />
 
+        {/* Handover Tracker */}
+        {!scheduleOnly && <ClientHandoverTracker clientName={decodedClientName} />}
+
+
 
         {/* Password Manager Section */}
         {!scheduleOnly && <ClientPasswordManager clientName={decodedClientName} />}
