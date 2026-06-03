@@ -418,49 +418,81 @@ export function ClientHandoverTracker({ clientName }: Props) {
                   </span>
                 </AccordionTrigger>
                 <AccordionContent>
-                  <div className="rounded-md border bg-background divide-y">
-                    {groupedTemplates.map(([category, items]) => (
-                      <div key={`lib-${category}`} className="p-3">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                          {category}
-                        </div>
-                        <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-                          {items.map((t) => {
-                            const added = usedTemplateIds.has(t.id);
-                            return (
-                              <button
-                                key={t.id}
-                                type="button"
-                                disabled={added}
-                                onClick={() => addTemplateAsTask(t)}
-                                className={`group flex items-start justify-between gap-2 text-left p-2 rounded border transition ${
-                                  added
-                                    ? "bg-success/5 border-success/30 cursor-not-allowed"
-                                    : "hover:bg-muted/40 border-border"
-                                }`}
-                                title={added ? "Already added" : "Add to tracker"}
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-sm font-medium truncate">{t.name}</div>
-                                  {t.description && (
-                                    <div className="text-xs text-muted-foreground line-clamp-2">
-                                      {t.description}
-                                    </div>
-                                  )}
-                                </div>
-                                <span className="shrink-0 text-muted-foreground group-hover:text-primary">
-                                  {added ? (
-                                    <Check className="h-4 w-4 text-success" />
-                                  ) : (
-                                    <Plus className="h-4 w-4" />
-                                  )}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
+                  <div className="overflow-x-auto border rounded-md bg-background">
+                    <table className="w-full text-sm border-collapse">
+                      <colgroup>
+                        <col style={{ width: "26%" }} />
+                        <col style={{ width: "54%" }} />
+                        <col style={{ width: "12%" }} />
+                        <col style={{ width: "8%" }} />
+                      </colgroup>
+                      <thead>
+                        <tr className="bg-muted/50 text-xs uppercase text-muted-foreground">
+                          <th className="text-left font-medium px-2 py-2 border-r border-border">Task</th>
+                          <th className="text-left font-medium px-2 py-2 border-r border-border">Description</th>
+                          <th className="text-left font-medium px-2 py-2 border-r border-border">Link</th>
+                          <th className="px-2 py-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {groupedTemplates.map(([category, items]) => (
+                          <Fragment key={`lib-${category}`}>
+                            <tr className="bg-muted/30 border-t border-border">
+                              <td colSpan={4} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                {category}
+                              </td>
+                            </tr>
+                            {items.map((t) => {
+                              const added = usedTemplateIds.has(t.id);
+                              return (
+                                <tr
+                                  key={t.id}
+                                  className={`border-t border-border ${added ? "bg-success/5" : "hover:bg-muted/20"}`}
+                                >
+                                  <td className="px-2 py-2 align-top border-r border-border font-medium">
+                                    {t.name}
+                                  </td>
+                                  <td className="px-2 py-2 align-top border-r border-border text-muted-foreground">
+                                    {t.description || "—"}
+                                  </td>
+                                  <td className="px-2 py-2 align-top border-r border-border">
+                                    {t.link ? (
+                                      <a
+                                        href={t.link}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-primary hover:text-primary/80 inline-flex items-center gap-1"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <ExternalLink className="h-3.5 w-3.5" />
+                                      </a>
+                                    ) : (
+                                      <span className="text-muted-foreground">—</span>
+                                    )}
+                                  </td>
+                                  <td className="px-1 py-1 text-right align-top">
+                                    {added ? (
+                                      <span className="inline-flex items-center gap-1 text-xs text-success px-2 py-1">
+                                        <Check className="h-3.5 w-3.5" /> Added
+                                      </span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => addTemplateAsTask(t)}
+                                        className="inline-flex items-center gap-1 text-xs text-primary hover:bg-primary/10 rounded px-2 py-1 transition"
+                                        title="Add to tracker"
+                                      >
+                                        <Plus className="h-3.5 w-3.5" /> Add
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </Fragment>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
                     Or scroll down and use the empty row to add your own custom task.
