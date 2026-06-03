@@ -382,62 +382,73 @@ export function ClientHandoverTracker({ clientName }: Props) {
     );
   }
 
+  // Spreadsheet column template — shared by header and rows
+  const GRID_COLS =
+    "grid grid-cols-[minmax(220px,2.4fr)_minmax(110px,1fr)_minmax(110px,1fr)_90px_180px_140px_40px]";
+
   const renderTaskRow = (t: HandoverTask) => (
     <div
       key={t.id}
-      className="group grid grid-cols-12 gap-x-4 gap-y-1 px-4 py-3 border-t border-border hover:bg-muted/30 transition-colors"
+      className={`group ${GRID_COLS} items-stretch border-t border-border hover:bg-muted/30 transition-colors`}
     >
-      {/* Left: task + description */}
-      <div className="col-span-12 md:col-span-6 min-w-0">
+      {/* Task name + description */}
+      <div className="border-r border-border px-1 py-1 min-w-0">
         <Cell
           value={t.task_name}
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_name: v.trim() || t.task_name } })}
-          className="!px-0 !py-0 font-semibold text-sm text-foreground"
+          className="font-medium text-sm text-foreground"
           multiline
         />
         <Cell
           value={t.task_description}
           placeholder="Add description…"
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_description: v.trim() || null } })}
-          className="!px-0 !py-0 text-xs text-muted-foreground"
+          className="text-xs text-muted-foreground"
           multiline
         />
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1.5 text-xs text-muted-foreground">
-          <div className="inline-flex items-center gap-1">
-            <span className="opacity-70">From</span>
-            <Cell
-              value={t.handed_over_by}
-              placeholder="—"
-              onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_by: v.trim() || null } })}
-              className="!px-1 !py-0 !min-h-0 text-xs text-foreground"
-            />
-          </div>
-          <div className="inline-flex items-center gap-1">
-            <span className="opacity-70">To</span>
-            <Cell
-              value={t.handed_over_to}
-              placeholder="—"
-              onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_to: v.trim() || null } })}
-              className="!px-1 !py-0 !min-h-0 text-xs text-foreground"
-            />
-          </div>
-          <LinkCell
-            value={t.link}
-            onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { link: v.trim() || null } })}
-          />
-        </div>
       </div>
-
-      {/* Right: progress + target + delete */}
-      <div className="col-span-12 md:col-span-6 flex flex-wrap items-start md:items-center justify-start md:justify-end gap-2">
+      {/* From */}
+      <div className="border-r border-border flex items-center min-w-0">
+        <Cell
+          value={t.handed_over_by}
+          placeholder="—"
+          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_by: v.trim() || null } })}
+          className="text-sm"
+        />
+      </div>
+      {/* To */}
+      <div className="border-r border-border flex items-center min-w-0">
+        <Cell
+          value={t.handed_over_to}
+          placeholder="—"
+          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_to: v.trim() || null } })}
+          className="text-sm"
+        />
+      </div>
+      {/* Link */}
+      <div className="border-r border-border flex items-center justify-center px-2">
+        <LinkCell
+          value={t.link}
+          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { link: v.trim() || null } })}
+          compact
+        />
+      </div>
+      {/* Progress */}
+      <div className="border-r border-border flex items-center justify-center px-2 py-1">
         <ProgressSlider
           value={t.progress}
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { progress: v } })}
         />
+      </div>
+      {/* Due date */}
+      <div className="border-r border-border flex items-center justify-center px-2 py-1">
         <TargetDateChip
           value={t.target_date}
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { target_date: v || null } })}
         />
+      </div>
+      {/* Delete */}
+      <div className="flex items-center justify-center">
         <button
           onClick={() => { if (confirm("Delete this task?")) deleteMutation.mutate(t.id); }}
           className="opacity-0 group-hover:opacity-100 transition p-1.5 rounded hover:bg-destructive/10 hover:text-destructive"
@@ -446,6 +457,18 @@ export function ClientHandoverTracker({ clientName }: Props) {
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
+    </div>
+  );
+
+  const ColumnHeader = () => (
+    <div className={`${GRID_COLS} bg-muted/60 border-t border-border text-[11px] font-semibold uppercase tracking-wide text-muted-foreground`}>
+      <div className="px-2 py-2 border-r border-border">Task</div>
+      <div className="px-2 py-2 border-r border-border">From</div>
+      <div className="px-2 py-2 border-r border-border">To</div>
+      <div className="px-2 py-2 border-r border-border text-center">Link</div>
+      <div className="px-2 py-2 border-r border-border text-center">Progress</div>
+      <div className="px-2 py-2 border-r border-border text-center">Due</div>
+      <div />
     </div>
   );
 
