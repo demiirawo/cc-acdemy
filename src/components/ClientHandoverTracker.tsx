@@ -127,6 +127,9 @@ function InlineAddRow({
     handed_over_by: defaultFrom,
     handed_over_to: defaultTo,
   }));
+  const rowRef = useRef<HTMLDivElement>(null);
+  const dRef = useRef(d);
+  useEffect(() => { dRef.current = d; }, [d]);
 
   const reset = () => {
     setD({
@@ -138,9 +141,24 @@ function InlineAddRow({
   };
 
   const save = () => {
-    if (!d.task_name.trim()) return;
-    onCreate(d, reset);
+    const cur = dRef.current;
+    if (!cur.task_name.trim()) { reset(); return; }
+    onCreate(cur, reset);
   };
+
+  // Save when clicking/tapping outside the row
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rowRef.current && !rowRef.current.contains(e.target as Node)) {
+        save();
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
 
   if (!open) {
     return (
@@ -160,7 +178,7 @@ function InlineAddRow({
   }
 
   return (
-    <div className={`${GRID_COLS} items-stretch border-b border-border/60 bg-primary/5`}>
+    <div ref={rowRef} className={`${GRID_COLS} items-stretch border-b border-border/60 bg-primary/5`}>
       <div className="border-r border-border/60 flex items-center justify-center text-[11px] text-muted-foreground font-mono">
         <Plus className="h-3.5 w-3.5" />
       </div>
@@ -236,23 +254,8 @@ function InlineAddRow({
           className="bg-transparent border-0 outline-none text-xs"
         />
       </div>
-      <div className="flex flex-col items-center justify-center gap-0.5 py-1">
-        <button
-          onClick={save}
-          disabled={!d.task_name.trim() || isPending}
-          title="Save (Enter)"
-          className="p-1 rounded hover:bg-success/15 text-success disabled:opacity-30"
-        >
-          <Check className="h-3.5 w-3.5" />
-        </button>
-        <button
-          onClick={reset}
-          title="Cancel (Esc)"
-          className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      <div aria-hidden />
+
     </div>
   );
 }
