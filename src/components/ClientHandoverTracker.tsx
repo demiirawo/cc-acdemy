@@ -815,17 +815,17 @@ export function ClientHandoverTracker({ clientName }: Props) {
 
         {/* Active tasks grouped by category — Airtable-style spreadsheet */}
         <div className="overflow-x-auto bg-background">
-          {groupedTasks.length === 0 ? (
-            <div className="px-6 py-12 text-center">
-              <p className="text-sm font-medium text-foreground">No handover tasks yet</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Add tasks from the Task Library above, or create a custom one below.
-              </p>
-            </div>
-          ) : (
-            <div className="min-w-[960px]">
-              <ColumnHeader />
-              {(() => {
+          <div className="min-w-[960px]">
+            <ColumnHeader />
+            {groupedTasks.length === 0 ? (
+              <div className="px-6 py-8 text-center border-b border-border/60">
+                <p className="text-sm font-medium text-foreground">No handover tasks yet</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Add tasks from the Task Library above, or use the row below.
+                </p>
+              </div>
+            ) : (
+              (() => {
                 let rowCounter = 0;
                 return groupedTasks.map(([category, rows]) => {
                   const collapsed = collapsedCats.has(category);
@@ -838,52 +838,16 @@ export function ClientHandoverTracker({ clientName }: Props) {
                             rowCounter += 1;
                             return renderTaskRow(r, rowCounter);
                           })}
-                          {renderAddRow(category)}
+                          <InlineAddRow defaultCategory={category} />
                         </>
                       )}
                     </div>
                   );
                 });
-              })()}
-            </div>
-          )}
-        </div>
-
-
-
-        {/* Add custom task */}
-        <div className="border-t border-border bg-muted/10 px-4 sm:px-6 py-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-            Add a custom task
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
-            <input
-              type="text"
-              value={draft.category}
-              placeholder="Category"
-              onChange={(e) => setDraft({ ...draft, category: e.target.value })}
-              className="md:col-span-3 bg-background border border-input rounded-md px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring"
-            />
-            <input
-              type="text"
-              value={draft.task_name}
-              placeholder="Task name"
-              onChange={(e) => setDraft({ ...draft, task_name: e.target.value })}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && draft.task_name.trim()) {
-                  createMutation.mutate(draft);
-                }
-              }}
-              className="md:col-span-6 bg-background border border-input rounded-md px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring"
-            />
-            <button
-              type="button"
-              disabled={!draft.task_name.trim() || createMutation.isPending}
-              onClick={() => createMutation.mutate(draft)}
-              className="md:col-span-3 inline-flex items-center justify-center gap-1.5 text-sm font-medium bg-primary text-primary-foreground rounded-md px-3 py-1.5 hover:bg-primary/90 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Plus className="h-4 w-4" /> Add task
-            </button>
+              })()
+            )}
+            {/* Always-available row for creating a task in a new (or any) category */}
+            <InlineAddRow defaultCategory="" allowCategoryEdit />
           </div>
         </div>
       </CardContent>
