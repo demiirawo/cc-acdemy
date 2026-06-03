@@ -332,6 +332,9 @@ export function RealDashboard({
         {/* Live View - Admin only */}
         {isAdmin && <DashboardLiveViewWrapper />}
 
+        {/* Active Handover Trackers - Admin only */}
+        {isAdmin && <HandoverTrackerSummaryCard />}
+
         {/* Upcoming Approved Requests - Admin only */}
         {isAdmin && <UpcomingRequestsPreview onViewRequest={onViewRequest} />}
 
