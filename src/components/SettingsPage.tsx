@@ -229,13 +229,19 @@ export function SettingsPage({
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="security">Security</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
+            <TabsTrigger value="handover">Handover</TabsTrigger>
             <TabsTrigger value="preferences">Preferences</TabsTrigger>
             <TabsTrigger value="data">Data & Privacy</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="handover" className="space-y-6">
+            <HandoverTemplatesManager />
+          </TabsContent>
+
 
           {/* Profile Tab */}
           <TabsContent value="profile" className="space-y-6">
