@@ -735,6 +735,15 @@ export function ClientHandoverTracker({ clientName }: Props) {
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0">
             <CardTitle className="text-lg sm:text-xl">Handover Tracker</CardTitle>
+            <a
+              href="https://www.youtube.com/watch?v=VGzR7cR1npA"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline mt-0.5"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Handover Tracker Explained
+            </a>
             {totalTasks > 0 && (
               <p className="text-xs text-muted-foreground mt-1">
                 {completedTasks} of {totalTasks} tasks complete · {overallProgress}% overall
