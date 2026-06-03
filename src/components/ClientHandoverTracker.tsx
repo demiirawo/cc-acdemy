@@ -415,9 +415,25 @@ export function ClientHandoverTracker({ clientName }: Props) {
   return (
     <Card className="mt-4 sm:mt-6">
       <CardHeader className="pb-2 px-3 sm:px-6">
-        <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
-          Handover Tracker
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-lg sm:text-xl">
+            Handover Tracker
+          </CardTitle>
+          {tasks.length > 0 && (
+            <button
+              onClick={() => {
+                if (confirm("Are you sure you want to clear all tasks from this handover tracker?")) {
+                  clearAllMutation.mutate();
+                }
+              }}
+              disabled={clearAllMutation.isPending}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 rounded-md px-2.5 py-1.5 transition disabled:opacity-50"
+              title="Clear all tasks"
+            >
+              <X className="h-3.5 w-3.5" /> Clear
+            </button>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="p-0 sm:p-0">
         {groupedTemplates.length > 0 && (
