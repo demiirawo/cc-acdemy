@@ -153,6 +153,7 @@ export type Database = {
       }
       client_handover_tasks: {
         Row: {
+          category: string | null
           client_name: string
           created_at: string
           handed_over_by: string | null
@@ -168,6 +169,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          category?: string | null
           client_name: string
           created_at?: string
           handed_over_by?: string | null
@@ -183,6 +185,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          category?: string | null
           client_name?: string
           created_at?: string
           handed_over_by?: string | null
@@ -580,6 +583,7 @@ export type Database = {
       }
       handover_task_templates: {
         Row: {
+          category: string | null
           created_at: string
           created_by: string | null
           description: string | null
@@ -590,6 +594,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          category?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
@@ -600,6 +605,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          category?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null

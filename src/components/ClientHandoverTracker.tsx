@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,12 +15,14 @@ interface HandoverTemplate {
   name: string;
   description: string | null;
   link: string | null;
+  category: string | null;
 }
 
 interface HandoverTask {
   id: string;
   client_name: string;
   template_id: string | null;
+  category: string | null;
   task_name: string;
   task_description: string | null;
   link: string | null;
@@ -37,7 +39,8 @@ interface Props {
 }
 
 type DraftRow = {
-  key: string; // local id for react keys
+  key: string;
+  category: string;
   task_name: string;
   task_description: string;
   link: string;
@@ -48,8 +51,9 @@ type DraftRow = {
   template_id: string | null;
 };
 
-const newDraft = (): DraftRow => ({
+const newDraft = (category = ""): DraftRow => ({
   key: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  category,
   task_name: "",
   task_description: "",
   link: "",
@@ -59,6 +63,8 @@ const newDraft = (): DraftRow => ({
   target_date: "",
   template_id: null,
 });
+
+const UNCATEGORIZED = "Uncategorized";
 
 // Spreadsheet-style cell (text/date/number/textarea). Saves on blur/Enter.
 function Cell({
@@ -158,11 +164,23 @@ export function ClientHandoverTracker({ clientName }: Props) {
     );
   }, [templates, templateSearch]);
 
+  // Group tasks by category, preserving first-seen order
+  const groupedTasks = useMemo(() => {
+    const groups = new Map<string, HandoverTask[]>();
+    for (const t of tasks) {
+      const cat = (t.category || "").trim() || UNCATEGORIZED;
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat)!.push(t);
+    }
+    return Array.from(groups.entries());
+  }, [tasks]);
+
   const createMutation = useMutation({
     mutationFn: async (d: DraftRow) => {
       const payload = {
         client_name: clientName,
         template_id: d.template_id,
+        category: d.category.trim() || null,
         task_name: d.task_name.trim() || "Untitled task",
         task_description: d.task_description.trim() || null,
         link: d.link.trim() || null,
@@ -200,13 +218,12 @@ export function ClientHandoverTracker({ clientName }: Props) {
 
   const draftHasContent = (d: DraftRow) =>
     !!(d.task_name.trim() || d.task_description.trim() || d.link.trim() ||
-       d.handed_over_by.trim() || d.handed_over_to.trim() ||
+       d.handed_over_by.trim() || d.handed_over_to.trim() || d.category.trim() ||
        d.target_date || d.progress > 0 || d.template_id);
 
   const commitDraftIfFilled = (next: DraftRow) => {
     setDraft(next);
     if (draftHasContent(next) && next.task_name.trim()) {
-      // auto-create when there's at least a task name
       createMutation.mutate(next);
     }
   };
@@ -223,13 +240,13 @@ export function ClientHandoverTracker({ clientName }: Props) {
     const next: DraftRow = {
       ...draft,
       template_id: t.id,
+      category: draft.category || t.category || "",
       task_name: t.name,
       task_description: t.description || "",
       link: t.link || "",
     };
     setTemplatePopoverOpen(false);
     setTemplateSearch("");
-    // Apply and persist immediately (task_name is set)
     commitDraftIfFilled(next);
   };
 
@@ -290,6 +307,87 @@ export function ClientHandoverTracker({ clientName }: Props) {
     );
   }
 
+  const renderTaskRow = (t: HandoverTask) => (
+    <tr key={t.id} className="border-t border-border hover:bg-muted/20 group">
+      <td className={cellClassesTop}>
+        <Cell
+          value={t.category}
+          placeholder="—"
+          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { category: v.trim() || null } })}
+        />
+      </td>
+      <td className={cellClassesTop}>
+        <Cell
+          value={t.task_name}
+          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_name: v.trim() || t.task_name } })}
+          className="font-medium"
+          multiline
+        />
+      </td>
+      <td className={cellClassesTop}>
+        <Cell
+          value={t.task_description}
+          placeholder="—"
+          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_description: v.trim() || null } })}
+          multiline
+        />
+      </td>
+      <td className={cellClasses}>
+        <LinkCell
+          value={t.link}
+          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { link: v.trim() || null } })}
+        />
+      </td>
+      <td className={cellClasses}>
+        <Cell
+          value={t.handed_over_by}
+          placeholder="—"
+          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_by: v.trim() || null } })}
+        />
+      </td>
+      <td className={cellClasses}>
+        <Cell
+          value={t.handed_over_to}
+          placeholder="—"
+          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_to: v.trim() || null } })}
+        />
+      </td>
+      <td className={cellClasses}>
+        <div className="flex items-center gap-2 px-2">
+          <Progress value={t.progress} className="h-2 flex-1" />
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={t.progress}
+            onChange={(e) => {
+              const v = Math.max(0, Math.min(100, Number(e.target.value) || 0));
+              updateMutation.mutate({ id: t.id, patch: { progress: v } });
+            }}
+            className="w-12 h-6 text-xs bg-transparent border border-transparent hover:border-input rounded px-1 outline-none focus:border-ring focus:bg-background"
+          />
+          <span className="text-xs text-muted-foreground">%</span>
+        </div>
+      </td>
+      <td className={`${cellClasses} ${targetDateClasses(t.target_date)}`}>
+        <Cell
+          value={t.target_date}
+          type="date"
+          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { target_date: v || null } })}
+        />
+      </td>
+      <td className="px-1 text-right">
+        <button
+          onClick={() => { if (confirm("Delete this task?")) deleteMutation.mutate(t.id); }}
+          className="opacity-0 group-hover:opacity-100 transition p-1 hover:text-destructive"
+          title="Delete"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </td>
+    </tr>
+  );
+
   return (
     <Card className="mt-4 sm:mt-6">
       <CardHeader className="pb-2 px-3 sm:px-6">
@@ -301,17 +399,19 @@ export function ClientHandoverTracker({ clientName }: Props) {
         <div className="overflow-x-auto border-t border-b">
           <table className="w-full text-sm border-collapse">
             <colgroup>
-              <col style={{ width: "18%" }} />
-              <col style={{ width: "22%" }} />
               <col style={{ width: "12%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "14%" }} />
-              <col style={{ width: "10%" }} />
+              <col style={{ width: "16%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "8%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "13%" }} />
+              <col style={{ width: "9%" }} />
               <col style={{ width: "4%" }} />
             </colgroup>
             <thead>
               <tr className="bg-muted/50 text-xs uppercase text-muted-foreground">
+                <th className="text-left font-medium px-2 py-2 border-r border-border">Category</th>
                 <th className="text-left font-medium px-2 py-2 border-r border-border">Task</th>
                 <th className="text-left font-medium px-2 py-2 border-r border-border">Description</th>
                 <th className="text-left font-medium px-2 py-2 border-r border-border">Link</th>
@@ -323,82 +423,26 @@ export function ClientHandoverTracker({ clientName }: Props) {
               </tr>
             </thead>
             <tbody>
-              {tasks.map((t) => (
-                <tr key={t.id} className="border-t border-border hover:bg-muted/20 group">
-                  <td className={cellClassesTop}>
-                    <Cell
-                      value={t.task_name}
-                      onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_name: v.trim() || t.task_name } })}
-                      className="font-medium"
-                      multiline
-                    />
-                  </td>
-                  <td className={cellClassesTop}>
-                    <Cell
-                      value={t.task_description}
-                      placeholder="—"
-                      onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_description: v.trim() || null } })}
-                      multiline
-                    />
-                  </td>
-                  <td className={cellClasses}>
-                    <LinkCell
-                      value={t.link}
-                      onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { link: v.trim() || null } })}
-                    />
-                  </td>
-                  <td className={cellClasses}>
-                    <Cell
-                      value={t.handed_over_by}
-                      placeholder="—"
-                      onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_by: v.trim() || null } })}
-                    />
-                  </td>
-                  <td className={cellClasses}>
-                    <Cell
-                      value={t.handed_over_to}
-                      placeholder="—"
-                      onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_to: v.trim() || null } })}
-                    />
-                  </td>
-                  <td className={cellClasses}>
-                    <div className="flex items-center gap-2 px-2">
-                      <Progress value={t.progress} className="h-2 flex-1" />
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        value={t.progress}
-                        onChange={(e) => {
-                          const v = Math.max(0, Math.min(100, Number(e.target.value) || 0));
-                          updateMutation.mutate({ id: t.id, patch: { progress: v } });
-                        }}
-                        className="w-12 h-6 text-xs bg-transparent border border-transparent hover:border-input rounded px-1 outline-none focus:border-ring focus:bg-background"
-                      />
-                      <span className="text-xs text-muted-foreground">%</span>
-                    </div>
-                  </td>
-                  <td className={`${cellClasses} ${targetDateClasses(t.target_date)}`}>
-                    <Cell
-                      value={t.target_date}
-                      type="date"
-                      onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { target_date: v || null } })}
-                    />
-                  </td>
-                  <td className="px-1 text-right">
-                    <button
-                      onClick={() => { if (confirm("Delete this task?")) deleteMutation.mutate(t.id); }}
-                      className="opacity-0 group-hover:opacity-100 transition p-1 hover:text-destructive"
-                      title="Delete"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </td>
-                </tr>
+              {groupedTasks.map(([category, rows]) => (
+                <Fragment key={`grp-${category}`}>
+                  <tr className="bg-muted/30 border-t border-border">
+                    <td colSpan={9} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {category}
+                    </td>
+                  </tr>
+                  {rows.map(renderTaskRow)}
+                </Fragment>
               ))}
 
               {/* Inline draft / "new row" — Airtable style */}
-              <tr key={draft.key} className="border-t border-border bg-background/50">
+              <tr key={draft.key} className="border-t-2 border-border bg-background/50">
+                <td className={cellClassesTop}>
+                  <Cell
+                    value={draft.category}
+                    placeholder="Category"
+                    onCommit={(v) => commitDraftIfFilled({ ...draft, category: v })}
+                  />
+                </td>
                 <td className={cellClassesTop}>
                   <div className="flex items-stretch">
                     <Cell
@@ -506,10 +550,9 @@ export function ClientHandoverTracker({ clientName }: Props) {
               {/* "+" footer row to manually queue another draft row (Airtable style) */}
               <tr className="border-t border-border">
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="px-3 py-2 text-muted-foreground hover:bg-muted/40 cursor-pointer"
                   onClick={() => {
-                    // If current draft has a name, persist it then make a new one; otherwise just focus the existing draft.
                     if (draft.task_name.trim()) {
                       createMutation.mutate(draft);
                     } else {
