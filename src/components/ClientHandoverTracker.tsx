@@ -451,7 +451,8 @@ export function ClientHandoverTracker({ clientName }: Props) {
     }
   };
 
-  function targetDateClasses(targetDate: string | null) {
+  function targetDateClasses(targetDate: string | null, progress: number = 0) {
+    if (progress >= 100) return "bg-background text-foreground";
     if (!targetDate) return "";
     const days = Math.ceil((new Date(targetDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
     if (days > 14) return "bg-success/10 text-success";
