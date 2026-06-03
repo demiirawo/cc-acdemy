@@ -7,7 +7,7 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
-import { ClipboardList, Trash2, ExternalLink, Search, Plus } from "lucide-react";
+import { Trash2, ExternalLink, Search, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 interface HandoverTemplate {
