@@ -326,14 +326,14 @@ export function RealDashboard({
           </div>
         </div>
 
+        {/* Active Handover Trackers - Admin only */}
+        {isAdmin && <HandoverTrackerSummaryCard />}
+
         {/* Company Noticeboard */}
         <CompanyNoticeboard />
 
         {/* Live View - Admin only */}
         {isAdmin && <DashboardLiveViewWrapper />}
-
-        {/* Active Handover Trackers - Admin only */}
-        {isAdmin && <HandoverTrackerSummaryCard />}
 
         {/* Upcoming Approved Requests - Admin only */}
         {isAdmin && <UpcomingRequestsPreview onViewRequest={onViewRequest} />}
