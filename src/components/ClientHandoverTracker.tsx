@@ -375,19 +375,22 @@ export function ClientHandoverTracker({ clientName }: Props) {
   function TargetDateChip({
     value, onCommit,
   }: { value: string | null; onCommit: (v: string) => void }) {
-    const tone = value ? targetDateClasses(value) : "bg-muted text-muted-foreground";
     return (
-      <label className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium cursor-text ${tone}`}>
+      <label className="flex w-full items-center justify-center gap-1.5 px-2 py-1 text-xs font-medium cursor-text">
         <span className="opacity-70">Due</span>
         <input
           type="date"
           value={value ?? ""}
           onChange={(e) => onCommit(e.target.value)}
-          className="bg-transparent border-0 outline-none text-xs font-medium [color-scheme:light] dark:[color-scheme:dark]"
+          className="bg-transparent border-0 outline-none text-xs font-medium [color-scheme:light] dark:[color-scheme:dark] min-w-0"
         />
       </label>
     );
   }
+
+  const targetDateCellTone = (value: string | null) =>
+    value ? targetDateClasses(value) : "";
+
 
   // Airtable-style column template: row-# gutter + columns
   const GRID_COLS =
