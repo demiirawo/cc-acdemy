@@ -60,9 +60,9 @@ const newDraft = (): DraftRow => ({
   template_id: null,
 });
 
-// Spreadsheet-style cell (text/date/number). Saves on blur/Enter.
+// Spreadsheet-style cell (text/date/number/textarea). Saves on blur/Enter.
 function Cell({
-  value, onCommit, type = "text", placeholder, className = "", min, max,
+  value, onCommit, type = "text", placeholder, className = "", min, max, multiline,
 }: {
   value: string | number | null;
   onCommit: (v: string) => void;
@@ -71,10 +71,34 @@ function Cell({
   className?: string;
   min?: number;
   max?: number;
+  multiline?: boolean;
 }) {
   const initial = value === null || value === undefined ? "" : String(value);
   const [local, setLocal] = useState<string>(initial);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { setLocal(initial); }, [initial]);
+  useEffect(() => {
+    if (multiline && textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
+    }
+  }, [local, multiline]);
+  if (multiline) {
+    return (
+      <textarea
+        ref={textareaRef}
+        value={local}
+        placeholder={placeholder}
+        rows={1}
+        onChange={(e) => setLocal(e.target.value)}
+        onBlur={() => { if (local !== initial) onCommit(local); }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") { setLocal(initial); (e.target as HTMLTextAreaElement).blur(); }
+        }}
+        className={`w-full bg-transparent border-0 px-2 py-1.5 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset resize-none min-h-[36px] ${className}`}
+      />
+    );
+  }
   return (
     <input
       type={type}
