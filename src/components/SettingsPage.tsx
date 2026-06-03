@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { AdminNotificationSettings } from "./AdminNotificationSettings";
+import { HandoverTemplatesManager } from "./HandoverTemplatesManager";
 interface UserProfile {
   id: string;
   user_id: string;
