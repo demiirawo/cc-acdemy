@@ -18,6 +18,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { toast } from "sonner";
 import { UnifiedShiftEditor, ShiftToEdit } from "@/components/hr/UnifiedShiftEditor";
+import { ClientHandoverTracker } from "@/components/ClientHandoverTracker";
 
 
 interface ClientWhiteboard {
@@ -1176,6 +1177,10 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
           clientName={decodedClientName}
           getStaffName={getStaffName} 
         />
+
+        {/* Handover Tracker */}
+        {!scheduleOnly && <ClientHandoverTracker clientName={decodedClientName} />}
+
 
 
         {/* Password Manager Section */}
