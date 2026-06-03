@@ -424,14 +424,14 @@ export function ClientHandoverTracker({ clientName }: Props) {
             </thead>
             <tbody>
               {groupedTasks.map(([category, rows]) => (
-                <>
-                  <tr key={`hdr-${category}`} className="bg-muted/30 border-t border-border">
+                <Fragment key={`grp-${category}`}>
+                  <tr className="bg-muted/30 border-t border-border">
                     <td colSpan={9} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                       {category}
                     </td>
                   </tr>
                   {rows.map(renderTaskRow)}
-                </>
+                </Fragment>
               ))}
 
               {/* Inline draft / "new row" — Airtable style */}
