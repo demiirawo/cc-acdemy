@@ -125,8 +125,6 @@ function Cell({
 export function ClientHandoverTracker({ clientName }: Props) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<DraftRow>(newDraft());
-  const [templateSearch, setTemplateSearch] = useState("");
-  const [templatePopoverOpen, setTemplatePopoverOpen] = useState(false);
 
   const { data: tasks = [] } = useQuery({
     queryKey: ["client-handover-tasks", clientName],
