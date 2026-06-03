@@ -66,6 +66,198 @@ const newDraft = (category = ""): DraftRow => ({
 
 const UNCATEGORIZED = "Uncategorized";
 
+// Airtable-style column template: row-# gutter + columns
+const GRID_COLS =
+  "grid grid-cols-[44px_minmax(240px,2.4fr)_minmax(120px,1fr)_minmax(120px,1fr)_88px_180px_140px_36px]";
+
+// Progress slider — compact, inline, drag to update (module-scope so it
+// keeps a stable identity across parent re-renders and doesn't remount).
+function ProgressSlider({
+  value,
+  onCommit,
+}: { value: number; onCommit: (v: number) => void }) {
+  const [local, setLocal] = useState(value);
+  useEffect(() => { setLocal(value); }, [value]);
+  const pct = Math.max(0, Math.min(100, local || 0));
+  const pctColor =
+    pct >= 100 ? "text-success"
+    : pct >= 50 ? "text-primary"
+    : pct > 0 ? "text-warning"
+    : "text-muted-foreground";
+  return (
+    <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-2.5 py-1">
+      <div className="w-20 sm:w-24">
+        <Slider
+          value={[pct]}
+          min={0}
+          max={100}
+          step={5}
+          onValueChange={([v]) => setLocal(v)}
+          onValueCommit={([v]) => { if (v !== value) onCommit(v); }}
+          className="[&_[role=slider]]:h-3.5 [&_[role=slider]]:w-3.5 [&_[role=slider]]:border-2 [&_[role=slider]]:border-primary [&_[role=slider]]:bg-background [&_[role=slider]]:ring-0"
+        />
+      </div>
+      <span className={`text-xs font-semibold min-w-[2.5ch] text-right ${pctColor}`}>
+        {pct}%
+      </span>
+    </div>
+  );
+}
+
+// Inline add row — module-scope so opening it and typing isn't wiped out
+// when the parent re-renders (e.g. after a progress mutation refetch).
+function InlineAddRow({
+  defaultCategory,
+  allowCategoryEdit = false,
+  defaultFrom = "",
+  defaultTo = "",
+  onCreate,
+  isPending,
+}: {
+  defaultCategory: string;
+  allowCategoryEdit?: boolean;
+  defaultFrom?: string;
+  defaultTo?: string;
+  onCreate: (d: DraftRow, onDone: () => void) => void;
+  isPending: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [d, setD] = useState<DraftRow>(() => ({
+    ...newDraft(defaultCategory === UNCATEGORIZED ? "" : defaultCategory),
+    handed_over_by: defaultFrom,
+    handed_over_to: defaultTo,
+  }));
+
+  const reset = () => {
+    setD({
+      ...newDraft(defaultCategory === UNCATEGORIZED ? "" : defaultCategory),
+      handed_over_by: defaultFrom,
+      handed_over_to: defaultTo,
+    });
+    setOpen(false);
+  };
+
+  const save = () => {
+    if (!d.task_name.trim()) return;
+    onCreate(d, reset);
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className={`${GRID_COLS} items-center border-b border-border/60 bg-background hover:bg-muted/30 text-left w-full`}
+      >
+        <div className="border-r border-border/60 flex items-center justify-center h-9">
+          <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+        </div>
+        <div className="col-span-7 px-3 py-2 text-xs text-muted-foreground">
+          Add a task…
+        </div>
+      </button>
+    );
+  }
+
+  return (
+    <div className={`${GRID_COLS} items-stretch border-b border-border/60 bg-primary/5`}>
+      <div className="border-r border-border/60 flex items-center justify-center text-[11px] text-muted-foreground font-mono">
+        <Plus className="h-3.5 w-3.5" />
+      </div>
+      <div className="border-r border-border/60 px-1 py-1 min-w-0">
+        {allowCategoryEdit && (
+          <input
+            type="text"
+            value={d.category}
+            placeholder="Category"
+            onChange={(e) => setD({ ...d, category: e.target.value })}
+            className="w-full bg-transparent border-0 px-2 py-1 text-xs text-muted-foreground italic outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
+          />
+        )}
+        <input
+          type="text"
+          autoFocus
+          value={d.task_name}
+          placeholder="Task name"
+          onChange={(e) => setD({ ...d, task_name: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") save();
+            if (e.key === "Escape") reset();
+          }}
+          className="w-full bg-transparent border-0 px-2 py-1 text-sm font-medium outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
+        />
+        <input
+          type="text"
+          value={d.task_description}
+          placeholder="Description (optional)"
+          onChange={(e) => setD({ ...d, task_description: e.target.value })}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") reset(); }}
+          className="w-full bg-transparent border-0 px-2 py-1 text-xs text-muted-foreground outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
+        />
+      </div>
+      <div className="border-r border-border/60 flex items-center min-w-0 px-1">
+        <input
+          type="text"
+          value={d.handed_over_by}
+          placeholder="From"
+          onChange={(e) => setD({ ...d, handed_over_by: e.target.value })}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") reset(); }}
+          className="w-full bg-transparent border-0 px-2 py-1 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
+        />
+      </div>
+      <div className="border-r border-border/60 flex items-center min-w-0 px-1">
+        <input
+          type="text"
+          value={d.handed_over_to}
+          placeholder="To"
+          onChange={(e) => setD({ ...d, handed_over_to: e.target.value })}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") reset(); }}
+          className="w-full bg-transparent border-0 px-2 py-1 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
+        />
+      </div>
+      <div className="border-r border-border/60 flex items-center px-2">
+        <input
+          type="text"
+          value={d.link}
+          placeholder="https://…"
+          onChange={(e) => setD({ ...d, link: e.target.value })}
+          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") reset(); }}
+          className="w-full bg-transparent border-0 px-1 py-1 text-xs outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
+        />
+      </div>
+      <div className="border-r border-border/60 flex items-center justify-center px-2 py-1">
+        <ProgressSlider value={d.progress} onCommit={(v) => setD({ ...d, progress: v })} />
+      </div>
+      <div className="border-r border-border/60 flex items-center justify-center px-2 py-1">
+        <input
+          type="date"
+          value={d.target_date}
+          onChange={(e) => setD({ ...d, target_date: e.target.value })}
+          className="bg-transparent border-0 outline-none text-xs"
+        />
+      </div>
+      <div className="flex flex-col items-center justify-center gap-0.5 py-1">
+        <button
+          onClick={save}
+          disabled={!d.task_name.trim() || isPending}
+          title="Save (Enter)"
+          className="p-1 rounded hover:bg-success/15 text-success disabled:opacity-30"
+        >
+          <Check className="h-3.5 w-3.5" />
+        </button>
+        <button
+          onClick={reset}
+          title="Cancel (Esc)"
+          className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
 // Spreadsheet-style cell (text/date/number/textarea). Saves on blur/Enter.
 function Cell({
   value, onCommit, type = "text", placeholder, className = "", min, max, multiline,
