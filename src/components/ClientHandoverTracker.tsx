@@ -127,6 +127,9 @@ function InlineAddRow({
     handed_over_by: defaultFrom,
     handed_over_to: defaultTo,
   }));
+  const rowRef = useRef<HTMLDivElement>(null);
+  const dRef = useRef(d);
+  useEffect(() => { dRef.current = d; }, [d]);
 
   const reset = () => {
     setD({
@@ -138,9 +141,24 @@ function InlineAddRow({
   };
 
   const save = () => {
-    if (!d.task_name.trim()) return;
-    onCreate(d, reset);
+    const cur = dRef.current;
+    if (!cur.task_name.trim()) { reset(); return; }
+    onCreate(cur, reset);
   };
+
+  // Save when clicking/tapping outside the row
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rowRef.current && !rowRef.current.contains(e.target as Node)) {
+        save();
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
 
   if (!open) {
     return (
