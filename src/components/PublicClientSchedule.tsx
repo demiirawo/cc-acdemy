@@ -1121,7 +1121,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
         <Card className="mt-4 sm:mt-6">
           <CardHeader className="pb-3 px-3 sm:px-6">
             <div className="flex flex-col gap-3">
-              <CardTitle className="text-xl sm:text-2xl">Weekly Schedule</CardTitle>
+              <CardTitle className="text-lg sm:text-xl">Weekly Schedule</CardTitle>
               
               {/* Week Navigation - Mobile optimized */}
               <div className="flex items-center justify-between gap-2">
