@@ -318,33 +318,27 @@ export function ClientHandoverTracker({ clientName }: Props) {
             <tbody>
               {tasks.map((t) => (
                 <tr key={t.id} className="border-t border-border hover:bg-muted/20 group">
-                  <td className={cellClasses}>
+                  <td className={cellClassesTop}>
                     <Cell
                       value={t.task_name}
                       onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_name: v.trim() || t.task_name } })}
                       className="font-medium"
+                      multiline
                     />
                   </td>
-                  <td className={cellClasses}>
+                  <td className={cellClassesTop}>
                     <Cell
                       value={t.task_description}
                       placeholder="—"
                       onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_description: v.trim() || null } })}
+                      multiline
                     />
                   </td>
                   <td className={cellClasses}>
-                    <div className="flex items-center">
-                      <Cell
-                        value={t.link}
-                        placeholder="https://…"
-                        onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { link: v.trim() || null } })}
-                      />
-                      {t.link && (
-                        <a href={t.link} target="_blank" rel="noopener noreferrer" className="px-2 text-primary shrink-0">
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                      )}
-                    </div>
+                    <LinkCell
+                      value={t.link}
+                      onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { link: v.trim() || null } })}
+                    />
                   </td>
                   <td className={cellClasses}>
                     <Cell
@@ -398,13 +392,14 @@ export function ClientHandoverTracker({ clientName }: Props) {
 
               {/* Inline draft / "new row" — Airtable style */}
               <tr key={draft.key} className="border-t border-border bg-background/50">
-                <td className={cellClasses}>
+                <td className={cellClassesTop}>
                   <div className="flex items-stretch">
                     <Cell
                       value={draft.task_name}
                       placeholder="Type a task name…"
                       onCommit={(v) => commitDraftIfFilled({ ...draft, task_name: v })}
                       className="font-medium"
+                      multiline
                     />
                     <Popover open={templatePopoverOpen} onOpenChange={setTemplatePopoverOpen}>
                       <PopoverTrigger asChild>
@@ -449,17 +444,17 @@ export function ClientHandoverTracker({ clientName }: Props) {
                     </Popover>
                   </div>
                 </td>
-                <td className={cellClasses}>
+                <td className={cellClassesTop}>
                   <Cell
                     value={draft.task_description}
                     placeholder="—"
                     onCommit={(v) => commitDraftIfFilled({ ...draft, task_description: v })}
+                    multiline
                   />
                 </td>
                 <td className={cellClasses}>
-                  <Cell
+                  <LinkCell
                     value={draft.link}
-                    placeholder="https://…"
                     onCommit={(v) => commitDraftIfFilled({ ...draft, link: v })}
                   />
                 </td>
