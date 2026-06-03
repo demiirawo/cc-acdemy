@@ -254,23 +254,8 @@ function InlineAddRow({
           className="bg-transparent border-0 outline-none text-xs"
         />
       </div>
-      <div className="flex flex-col items-center justify-center gap-0.5 py-1">
-        <button
-          onClick={save}
-          disabled={!d.task_name.trim() || isPending}
-          title="Save (Enter)"
-          className="p-1 rounded hover:bg-success/15 text-success disabled:opacity-30"
-        >
-          <Check className="h-3.5 w-3.5" />
-        </button>
-        <button
-          onClick={reset}
-          title="Cancel (Esc)"
-          className="p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      <div aria-hidden />
+
     </div>
   );
 }
