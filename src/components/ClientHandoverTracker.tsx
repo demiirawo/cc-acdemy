@@ -178,7 +178,7 @@ function InlineAddRow({
   }
 
   return (
-    <div className={`${GRID_COLS} items-stretch border-b border-border/60 bg-primary/5`}>
+    <div ref={rowRef} className={`${GRID_COLS} items-stretch border-b border-border/60 bg-primary/5`}>
       <div className="border-r border-border/60 flex items-center justify-center text-[11px] text-muted-foreground font-mono">
         <Plus className="h-3.5 w-3.5" />
       </div>
