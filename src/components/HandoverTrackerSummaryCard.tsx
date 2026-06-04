@@ -25,12 +25,11 @@ export function HandoverTrackerSummaryCard() {
   const qc = useQueryClient();
 
   const { data: tasks = [], isLoading } = useQuery({
-    queryKey: ["handover-summary-active"],
+    queryKey: ["handover-summary-all"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("client_handover_tasks")
-        .select("id, client_name, progress, target_date")
-        .lt("progress", 100);
+        .select("id, client_name, progress, target_date");
       if (error) throw error;
       return (data || []) as HandoverTaskRow[];
     },
@@ -45,7 +44,7 @@ export function HandoverTrackerSummaryCard() {
       if (error) throw error;
     },
     onSuccess: (_d, clientName) => {
-      qc.invalidateQueries({ queryKey: ["handover-summary-active"] });
+      qc.invalidateQueries({ queryKey: ["handover-summary-all"] });
       qc.invalidateQueries({ queryKey: ["client-handover-tasks", clientName] });
       toast.success(`Cleared handover tracker for ${clientName}`);
     },
@@ -60,10 +59,16 @@ export function HandoverTrackerSummaryCard() {
       map.get(t.client_name)!.push(t);
     }
     return Array.from(map.entries())
-      .map(([client, rows]) => ({
-        client,
-        count: rows.length,
-      }))
+      .map(([client, rows]) => {
+        const activeCount = rows.filter((r) => (r.progress ?? 0) < 100).length;
+        const overallProgress = rows.length
+          ? Math.round(
+              rows.reduce((sum, r) => sum + (r.progress ?? 0), 0) / rows.length
+            )
+          : 0;
+        return { client, count: activeCount, overallProgress };
+      })
+      .filter((g) => g.count > 0)
       .sort((a, b) => b.count - a.count);
   }, [tasks]);
 
