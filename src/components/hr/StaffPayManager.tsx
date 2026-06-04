@@ -1086,12 +1086,19 @@ export function StaffPayManager() {
         const INCREASED_ALLOWANCE = 18;
         const totalDaysInYear = Math.ceil((holidayYearEnd.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
 
+        // Determine the annual allowance for the completed holiday year.
+        // Priority: explicit HR profile override (annual_holiday_allowance) > tenure-based default (15 / 18 after 1yr).
+        const profileAllowance = userHRFull?.annual_holiday_allowance;
+        const hasProfileOverride = typeof profileAllowance === 'number' && profileAllowance > 0;
+
         let accruedAllowance = 0;
         if (employeeStartDateStr) {
           const start = parseISO(employeeStartDateStr);
           // Years employed as of the end of the completed holiday year (May 31)
           const yearsEmployedAtYearEnd = (holidayYearEnd.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
-          const annualAllowance = yearsEmployedAtYearEnd >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
+          const annualAllowance = hasProfileOverride
+            ? (profileAllowance as number)
+            : (yearsEmployedAtYearEnd >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE);
 
           if (start > holidayYearEnd) {
             accruedAllowance = 0;
@@ -1102,7 +1109,7 @@ export function StaffPayManager() {
             accruedAllowance = Math.round(annualAllowance * fraction * 10) / 10;
           }
         } else {
-          accruedAllowance = DEFAULT_ALLOWANCE;
+          accruedAllowance = hasProfileOverride ? (profileAllowance as number) : DEFAULT_ALLOWANCE;
         }
 
         const holidayBalance = accruedAllowance - userHolidaysTaken;
