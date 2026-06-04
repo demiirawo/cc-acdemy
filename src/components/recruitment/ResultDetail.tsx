@@ -50,7 +50,7 @@ const STAGE_META: Record<PipelineStage, { label: string; description: string; em
 interface Props {
   attemptId: string;
   onBack: () => void;
-  onNavigate?: (attemptId: string) => void;
+  onNavigate?: (attemptId: string, siblingIds?: string[]) => void;
   siblingIds?: string[];
 }
 
@@ -117,7 +117,24 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
       if ((data as any)?.error) throw new Error((data as any).error);
       setAttempt((a: any) => ({ ...a, status: stage }));
       if (stage === "rejected") {
-        setSiblings((current) => current.filter((id) => id !== attemptId));
+        setSiblings((current) => {
+          const nextSiblings = current.filter((id) => id !== attemptId);
+          if (onNavigate) {
+            const currentIndex = current.indexOf(attemptId);
+            const nextId =
+              (currentIndex >= 0 && current[currentIndex + 1] !== attemptId
+                ? current[currentIndex + 1]
+                : null) ??
+              (currentIndex > 0 ? current[currentIndex - 1] : null) ??
+              nextSiblings[0] ??
+              null;
+
+            if (nextId && nextId !== attemptId) {
+              queueMicrotask(() => onNavigate(nextId, nextSiblings));
+            }
+          }
+          return nextSiblings;
+        });
       }
       toast({
         title: `Marked as ${STAGE_META[stage].label}`,
@@ -185,14 +202,10 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
       setAnswers((ans as AnswerRow[]) || []);
       setEvents((ev as EventRow[]) || []);
       setSnapshots((sn as SnapRow[]) || []);
-      // Use the dashboard order, but keep navigation limited to raw "submitted"
-      // attempts for Pending Review so rejected candidates never appear in
-      // Prev/Next navigation.
-      const sibRows = (sib as { id: string; status: string }[]) || [];
       if (siblingIds && siblingIds.length > 0) {
-        const statusById = new Map(sibRows.map((row) => [row.id, row.status]));
-        setSiblings(siblingIds.filter((id) => statusById.get(id) === "submitted"));
+        setSiblings(siblingIds);
       } else {
+        const sibRows = (sib as { id: string; status: string }[]) || [];
         setSiblings(sibRows.filter((r) => r.status === "submitted").map((r) => r.id));
       }
 
@@ -209,23 +222,6 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
       setLoading(false);
     })();
   }, [attemptId, siblingIds]);
-
-  useEffect(() => {
-    if (!attempt || attempt.status !== "rejected" || !onNavigate || !siblingIds?.length) return;
-    if (siblings.includes(attemptId)) return;
-
-    const currentIndex = siblingIds.indexOf(attemptId);
-    const nextSubmitted = siblingIds.slice(currentIndex + 1).find((id) => siblings.includes(id));
-    const prevSubmitted = siblingIds
-      .slice(0, Math.max(currentIndex, 0))
-      .reverse()
-      .find((id) => siblings.includes(id));
-    const fallbackId = nextSubmitted ?? prevSubmitted ?? siblings[0] ?? null;
-
-    if (fallbackId && fallbackId !== attemptId) {
-      onNavigate(fallbackId);
-    }
-  }, [attempt, attemptId, onNavigate, siblingIds, siblings]);
 
   // Snapshot signed URLs (separate effect so they stream in)
   useEffect(() => {
@@ -358,7 +354,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
             variant="outline"
             size="sm"
             disabled={!prevId}
-            onClick={() => prevId && onNavigate?.(prevId)}
+              onClick={() => prevId && onNavigate?.(prevId, siblings)}
           >
             <ChevronLeft className="h-4 w-4 mr-1" />
             Prev
@@ -367,7 +363,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
             variant="outline"
             size="sm"
             disabled={!nextId}
-            onClick={() => nextId && onNavigate?.(nextId)}
+              onClick={() => nextId && onNavigate?.(nextId, siblings)}
           >
             Next
             <ChevronRight className="h-4 w-4 ml-1" />

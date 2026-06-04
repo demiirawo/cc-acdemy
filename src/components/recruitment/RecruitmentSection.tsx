@@ -10,6 +10,8 @@ type View =
   | { name: "results"; testId: string }
   | { name: "detail"; attemptId: string; testId: string; siblingIds?: string[] };
 
+type DetailNavigateHandler = (attemptId: string, siblingIds?: string[]) => void;
+
 export function RecruitmentSection() {
   const [view, setView] = useState<View>({ name: "list" });
 
@@ -42,9 +44,13 @@ export function RecruitmentSection() {
           attemptId={view.attemptId}
           siblingIds={view.siblingIds}
           onBack={() => setView({ name: "results", testId: view.testId })}
-          onNavigate={(attemptId) =>
-            setView({ name: "detail", attemptId, testId: view.testId, siblingIds: view.siblingIds })
-          }
+          onNavigate={((attemptId, siblingIds) =>
+            setView({
+              name: "detail",
+              attemptId,
+              testId: view.testId,
+              siblingIds: siblingIds ?? view.siblingIds,
+            })) as DetailNavigateHandler}
         />
       )}
     </div>
