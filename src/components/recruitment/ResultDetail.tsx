@@ -186,9 +186,8 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
       // the list the user actually opened (e.g. Pending Review can include both the
       // "Submitted" and "Completed" UI labels, since both are raw "submitted").
       const sibRows = (sib as { id: string; status: string }[]) || [];
-      const availableIds = new Set(sibRows.map((r) => r.id));
       if (siblingIds && siblingIds.length > 0) {
-        setSiblings(siblingIds.filter((id) => id === attemptId || availableIds.has(id)));
+        setSiblings(siblingIds);
       } else {
         const currentStatus = (a as { status: string }).status;
         setSiblings(
