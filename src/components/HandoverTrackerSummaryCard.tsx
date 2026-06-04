@@ -60,13 +60,19 @@ export function HandoverTrackerSummaryCard() {
     }
     return Array.from(map.entries())
       .map(([client, rows]) => {
-        const activeCount = rows.filter((r) => (r.progress ?? 0) < 100).length;
+        const activeRows = rows.filter((r) => (r.progress ?? 0) < 100);
+        const activeCount = activeRows.length;
         const overallProgress = rows.length
           ? Math.round(
               rows.reduce((sum, r) => sum + (r.progress ?? 0), 0) / rows.length
             )
           : 0;
-        return { client, count: activeCount, overallProgress };
+        const latestTargetDate = activeRows
+          .map((r) => r.target_date)
+          .filter((d): d is string => !!d)
+          .sort()
+          .pop() ?? null;
+        return { client, count: activeCount, overallProgress, latestTargetDate };
       })
       .filter((g) => g.count > 0)
       .sort((a, b) => b.count - a.count);
@@ -87,7 +93,7 @@ export function HandoverTrackerSummaryCard() {
       </CardHeader>
       <CardContent>
         <Accordion type="multiple" className="w-full">
-          {grouped.map(({ client, count, overallProgress }) => (
+          {grouped.map(({ client, count, overallProgress, latestTargetDate }) => (
             <AccordionItem key={client} value={client}>
               <div className="flex items-center gap-2">
                 <AccordionTrigger className="flex-1">
@@ -97,6 +103,11 @@ export function HandoverTrackerSummaryCard() {
                       <Badge variant="outline">
                         {count} active task{count === 1 ? "" : "s"}
                       </Badge>
+                      {latestTargetDate && (
+                        <Badge variant="secondary" className="font-normal">
+                          Due {new Date(latestTargetDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 min-w-[160px]">
                       <div className="h-2 flex-1 rounded-full bg-muted overflow-hidden">
