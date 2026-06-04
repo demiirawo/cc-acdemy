@@ -818,11 +818,17 @@ export function MyHRProfile() {
         const INCREASED_ALLOWANCE = 18;
         const totalDaysInYear = Math.ceil((holidayYearEnd.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
 
+        // Priority: explicit HR profile override (annual_holiday_allowance) > tenure-based default (15 / 18 after 1yr).
+        const profileAllowance = hrProfile.annual_holiday_allowance;
+        const hasProfileOverride = typeof profileAllowance === 'number' && profileAllowance > 0;
+
         let accruedAllowance = 0;
         if (hrProfile.start_date) {
           const start = parseISO(hrProfile.start_date);
           const yearsEmployedAtYearEnd = (holidayYearEnd.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
-          const annualAllowance = yearsEmployedAtYearEnd >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
+          const annualAllowance = hasProfileOverride
+            ? (profileAllowance as number)
+            : (yearsEmployedAtYearEnd >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE);
 
           if (start > holidayYearEnd) {
             accruedAllowance = 0;
@@ -831,23 +837,9 @@ export function MyHRProfile() {
             const daysAccruing = Math.max(0, Math.ceil((holidayYearEnd.getTime() - accrualStart.getTime()) / (1000 * 60 * 60 * 24)));
             const fraction = Math.min(daysAccruing / totalDaysInYear, 1);
             accruedAllowance = Math.round(annualAllowance * fraction * 10) / 10;
-            console.log('[MyHRProfile unused-holiday]', {
-              month: format(targetMonth, 'MMM yyyy'),
-              start_date_raw: hrProfile.start_date,
-              parsed_start: start.toISOString(),
-              holidayYearStart: holidayYearStart.toISOString(),
-              holidayYearEnd: holidayYearEnd.toISOString(),
-              accrualStart: accrualStart.toISOString(),
-              daysAccruing,
-              totalDaysInYear,
-              fraction,
-              annualAllowance,
-              accruedAllowance,
-              holidaysTakenInYear,
-            });
           }
         } else {
-          accruedAllowance = DEFAULT_ALLOWANCE;
+          accruedAllowance = hasProfileOverride ? (profileAllowance as number) : DEFAULT_ALLOWANCE;
         }
 
         const holidayBalance = accruedAllowance - holidaysTakenInYear;
