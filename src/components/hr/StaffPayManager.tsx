@@ -1087,14 +1087,14 @@ export function StaffPayManager() {
         const totalDaysInYear = Math.ceil((holidayYearEnd.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
 
         // Allowance is tenure-based: 15 days by default, 18 days once the staff member
-        // has completed 1+ full year of employment AS OF THE START of the holiday year
-        // being reconciled. (Tenure on the first day of the year decides the rate for
-        // that year — partial-year staff don't jump to 18 mid-year.)
+        // has completed 1+ full year of employment AS OF THE END of the holiday year
+        // being reconciled (so staff who cross their 1-year anniversary during the year
+        // get the higher rate applied to the completed year).
         let accruedAllowance = 0;
         if (employeeStartDateStr) {
           const start = parseISO(employeeStartDateStr);
-          const yearsEmployedAtYearStart = (holidayYearStart.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
-          const annualAllowance = yearsEmployedAtYearStart >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
+          const yearsEmployedAtYearEnd = (holidayYearEnd.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
+          const annualAllowance = yearsEmployedAtYearEnd >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
 
           if (start > holidayYearEnd) {
             accruedAllowance = 0;
