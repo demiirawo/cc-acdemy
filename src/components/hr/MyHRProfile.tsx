@@ -804,6 +804,7 @@ export function MyHRProfile() {
       let unusedHolidayDays = 0;
       let excessHolidayDeduction = 0;
       let excessHolidayDays = 0;
+      let holidayAccrualBreakdown: PayPreview['holidayAccrualBreakdown'] | undefined;
       const targetMonthNum = targetMonth.getMonth(); // 0-indexed, June = 5
 
       if (targetMonthNum === 5 && !hrProfile.unlimited_holiday) {
