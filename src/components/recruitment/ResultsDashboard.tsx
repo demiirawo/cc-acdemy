@@ -194,7 +194,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
   const sortedRows = useMemo(
     () =>
       statusFilter === "all"
-        ? rowsWithStatus.filter((r) => r.label === "Submitted").map((r) => r.a)
+        ? rowsWithStatus.filter((r) => r.a.status === "submitted").map((r) => r.a)
         : rowsWithStatus.filter((r) => r.label === statusFilter).map((r) => r.a),
     [rowsWithStatus, statusFilter],
   );
@@ -232,7 +232,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
               const active = statusFilter === opt;
               const count =
                 opt === "all"
-                  ? statusCounts["Submitted"] ?? 0
+                  ? rowsWithStatus.filter((r) => r.a.status === "submitted").length
                   : statusCounts[opt] ?? 0;
               return (
                 <Button
