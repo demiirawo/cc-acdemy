@@ -194,7 +194,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
   const sortedRows = useMemo(
     () =>
       statusFilter === "all"
-        ? rowsWithStatus.filter((r) => r.label !== "Rejected").map((r) => r.a)
+        ? rowsWithStatus.filter((r) => r.label === "Submitted").map((r) => r.a)
         : rowsWithStatus.filter((r) => r.label === statusFilter).map((r) => r.a),
     [rowsWithStatus, statusFilter],
   );
