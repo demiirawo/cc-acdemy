@@ -48,6 +48,12 @@ interface MonthlyPayPreview {
   unusedHolidayDays: number;
   excessHolidayDeduction: number;
   excessHolidayDays: number;
+  holidayAccrualBreakdown?: {
+    annualAllowance: number;
+    accruedAllowance: number;
+    monthsWorkedInYear: number;
+    daysTakenInYear: number;
+  };
   unpaidHolidayDeduction: number;
   unpaidHolidayDays: number;
   proRataDeduction: number;
