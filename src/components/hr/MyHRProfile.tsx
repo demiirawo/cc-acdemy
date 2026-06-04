@@ -818,17 +818,13 @@ export function MyHRProfile() {
         const INCREASED_ALLOWANCE = 18;
         const totalDaysInYear = Math.ceil((holidayYearEnd.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
 
-        // Priority: explicit HR profile override (annual_holiday_allowance) > tenure-based default (15 / 18 after 1yr).
-        const profileAllowance = hrProfile.annual_holiday_allowance;
-        const hasProfileOverride = typeof profileAllowance === 'number' && profileAllowance > 0;
-
+        // Tenure-based: 15 days default, 18 after 1+ year of employment as of the START
+        // of the holiday year being reconciled.
         let accruedAllowance = 0;
         if (hrProfile.start_date) {
           const start = parseISO(hrProfile.start_date);
-          const yearsEmployedAtYearEnd = (holidayYearEnd.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
-          const annualAllowance = hasProfileOverride
-            ? (profileAllowance as number)
-            : (yearsEmployedAtYearEnd >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE);
+          const yearsEmployedAtYearStart = (holidayYearStart.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
+          const annualAllowance = yearsEmployedAtYearStart >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
 
           if (start > holidayYearEnd) {
             accruedAllowance = 0;
@@ -839,7 +835,7 @@ export function MyHRProfile() {
             accruedAllowance = Math.round(annualAllowance * fraction * 10) / 10;
           }
         } else {
-          accruedAllowance = hasProfileOverride ? (profileAllowance as number) : DEFAULT_ALLOWANCE;
+          accruedAllowance = DEFAULT_ALLOWANCE;
         }
 
         const holidayBalance = accruedAllowance - holidaysTakenInYear;
