@@ -116,6 +116,9 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       setAttempt((a: any) => ({ ...a, status: stage }));
+      if (stage === "rejected") {
+        setSiblings((current) => current.filter((id) => id !== attemptId));
+      }
       toast({
         title: `Marked as ${STAGE_META[stage].label}`,
         description: STAGE_META[stage].emails
@@ -183,23 +186,14 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
       setEvents((ev as EventRow[]) || []);
       setSnapshots((sn as SnapRow[]) || []);
       // Use the dashboard order, but keep navigation limited to raw "submitted"
-      // attempts for Pending Review while still preserving the current attempt in
-      // the list so Prev/Next keeps working immediately after a stage change.
+      // attempts for Pending Review so rejected candidates never appear in
+      // Prev/Next navigation.
       const sibRows = (sib as { id: string; status: string }[]) || [];
       if (siblingIds && siblingIds.length > 0) {
         const statusById = new Map(sibRows.map((row) => [row.id, row.status]));
-        const includesSubmitted = siblingIds.some((id) => statusById.get(id) === "submitted");
-        setSiblings(
-          includesSubmitted
-            ? siblingIds.filter((id) => id === attemptId || statusById.get(id) === "submitted")
-            : siblingIds,
-        );
+        setSiblings(siblingIds.filter((id) => statusById.get(id) === "submitted"));
       } else {
-        setSiblings(
-          sibRows
-            .filter((r) => r.id === attemptId || r.status === "submitted")
-            .map((r) => r.id),
-        );
+        setSiblings(sibRows.filter((r) => r.status === "submitted").map((r) => r.id));
       }
 
       const qIds = (ans || []).map((r: any) => r.question_id);
@@ -215,6 +209,23 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
       setLoading(false);
     })();
   }, [attemptId, siblingIds]);
+
+  useEffect(() => {
+    if (!attempt || attempt.status !== "rejected" || !onNavigate || !siblingIds?.length) return;
+    if (siblings.includes(attemptId)) return;
+
+    const currentIndex = siblingIds.indexOf(attemptId);
+    const nextSubmitted = siblingIds.slice(currentIndex + 1).find((id) => siblings.includes(id));
+    const prevSubmitted = siblingIds
+      .slice(0, Math.max(currentIndex, 0))
+      .reverse()
+      .find((id) => siblings.includes(id));
+    const fallbackId = nextSubmitted ?? prevSubmitted ?? siblings[0] ?? null;
+
+    if (fallbackId && fallbackId !== attemptId) {
+      onNavigate(fallbackId);
+    }
+  }, [attempt, attemptId, onNavigate, siblingIds, siblings]);
 
   // Snapshot signed URLs (separate effect so they stream in)
   useEffect(() => {
