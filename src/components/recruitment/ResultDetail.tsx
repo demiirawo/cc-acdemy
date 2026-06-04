@@ -152,10 +152,13 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
       }
       setAttempt(a);
       const sibFetch = siblingIds && siblingIds.length > 0
-        ? Promise.resolve({ data: siblingIds.map((id) => ({ id })) })
+        ? supabase
+            .from("recruitment_attempts")
+            .select("id,status")
+            .in("id", siblingIds)
         : supabase
             .from("recruitment_attempts")
-            .select("id")
+            .select("id,status")
             .eq("test_id", a.test_id)
             .order("total_score", { ascending: false })
             .order("created_at", { ascending: false });
@@ -179,7 +182,18 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
       setAnswers((ans as AnswerRow[]) || []);
       setEvents((ev as EventRow[]) || []);
       setSnapshots((sn as SnapRow[]) || []);
-      setSiblings(((sib as { id: string }[]) || []).map((r) => r.id));
+      // Filter siblings to only those still in "submitted" status (Pending Review),
+      // but always keep the currently-viewed attempt so position/index remains valid.
+      const sibRows = (sib as { id: string; status: string }[]) || [];
+      const statusById = new Map(sibRows.map((r) => [r.id, r.status]));
+      const orderedIds =
+        siblingIds && siblingIds.length > 0
+          ? siblingIds
+          : sibRows.map((r) => r.id);
+      const filtered = orderedIds.filter(
+        (id) => id === attemptId || statusById.get(id) === "submitted",
+      );
+      setSiblings(filtered);
 
       const qIds = (ans || []).map((r: any) => r.question_id);
       if (qIds.length) {
