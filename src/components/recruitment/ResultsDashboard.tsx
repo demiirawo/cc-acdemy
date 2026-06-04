@@ -227,10 +227,13 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-sm text-muted-foreground mr-1">Filter by status:</span>
           {(() => {
-            const options = ["all", ...Object.keys(statusCounts).sort()];
+            const options = ["all", ...Object.keys(statusCounts).filter((s) => s !== "Rejected").sort(), "Rejected"].filter((v, i, a) => a.indexOf(v) === i);
             return options.map((opt) => {
               const active = statusFilter === opt;
-              const count = opt === "all" ? attempts.length : statusCounts[opt] ?? 0;
+              const count =
+                opt === "all"
+                  ? attempts.length - (statusCounts["Rejected"] ?? 0)
+                  : statusCounts[opt] ?? 0;
               return (
                 <Button
                   key={opt}
@@ -238,7 +241,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
                   variant={active ? "default" : "outline"}
                   onClick={() => setStatusFilter(opt)}
                 >
-                  {opt === "all" ? "All" : opt}
+                  {opt === "all" ? "Pending Review" : opt}
                   <span className="ml-1.5 opacity-70">({count})</span>
                 </Button>
               );
