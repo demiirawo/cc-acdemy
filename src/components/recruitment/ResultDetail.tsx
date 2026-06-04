@@ -188,8 +188,11 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
       const sibRows = (sib as { id: string; status: string }[]) || [];
       if (siblingIds && siblingIds.length > 0) {
         const statusById = new Map(sibRows.map((row) => [row.id, row.status]));
+        const includesSubmitted = siblingIds.some((id) => statusById.get(id) === "submitted");
         setSiblings(
-          siblingIds.filter((id) => id === attemptId || statusById.get(id) === "submitted"),
+          includesSubmitted
+            ? siblingIds.filter((id) => id === attemptId || statusById.get(id) === "submitted")
+            : siblingIds,
         );
       } else {
         setSiblings(
