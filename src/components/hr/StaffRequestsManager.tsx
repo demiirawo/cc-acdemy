@@ -570,13 +570,33 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                           // Find covers for this holiday
                           const nestedCovers = isHolidayRequest ? findCoverForHoliday(request) : [];
                           
-                          // Determine row highlighting for holiday requests: green if covered or no cover required, red if not covered
-                          const hasCover = nestedCovers.length > 0;
+                          // Count unique covered dates across all nested covers
+                          const coveredDateSet = new Set<string>();
+                          nestedCovers.forEach(cover => {
+                            const meta = (cover as any).coverage_metadata;
+                            const dates: string[] | undefined = meta?.covered_dates;
+                            if (Array.isArray(dates) && dates.length > 0) {
+                              dates.forEach(d => coveredDateSet.add(d));
+                            } else {
+                              // Fallback: enumerate date range
+                              const start = new Date(cover.start_date);
+                              const end = new Date(cover.end_date);
+                              for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                                coveredDateSet.add(d.toISOString().split('T')[0]);
+                              }
+                            }
+                          });
+                          const coveredDaysCount = coveredDateSet.size;
+                          const requiredDaysCount = getDisplayDays(request);
+                          const fullyCovered = coveredDaysCount >= requiredDaysCount && requiredDaysCount > 0;
+                          const partiallyCovered = coveredDaysCount > 0 && !fullyCovered;
                           const noCoverRequired = isNoCoverRequired(request);
                           const rowHighlightClass = isHolidayRequest 
-                            ? (hasCover || noCoverRequired)
+                            ? (fullyCovered || noCoverRequired)
                               ? 'bg-green-100 dark:bg-green-950/30 hover:bg-green-200 dark:hover:bg-green-950/50' 
-                              : 'bg-red-100 dark:bg-red-950/30 hover:bg-red-200 dark:hover:bg-red-950/50'
+                              : partiallyCovered
+                                ? 'bg-amber-100 dark:bg-amber-950/30 hover:bg-amber-200 dark:hover:bg-amber-950/50'
+                                : 'bg-red-100 dark:bg-red-950/30 hover:bg-red-200 dark:hover:bg-red-950/50'
                             : 'hover:bg-muted/50';
 
                           // Helper to render a single request row
