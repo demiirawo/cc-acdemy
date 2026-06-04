@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
     };
     if (!partial) {
       updatePayload.submitted_at = new Date().toISOString();
-      updatePayload.status = "submitted";
+      updatePayload.status = integrity < 70 ? "rejected" : "submitted";
     }
 
     const { error: updErr } = await supabase
@@ -127,7 +127,13 @@ Deno.serve(async (req) => {
     await supabase.from("recruitment_events").insert({
       attempt_id: attemptId,
       event_type: partial ? "auto_submit_partial" : "submitted",
-      metadata: { total, max, integrity },
+      metadata: {
+        total,
+        max,
+        integrity,
+        auto_rejected: !partial && integrity < 70,
+        final_status: !partial ? (integrity < 70 ? "rejected" : "submitted") : attempt.status,
+      },
     });
 
     return new Response(JSON.stringify({ ok: true, total, max }), {
