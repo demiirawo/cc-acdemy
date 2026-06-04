@@ -232,7 +232,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
               const active = statusFilter === opt;
               const count =
                 opt === "all"
-                  ? statusCounts["Submitted"] ?? 0
+                  ? rowsWithStatus.filter((r) => r.a.status === "submitted").length
                   : statusCounts[opt] ?? 0;
               return (
                 <Button
