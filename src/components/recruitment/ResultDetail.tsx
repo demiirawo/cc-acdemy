@@ -50,7 +50,7 @@ const STAGE_META: Record<PipelineStage, { label: string; description: string; em
 interface Props {
   attemptId: string;
   onBack: () => void;
-  onNavigate?: (attemptId: string) => void;
+  onNavigate?: (attemptId: string, siblingIds?: string[]) => void;
   siblingIds?: string[];
 }
 
@@ -130,7 +130,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
               null;
 
             if (nextId && nextId !== attemptId) {
-              queueMicrotask(() => onNavigate(nextId));
+              queueMicrotask(() => onNavigate(nextId, nextSiblings));
             }
           }
           return nextSiblings;
@@ -354,7 +354,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
             variant="outline"
             size="sm"
             disabled={!prevId}
-            onClick={() => prevId && onNavigate?.(prevId)}
+              onClick={() => prevId && onNavigate?.(prevId, siblings)}
           >
             <ChevronLeft className="h-4 w-4 mr-1" />
             Prev
@@ -363,7 +363,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
             variant="outline"
             size="sm"
             disabled={!nextId}
-            onClick={() => nextId && onNavigate?.(nextId)}
+              onClick={() => nextId && onNavigate?.(nextId, siblings)}
           >
             Next
             <ChevronRight className="h-4 w-4 ml-1" />
