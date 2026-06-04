@@ -182,16 +182,18 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
       setAnswers((ans as AnswerRow[]) || []);
       setEvents((ev as EventRow[]) || []);
       setSnapshots((sn as SnapRow[]) || []);
-      // Filter siblings to only those still in "submitted" status (Pending Review),
-      // but always keep the currently-viewed attempt so position/index remains valid.
+      // Filter siblings to only those still sharing the current attempt's status
+      // (e.g. in Pending Review, only "submitted" candidates remain navigable).
+      // Always keep the currently-viewed attempt so position/index stays valid.
       const sibRows = (sib as { id: string; status: string }[]) || [];
       const statusById = new Map(sibRows.map((r) => [r.id, r.status]));
       const orderedIds =
         siblingIds && siblingIds.length > 0
           ? siblingIds
           : sibRows.map((r) => r.id);
+      const currentStatus = (a as { status: string }).status;
       const filtered = orderedIds.filter(
-        (id) => id === attemptId || statusById.get(id) === "submitted",
+        (id) => id === attemptId || statusById.get(id) === currentStatus,
       );
       setSiblings(filtered);
 
