@@ -48,6 +48,12 @@ interface MonthlyPayPreview {
   unusedHolidayDays: number;
   excessHolidayDeduction: number;
   excessHolidayDays: number;
+  holidayAccrualBreakdown?: {
+    annualAllowance: number;
+    accruedAllowance: number;
+    monthsWorkedInYear: number;
+    daysTakenInYear: number;
+  };
   unpaidHolidayDeduction: number;
   unpaidHolidayDays: number;
   proRataDeduction: number;
@@ -798,6 +804,7 @@ export function MyHRProfile() {
       let unusedHolidayDays = 0;
       let excessHolidayDeduction = 0;
       let excessHolidayDays = 0;
+      let holidayAccrualBreakdown: MonthlyPayPreview['holidayAccrualBreakdown'] | undefined;
       const targetMonthNum = targetMonth.getMonth(); // 0-indexed, June = 5
 
       if (targetMonthNum === 5 && !hrProfile.unlimited_holiday) {
@@ -821,22 +828,34 @@ export function MyHRProfile() {
         // Tenure-based: 15 days default, 18 after 1+ year of employment as of the START
         // of the holiday year being reconciled.
         let accruedAllowance = 0;
+        let annualAllowanceForYear = DEFAULT_ALLOWANCE;
+        let monthsWorkedInYear = 12;
         if (hrProfile.start_date) {
           const start = parseISO(hrProfile.start_date);
           const yearsEmployedAtYearStart = (holidayYearStart.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
-          const annualAllowance = yearsEmployedAtYearStart >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
+          annualAllowanceForYear = yearsEmployedAtYearStart >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
 
           if (start > holidayYearEnd) {
             accruedAllowance = 0;
+            monthsWorkedInYear = 0;
           } else {
             const accrualStart = start > holidayYearStart ? start : holidayYearStart;
             const daysAccruing = Math.max(0, Math.ceil((holidayYearEnd.getTime() - accrualStart.getTime()) / (1000 * 60 * 60 * 24)));
             const fraction = Math.min(daysAccruing / totalDaysInYear, 1);
-            accruedAllowance = Math.round(annualAllowance * fraction * 10) / 10;
+            accruedAllowance = Math.round(annualAllowanceForYear * fraction * 10) / 10;
+            monthsWorkedInYear = Math.round((daysAccruing / 30.4375) * 10) / 10;
           }
         } else {
           accruedAllowance = DEFAULT_ALLOWANCE;
+          annualAllowanceForYear = DEFAULT_ALLOWANCE;
         }
+
+        holidayAccrualBreakdown = {
+          annualAllowance: annualAllowanceForYear,
+          accruedAllowance,
+          monthsWorkedInYear,
+          daysTakenInYear: holidaysTakenInYear,
+        };
 
         const holidayBalance = accruedAllowance - holidaysTakenInYear;
         if (holidayBalance >= 0) {
@@ -926,6 +945,7 @@ export function MyHRProfile() {
         unusedHolidayDays,
         excessHolidayDeduction,
         excessHolidayDays,
+        holidayAccrualBreakdown,
         unpaidHolidayDeduction,
         unpaidHolidayDays,
         proRataDeduction,
@@ -1485,6 +1505,11 @@ export function MyHRProfile() {
                                         <span className="text-muted-foreground">Unused Holiday Payout ({preview.unusedHolidayDays.toFixed(1)} days)</span>
                                         <span className="font-medium text-success">+{formatCurrency(preview.unusedHolidayPayout, preview.currency)}</span>
                                       </div>
+                                      {preview.holidayAccrualBreakdown && <div className="text-xs text-muted-foreground/70 mt-1">
+                                        Accrued {preview.holidayAccrualBreakdown.accruedAllowance.toFixed(1)} days
+                                        {' '}({preview.holidayAccrualBreakdown.monthsWorkedInYear} months worked × {preview.holidayAccrualBreakdown.annualAllowance} days/year)
+                                        {' '}− {preview.holidayAccrualBreakdown.daysTakenInYear} taken = {preview.unusedHolidayDays.toFixed(1)} unused
+                                      </div>}
                                       <div className="text-xs text-muted-foreground/70 mt-1">
                                         {preview.unusedHolidayDays.toFixed(1)} × ({formatCurrency(preview.monthlyBaseSalary, preview.currency)} ÷ 20) — end-of-holiday-year payout
                                       </div>
