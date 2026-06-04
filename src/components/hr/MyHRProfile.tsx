@@ -945,6 +945,7 @@ export function MyHRProfile() {
         unusedHolidayDays,
         excessHolidayDeduction,
         excessHolidayDays,
+        holidayAccrualBreakdown,
         unpaidHolidayDeduction,
         unpaidHolidayDays,
         proRataDeduction,
