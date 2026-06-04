@@ -1505,6 +1505,11 @@ export function MyHRProfile() {
                                         <span className="text-muted-foreground">Unused Holiday Payout ({preview.unusedHolidayDays.toFixed(1)} days)</span>
                                         <span className="font-medium text-success">+{formatCurrency(preview.unusedHolidayPayout, preview.currency)}</span>
                                       </div>
+                                      {preview.holidayAccrualBreakdown && <div className="text-xs text-muted-foreground/70 mt-1">
+                                        Accrued {preview.holidayAccrualBreakdown.accruedAllowance.toFixed(1)} days
+                                        {' '}({preview.holidayAccrualBreakdown.monthsWorkedInYear} months worked × {preview.holidayAccrualBreakdown.annualAllowance} days/year)
+                                        {' '}− {preview.holidayAccrualBreakdown.daysTakenInYear} taken = {preview.unusedHolidayDays.toFixed(1)} unused
+                                      </div>}
                                       <div className="text-xs text-muted-foreground/70 mt-1">
                                         {preview.unusedHolidayDays.toFixed(1)} × ({formatCurrency(preview.monthlyBaseSalary, preview.currency)} ÷ 20) — end-of-holiday-year payout
                                       </div>
