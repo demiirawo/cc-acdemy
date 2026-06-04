@@ -87,15 +87,28 @@ export function HandoverTrackerSummaryCard() {
       </CardHeader>
       <CardContent>
         <Accordion type="multiple" className="w-full">
-          {grouped.map(({ client, count }) => (
+          {grouped.map(({ client, count, overallProgress }) => (
             <AccordionItem key={client} value={client}>
               <div className="flex items-center gap-2">
                 <AccordionTrigger className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium text-foreground">{client}</span>
-                    <Badge variant="outline">
-                      {count} active task{count === 1 ? "" : "s"}
-                    </Badge>
+                  <div className="flex items-center justify-between gap-2 w-full pr-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-foreground">{client}</span>
+                      <Badge variant="outline">
+                        {count} active task{count === 1 ? "" : "s"}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2 min-w-[160px]">
+                      <div className="h-2 flex-1 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all"
+                          style={{ width: `${overallProgress}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
+                        {overallProgress}%
+                      </span>
+                    </div>
                   </div>
                 </AccordionTrigger>
                 <Button
