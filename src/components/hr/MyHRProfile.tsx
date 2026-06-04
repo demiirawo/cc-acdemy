@@ -832,8 +832,8 @@ export function MyHRProfile() {
         let monthsWorkedInYear = 12;
         if (hrProfile.start_date) {
           const start = parseISO(hrProfile.start_date);
-          const yearsEmployedAtYearStart = (holidayYearStart.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
-          annualAllowanceForYear = yearsEmployedAtYearStart >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
+          const yearsEmployedAtYearEnd = (holidayYearEnd.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
+          annualAllowanceForYear = yearsEmployedAtYearEnd >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
 
           if (start > holidayYearEnd) {
             accruedAllowance = 0;
