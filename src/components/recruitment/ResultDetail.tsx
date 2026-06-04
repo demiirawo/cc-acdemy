@@ -182,17 +182,19 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
       setAnswers((ans as AnswerRow[]) || []);
       setEvents((ev as EventRow[]) || []);
       setSnapshots((sn as SnapRow[]) || []);
-      // Use the exact sibling list provided by the dashboard so navigation matches
-      // the list the user actually opened (e.g. Pending Review can include both the
-      // "Submitted" and "Completed" UI labels, since both are raw "submitted").
+      // Use the dashboard order, but keep navigation limited to raw "submitted"
+      // attempts for Pending Review while still preserving the current attempt in
+      // the list so Prev/Next keeps working immediately after a stage change.
       const sibRows = (sib as { id: string; status: string }[]) || [];
       if (siblingIds && siblingIds.length > 0) {
-        setSiblings(siblingIds);
+        const statusById = new Map(sibRows.map((row) => [row.id, row.status]));
+        setSiblings(
+          siblingIds.filter((id) => id === attemptId || statusById.get(id) === "submitted"),
+        );
       } else {
-        const currentStatus = (a as { status: string }).status;
         setSiblings(
           sibRows
-            .filter((r) => r.id === attemptId || r.status === currentStatus)
+            .filter((r) => r.id === attemptId || r.status === "submitted")
             .map((r) => r.id),
         );
       }
