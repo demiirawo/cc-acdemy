@@ -828,22 +828,34 @@ export function MyHRProfile() {
         // Tenure-based: 15 days default, 18 after 1+ year of employment as of the START
         // of the holiday year being reconciled.
         let accruedAllowance = 0;
+        let annualAllowanceForYear = DEFAULT_ALLOWANCE;
+        let monthsWorkedInYear = 12;
         if (hrProfile.start_date) {
           const start = parseISO(hrProfile.start_date);
           const yearsEmployedAtYearStart = (holidayYearStart.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
-          const annualAllowance = yearsEmployedAtYearStart >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
+          annualAllowanceForYear = yearsEmployedAtYearStart >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
 
           if (start > holidayYearEnd) {
             accruedAllowance = 0;
+            monthsWorkedInYear = 0;
           } else {
             const accrualStart = start > holidayYearStart ? start : holidayYearStart;
             const daysAccruing = Math.max(0, Math.ceil((holidayYearEnd.getTime() - accrualStart.getTime()) / (1000 * 60 * 60 * 24)));
             const fraction = Math.min(daysAccruing / totalDaysInYear, 1);
-            accruedAllowance = Math.round(annualAllowance * fraction * 10) / 10;
+            accruedAllowance = Math.round(annualAllowanceForYear * fraction * 10) / 10;
+            monthsWorkedInYear = Math.round((daysAccruing / 30.4375) * 10) / 10;
           }
         } else {
           accruedAllowance = DEFAULT_ALLOWANCE;
+          annualAllowanceForYear = DEFAULT_ALLOWANCE;
         }
+
+        holidayAccrualBreakdown = {
+          annualAllowance: annualAllowanceForYear,
+          accruedAllowance,
+          monthsWorkedInYear,
+          daysTakenInYear: holidaysTakenInYear,
+        };
 
         const holidayBalance = accruedAllowance - holidaysTakenInYear;
         if (holidayBalance >= 0) {
