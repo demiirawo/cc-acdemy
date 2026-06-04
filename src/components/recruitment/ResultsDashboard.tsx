@@ -65,7 +65,51 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
     }
 
     setTest((t as RecruitmentTest) || null);
-    const attemptsArr = (a as RecruitmentAttempt[]) || [];
+    let attemptsArr = (a as RecruitmentAttempt[]) || [];
+
+    const lowIntegritySubmitted = attemptsArr.filter(
+      (attempt) => attempt.status === "submitted" && Number(attempt.integrity_score) < 70,
+    );
+
+    if (lowIntegritySubmitted.length > 0) {
+      const autoRejectResults = await Promise.allSettled(
+        lowIntegritySubmitted.map((attempt) =>
+          supabase.functions.invoke("recruitment-set-stage", {
+            body: { attempt_id: attempt.id, stage: "rejected" },
+          }),
+        ),
+      );
+
+      let autoRejectFailed = false;
+      const rejectedIds = new Set<string>();
+
+      autoRejectResults.forEach((result, index) => {
+        if (
+          result.status === "fulfilled" &&
+          !result.value.error &&
+          !(result.value.data as any)?.error
+        ) {
+          rejectedIds.add(lowIntegritySubmitted[index].id);
+        } else {
+          autoRejectFailed = true;
+        }
+      });
+
+      if (rejectedIds.size > 0) {
+        attemptsArr = attemptsArr.map((attempt) =>
+          rejectedIds.has(attempt.id) ? { ...attempt, status: "rejected" } : attempt,
+        );
+      }
+
+      if (autoRejectFailed) {
+        toast({
+          title: "Some low-integrity candidates were not auto-rejected",
+          description: "Please refresh and try again.",
+          variant: "destructive",
+        });
+      }
+    }
+
     setAttempts(attemptsArr);
     setQuestionMaxScore(
       (qs ?? []).reduce((s: number, q: any) => s + Number(q.weight ?? 0), 0),
