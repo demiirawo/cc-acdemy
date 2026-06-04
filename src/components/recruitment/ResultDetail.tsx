@@ -182,20 +182,21 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
       setAnswers((ans as AnswerRow[]) || []);
       setEvents((ev as EventRow[]) || []);
       setSnapshots((sn as SnapRow[]) || []);
-      // Filter siblings to only those still sharing the current attempt's status
-      // (e.g. in Pending Review, only "submitted" candidates remain navigable).
-      // Always keep the currently-viewed attempt so position/index stays valid.
+      // Use the exact sibling list provided by the dashboard so navigation matches
+      // the list the user actually opened (e.g. Pending Review can include both the
+      // "Submitted" and "Completed" UI labels, since both are raw "submitted").
       const sibRows = (sib as { id: string; status: string }[]) || [];
-      const statusById = new Map(sibRows.map((r) => [r.id, r.status]));
-      const orderedIds =
-        siblingIds && siblingIds.length > 0
-          ? siblingIds
-          : sibRows.map((r) => r.id);
-      const currentStatus = (a as { status: string }).status;
-      const filtered = orderedIds.filter(
-        (id) => id === attemptId || statusById.get(id) === currentStatus,
-      );
-      setSiblings(filtered);
+      const availableIds = new Set(sibRows.map((r) => r.id));
+      if (siblingIds && siblingIds.length > 0) {
+        setSiblings(siblingIds.filter((id) => id === attemptId || availableIds.has(id)));
+      } else {
+        const currentStatus = (a as { status: string }).status;
+        setSiblings(
+          sibRows
+            .filter((r) => r.id === attemptId || r.status === currentStatus)
+            .map((r) => r.id),
+        );
+      }
 
       const qIds = (ans || []).map((r: any) => r.question_id);
       if (qIds.length) {
