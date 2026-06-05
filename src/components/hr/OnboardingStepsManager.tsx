@@ -31,6 +31,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { VoiceNoteRecorder } from "./VoiceNoteRecorder";
+import { Volume2 } from "lucide-react";
 
 interface OnboardingOwner {
   id: string;
