@@ -197,6 +197,7 @@ export function OnboardingStepsManager() {
         external_url: stepType === 'external_link' ? externalUrl || null : null,
         owner_id: ownerId || null,
         stage,
+        voice_note_url: voiceNoteUrl,
       };
 
       if (editingStep) {
