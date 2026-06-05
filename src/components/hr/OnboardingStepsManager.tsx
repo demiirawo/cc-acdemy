@@ -527,6 +527,15 @@ export function OnboardingStepsManager() {
               </div>
 
               <div className="space-y-2">
+                <Label>Voice note (optional)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Record a short audio message to accompany this step. Staff will be able to play it back.
+                </p>
+                <VoiceNoteRecorder value={voiceNoteUrl} onChange={setVoiceNoteUrl} />
+              </div>
+
+
+              <div className="space-y-2">
                 <Label htmlFor="stage">Stage</Label>
                 <Select value={stage} onValueChange={setStage}>
                   <SelectTrigger>
