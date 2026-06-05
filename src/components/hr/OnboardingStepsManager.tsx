@@ -688,10 +688,14 @@ function SortableStepCard({
       </div>
       
       <div className="flex items-center gap-2 flex-shrink-0">
+        {step.voice_note_url && (
+          <Volume2 className="h-3.5 w-3.5 text-primary" aria-label="Has voice note" />
+        )}
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           {getStepTypeIcon(step.step_type)}
           <span className="hidden sm:inline">{getStepTypeLabel(step.step_type)}</span>
         </div>
+        
         
         {step.owner && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">
