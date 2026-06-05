@@ -90,6 +90,7 @@ export function OnboardingStepsManager() {
   const [externalUrl, setExternalUrl] = useState("");
   const [ownerId, setOwnerId] = useState<string>("");
   const [stage, setStage] = useState<string>("Getting Started");
+  const [voiceNoteUrl, setVoiceNoteUrl] = useState<string | null>(null);
 
   useEffect(() => {
     fetchSteps();
