@@ -53,6 +53,7 @@ interface OnboardingStep {
   owner_id: string | null;
   stage: string;
   created_at: string;
+  voice_note_url: string | null;
   owner?: OnboardingOwner | null;
 }
 
