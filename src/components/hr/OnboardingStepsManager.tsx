@@ -31,6 +31,8 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { VoiceNoteRecorder } from "./VoiceNoteRecorder";
+import { Volume2 } from "lucide-react";
 
 interface OnboardingOwner {
   id: string;
@@ -51,6 +53,7 @@ interface OnboardingStep {
   owner_id: string | null;
   stage: string;
   created_at: string;
+  voice_note_url: string | null;
   owner?: OnboardingOwner | null;
 }
 
@@ -87,6 +90,7 @@ export function OnboardingStepsManager() {
   const [externalUrl, setExternalUrl] = useState("");
   const [ownerId, setOwnerId] = useState<string>("");
   const [stage, setStage] = useState<string>("Getting Started");
+  const [voiceNoteUrl, setVoiceNoteUrl] = useState<string | null>(null);
 
   useEffect(() => {
     fetchSteps();
@@ -156,6 +160,7 @@ export function OnboardingStepsManager() {
     setExternalUrl("");
     setOwnerId("");
     setStage("Getting Started");
+    setVoiceNoteUrl(null);
     setEditingStep(null);
   };
 
@@ -174,6 +179,7 @@ export function OnboardingStepsManager() {
     setExternalUrl(step.external_url || "");
     setOwnerId(step.owner_id || "");
     setStage(step.stage || "Getting Started");
+    setVoiceNoteUrl(step.voice_note_url || null);
     setDialogOpen(true);
   };
 
@@ -191,6 +197,7 @@ export function OnboardingStepsManager() {
         external_url: stepType === 'external_link' ? externalUrl || null : null,
         owner_id: ownerId || null,
         stage,
+        voice_note_url: voiceNoteUrl,
       };
 
       if (editingStep) {
@@ -520,6 +527,15 @@ export function OnboardingStepsManager() {
               </div>
 
               <div className="space-y-2">
+                <Label>Voice note (optional)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Record a short audio message to accompany this step. Staff will be able to play it back.
+                </p>
+                <VoiceNoteRecorder value={voiceNoteUrl} onChange={setVoiceNoteUrl} />
+              </div>
+
+
+              <div className="space-y-2">
                 <Label htmlFor="stage">Stage</Label>
                 <Select value={stage} onValueChange={setStage}>
                   <SelectTrigger>
@@ -672,10 +688,14 @@ function SortableStepCard({
       </div>
       
       <div className="flex items-center gap-2 flex-shrink-0">
+        {step.voice_note_url && (
+          <Volume2 className="h-3.5 w-3.5 text-primary" aria-label="Has voice note" />
+        )}
         <div className="flex items-center gap-1 text-xs text-muted-foreground">
           {getStepTypeIcon(step.step_type)}
           <span className="hidden sm:inline">{getStepTypeLabel(step.step_type)}</span>
         </div>
+        
         
         {step.owner && (
           <div className="flex items-center gap-1 text-xs text-muted-foreground">

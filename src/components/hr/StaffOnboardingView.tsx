@@ -27,6 +27,7 @@ interface OnboardingStep {
   external_url: string | null;
   owner_id: string | null;
   stage: string;
+  voice_note_url: string | null;
   owner?: OnboardingOwner | null;
 }
 
@@ -88,7 +89,7 @@ export function StaffOnboardingView() {
       const { data: stepsData, error: stepsError } = await supabase
         .from('onboarding_steps')
         .select(`
-          id, title, description, sort_order, step_type, target_page_id, external_url, owner_id, stage,
+          id, title, description, sort_order, step_type, target_page_id, external_url, owner_id, stage, voice_note_url,
           owner:onboarding_owners(id, name, role, email, phone)
         `)
         .order('stage', { ascending: true })
@@ -312,6 +313,15 @@ export function StaffOnboardingView() {
                                   {step.description && (
                                     <div className="text-muted-foreground mt-1 whitespace-pre-wrap">
                                       {renderDescriptionWithLinks(step.description)}
+                                    </div>
+                                  )}
+
+                                  {step.voice_note_url && (
+                                    <div className="mt-3 p-2 bg-muted/50 rounded-lg">
+                                      <div className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                                        <FileText className="h-3 w-3" /> Voice note
+                                      </div>
+                                      <audio src={step.voice_note_url} controls className="w-full h-10" />
                                     </div>
                                   )}
 
