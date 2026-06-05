@@ -160,6 +160,7 @@ export function OnboardingStepsManager() {
     setExternalUrl("");
     setOwnerId("");
     setStage("Getting Started");
+    setVoiceNoteUrl(null);
     setEditingStep(null);
   };
 
@@ -178,6 +179,7 @@ export function OnboardingStepsManager() {
     setExternalUrl(step.external_url || "");
     setOwnerId(step.owner_id || "");
     setStage(step.stage || "Getting Started");
+    setVoiceNoteUrl(step.voice_note_url || null);
     setDialogOpen(true);
   };
 
