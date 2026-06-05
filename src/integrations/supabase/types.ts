@@ -846,6 +846,7 @@ export type Database = {
           target_page_id: string | null
           title: string
           updated_at: string
+          voice_note_url: string | null
         }
         Insert: {
           created_at?: string
@@ -860,6 +861,7 @@ export type Database = {
           target_page_id?: string | null
           title: string
           updated_at?: string
+          voice_note_url?: string | null
         }
         Update: {
           created_at?: string
@@ -874,6 +876,7 @@ export type Database = {
           target_page_id?: string | null
           title?: string
           updated_at?: string
+          voice_note_url?: string | null
         }
         Relationships: [
           {
