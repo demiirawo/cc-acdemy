@@ -1,0 +1,1 @@
+ALTER TABLE public.onboarding_steps ADD COLUMN IF NOT EXISTS voice_note_url text;
