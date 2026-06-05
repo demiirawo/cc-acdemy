@@ -89,7 +89,7 @@ export function StaffOnboardingView() {
       const { data: stepsData, error: stepsError } = await supabase
         .from('onboarding_steps')
         .select(`
-          id, title, description, sort_order, step_type, target_page_id, external_url, owner_id, stage,
+          id, title, description, sort_order, step_type, target_page_id, external_url, owner_id, stage, voice_note_url,
           owner:onboarding_owners(id, name, role, email, phone)
         `)
         .order('stage', { ascending: true })
