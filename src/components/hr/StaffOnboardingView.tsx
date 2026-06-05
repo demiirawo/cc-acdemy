@@ -27,6 +27,7 @@ interface OnboardingStep {
   external_url: string | null;
   owner_id: string | null;
   stage: string;
+  voice_note_url: string | null;
   owner?: OnboardingOwner | null;
 }
 
