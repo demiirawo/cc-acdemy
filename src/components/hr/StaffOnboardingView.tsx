@@ -316,6 +316,15 @@ export function StaffOnboardingView() {
                                     </div>
                                   )}
 
+                                  {step.voice_note_url && (
+                                    <div className="mt-3 p-2 bg-muted/50 rounded-lg">
+                                      <div className="text-xs font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                                        <FileText className="h-3 w-3" /> Voice note
+                                      </div>
+                                      <audio src={step.voice_note_url} controls className="w-full h-10" />
+                                    </div>
+                                  )}
+
                                   {/* Step type indicator */}
                                   <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
                                     {step.step_type === 'internal_page' && (
