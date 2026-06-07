@@ -40,7 +40,7 @@ interface RequestsTimelineProps {
   onSelectRequest?: (id: string) => void;
 }
 
-const ZOOM_LEVELS: Record<string, number> = { month: 8, week: 18, day: 36 };
+const ZOOM_LEVELS: Record<string, number> = { month: 22, week: 50, day: 110 };
 const ROW_HEIGHT = 30;
 const ROW_GAP = 6;
 const LANE_PADDING = 10;
