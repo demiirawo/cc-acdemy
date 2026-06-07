@@ -130,7 +130,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
       const offset = differenceInCalendarDays(today, rangeStart) * DAY_WIDTH;
       scrollRef.current.scrollLeft = Math.max(0, offset - 200);
     }
-  }, [rangeStart, rangeEnd]);
+  }, [rangeStart, rangeEnd, DAY_WIDTH]);
 
   const scrollByMonths = (n: number) => {
     if (!scrollRef.current) return;
