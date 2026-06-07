@@ -250,14 +250,34 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                     const isPending = req.status === "pending";
                     const isUnpaid = req.request_type === "holiday_unpaid";
                     const covers = coversByHoliday.get(req.id) || [];
-                    const isCovered = covers.length > 0;
                     const name = getName(req.user_id);
                     const totalDays =
                       differenceInCalendarDays(parseISO(req.end_date), parseISO(req.start_date)) + 1;
 
-                    const palette = isUnpaid
-                      ? "bg-amber-50 dark:bg-amber-900/30 border-amber-400 text-amber-900 dark:text-amber-100"
-                      : "bg-emerald-50 dark:bg-emerald-900/30 border-emerald-500 text-emerald-900 dark:text-emerald-100";
+                    // Coverage status: count unique covered days vs holiday days
+                    const coveredDays = new Set<string>();
+                    covers.forEach((c) => {
+                      const cStart = c.start_date > req.start_date ? c.start_date : req.start_date;
+                      const cEnd = c.end_date < req.end_date ? c.end_date : req.end_date;
+                      if (cStart > cEnd) return;
+                      eachDayOfInterval({ start: parseISO(cStart), end: parseISO(cEnd) }).forEach((d) =>
+                        coveredDays.add(format(d, "yyyy-MM-dd"))
+                      );
+                    });
+                    let coverage: "covered" | "partial" | "open";
+                    if (coveredDays.size === 0) coverage = "open";
+                    else if (coveredDays.size >= totalDays) coverage = "covered";
+                    else coverage = "partial";
+
+                    // Color-code by coverage status
+                    let palette: string;
+                    if (coverage === "covered") {
+                      palette = "bg-cyan-100 dark:bg-cyan-900/40 border-cyan-500 text-cyan-900 dark:text-cyan-50";
+                    } else if (coverage === "partial") {
+                      palette = "bg-amber-100 dark:bg-amber-900/40 border-amber-500 text-amber-900 dark:text-amber-50";
+                    } else {
+                      palette = "bg-rose-100 dark:bg-rose-900/40 border-rose-500 text-rose-900 dark:text-rose-50";
+                    }
 
                     return (
                       <Tooltip key={req.id}>
@@ -267,19 +287,13 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                             onClick={() => onSelectRequest?.(req.id)}
                             className={`absolute rounded-md border-2 ${palette} ${
                               isPending ? "opacity-70 border-dashed" : ""
-                            } flex items-center gap-1.5 px-2 text-xs font-medium overflow-hidden hover:ring-2 hover:ring-primary hover:z-10 transition`}
+                            } flex items-center gap-2 px-2.5 text-xs font-medium overflow-hidden hover:ring-2 hover:ring-primary hover:z-10 transition`}
                             style={{ left: startOff * DAY_WIDTH + 2, top, width, height: ROW_HEIGHT }}
                           >
-                            <Palmtree className="h-3.5 w-3.5 flex-shrink-0" />
+                            <Palmtree className={`h-4 w-4 flex-shrink-0 ${isUnpaid ? "opacity-60" : ""}`} />
                             <span className="truncate flex-1 text-left">{name}</span>
-                            {isCovered ? (
-                              <span className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-100 dark:bg-cyan-900/50 text-cyan-800 dark:text-cyan-100 border border-cyan-300 flex-shrink-0">
-                                <Check className="h-2.5 w-2.5" /> Covered
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-100 border border-rose-300 flex-shrink-0">
-                                <AlertCircle className="h-2.5 w-2.5" /> Open
-                              </span>
+                            {isUnpaid && (
+                              <span className="text-[9px] uppercase tracking-wider opacity-70 flex-shrink-0">Unpaid</span>
                             )}
                           </button>
                         </TooltipTrigger>
@@ -291,18 +305,25 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                           <div className="capitalize text-muted-foreground">
                             {isUnpaid ? "Unpaid holiday" : "Holiday"} · {req.status}
                           </div>
-                          {covers.length > 0 ? (
-                            <div className="mt-1 pt-1 border-t">
-                              Covered by: {covers.map((c) => getName(c.user_id)).join(", ")}
-                            </div>
-                          ) : (
-                            <div className="mt-1 pt-1 border-t text-rose-600">No cover assigned</div>
-                          )}
+                          <div className="mt-1 pt-1 border-t">
+                            {coverage === "covered" && (
+                              <span className="text-cyan-700 dark:text-cyan-300">Fully covered by: {covers.map((c) => getName(c.user_id)).join(", ")}</span>
+                            )}
+                            {coverage === "partial" && (
+                              <span className="text-amber-700 dark:text-amber-300">
+                                Partially covered ({coveredDays.size}/{totalDays} days) by: {covers.map((c) => getName(c.user_id)).join(", ")}
+                              </span>
+                            )}
+                            {coverage === "open" && (
+                              <span className="text-rose-600 dark:text-rose-400">No cover assigned</span>
+                            )}
+                          </div>
                         </TooltipContent>
                       </Tooltip>
                     );
                   })
                 )}
+
               </div>
             </div>
           </div>
@@ -311,29 +332,26 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
         {/* Legend */}
         <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-t text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded border-2 bg-emerald-50 border-emerald-500" />
-            Paid holiday
+            <div className="w-3 h-3 rounded border-2 bg-cyan-100 border-cyan-500" />
+            Fully covered
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded border-2 bg-amber-50 border-amber-400" />
-            Unpaid holiday
+            <div className="w-3 h-3 rounded border-2 bg-amber-100 border-amber-500" />
+            Partially covered
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded border-2 bg-rose-100 border-rose-500" />
+            Needs cover
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded border-2 border-dashed border-muted-foreground" />
             Pending
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-100 text-cyan-800 border border-cyan-300">Covered</span>
-            Shift has cover
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300">Open</span>
-            Needs cover
-          </div>
           <div className="flex items-center gap-1.5 ml-auto">
             <div className="w-px h-3 bg-red-500" /> Today
           </div>
         </div>
+
       </CardContent>
     </Card>
   );
