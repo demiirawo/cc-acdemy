@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification";
 import { useBatchWorkingDays } from "@/hooks/useWorkingDays";
+import { RequestsTimeline } from "./RequestsTimeline";
 
 type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
 
@@ -505,6 +506,12 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
           </p>
         </div>
       </div>
+
+      <RequestsTimeline
+        requests={requests}
+        userProfiles={userProfiles}
+        onSelectRequest={onViewRequest}
+      />
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
