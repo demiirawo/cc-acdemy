@@ -125,7 +125,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
   const todayOffset = todayInMonth ? differenceInCalendarDays(today, monthStart) * DAY_WIDTH + DAY_WIDTH / 2 : null;
 
   const laneHeight = ROW_HEIGHT + ROW_GAP;
-  const contentHeight = Math.max(lanes.length, 1) * laneHeight + LANE_PADDING * 2;
+  const contentHeight = Math.max(lanes.length, MIN_LANES) * laneHeight + LANE_PADDING * 2;
 
   return (
     <Card>
