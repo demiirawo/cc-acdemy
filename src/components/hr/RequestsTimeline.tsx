@@ -48,6 +48,8 @@ const HOLIDAY_TYPES = ["holiday", "holiday_paid", "holiday_unpaid"];
 
 export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: RequestsTimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState<"month" | "week" | "day">("week");
+  const DAY_WIDTH = ZOOM_LEVELS[zoom];
 
   const getName = (id: string | null) => {
     if (!id) return "Unknown";
