@@ -1,8 +1,8 @@
-import { useMemo, useRef, useEffect, useState } from "react";
+import { useMemo, useRef, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronLeft, ChevronRight, Palmtree, RefreshCw, Clock, Link2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Palmtree, Check, AlertCircle } from "lucide-react";
 import {
   addMonths,
   differenceInCalendarDays,
@@ -39,24 +39,14 @@ interface RequestsTimelineProps {
   onSelectRequest?: (id: string) => void;
 }
 
-const DAY_WIDTH = 18; // px per day
-const ROW_HEIGHT = 28;
+const DAY_WIDTH = 14;
+const ROW_HEIGHT = 30;
 const ROW_GAP = 6;
-const LANE_PADDING = 8;
-
-const typeStyles: Record<string, { bg: string; border: string; icon: typeof Palmtree; label: string }> = {
-  holiday: { bg: "bg-green-100 dark:bg-green-900/40", border: "border-green-500", icon: Palmtree, label: "Holiday" },
-  holiday_paid: { bg: "bg-green-100 dark:bg-green-900/40", border: "border-green-500", icon: Palmtree, label: "Paid Holiday" },
-  holiday_unpaid: { bg: "bg-yellow-100 dark:bg-yellow-900/40", border: "border-yellow-500", icon: Palmtree, label: "Unpaid Holiday" },
-  shift_swap: { bg: "bg-cyan-100 dark:bg-cyan-900/40", border: "border-cyan-500", icon: RefreshCw, label: "Shift Cover" },
-  overtime: { bg: "bg-orange-100 dark:bg-orange-900/40", border: "border-orange-500", icon: Clock, label: "Overtime" },
-  overtime_standard: { bg: "bg-orange-100 dark:bg-orange-900/40", border: "border-orange-500", icon: Clock, label: "Overtime (Outside)" },
-  overtime_double_up: { bg: "bg-amber-100 dark:bg-amber-900/40", border: "border-amber-500", icon: Clock, label: "Overtime (Inside)" },
-};
+const LANE_PADDING = 10;
+const HOLIDAY_TYPES = ["holiday", "holiday_paid", "holiday_unpaid"];
 
 export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: RequestsTimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [scrollLeft, setScrollLeft] = useState(0);
 
   const getName = (id: string | null) => {
     if (!id) return "Unknown";
@@ -65,8 +55,11 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
   };
 
   const { months, rangeStart, rangeEnd, lanes, totalWidth } = useMemo(() => {
-    const active = requests.filter((r) => r.status !== "rejected");
-    if (active.length === 0) {
+    const holidays = requests.filter(
+      (r) => r.status !== "rejected" && HOLIDAY_TYPES.includes(r.request_type)
+    );
+
+    if (holidays.length === 0) {
       const today = new Date();
       const start = startOfMonth(today);
       const end = endOfMonth(addMonths(today, 5));
@@ -74,28 +67,24 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
         months: eachMonthOfInterval({ start, end }),
         rangeStart: start,
         rangeEnd: end,
-        lanes: [] as Array<{ user_id: string; items: TimelineRequest[] }>,
-        totalWidth: differenceInCalendarDays(end, start) * DAY_WIDTH,
+        lanes: [] as TimelineRequest[][],
+        totalWidth: (differenceInCalendarDays(end, start) + 1) * DAY_WIDTH,
       };
     }
 
-    const dates = active.flatMap((r) => [parseISO(r.start_date), parseISO(r.end_date)]);
+    const dates = holidays.flatMap((r) => [parseISO(r.start_date), parseISO(r.end_date)]);
     const minD = startOfMonth(minDate(dates));
     const maxD = endOfMonth(maxDate(dates));
     const months = eachMonthOfInterval({ start: minD, end: maxD });
 
-    // Only show users with at least one holiday request; include all their requests
-    const holidayTypes = ["holiday", "holiday_paid", "holiday_unpaid"];
-    const byUser = new Map<string, TimelineRequest[]>();
-    active.forEach((r) => {
-      const list = byUser.get(r.user_id) || [];
-      list.push(r);
-      byUser.set(r.user_id, list);
+    // Pack holidays into lanes (greedy, sorted by start)
+    const sorted = [...holidays].sort((a, b) => a.start_date.localeCompare(b.start_date));
+    const lanes: TimelineRequest[][] = [];
+    sorted.forEach((req) => {
+      const lane = lanes.find((l) => l[l.length - 1].end_date < req.start_date);
+      if (lane) lane.push(req);
+      else lanes.push([req]);
     });
-    const lanes = Array.from(byUser.entries())
-      .filter(([, items]) => items.some((r) => holidayTypes.includes(r.request_type)))
-      .map(([user_id, items]) => ({ user_id, items }))
-      .sort((a, b) => getName(a.user_id).localeCompare(getName(b.user_id)));
 
     return {
       months,
@@ -104,45 +93,33 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
       lanes,
       totalWidth: (differenceInCalendarDays(maxD, minD) + 1) * DAY_WIDTH,
     };
-  }, [requests, userProfiles]);
-
-  const requestById = useMemo(() => {
-    const m = new Map<string, TimelineRequest>();
-    requests.forEach((r) => m.set(r.id, r));
-    return m;
   }, [requests]);
 
-  // Compute dependency lines: cover request -> linked holiday
-  const dependencies = useMemo(() => {
-    const deps: Array<{ from: TimelineRequest; to: TimelineRequest }> = [];
+  // Map holiday id -> cover requests
+  const coversByHoliday = useMemo(() => {
+    const m = new Map<string, TimelineRequest[]>();
     requests.forEach((r) => {
       if (r.status === "rejected") return;
-      if (r.request_type === "shift_swap" && r.linked_holiday_id) {
-        // linked_holiday_id is a staff_holidays id; we look for the holiday request matching covered user
-        const covered = r.swap_with_user_id;
-        const holiday = requests.find(
-          (h) =>
-            h.user_id === covered &&
-            ["holiday", "holiday_paid", "holiday_unpaid"].includes(h.request_type) &&
-            h.start_date <= r.end_date &&
-            h.end_date >= r.start_date &&
-            h.status !== "rejected"
-        );
-        if (holiday) deps.push({ from: r, to: holiday });
-      }
+      if (r.request_type !== "shift_swap") return;
+      // Match via linked_holiday_id, else by covered user + overlap
+      const holiday = requests.find(
+        (h) =>
+          HOLIDAY_TYPES.includes(h.request_type) &&
+          h.status !== "rejected" &&
+          h.user_id === r.swap_with_user_id &&
+          h.start_date <= r.end_date &&
+          h.end_date >= r.start_date
+      );
+      if (!holiday) return;
+      const list = m.get(holiday.id) || [];
+      list.push(r);
+      m.set(holiday.id, list);
     });
-    return deps;
+    return m;
   }, [requests]);
 
   const dayOffset = (iso: string) => differenceInCalendarDays(parseISO(iso), rangeStart);
 
-  const laneIndexByUser = useMemo(() => {
-    const m = new Map<string, number>();
-    lanes.forEach((l, i) => m.set(l.user_id, i));
-    return m;
-  }, [lanes]);
-
-  // Scroll to today on mount
   useEffect(() => {
     if (!scrollRef.current) return;
     const today = new Date();
@@ -163,19 +140,18 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
       : null;
 
   const laneHeight = ROW_HEIGHT + ROW_GAP;
-  const contentHeight = lanes.length * laneHeight + LANE_PADDING * 2;
-  const NAME_COL = 160;
+  const contentHeight = Math.max(lanes.length, 1) * laneHeight + LANE_PADDING * 2;
 
   return (
     <Card>
       <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
         <div>
           <CardTitle className="text-base flex items-center gap-2">
-            <Link2 className="h-4 w-4 text-primary" />
-            Request Timeline
+            <Palmtree className="h-4 w-4 text-primary" />
+            Who's On Holiday
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            Holidays and their shift covers, plotted across months. Lines link covers to the holiday they cover.
+            Approved &amp; pending holidays across upcoming months. Each bar shows whether the shift is covered.
           </p>
         </div>
         <div className="flex items-center gap-1">
@@ -189,158 +165,117 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
       </CardHeader>
       <CardContent className="p-0">
         <TooltipProvider delayDuration={150}>
-          <div className="flex border-t">
-            {/* Sticky name column */}
-            <div className="flex-shrink-0 border-r bg-muted/30" style={{ width: NAME_COL }}>
-              <div className="h-10 border-b flex items-center px-3 text-xs font-medium text-muted-foreground">
-                Staff Member
-              </div>
-              <div style={{ paddingTop: LANE_PADDING, paddingBottom: LANE_PADDING }}>
-                {lanes.length === 0 ? (
-                  <div className="px-3 py-6 text-xs text-muted-foreground">No requests</div>
-                ) : (
-                  lanes.map((lane) => (
+          <div ref={scrollRef} className="overflow-x-auto border-t">
+            <div style={{ width: totalWidth, position: "relative" }}>
+              {/* Month header */}
+              <div className="h-9 border-b flex sticky top-0 bg-card z-10">
+                {months.map((m) => {
+                  const days = differenceInCalendarDays(endOfMonth(m), startOfMonth(m)) + 1;
+                  return (
                     <div
-                      key={lane.user_id}
-                      className="px-3 text-sm truncate flex items-center"
-                      style={{ height: ROW_HEIGHT, marginBottom: ROW_GAP }}
-                      title={getName(lane.user_id)}
+                      key={m.toISOString()}
+                      className="border-r text-xs font-medium flex items-center justify-center text-muted-foreground"
+                      style={{ width: days * DAY_WIDTH, minWidth: days * DAY_WIDTH }}
                     >
-                      {getName(lane.user_id)}
+                      {format(m, "MMMM yyyy")}
                     </div>
-                  ))
-                )}
+                  );
+                })}
               </div>
-            </div>
 
-            {/* Scrollable timeline */}
-            <div
-              ref={scrollRef}
-              className="overflow-x-auto flex-1"
-              onScroll={(e) => setScrollLeft((e.target as HTMLDivElement).scrollLeft)}
-            >
-              <div style={{ width: totalWidth, position: "relative" }}>
-                {/* Month header */}
-                <div className="h-10 border-b flex sticky top-0 bg-card z-10">
+              <div className="relative" style={{ height: contentHeight, paddingTop: LANE_PADDING }}>
+                {/* Month grid lines */}
+                <div className="absolute inset-0 flex pointer-events-none">
                   {months.map((m) => {
                     const days = differenceInCalendarDays(endOfMonth(m), startOfMonth(m)) + 1;
                     return (
                       <div
                         key={m.toISOString()}
-                        className="border-r text-xs font-medium flex items-center justify-center text-muted-foreground"
-                        style={{ width: days * DAY_WIDTH, minWidth: days * DAY_WIDTH }}
-                      >
-                        {format(m, "MMM yyyy")}
-                      </div>
+                        className="border-r border-dashed border-muted"
+                        style={{ width: days * DAY_WIDTH }}
+                      />
                     );
                   })}
                 </div>
 
-                {/* Body with bars + dependencies */}
-                <div className="relative" style={{ height: contentHeight, paddingTop: LANE_PADDING }}>
-                  {/* Month grid lines */}
-                  <div className="absolute inset-0 flex pointer-events-none">
-                    {months.map((m) => {
-                      const days = differenceInCalendarDays(endOfMonth(m), startOfMonth(m)) + 1;
-                      return (
-                        <div
-                          key={m.toISOString()}
-                          className="border-r border-dashed border-muted"
-                          style={{ width: days * DAY_WIDTH }}
-                        />
-                      );
-                    })}
-                  </div>
-
-                  {/* Today line */}
-                  {todayOffset !== null && (
-                    <div
-                      className="absolute top-0 bottom-0 w-px bg-red-500 z-20 pointer-events-none"
-                      style={{ left: todayOffset }}
-                    >
-                      <div className="absolute -top-1 -left-[3px] w-[7px] h-[7px] rounded-full bg-red-500" />
-                    </div>
-                  )}
-
-                  {/* Dependency arrows */}
-                  <svg
-                    className="absolute inset-0 pointer-events-none"
-                    width={totalWidth}
-                    height={contentHeight}
-                    style={{ top: 0 }}
+                {/* Today line */}
+                {todayOffset !== null && (
+                  <div
+                    className="absolute top-0 bottom-0 w-px bg-red-500 z-20 pointer-events-none"
+                    style={{ left: todayOffset }}
                   >
-                    {dependencies.map(({ from, to }, i) => {
-                      const fromLane = laneIndexByUser.get(from.user_id);
-                      const toLane = laneIndexByUser.get(to.user_id);
-                      if (fromLane === undefined || toLane === undefined) return null;
-                      const fromX = (dayOffset(from.start_date) + 0.5) * DAY_WIDTH;
-                      const toX = (dayOffset(to.start_date) + 0.5) * DAY_WIDTH;
-                      const fromY = LANE_PADDING + fromLane * laneHeight + ROW_HEIGHT / 2;
-                      const toY = LANE_PADDING + toLane * laneHeight + ROW_HEIGHT / 2;
-                      const midY = (fromY + toY) / 2;
-                      return (
-                        <g key={i}>
-                          <path
-                            d={`M ${fromX} ${fromY} C ${fromX} ${midY}, ${toX} ${midY}, ${toX} ${toY}`}
-                            stroke="hsl(var(--primary))"
-                            strokeWidth={1.2}
-                            strokeDasharray="3 3"
-                            fill="none"
-                            opacity={0.6}
-                          />
-                          <circle cx={toX} cy={toY} r={2.5} fill="hsl(var(--primary))" opacity={0.7} />
-                        </g>
-                      );
-                    })}
-                  </svg>
+                    <div className="absolute -top-1 -left-[3px] w-[7px] h-[7px] rounded-full bg-red-500" />
+                  </div>
+                )}
 
-                  {/* Bars */}
-                  {lanes.map((lane, laneIdx) =>
-                    lane.items.map((req) => {
-                      const style = typeStyles[req.request_type] || typeStyles.holiday;
-                      const Icon = style.icon;
-                      const startOff = dayOffset(req.start_date);
-                      const endOff = dayOffset(req.end_date);
-                      const width = Math.max(DAY_WIDTH, (endOff - startOff + 1) * DAY_WIDTH);
-                      const top = LANE_PADDING + laneIdx * laneHeight;
-                      const isPending = req.status === "pending";
-                      const isCover = req.request_type === "shift_swap";
-                      const coveringName = isCover && req.swap_with_user_id ? getName(req.swap_with_user_id) : null;
+                {lanes.length === 0 && (
+                  <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+                    No upcoming holidays
+                  </div>
+                )}
 
-                      return (
-                        <Tooltip key={req.id}>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={() => onSelectRequest?.(req.id)}
-                              className={`absolute rounded-md border-2 ${style.bg} ${style.border} ${
-                                isPending ? "opacity-70 border-dashed" : ""
-                              } flex items-center gap-1 px-2 text-xs font-medium overflow-hidden hover:ring-2 hover:ring-primary hover:z-10 transition`}
-                              style={{
-                                left: startOff * DAY_WIDTH,
-                                top,
-                                width,
-                                height: ROW_HEIGHT,
-                              }}
-                            >
-                              <Icon className="h-3 w-3 flex-shrink-0" />
-                              <span className="truncate">
-                                {style.label}
-                                {coveringName ? ` · ${coveringName}` : ""}
+                {/* Holiday bars */}
+                {lanes.map((lane, laneIdx) =>
+                  lane.map((req) => {
+                    const startOff = dayOffset(req.start_date);
+                    const endOff = dayOffset(req.end_date);
+                    const width = Math.max(DAY_WIDTH * 2, (endOff - startOff + 1) * DAY_WIDTH);
+                    const top = LANE_PADDING + laneIdx * laneHeight;
+                    const isPending = req.status === "pending";
+                    const isUnpaid = req.request_type === "holiday_unpaid";
+                    const covers = coversByHoliday.get(req.id) || [];
+                    const isCovered = covers.length > 0;
+                    const name = getName(req.user_id);
+                    const days = endOff - startOff + 1;
+
+                    const palette = isUnpaid
+                      ? "bg-amber-50 dark:bg-amber-900/30 border-amber-400 text-amber-900 dark:text-amber-100"
+                      : "bg-emerald-50 dark:bg-emerald-900/30 border-emerald-500 text-emerald-900 dark:text-emerald-100";
+
+                    return (
+                      <Tooltip key={req.id}>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={() => onSelectRequest?.(req.id)}
+                            className={`absolute rounded-md border-2 ${palette} ${
+                              isPending ? "opacity-70 border-dashed" : ""
+                            } flex items-center gap-1.5 px-2 text-xs font-medium overflow-hidden hover:ring-2 hover:ring-primary hover:z-10 transition`}
+                            style={{ left: startOff * DAY_WIDTH, top, width, height: ROW_HEIGHT }}
+                          >
+                            <Palmtree className="h-3.5 w-3.5 flex-shrink-0" />
+                            <span className="truncate flex-1 text-left">{name}</span>
+                            {isCovered ? (
+                              <span className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-100 dark:bg-cyan-900/50 text-cyan-800 dark:text-cyan-100 border border-cyan-300 flex-shrink-0">
+                                <Check className="h-2.5 w-2.5" /> Covered
                               </span>
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="text-xs">
-                            <div className="font-semibold">{getName(req.user_id)} — {style.label}</div>
-                            <div>{format(parseISO(req.start_date), "dd MMM yyyy")} → {format(parseISO(req.end_date), "dd MMM yyyy")}</div>
-                            {coveringName && <div>Covering: {coveringName}</div>}
-                            <div className="capitalize text-muted-foreground">Status: {req.status}</div>
-                          </TooltipContent>
-                        </Tooltip>
-                      );
-                    })
-                  )}
-                </div>
+                            ) : (
+                              <span className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/40 text-rose-800 dark:text-rose-100 border border-rose-300 flex-shrink-0">
+                                <AlertCircle className="h-2.5 w-2.5" /> Open
+                              </span>
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          <div className="font-semibold">{name}</div>
+                          <div>
+                            {format(parseISO(req.start_date), "dd MMM")} → {format(parseISO(req.end_date), "dd MMM yyyy")} ({days} day{days === 1 ? "" : "s"})
+                          </div>
+                          <div className="capitalize text-muted-foreground">
+                            {isUnpaid ? "Unpaid holiday" : "Holiday"} · {req.status}
+                          </div>
+                          {covers.length > 0 ? (
+                            <div className="mt-1 pt-1 border-t">
+                              Covered by: {covers.map((c) => getName(c.user_id)).join(", ")}
+                            </div>
+                          ) : (
+                            <div className="mt-1 pt-1 border-t text-rose-600">No cover assigned</div>
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -349,28 +284,24 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
         {/* Legend */}
         <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-t text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded border-2 bg-green-100 border-green-500" />
-            Holiday
+            <div className="w-3 h-3 rounded border-2 bg-emerald-50 border-emerald-500" />
+            Paid holiday
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded border-2 bg-yellow-100 border-yellow-500" />
-            Unpaid Holiday
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded border-2 bg-cyan-100 border-cyan-500" />
-            Shift Cover
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded border-2 bg-orange-100 border-orange-500" />
-            Overtime
+            <div className="w-3 h-3 rounded border-2 bg-amber-50 border-amber-400" />
+            Unpaid holiday
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded border-2 border-dashed border-muted-foreground" />
             Pending
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-px bg-primary" style={{ borderTop: "1px dashed" }} />
-            Cover → Holiday link
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-100 text-cyan-800 border border-cyan-300">Covered</span>
+            Shift has cover
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300">Open</span>
+            Needs cover
           </div>
           <div className="flex items-center gap-1.5 ml-auto">
             <div className="w-px h-3 bg-red-500" /> Today
