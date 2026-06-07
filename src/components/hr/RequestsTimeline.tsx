@@ -157,7 +157,18 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
             Approved &amp; pending holidays across upcoming months. Each bar shows whether the shift is covered.
           </p>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
+          <ToggleGroup
+            type="single"
+            value={zoom}
+            onValueChange={(v) => v && setZoom(v as "month" | "week" | "day")}
+            size="sm"
+            className="border rounded-md"
+          >
+            <ToggleGroupItem value="month" className="h-8 px-2 text-xs">Months</ToggleGroupItem>
+            <ToggleGroupItem value="week" className="h-8 px-2 text-xs">Weeks</ToggleGroupItem>
+            <ToggleGroupItem value="day" className="h-8 px-2 text-xs">Days</ToggleGroupItem>
+          </ToggleGroup>
           <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => scrollByMonths(-1)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
