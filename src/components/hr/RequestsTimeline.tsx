@@ -39,9 +39,10 @@ interface RequestsTimelineProps {
   onSelectRequest?: (id: string) => void;
 }
 
-const ROW_HEIGHT = 32;
-const ROW_GAP = 6;
-const LANE_PADDING = 12;
+const ROW_HEIGHT = 48;
+const ROW_GAP = 10;
+const LANE_PADDING = 16;
+const MIN_LANES = 6;
 const HOLIDAY_TYPES = ["holiday", "holiday_paid", "holiday_unpaid"];
 const ZOOM_STEPS = [0.5, 0.75, 1, 1.5, 2, 3, 4];
 const BASE_DAY_WIDTH = 40; // base px per day at zoom=1
@@ -124,7 +125,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
   const todayOffset = todayInMonth ? differenceInCalendarDays(today, monthStart) * DAY_WIDTH + DAY_WIDTH / 2 : null;
 
   const laneHeight = ROW_HEIGHT + ROW_GAP;
-  const contentHeight = Math.max(lanes.length, 1) * laneHeight + LANE_PADDING * 2;
+  const contentHeight = Math.max(lanes.length, MIN_LANES) * laneHeight + LANE_PADDING * 2;
 
   return (
     <Card>
