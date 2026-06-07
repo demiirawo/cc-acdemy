@@ -1,6 +1,7 @@
-import { useMemo, useRef, useEffect } from "react";
+import { useMemo, useRef, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ChevronLeft, ChevronRight, Palmtree, Check, AlertCircle } from "lucide-react";
 import {
@@ -39,7 +40,7 @@ interface RequestsTimelineProps {
   onSelectRequest?: (id: string) => void;
 }
 
-const DAY_WIDTH = 14;
+const ZOOM_LEVELS: Record<string, number> = { month: 8, week: 18, day: 36 };
 const ROW_HEIGHT = 30;
 const ROW_GAP = 6;
 const LANE_PADDING = 10;
@@ -47,6 +48,8 @@ const HOLIDAY_TYPES = ["holiday", "holiday_paid", "holiday_unpaid"];
 
 export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: RequestsTimelineProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState<"month" | "week" | "day">("week");
+  const DAY_WIDTH = ZOOM_LEVELS[zoom];
 
   const getName = (id: string | null) => {
     if (!id) return "Unknown";
@@ -93,7 +96,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
       lanes,
       totalWidth: (differenceInCalendarDays(maxD, minD) + 1) * DAY_WIDTH,
     };
-  }, [requests]);
+  }, [requests, DAY_WIDTH]);
 
   // Map holiday id -> cover requests
   const coversByHoliday = useMemo(() => {
@@ -127,7 +130,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
       const offset = differenceInCalendarDays(today, rangeStart) * DAY_WIDTH;
       scrollRef.current.scrollLeft = Math.max(0, offset - 200);
     }
-  }, [rangeStart, rangeEnd]);
+  }, [rangeStart, rangeEnd, DAY_WIDTH]);
 
   const scrollByMonths = (n: number) => {
     if (!scrollRef.current) return;
@@ -154,7 +157,18 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
             Approved &amp; pending holidays across upcoming months. Each bar shows whether the shift is covered.
           </p>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
+          <ToggleGroup
+            type="single"
+            value={zoom}
+            onValueChange={(v) => v && setZoom(v as "month" | "week" | "day")}
+            size="sm"
+            className="border rounded-md"
+          >
+            <ToggleGroupItem value="month" className="h-8 px-2 text-xs">Months</ToggleGroupItem>
+            <ToggleGroupItem value="week" className="h-8 px-2 text-xs">Weeks</ToggleGroupItem>
+            <ToggleGroupItem value="day" className="h-8 px-2 text-xs">Days</ToggleGroupItem>
+          </ToggleGroup>
           <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => scrollByMonths(-1)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
