@@ -96,7 +96,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
       lanes,
       totalWidth: (differenceInCalendarDays(maxD, minD) + 1) * DAY_WIDTH,
     };
-  }, [requests]);
+  }, [requests, DAY_WIDTH]);
 
   // Map holiday id -> cover requests
   const coversByHoliday = useMemo(() => {
