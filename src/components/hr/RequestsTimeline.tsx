@@ -1,17 +1,16 @@
-import { useMemo, useRef, useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronLeft, ChevronRight, Palmtree, Check, AlertCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Palmtree, Check, AlertCircle, ZoomIn, ZoomOut } from "lucide-react";
 import {
   addMonths,
   differenceInCalendarDays,
-  eachMonthOfInterval,
+  eachDayOfInterval,
   endOfMonth,
   format,
-  max as maxDate,
-  min as minDate,
+  getDay,
+  isSameDay,
   parseISO,
   startOfMonth,
 } from "date-fns";
@@ -40,16 +39,16 @@ interface RequestsTimelineProps {
   onSelectRequest?: (id: string) => void;
 }
 
-const ZOOM_LEVELS: Record<string, number> = { month: 22, week: 50, day: 110 };
-const ROW_HEIGHT = 30;
+const ROW_HEIGHT = 32;
 const ROW_GAP = 6;
-const LANE_PADDING = 10;
+const LANE_PADDING = 12;
 const HOLIDAY_TYPES = ["holiday", "holiday_paid", "holiday_unpaid"];
+const ZOOM_STEPS = [0.5, 0.75, 1, 1.5, 2, 3, 4];
+const BASE_DAY_WIDTH = 40; // base px per day at zoom=1
 
 export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: RequestsTimelineProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [zoom, setZoom] = useState<"month" | "week" | "day">("week");
-  const DAY_WIDTH = ZOOM_LEVELS[zoom];
+  const [monthCursor, setMonthCursor] = useState(() => startOfMonth(new Date()));
+  const [zoomIdx, setZoomIdx] = useState(2); // 1.0x
 
   const getName = (id: string | null) => {
     if (!id) return "Unknown";
@@ -57,54 +56,42 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
     return p?.display_name || p?.email?.split("@")[0] || "Unknown";
   };
 
-  const { months, rangeStart, rangeEnd, lanes, totalWidth } = useMemo(() => {
-    const holidays = requests.filter(
-      (r) => r.status !== "rejected" && HOLIDAY_TYPES.includes(r.request_type)
-    );
+  const monthStart = monthCursor;
+  const monthEnd = endOfMonth(monthCursor);
+  const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  const daysInMonth = days.length;
 
-    if (holidays.length === 0) {
-      const today = new Date();
-      const start = startOfMonth(today);
-      const end = endOfMonth(addMonths(today, 5));
-      return {
-        months: eachMonthOfInterval({ start, end }),
-        rangeStart: start,
-        rangeEnd: end,
-        lanes: [] as TimelineRequest[][],
-        totalWidth: (differenceInCalendarDays(end, start) + 1) * DAY_WIDTH,
-      };
-    }
+  // Holidays overlapping the current month
+  const monthHolidays = useMemo(() => {
+    const monthStartStr = format(monthStart, "yyyy-MM-dd");
+    const monthEndStr = format(monthEnd, "yyyy-MM-dd");
+    return requests
+      .filter(
+        (r) =>
+          r.status !== "rejected" &&
+          HOLIDAY_TYPES.includes(r.request_type) &&
+          r.start_date <= monthEndStr &&
+          r.end_date >= monthStartStr
+      )
+      .sort((a, b) => a.start_date.localeCompare(b.start_date));
+  }, [requests, monthStart, monthEnd]);
 
-    const dates = holidays.flatMap((r) => [parseISO(r.start_date), parseISO(r.end_date)]);
-    const minD = startOfMonth(minDate(dates));
-    const maxD = endOfMonth(maxDate(dates));
-    const months = eachMonthOfInterval({ start: minD, end: maxD });
-
-    // Pack holidays into lanes (greedy, sorted by start)
-    const sorted = [...holidays].sort((a, b) => a.start_date.localeCompare(b.start_date));
-    const lanes: TimelineRequest[][] = [];
-    sorted.forEach((req) => {
-      const lane = lanes.find((l) => l[l.length - 1].end_date < req.start_date);
+  // Lane packing
+  const lanes = useMemo(() => {
+    const ls: TimelineRequest[][] = [];
+    monthHolidays.forEach((req) => {
+      const lane = ls.find((l) => l[l.length - 1].end_date < req.start_date);
       if (lane) lane.push(req);
-      else lanes.push([req]);
+      else ls.push([req]);
     });
+    return ls;
+  }, [monthHolidays]);
 
-    return {
-      months,
-      rangeStart: minD,
-      rangeEnd: maxD,
-      lanes,
-      totalWidth: (differenceInCalendarDays(maxD, minD) + 1) * DAY_WIDTH,
-    };
-  }, [requests, DAY_WIDTH]);
-
-  // Map holiday id -> cover requests
+  // Cover map
   const coversByHoliday = useMemo(() => {
     const m = new Map<string, TimelineRequest[]>();
     requests.forEach((r) => {
-      if (r.status === "rejected") return;
-      if (r.request_type !== "shift_swap") return;
-      // Match via linked_holiday_id, else by covered user + overlap
+      if (r.status === "rejected" || r.request_type !== "shift_swap") return;
       const holiday = requests.find(
         (h) =>
           HOLIDAY_TYPES.includes(h.request_type) &&
@@ -121,92 +108,115 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
     return m;
   }, [requests]);
 
-  const dayOffset = (iso: string) => differenceInCalendarDays(parseISO(iso), rangeStart);
+  const zoom = ZOOM_STEPS[zoomIdx];
+  const DAY_WIDTH = BASE_DAY_WIDTH * zoom;
+  const totalWidth = daysInMonth * DAY_WIDTH;
 
-  useEffect(() => {
-    if (!scrollRef.current) return;
-    const today = new Date();
-    if (today >= rangeStart && today <= rangeEnd) {
-      const offset = differenceInCalendarDays(today, rangeStart) * DAY_WIDTH;
-      scrollRef.current.scrollLeft = Math.max(0, offset - 200);
-    }
-  }, [rangeStart, rangeEnd, DAY_WIDTH]);
-
-  const scrollByMonths = (n: number) => {
-    if (!scrollRef.current) return;
-    scrollRef.current.scrollBy({ left: n * 30 * DAY_WIDTH, behavior: "smooth" });
+  const dayOffsetInMonth = (iso: string) => {
+    const d = parseISO(iso);
+    if (d < monthStart) return 0;
+    if (d > monthEnd) return daysInMonth - 1;
+    return differenceInCalendarDays(d, monthStart);
   };
 
-  const todayOffset =
-    new Date() >= rangeStart && new Date() <= rangeEnd
-      ? differenceInCalendarDays(new Date(), rangeStart) * DAY_WIDTH
-      : null;
+  const today = new Date();
+  const todayInMonth = today >= monthStart && today <= monthEnd;
+  const todayOffset = todayInMonth ? differenceInCalendarDays(today, monthStart) * DAY_WIDTH + DAY_WIDTH / 2 : null;
 
   const laneHeight = ROW_HEIGHT + ROW_GAP;
   const contentHeight = Math.max(lanes.length, 1) * laneHeight + LANE_PADDING * 2;
 
   return (
     <Card>
-      <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
-        <div>
+      <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0 gap-4">
+        <div className="min-w-0">
           <CardTitle className="text-base flex items-center gap-2">
             <Palmtree className="h-4 w-4 text-primary" />
             Who's On Holiday
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            Approved &amp; pending holidays across upcoming months. Each bar shows whether the shift is covered.
+            One month at a time. Use the arrows to navigate, zoom to fit.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <ToggleGroup
-            type="single"
-            value={zoom}
-            onValueChange={(v) => v && setZoom(v as "month" | "week" | "day")}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-1 border rounded-md">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setZoomIdx((i) => Math.max(0, i - 1))}
+              disabled={zoomIdx === 0}
+            >
+              <ZoomOut className="h-4 w-4" />
+            </Button>
+            <span className="text-xs font-medium tabular-nums w-10 text-center">
+              {Math.round(zoom * 100)}%
+            </span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setZoomIdx((i) => Math.min(ZOOM_STEPS.length - 1, i + 1))}
+              disabled={zoomIdx === ZOOM_STEPS.length - 1}
+            >
+              <ZoomIn className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="flex items-center gap-1 border rounded-md px-1">
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setMonthCursor((m) => addMonths(m, -1))}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="text-sm font-semibold min-w-[130px] text-center">
+              {format(monthCursor, "MMMM yyyy")}
+            </div>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setMonthCursor((m) => addMonths(m, 1))}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+          <Button
+            variant="outline"
             size="sm"
-            className="border rounded-md"
+            className="h-8"
+            onClick={() => setMonthCursor(startOfMonth(new Date()))}
           >
-            <ToggleGroupItem value="month" className="h-8 px-2 text-xs">Months</ToggleGroupItem>
-            <ToggleGroupItem value="week" className="h-8 px-2 text-xs">Weeks</ToggleGroupItem>
-            <ToggleGroupItem value="day" className="h-8 px-2 text-xs">Days</ToggleGroupItem>
-          </ToggleGroup>
-          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => scrollByMonths(-1)}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => scrollByMonths(1)}>
-            <ChevronRight className="h-4 w-4" />
+            Today
           </Button>
         </div>
       </CardHeader>
       <CardContent className="p-0">
         <TooltipProvider delayDuration={150}>
-          <div ref={scrollRef} className="overflow-x-auto border-t">
-            <div style={{ width: totalWidth, position: "relative" }}>
-              {/* Month header */}
-              <div className="h-9 border-b flex sticky top-0 bg-card z-10">
-                {months.map((m) => {
-                  const days = differenceInCalendarDays(endOfMonth(m), startOfMonth(m)) + 1;
+          <div className="overflow-x-auto border-t">
+            <div style={{ width: totalWidth, minWidth: "100%", position: "relative" }}>
+              {/* Day header */}
+              <div className="h-10 border-b flex sticky top-0 bg-card z-10">
+                {days.map((d) => {
+                  const isToday = isSameDay(d, today);
+                  const isWeekend = getDay(d) === 0 || getDay(d) === 6;
                   return (
                     <div
-                      key={m.toISOString()}
-                      className="border-r text-xs font-medium flex items-center justify-center text-muted-foreground"
-                      style={{ width: days * DAY_WIDTH, minWidth: days * DAY_WIDTH }}
+                      key={d.toISOString()}
+                      className={`border-r text-[10px] flex flex-col items-center justify-center ${
+                        isWeekend ? "bg-muted/40" : ""
+                      } ${isToday ? "bg-red-50 dark:bg-red-950/40 font-semibold text-red-700 dark:text-red-300" : "text-muted-foreground"}`}
+                      style={{ width: DAY_WIDTH, minWidth: DAY_WIDTH }}
                     >
-                      {format(m, "MMMM yyyy")}
+                      <div className="uppercase tracking-wide">{format(d, "EEE")[0]}</div>
+                      <div className="text-xs font-medium text-foreground">{format(d, "d")}</div>
                     </div>
                   );
                 })}
               </div>
 
               <div className="relative" style={{ height: contentHeight, paddingTop: LANE_PADDING }}>
-                {/* Month grid lines */}
+                {/* Day grid */}
                 <div className="absolute inset-0 flex pointer-events-none">
-                  {months.map((m) => {
-                    const days = differenceInCalendarDays(endOfMonth(m), startOfMonth(m)) + 1;
+                  {days.map((d) => {
+                    const isWeekend = getDay(d) === 0 || getDay(d) === 6;
                     return (
                       <div
-                        key={m.toISOString()}
-                        className="border-r border-dashed border-muted"
-                        style={{ width: days * DAY_WIDTH }}
+                        key={d.toISOString()}
+                        className={`border-r border-dashed border-muted ${isWeekend ? "bg-muted/20" : ""}`}
+                        style={{ width: DAY_WIDTH }}
                       />
                     );
                   })}
@@ -224,23 +234,25 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
 
                 {lanes.length === 0 && (
                   <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-                    No upcoming holidays
+                    No holidays in {format(monthCursor, "MMMM yyyy")}
                   </div>
                 )}
 
-                {/* Holiday bars */}
+                {/* Bars */}
                 {lanes.map((lane, laneIdx) =>
                   lane.map((req) => {
-                    const startOff = dayOffset(req.start_date);
-                    const endOff = dayOffset(req.end_date);
-                    const width = Math.max(DAY_WIDTH * 2, (endOff - startOff + 1) * DAY_WIDTH);
+                    const startOff = dayOffsetInMonth(req.start_date);
+                    const endOff = dayOffsetInMonth(req.end_date);
+                    const spanDays = endOff - startOff + 1;
+                    const width = Math.max(DAY_WIDTH, spanDays * DAY_WIDTH) - 4;
                     const top = LANE_PADDING + laneIdx * laneHeight;
                     const isPending = req.status === "pending";
                     const isUnpaid = req.request_type === "holiday_unpaid";
                     const covers = coversByHoliday.get(req.id) || [];
                     const isCovered = covers.length > 0;
                     const name = getName(req.user_id);
-                    const days = endOff - startOff + 1;
+                    const totalDays =
+                      differenceInCalendarDays(parseISO(req.end_date), parseISO(req.start_date)) + 1;
 
                     const palette = isUnpaid
                       ? "bg-amber-50 dark:bg-amber-900/30 border-amber-400 text-amber-900 dark:text-amber-100"
@@ -255,7 +267,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                             className={`absolute rounded-md border-2 ${palette} ${
                               isPending ? "opacity-70 border-dashed" : ""
                             } flex items-center gap-1.5 px-2 text-xs font-medium overflow-hidden hover:ring-2 hover:ring-primary hover:z-10 transition`}
-                            style={{ left: startOff * DAY_WIDTH, top, width, height: ROW_HEIGHT }}
+                            style={{ left: startOff * DAY_WIDTH + 2, top, width, height: ROW_HEIGHT }}
                           >
                             <Palmtree className="h-3.5 w-3.5 flex-shrink-0" />
                             <span className="truncate flex-1 text-left">{name}</span>
@@ -273,7 +285,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                         <TooltipContent side="top" className="text-xs">
                           <div className="font-semibold">{name}</div>
                           <div>
-                            {format(parseISO(req.start_date), "dd MMM")} → {format(parseISO(req.end_date), "dd MMM yyyy")} ({days} day{days === 1 ? "" : "s"})
+                            {format(parseISO(req.start_date), "dd MMM")} → {format(parseISO(req.end_date), "dd MMM yyyy")} ({totalDays} day{totalDays === 1 ? "" : "s"})
                           </div>
                           <div className="capitalize text-muted-foreground">
                             {isUnpaid ? "Unpaid holiday" : "Holiday"} · {req.status}
