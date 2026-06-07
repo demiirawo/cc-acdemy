@@ -84,7 +84,8 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
     const maxD = endOfMonth(maxDate(dates));
     const months = eachMonthOfInterval({ start: minD, end: maxD });
 
-    // Group by user
+    // Only show users with at least one holiday request; include all their requests
+    const holidayTypes = ["holiday", "holiday_paid", "holiday_unpaid"];
     const byUser = new Map<string, TimelineRequest[]>();
     active.forEach((r) => {
       const list = byUser.get(r.user_id) || [];
@@ -92,6 +93,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
       byUser.set(r.user_id, list);
     });
     const lanes = Array.from(byUser.entries())
+      .filter(([, items]) => items.some((r) => holidayTypes.includes(r.request_type)))
       .map(([user_id, items]) => ({ user_id, items }))
       .sort((a, b) => getName(a.user_id).localeCompare(getName(b.user_id)));
 
