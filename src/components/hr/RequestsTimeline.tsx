@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ChevronLeft, ChevronRight, Palmtree, Check, AlertCircle, ZoomIn, ZoomOut } from "lucide-react";
 import {
+  addDays,
   addMonths,
   differenceInCalendarDays,
   eachDayOfInterval,
@@ -77,7 +80,101 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
       .sort((a, b) => a.start_date.localeCompare(b.start_date));
   }, [requests, monthStart, monthEnd]);
 
-  // Lane packing
+  // Fetch shift patterns for users with holidays in this month, so we can show only
+  // their actual working days (a holiday spanning a non-working day shouldn't be drawn solid).
+  const userIdsForMonth = useMemo(
+    () => Array.from(new Set(monthHolidays.map((h) => h.user_id))),
+    [monthHolidays]
+  );
+
+  const { data: shiftPatterns = [] } = useQuery({
+    queryKey: ["timeline-shift-patterns", userIdsForMonth],
+    enabled: userIdsForMonth.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("recurring_shift_patterns")
+        .select("id, user_id, days_of_week, start_date, end_date, recurrence_interval")
+        .in("user_id", userIdsForMonth);
+      if (error) throw error;
+      return (data || []) as Array<{
+        id: string;
+        user_id: string;
+        days_of_week: number[];
+        start_date: string;
+        end_date: string | null;
+        recurrence_interval: string;
+      }>;
+    },
+  });
+
+  const patternIds = useMemo(() => shiftPatterns.map((p) => p.id), [shiftPatterns]);
+  const { data: shiftExceptions = [] } = useQuery({
+    queryKey: ["timeline-shift-exceptions", patternIds],
+    enabled: patternIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("shift_pattern_exceptions")
+        .select("pattern_id, exception_date")
+        .in("pattern_id", patternIds);
+      if (error) throw error;
+      return (data || []) as Array<{ pattern_id: string; exception_date: string }>;
+    },
+  });
+
+  const isWorkingDay = useMemo(() => {
+    const exceptionSet = new Set(shiftExceptions.map((e) => `${e.pattern_id}:${e.exception_date}`));
+    const byUser = new Map<string, typeof shiftPatterns>();
+    shiftPatterns.forEach((p) => {
+      const list = byUser.get(p.user_id) || [];
+      list.push(p);
+      byUser.set(p.user_id, list);
+    });
+    return (userId: string, date: Date): boolean => {
+      const patterns = byUser.get(userId);
+      if (!patterns || patterns.length === 0) return true; // fallback: treat all days as working
+      const dStr = format(date, "yyyy-MM-dd");
+      const dow = date.getDay();
+      for (const p of patterns) {
+        if (!p.days_of_week?.includes(dow)) continue;
+        if (dStr < p.start_date) continue;
+        if (p.end_date && dStr > p.end_date) continue;
+        if (p.recurrence_interval !== "weekly") {
+          const ps = parseISO(p.start_date);
+          const diffWeeks = Math.floor(differenceInCalendarDays(date, ps) / 7);
+          if (p.recurrence_interval === "biweekly" && diffWeeks % 2 !== 0) continue;
+          if (p.recurrence_interval === "monthly" && diffWeeks % 4 !== 0) continue;
+        }
+        if (exceptionSet.has(`${p.id}:${dStr}`)) continue;
+        return true;
+      }
+      return false;
+    };
+  }, [shiftPatterns, shiftExceptions]);
+
+  // Compute contiguous working-day segments for a holiday within the current month.
+  const segmentsFor = (req: TimelineRequest): Array<{ startIso: string; endIso: string }> => {
+    const rangeStart = req.start_date > format(monthStart, "yyyy-MM-dd") ? parseISO(req.start_date) : monthStart;
+    const rangeEnd = req.end_date < format(monthEnd, "yyyy-MM-dd") ? parseISO(req.end_date) : monthEnd;
+    if (rangeStart > rangeEnd) return [];
+    const segments: Array<{ startIso: string; endIso: string }> = [];
+    let cur: { startIso: string; endIso: string } | null = null;
+    let d = rangeStart;
+    while (d <= rangeEnd) {
+      if (isWorkingDay(req.user_id, d)) {
+        const iso = format(d, "yyyy-MM-dd");
+        if (cur) cur.endIso = iso;
+        else cur = { startIso: iso, endIso: iso };
+      } else if (cur) {
+        segments.push(cur);
+        cur = null;
+      }
+      d = addDays(d, 1);
+    }
+    if (cur) segments.push(cur);
+    return segments;
+  };
+
+  // Lane packing (still based on full request range so visually grouped)
   const lanes = useMemo(() => {
     const ls: TimelineRequest[][] = [];
     monthHolidays.forEach((req) => {
@@ -87,6 +184,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
     });
     return ls;
   }, [monthHolidays]);
+
 
   // Cover map
   const coversByHoliday = useMemo(() => {
@@ -242,34 +340,42 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                 {/* Bars */}
                 {lanes.map((lane, laneIdx) =>
                   lane.map((req) => {
-                    const startOff = dayOffsetInMonth(req.start_date);
-                    const endOff = dayOffsetInMonth(req.end_date);
-                    const spanDays = endOff - startOff + 1;
-                    const width = Math.max(DAY_WIDTH, spanDays * DAY_WIDTH) - 4;
                     const top = LANE_PADDING + laneIdx * laneHeight;
                     const isPending = req.status === "pending";
                     const isUnpaid = req.request_type === "holiday_unpaid";
                     const covers = coversByHoliday.get(req.id) || [];
                     const name = getName(req.user_id);
-                    const totalDays =
-                      differenceInCalendarDays(parseISO(req.end_date), parseISO(req.start_date)) + 1;
 
-                    // Coverage status: count unique covered days vs holiday days
+                    // Working-day segments within the visible month
+                    const segments = segmentsFor(req);
+                    if (segments.length === 0) return null;
+
+                    // Working days in this holiday (across full range, not just month)
+                    const allWorkingDays: string[] = [];
+                    let dd = parseISO(req.start_date);
+                    const endD = parseISO(req.end_date);
+                    while (dd <= endD) {
+                      if (isWorkingDay(req.user_id, dd)) allWorkingDays.push(format(dd, "yyyy-MM-dd"));
+                      dd = addDays(dd, 1);
+                    }
+                    const totalWorkingDays = allWorkingDays.length || 1;
+
+                    // Coverage by working days only
                     const coveredDays = new Set<string>();
                     covers.forEach((c) => {
                       const cStart = c.start_date > req.start_date ? c.start_date : req.start_date;
                       const cEnd = c.end_date < req.end_date ? c.end_date : req.end_date;
                       if (cStart > cEnd) return;
-                      eachDayOfInterval({ start: parseISO(cStart), end: parseISO(cEnd) }).forEach((d) =>
-                        coveredDays.add(format(d, "yyyy-MM-dd"))
-                      );
+                      eachDayOfInterval({ start: parseISO(cStart), end: parseISO(cEnd) }).forEach((d) => {
+                        const iso = format(d, "yyyy-MM-dd");
+                        if (allWorkingDays.includes(iso)) coveredDays.add(iso);
+                      });
                     });
                     let coverage: "covered" | "partial" | "open";
                     if (coveredDays.size === 0) coverage = "open";
-                    else if (coveredDays.size >= totalDays) coverage = "covered";
+                    else if (coveredDays.size >= totalWorkingDays) coverage = "covered";
                     else coverage = "partial";
 
-                    // Color-code by coverage status
                     let palette: string;
                     if (coverage === "covered") {
                       palette = "bg-cyan-100 dark:bg-cyan-900/40 border-cyan-500 text-cyan-900 dark:text-cyan-50";
@@ -279,50 +385,71 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                       palette = "bg-rose-100 dark:bg-rose-900/40 border-rose-500 text-rose-900 dark:text-rose-50";
                     }
 
-                    return (
-                      <Tooltip key={req.id}>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            onClick={() => onSelectRequest?.(req.id)}
-                            className={`absolute rounded-md border-2 ${palette} ${
-                              isPending ? "opacity-70 border-dashed" : ""
-                            } flex items-center gap-2 px-2.5 text-xs font-medium overflow-hidden hover:ring-2 hover:ring-primary hover:z-10 transition`}
-                            style={{ left: startOff * DAY_WIDTH + 2, top, width, height: ROW_HEIGHT }}
-                          >
-                            <Palmtree className={`h-4 w-4 flex-shrink-0 ${isUnpaid ? "opacity-60" : ""}`} />
-                            <span className="truncate flex-1 text-left">{name}</span>
-                            {isUnpaid && (
-                              <span className="text-[9px] uppercase tracking-wider opacity-70 flex-shrink-0">Unpaid</span>
-                            )}
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="text-xs">
-                          <div className="font-semibold">{name}</div>
-                          <div>
-                            {format(parseISO(req.start_date), "dd MMM")} → {format(parseISO(req.end_date), "dd MMM yyyy")} ({totalDays} day{totalDays === 1 ? "" : "s"})
-                          </div>
-                          <div className="capitalize text-muted-foreground">
-                            {isUnpaid ? "Unpaid holiday" : "Holiday"} · {req.status}
-                          </div>
-                          <div className="mt-1 pt-1 border-t">
-                            {coverage === "covered" && (
-                              <span className="text-cyan-700 dark:text-cyan-300">Fully covered by: {covers.map((c) => getName(c.user_id)).join(", ")}</span>
-                            )}
-                            {coverage === "partial" && (
-                              <span className="text-amber-700 dark:text-amber-300">
-                                Partially covered ({coveredDays.size}/{totalDays} days) by: {covers.map((c) => getName(c.user_id)).join(", ")}
-                              </span>
-                            )}
-                            {coverage === "open" && (
-                              <span className="text-rose-600 dark:text-rose-400">No cover assigned</span>
-                            )}
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
+                    // Render one bar per contiguous working-day segment.
+                    // Show the name on the widest segment only to avoid clutter.
+                    const widestIdx = segments.reduce(
+                      (best, s, i, arr) => {
+                        const w = differenceInCalendarDays(parseISO(s.endIso), parseISO(s.startIso));
+                        const bw = differenceInCalendarDays(parseISO(arr[best].endIso), parseISO(arr[best].startIso));
+                        return w > bw ? i : best;
+                      },
+                      0
                     );
+
+                    return segments.map((seg, sIdx) => {
+                      const startOff = dayOffsetInMonth(seg.startIso);
+                      const endOff = dayOffsetInMonth(seg.endIso);
+                      const spanDays = endOff - startOff + 1;
+                      const width = Math.max(DAY_WIDTH, spanDays * DAY_WIDTH) - 4;
+                      const showLabel = sIdx === widestIdx;
+                      return (
+                        <Tooltip key={`${req.id}-${sIdx}`}>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={() => onSelectRequest?.(req.id)}
+                              className={`absolute rounded-md border-2 ${palette} ${
+                                isPending ? "opacity-70 border-dashed" : ""
+                              } flex items-center gap-2 px-2.5 text-xs font-medium overflow-hidden hover:ring-2 hover:ring-primary hover:z-10 transition`}
+                              style={{ left: startOff * DAY_WIDTH + 2, top, width, height: ROW_HEIGHT }}
+                            >
+                              <Palmtree className={`h-4 w-4 flex-shrink-0 ${isUnpaid ? "opacity-60" : ""}`} />
+                              {showLabel && (
+                                <span className="truncate flex-1 text-left">{name}</span>
+                              )}
+                              {showLabel && isUnpaid && (
+                                <span className="text-[9px] uppercase tracking-wider opacity-70 flex-shrink-0">Unpaid</span>
+                              )}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs">
+                            <div className="font-semibold">{name}</div>
+                            <div>
+                              {format(parseISO(req.start_date), "dd MMM")} → {format(parseISO(req.end_date), "dd MMM yyyy")} ({totalWorkingDays} working day{totalWorkingDays === 1 ? "" : "s"})
+                            </div>
+                            <div className="capitalize text-muted-foreground">
+                              {isUnpaid ? "Unpaid holiday" : "Holiday"} · {req.status}
+                            </div>
+                            <div className="mt-1 pt-1 border-t">
+                              {coverage === "covered" && (
+                                <span className="text-cyan-700 dark:text-cyan-300">Fully covered by: {covers.map((c) => getName(c.user_id)).join(", ")}</span>
+                              )}
+                              {coverage === "partial" && (
+                                <span className="text-amber-700 dark:text-amber-300">
+                                  Partially covered ({coveredDays.size}/{totalWorkingDays} days) by: {covers.map((c) => getName(c.user_id)).join(", ")}
+                                </span>
+                              )}
+                              {coverage === "open" && (
+                                <span className="text-rose-600 dark:text-rose-400">No cover assigned</span>
+                              )}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      );
+                    });
                   })
                 )}
+
 
               </div>
             </div>
