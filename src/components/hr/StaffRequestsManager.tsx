@@ -507,6 +507,12 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
         </div>
       </div>
 
+      <RequestsTimeline
+        requests={requests}
+        userProfiles={userProfiles}
+        onSelectRequest={onViewRequest}
+      />
+
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="approved" className="gap-2">
