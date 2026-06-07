@@ -80,7 +80,101 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
       .sort((a, b) => a.start_date.localeCompare(b.start_date));
   }, [requests, monthStart, monthEnd]);
 
-  // Lane packing
+  // Fetch shift patterns for users with holidays in this month, so we can show only
+  // their actual working days (a holiday spanning a non-working day shouldn't be drawn solid).
+  const userIdsForMonth = useMemo(
+    () => Array.from(new Set(monthHolidays.map((h) => h.user_id))),
+    [monthHolidays]
+  );
+
+  const { data: shiftPatterns = [] } = useQuery({
+    queryKey: ["timeline-shift-patterns", userIdsForMonth],
+    enabled: userIdsForMonth.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("recurring_shift_patterns")
+        .select("id, user_id, days_of_week, start_date, end_date, recurrence_interval")
+        .in("user_id", userIdsForMonth);
+      if (error) throw error;
+      return (data || []) as Array<{
+        id: string;
+        user_id: string;
+        days_of_week: number[];
+        start_date: string;
+        end_date: string | null;
+        recurrence_interval: string;
+      }>;
+    },
+  });
+
+  const patternIds = useMemo(() => shiftPatterns.map((p) => p.id), [shiftPatterns]);
+  const { data: shiftExceptions = [] } = useQuery({
+    queryKey: ["timeline-shift-exceptions", patternIds],
+    enabled: patternIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("shift_pattern_exceptions")
+        .select("pattern_id, exception_date")
+        .in("pattern_id", patternIds);
+      if (error) throw error;
+      return (data || []) as Array<{ pattern_id: string; exception_date: string }>;
+    },
+  });
+
+  const isWorkingDay = useMemo(() => {
+    const exceptionSet = new Set(shiftExceptions.map((e) => `${e.pattern_id}:${e.exception_date}`));
+    const byUser = new Map<string, typeof shiftPatterns>();
+    shiftPatterns.forEach((p) => {
+      const list = byUser.get(p.user_id) || [];
+      list.push(p);
+      byUser.set(p.user_id, list);
+    });
+    return (userId: string, date: Date): boolean => {
+      const patterns = byUser.get(userId);
+      if (!patterns || patterns.length === 0) return true; // fallback: treat all days as working
+      const dStr = format(date, "yyyy-MM-dd");
+      const dow = date.getDay();
+      for (const p of patterns) {
+        if (!p.days_of_week?.includes(dow)) continue;
+        if (dStr < p.start_date) continue;
+        if (p.end_date && dStr > p.end_date) continue;
+        if (p.recurrence_interval !== "weekly") {
+          const ps = parseISO(p.start_date);
+          const diffWeeks = Math.floor(differenceInCalendarDays(date, ps) / 7);
+          if (p.recurrence_interval === "biweekly" && diffWeeks % 2 !== 0) continue;
+          if (p.recurrence_interval === "monthly" && diffWeeks % 4 !== 0) continue;
+        }
+        if (exceptionSet.has(`${p.id}:${dStr}`)) continue;
+        return true;
+      }
+      return false;
+    };
+  }, [shiftPatterns, shiftExceptions]);
+
+  // Compute contiguous working-day segments for a holiday within the current month.
+  const segmentsFor = (req: TimelineRequest): Array<{ startIso: string; endIso: string }> => {
+    const rangeStart = req.start_date > format(monthStart, "yyyy-MM-dd") ? parseISO(req.start_date) : monthStart;
+    const rangeEnd = req.end_date < format(monthEnd, "yyyy-MM-dd") ? parseISO(req.end_date) : monthEnd;
+    if (rangeStart > rangeEnd) return [];
+    const segments: Array<{ startIso: string; endIso: string }> = [];
+    let cur: { startIso: string; endIso: string } | null = null;
+    let d = rangeStart;
+    while (d <= rangeEnd) {
+      if (isWorkingDay(req.user_id, d)) {
+        const iso = format(d, "yyyy-MM-dd");
+        if (cur) cur.endIso = iso;
+        else cur = { startIso: iso, endIso: iso };
+      } else if (cur) {
+        segments.push(cur);
+        cur = null;
+      }
+      d = addDays(d, 1);
+    }
+    if (cur) segments.push(cur);
+    return segments;
+  };
+
+  // Lane packing (still based on full request range so visually grouped)
   const lanes = useMemo(() => {
     const ls: TimelineRequest[][] = [];
     monthHolidays.forEach((req) => {
@@ -90,6 +184,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
     });
     return ls;
   }, [monthHolidays]);
+
 
   // Cover map
   const coversByHoliday = useMemo(() => {
