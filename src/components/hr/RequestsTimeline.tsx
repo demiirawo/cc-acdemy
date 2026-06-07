@@ -332,29 +332,26 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
         {/* Legend */}
         <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-t text-xs text-muted-foreground">
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded border-2 bg-emerald-50 border-emerald-500" />
-            Paid holiday
+            <div className="w-3 h-3 rounded border-2 bg-cyan-100 border-cyan-500" />
+            Fully covered
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded border-2 bg-amber-50 border-amber-400" />
-            Unpaid holiday
+            <div className="w-3 h-3 rounded border-2 bg-amber-100 border-amber-500" />
+            Partially covered
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded border-2 bg-rose-100 border-rose-500" />
+            Needs cover
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded border-2 border-dashed border-muted-foreground" />
             Pending
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-cyan-100 text-cyan-800 border border-cyan-300">Covered</span>
-            Shift has cover
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300">Open</span>
-            Needs cover
-          </div>
           <div className="flex items-center gap-1.5 ml-auto">
             <div className="w-px h-3 bg-red-500" /> Today
           </div>
         </div>
+
       </CardContent>
     </Card>
   );
