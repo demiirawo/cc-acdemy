@@ -2714,7 +2714,7 @@ export function StaffPayManager() {
                   <SelectValue placeholder="Select staff member" />
                 </SelectTrigger>
                 <SelectContent>
-                  {hrProfiles.filter(hr => hr.base_salary && hr.base_salary > 0).map(hr => {
+                  {hrProfiles.filter(hr => hr.base_salary && hr.base_salary > 0 && userProfiles.some(u => u.user_id === hr.user_id)).map(hr => {
                     const profile = userProfiles.find(u => u.user_id === hr.user_id);
                     return (
                       <SelectItem key={hr.user_id} value={hr.user_id}>
