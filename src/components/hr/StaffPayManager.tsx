@@ -541,7 +541,9 @@ export function StaffPayManager() {
   // Calculate payroll summary per staff member for the month
   const payrollSummary = useMemo(() => {
     // Get staff with HR profiles (who have salary configured)
-    const staffWithHR = hrProfiles.filter(hr => hr.base_salary && hr.base_salary > 0);
+    // Exclude any whose user profile has been deleted (orphaned hr_profiles)
+    const userProfileIds = new Set(userProfiles.map(u => u.user_id));
+    const staffWithHR = hrProfiles.filter(hr => hr.base_salary && hr.base_salary > 0 && userProfileIds.has(hr.user_id));
     
     // Create a set of public holiday dates for quick lookup (format: YYYY-MM-DD)
     const holidayDatesSet = new Set(publicHolidays.map(h => h.date));
@@ -2712,7 +2714,7 @@ export function StaffPayManager() {
                   <SelectValue placeholder="Select staff member" />
                 </SelectTrigger>
                 <SelectContent>
-                  {hrProfiles.filter(hr => hr.base_salary && hr.base_salary > 0).map(hr => {
+                  {hrProfiles.filter(hr => hr.base_salary && hr.base_salary > 0 && userProfiles.some(u => u.user_id === hr.user_id)).map(hr => {
                     const profile = userProfiles.find(u => u.user_id === hr.user_id);
                     return (
                       <SelectItem key={hr.user_id} value={hr.user_id}>
