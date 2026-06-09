@@ -827,6 +827,87 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
+    // ===== 7. OUTSTANDING HANDOVERS =====
+    // Daily summary of incomplete handover tasks (progress < 100), highlighting any
+    // whose target date (leave start) is today, past, or imminent and not yet acknowledged.
+    const handoverSetting = settingsMap.get("outstanding_handovers");
+    const handoverLeadDays = handoverSetting?.days_before ?? 3;
+    const handoverEnabled = handoverSetting ? handoverSetting.is_enabled : true;
+    if ((handoverEnabled || testType === "outstanding_handovers") && (!testType || testType === "outstanding_handovers")) {
+      const { data: openTasks } = await supabaseClient
+        .from("client_handover_tasks")
+        .select("id, client_name, task_name, handed_over_by, handed_over_to, progress, target_date")
+        .lt("progress", 100)
+        .order("target_date", { ascending: true, nullsFirst: false });
+
+      const tasks = openTasks || [];
+      const horizon = new Date(today);
+      horizon.setDate(horizon.getDate() + handoverLeadDays);
+      const horizonStr = horizon.toISOString().split("T")[0];
+
+      const overdue = tasks.filter(t => t.target_date && t.target_date <= todayStr);
+      const upcoming = tasks.filter(t => t.target_date && t.target_date > todayStr && t.target_date <= horizonStr);
+      const other = tasks.filter(t => !t.target_date || t.target_date > horizonStr);
+
+      const hasAny = overdue.length > 0 || upcoming.length > 0 || other.length > 0;
+      const isTest = testType === "outstanding_handovers" && !hasAny;
+
+      if (hasAny || isTest) {
+        const fmtItem = (t: { client_name: string; task_name: string; handed_over_by: string | null; handed_over_to: string | null; progress: number; target_date: string | null }, prefix: string) => {
+          const dateLabel = t.target_date ? formatShortDate(t.target_date) : "no due date";
+          const from = t.handed_over_by || "—";
+          const to = t.handed_over_to || "unassigned";
+          return `${prefix} <strong>${t.client_name}</strong> — ${t.task_name} (${t.progress}%) · from ${from} → ${to} · leave starts ${dateLabel}`;
+        };
+
+        const items: string[] = [];
+        const display = isTest
+          ? {
+              overdue: [{ client_name: "[TEST] Comfort", task_name: "Medication handover", handed_over_by: "Jane Doe", handed_over_to: "John Smith", progress: 40, target_date: todayStr }],
+              upcoming: [{ client_name: "[TEST] Hope", task_name: "Care plan briefing", handed_over_by: "Mary K", handed_over_to: "Peter O", progress: 20, target_date: horizonStr }],
+              other: [] as typeof tasks,
+            }
+          : { overdue, upcoming, other };
+
+        if (display.overdue.length > 0) {
+          items.push(`<span style="color:#ef4444;font-weight:700;">⚠️ Not acknowledged before leave start (${display.overdue.length}):</span>`);
+          display.overdue.forEach(t => items.push(fmtItem(t, "🔴")));
+        }
+        if (display.upcoming.length > 0) {
+          items.push(`<span style="color:#f59e0b;font-weight:700;">⏳ Due within ${handoverLeadDays} day${handoverLeadDays === 1 ? "" : "s"} (${display.upcoming.length}):</span>`);
+          display.upcoming.forEach(t => items.push(fmtItem(t, "🟠")));
+        }
+        if (display.other.length > 0) {
+          items.push(`<span style="color:#6b7280;font-weight:700;">📋 Other outstanding (${display.other.length}):</span>`);
+          display.other.slice(0, 20).forEach(t => items.push(fmtItem(t, "•")));
+          if (display.other.length > 20) items.push(`…and ${display.other.length - 20} more`);
+        }
+
+        const totalCount = display.overdue.length + display.upcoming.length + display.other.length;
+        const subject = display.overdue.length > 0
+          ? `⚠️ ${display.overdue.length} handover${display.overdue.length === 1 ? "" : "s"} not acknowledged before leave start`
+          : `📋 ${totalCount} outstanding handover${totalCount === 1 ? "" : "s"}`;
+
+        const result = await sendIndividualAlert(
+          resend,
+          adminEmails,
+          isTest ? `[TEST] ${subject}` : subject,
+          "📋 Outstanding Handovers",
+          display.overdue.length > 0 ? "#ef4444" : "#f59e0b",
+          items,
+          todayStr
+        );
+
+        results.push({
+          type: "outstanding_handovers",
+          title: "Outstanding Handovers",
+          items: items,
+          emailSent: result.success,
+          error: result.error,
+        });
+      }
+    }
+
     const emailsSent = results.filter(r => r.emailSent).length;
     const hasItems = results.some(r => r.items.length > 0);
 
