@@ -790,8 +790,9 @@ export function ClientHandoverTracker({ clientName }: Props) {
         />
       </div>
 
-      {/* Delete */}
-      <div className="flex items-center justify-center">
+      {/* Actions: comments + delete */}
+      <div className="flex items-center justify-center gap-0.5">
+        <HandoverTaskComments taskId={t.id} taskName={t.task_name} />
         <button
           onClick={() => { if (confirm("Delete this task?")) deleteMutation.mutate(t.id); }}
           className="opacity-0 group-hover:opacity-100 transition p-1 rounded hover:bg-destructive/10 hover:text-destructive"
