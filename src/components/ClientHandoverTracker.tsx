@@ -7,6 +7,7 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Trash2, ExternalLink, Plus, Check, X, ChevronDown, ChevronRight, Type, Link2, BarChart3, Calendar, User, Hash } from "lucide-react";
+import { HandoverTaskComments } from "@/components/HandoverTaskComments";
 import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -152,7 +153,7 @@ const UNCATEGORIZED = "Uncategorized";
 
 // Airtable-style column template: row-# gutter + columns
 const GRID_COLS =
-  "grid grid-cols-[44px_minmax(240px,2.4fr)_minmax(120px,1fr)_minmax(120px,1fr)_88px_180px_140px_36px]";
+  "grid grid-cols-[44px_minmax(240px,2.4fr)_minmax(120px,1fr)_minmax(120px,1fr)_88px_180px_140px_72px]";
 
 // Progress slider — compact, inline, drag to update (module-scope so it
 // keeps a stable identity across parent re-renders and doesn't remount).
@@ -789,8 +790,9 @@ export function ClientHandoverTracker({ clientName }: Props) {
         />
       </div>
 
-      {/* Delete */}
-      <div className="flex items-center justify-center">
+      {/* Actions: comments + delete */}
+      <div className="flex items-center justify-center gap-0.5">
+        <HandoverTaskComments taskId={t.id} taskName={t.task_name} />
         <button
           onClick={() => { if (confirm("Delete this task?")) deleteMutation.mutate(t.id); }}
           className="opacity-0 group-hover:opacity-100 transition p-1 rounded hover:bg-destructive/10 hover:text-destructive"
