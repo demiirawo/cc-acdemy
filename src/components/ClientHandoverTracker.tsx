@@ -153,7 +153,7 @@ const UNCATEGORIZED = "Uncategorized";
 
 // Airtable-style column template: row-# gutter + columns
 const GRID_COLS =
-  "grid grid-cols-[44px_minmax(240px,2.4fr)_minmax(120px,1fr)_minmax(120px,1fr)_88px_180px_140px_36px]";
+  "grid grid-cols-[44px_minmax(240px,2.4fr)_minmax(120px,1fr)_minmax(120px,1fr)_88px_180px_140px_72px]";
 
 // Progress slider — compact, inline, drag to update (module-scope so it
 // keeps a stable identity across parent re-renders and doesn't remount).
