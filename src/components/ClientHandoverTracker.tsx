@@ -743,7 +743,21 @@ export function ClientHandoverTracker({ clientName }: Props) {
         <UserPickerCell
           value={t.handed_over_to}
           placeholder="—"
-          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_to: v.trim() || null } })}
+          onCommit={(v) => {
+            const next = v.trim();
+            const prev = (t.handed_over_to || "").trim();
+            updateMutation.mutate({ id: t.id, patch: { handed_over_to: next || null } });
+            if (next && next.toLowerCase() !== prev.toLowerCase()) {
+              notifyAssignment(next, {
+                task_name: t.task_name,
+                task_description: t.task_description,
+                link: t.link,
+                target_date: t.target_date,
+                handed_over_by: t.handed_over_by,
+              });
+              toast.success(`Notified ${next}`);
+            }
+          }}
         />
       </div>
       {/* Link */}
