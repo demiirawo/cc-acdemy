@@ -24,10 +24,14 @@ export function PageAcknowledgement({ pageId, pageTitle, pageContent }: PageAckn
   const { user } = useAuth();
   const { toast } = useToast();
 
-  // Check if there's actual content (not just empty HTML tags or whitespace)
+  // Check if there's actual content (text, or embedded media like videos/images)
   const hasActualContent = (() => {
     if (!pageContent) return false;
-    // Remove HTML tags and check if there's any text content
+    // Treat embedded media (iframes, images, videos, audio, embeds) as content
+    if (/<(iframe|img|video|audio|embed|object|source|picture|svg|canvas)\b/i.test(pageContent)) {
+      return true;
+    }
+    // Otherwise, fall back to checking for visible text after stripping tags
     const strippedContent = pageContent.replace(/<[^>]*>/g, '').trim();
     return strippedContent.length > 0;
   })();
