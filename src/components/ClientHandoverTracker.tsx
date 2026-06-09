@@ -406,6 +406,37 @@ export function ClientHandoverTracker({ clientName }: Props) {
       return next;
     });
 
+  const { data: users = [] } = useHandoverUsers();
+
+  // Notify an assignee (by display name) that they have a new handover task.
+  // Silent on failure — assignment still succeeds.
+  const notifyAssignment = async (
+    assigneeName: string,
+    task: { task_name: string; task_description?: string | null; link?: string | null; target_date?: string | null; handed_over_by?: string | null },
+  ) => {
+    const trimmed = (assigneeName || "").trim();
+    if (!trimmed) return;
+    const user = users.find((u) => u.name.toLowerCase() === trimmed.toLowerCase());
+    if (!user?.email) return;
+    try {
+      await supabase.functions.invoke("send-handover-assignment-email", {
+        body: {
+          assigneeEmail: user.email,
+          assigneeName: user.name,
+          clientName,
+          taskName: task.task_name,
+          taskDescription: task.task_description ?? null,
+          link: task.link ?? null,
+          handedOverBy: task.handed_over_by ?? null,
+          targetDate: task.target_date ?? null,
+        },
+      });
+    } catch (e) {
+      console.warn("Handover assignment email failed", e);
+    }
+  };
+
+
   const { data: tasks = [] } = useQuery({
     queryKey: ["client-handover-tasks", clientName],
     queryFn: async () => {
