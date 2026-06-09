@@ -7,6 +7,7 @@ import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Trash2, ExternalLink, Plus, Check, X, ChevronDown, ChevronRight, Type, Link2, BarChart3, Calendar, User, Hash } from "lucide-react";
+import { HandoverTaskComments } from "@/components/HandoverTaskComments";
 import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
