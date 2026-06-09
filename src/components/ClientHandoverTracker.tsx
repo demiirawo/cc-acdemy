@@ -26,6 +26,7 @@ function useHandoverUsers() {
         .map((p) => ({
           id: p.user_id as string,
           name: (p.display_name || p.email || "").trim(),
+          email: (p.email || "").trim(),
         }))
         .filter((u) => u.name);
     },
