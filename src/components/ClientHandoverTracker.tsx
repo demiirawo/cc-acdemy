@@ -297,23 +297,17 @@ function InlineAddRow({
         />
       </div>
       <div className="border-r border-border/60 flex items-center min-w-0 px-1">
-        <input
-          type="text"
+        <UserPickerCell
           value={d.handed_over_by}
           placeholder="From"
-          onChange={(e) => setD({ ...d, handed_over_by: e.target.value })}
-          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") reset(); }}
-          className="w-full bg-transparent border-0 px-2 py-1 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
+          onCommit={(v) => setD({ ...d, handed_over_by: v })}
         />
       </div>
       <div className="border-r border-border/60 flex items-center min-w-0 px-1">
-        <input
-          type="text"
+        <UserPickerCell
           value={d.handed_over_to}
           placeholder="To"
-          onChange={(e) => setD({ ...d, handed_over_to: e.target.value })}
-          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") reset(); }}
-          className="w-full bg-transparent border-0 px-2 py-1 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
+          onCommit={(v) => setD({ ...d, handed_over_to: v })}
         />
       </div>
       <div className="border-r border-border/60 flex items-center px-2">
