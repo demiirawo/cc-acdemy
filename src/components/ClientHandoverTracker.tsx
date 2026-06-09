@@ -690,20 +690,18 @@ export function ClientHandoverTracker({ clientName }: Props) {
       </div>
       {/* From */}
       <div className="border-r border-border/60 flex items-center min-w-0">
-        <Cell
+        <UserPickerCell
           value={t.handed_over_by}
           placeholder="—"
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_by: v.trim() || null } })}
-          className="text-sm"
         />
       </div>
       {/* To */}
       <div className="border-r border-border/60 flex items-center min-w-0">
-        <Cell
+        <UserPickerCell
           value={t.handed_over_to}
           placeholder="—"
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_to: v.trim() || null } })}
-          className="text-sm"
         />
       </div>
       {/* Link */}
