@@ -26,6 +26,7 @@ function useHandoverUsers() {
         .map((p) => ({
           id: p.user_id as string,
           name: (p.display_name || p.email || "").trim(),
+          email: (p.email || "").trim(),
         }))
         .filter((u) => u.name);
     },
@@ -406,6 +407,37 @@ export function ClientHandoverTracker({ clientName }: Props) {
       return next;
     });
 
+  const { data: users = [] } = useHandoverUsers();
+
+  // Notify an assignee (by display name) that they have a new handover task.
+  // Silent on failure — assignment still succeeds.
+  const notifyAssignment = async (
+    assigneeName: string,
+    task: { task_name: string; task_description?: string | null; link?: string | null; target_date?: string | null; handed_over_by?: string | null },
+  ) => {
+    const trimmed = (assigneeName || "").trim();
+    if (!trimmed) return;
+    const user = users.find((u) => u.name.toLowerCase() === trimmed.toLowerCase());
+    if (!user?.email) return;
+    try {
+      await supabase.functions.invoke("send-handover-assignment-email", {
+        body: {
+          assigneeEmail: user.email,
+          assigneeName: user.name,
+          clientName,
+          taskName: task.task_name,
+          taskDescription: task.task_description ?? null,
+          link: task.link ?? null,
+          handedOverBy: task.handed_over_by ?? null,
+          targetDate: task.target_date ?? null,
+        },
+      });
+    } catch (e) {
+      console.warn("Handover assignment email failed", e);
+    }
+  };
+
+
   const { data: tasks = [] } = useQuery({
     queryKey: ["client-handover-tasks", clientName],
     queryFn: async () => {
@@ -479,9 +511,19 @@ export function ClientHandoverTracker({ clientName }: Props) {
       const { error } = await supabase.from("client_handover_tasks").insert(payload);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["client-handover-tasks", clientName] });
       setDraft(newDraft());
+      const assignee = variables.handed_over_to?.trim();
+      if (assignee) {
+        notifyAssignment(assignee, {
+          task_name: variables.task_name.trim() || "Untitled task",
+          task_description: variables.task_description?.trim() || null,
+          link: variables.link?.trim() || null,
+          target_date: variables.target_date || null,
+          handed_over_by: variables.handed_over_by?.trim() || null,
+        });
+      }
     },
     onError: (e: any) => toast.error(e.message || "Failed to add row"),
   });
@@ -701,7 +743,21 @@ export function ClientHandoverTracker({ clientName }: Props) {
         <UserPickerCell
           value={t.handed_over_to}
           placeholder="—"
-          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_to: v.trim() || null } })}
+          onCommit={(v) => {
+            const next = v.trim();
+            const prev = (t.handed_over_to || "").trim();
+            updateMutation.mutate({ id: t.id, patch: { handed_over_to: next || null } });
+            if (next && next.toLowerCase() !== prev.toLowerCase()) {
+              notifyAssignment(next, {
+                task_name: t.task_name,
+                task_description: t.task_description,
+                link: t.link,
+                target_date: t.target_date,
+                handed_over_by: t.handed_over_by,
+              });
+              toast.success(`Notified ${next}`);
+            }
+          }}
         />
       </div>
       {/* Link */}
