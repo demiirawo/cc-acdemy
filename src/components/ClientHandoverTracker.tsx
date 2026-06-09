@@ -234,7 +234,13 @@ function InlineAddRow({
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (rowRef.current && !rowRef.current.contains(e.target as Node)) {
+      const target = e.target as HTMLElement | null;
+      // Ignore clicks inside Radix popovers / dropdowns / dialogs that render
+      // in a portal outside this row (e.g. the user picker).
+      if (target?.closest('[data-radix-popper-content-wrapper],[role="dialog"],[role="listbox"],[cmdk-root]')) {
+        return;
+      }
+      if (rowRef.current && !rowRef.current.contains(target as Node)) {
         save();
       }
     };
