@@ -511,9 +511,19 @@ export function ClientHandoverTracker({ clientName }: Props) {
       const { error } = await supabase.from("client_handover_tasks").insert(payload);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ["client-handover-tasks", clientName] });
       setDraft(newDraft());
+      const assignee = variables.handed_over_to?.trim();
+      if (assignee) {
+        notifyAssignment(assignee, {
+          task_name: variables.task_name.trim() || "Untitled task",
+          task_description: variables.task_description?.trim() || null,
+          link: variables.link?.trim() || null,
+          target_date: variables.target_date || null,
+          handed_over_by: variables.handed_over_by?.trim() || null,
+        });
+      }
     },
     onError: (e: any) => toast.error(e.message || "Failed to add row"),
   });
