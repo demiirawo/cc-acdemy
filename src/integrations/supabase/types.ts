@@ -151,6 +151,50 @@ export type Database = {
           },
         ]
       }
+      client_handover_task_comments: {
+        Row: {
+          author_name: string
+          author_user_id: string | null
+          content: string
+          created_at: string
+          id: string
+          is_clarification_request: boolean
+          resolved: boolean
+          task_id: string
+          updated_at: string
+        }
+        Insert: {
+          author_name: string
+          author_user_id?: string | null
+          content: string
+          created_at?: string
+          id?: string
+          is_clarification_request?: boolean
+          resolved?: boolean
+          task_id: string
+          updated_at?: string
+        }
+        Update: {
+          author_name?: string
+          author_user_id?: string | null
+          content?: string
+          created_at?: string
+          id?: string
+          is_clarification_request?: boolean
+          resolved?: boolean
+          task_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_handover_task_comments_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "client_handover_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_handover_tasks: {
         Row: {
           category: string | null
