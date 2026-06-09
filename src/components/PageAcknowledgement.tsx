@@ -21,6 +21,7 @@ export function PageAcknowledgement({ pageId, pageTitle, pageContent }: PageAckn
   const [submitting, setSubmitting] = useState(false);
   const [hasQuiz, setHasQuiz] = useState(false);
   const [quizPassed, setQuizPassed] = useState(false);
+  const [isOnboardingPage, setIsOnboardingPage] = useState(false);
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -36,14 +37,68 @@ export function PageAcknowledgement({ pageId, pageTitle, pageContent }: PageAckn
     return strippedContent.length > 0;
   })();
 
+  const shouldRenderAcknowledgement = hasActualContent || isOnboardingPage;
+
   useEffect(() => {
-    if (user && pageId && hasActualContent) {
-      checkAcknowledgement();
-      checkQuiz();
-    } else {
-      setLoading(false);
-    }
+    let isActive = true;
+
+    const loadAcknowledgementState = async () => {
+      if (!pageId) {
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      setAcknowledged(false);
+      setAcknowledgedAt(null);
+      setHasQuiz(false);
+      setQuizPassed(false);
+
+      try {
+        const onboardingLinked = await checkIsOnboardingPage(pageId);
+        if (!isActive) return;
+
+        setIsOnboardingPage(onboardingLinked);
+
+        if (!(hasActualContent || onboardingLinked)) {
+          setLoading(false);
+          return;
+        }
+
+        await checkQuiz();
+
+        if (user) {
+          await checkAcknowledgement();
+        }
+      } catch (error) {
+        console.error('Error loading acknowledgement state:', error);
+      } finally {
+        if (isActive) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadAcknowledgementState();
+
+    return () => {
+      isActive = false;
+    };
   }, [user, pageId, hasActualContent]);
+
+  const checkIsOnboardingPage = async (currentPageId: string): Promise<boolean> => {
+    const { data, error } = await supabase
+      .from('onboarding_steps')
+      .select('id')
+      .eq('step_type', 'internal_page')
+      .eq('target_page_id', currentPageId)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    return !!data;
+  };
 
   const checkQuiz = async () => {
     try {
@@ -84,8 +139,6 @@ export function PageAcknowledgement({ pageId, pageTitle, pageContent }: PageAckn
       }
     } catch (error) {
       console.error('Error checking acknowledgement:', error);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -132,7 +185,7 @@ export function PageAcknowledgement({ pageId, pageTitle, pageContent }: PageAckn
   };
 
   // Don't render if there's no actual content or still loading
-  if (!hasActualContent || loading) {
+  if (!shouldRenderAcknowledgement || loading) {
     return null;
   }
 
