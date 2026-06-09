@@ -66,3 +66,7 @@ verify_jwt = false
 
 [functions.process-pending-rejections]
 verify_jwt = false
+
+[functions.send-handover-assignment-email]
+verify_jwt = true
+
