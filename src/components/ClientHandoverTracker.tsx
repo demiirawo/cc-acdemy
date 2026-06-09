@@ -8,7 +8,90 @@ import {
 } from "@/components/ui/accordion";
 import { Trash2, ExternalLink, Plus, Check, X, ChevronDown, ChevronRight, Type, Link2, BarChart3, Calendar, User, Hash } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
+
+// Shared hook: list of staff display names for the user picker
+function useHandoverUsers() {
+  return useQuery({
+    queryKey: ["handover-user-options"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("user_id, display_name, email")
+        .order("display_name", { ascending: true });
+      if (error) throw error;
+      return (data || [])
+        .map((p) => ({
+          id: p.user_id as string,
+          name: (p.display_name || p.email || "").trim(),
+        }))
+        .filter((u) => u.name);
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+// Searchable user picker — used for handed_over_by / handed_over_to
+function UserPickerCell({
+  value,
+  onCommit,
+  placeholder = "Select…",
+  className = "",
+}: {
+  value: string | null;
+  onCommit: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const { data: users = [] } = useHandoverUsers();
+  const display = (value || "").trim();
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={`w-full h-full text-left bg-transparent border-0 px-2 py-1.5 text-sm outline-none hover:bg-background focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset truncate ${className}`}
+        >
+          {display || <span className="text-muted-foreground">{placeholder}</span>}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Search staff…" />
+          <CommandList>
+            <CommandEmpty>No staff found.</CommandEmpty>
+            {display && (
+              <CommandGroup>
+                <CommandItem
+                  value="__clear__"
+                  onSelect={() => { onCommit(""); setOpen(false); }}
+                >
+                  <X className="h-3.5 w-3.5 mr-2" />
+                  Clear
+                </CommandItem>
+              </CommandGroup>
+            )}
+            <CommandGroup>
+              {users.map((u) => (
+                <CommandItem
+                  key={u.id}
+                  value={u.name}
+                  onSelect={() => { onCommit(u.name); setOpen(false); }}
+                >
+                  <Check className={`h-3.5 w-3.5 mr-2 ${display === u.name ? "opacity-100" : "opacity-0"}`} />
+                  {u.name}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 interface HandoverTemplate {
   id: string;
@@ -214,23 +297,17 @@ function InlineAddRow({
         />
       </div>
       <div className="border-r border-border/60 flex items-center min-w-0 px-1">
-        <input
-          type="text"
+        <UserPickerCell
           value={d.handed_over_by}
           placeholder="From"
-          onChange={(e) => setD({ ...d, handed_over_by: e.target.value })}
-          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") reset(); }}
-          className="w-full bg-transparent border-0 px-2 py-1 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
+          onCommit={(v) => setD({ ...d, handed_over_by: v })}
         />
       </div>
       <div className="border-r border-border/60 flex items-center min-w-0 px-1">
-        <input
-          type="text"
+        <UserPickerCell
           value={d.handed_over_to}
           placeholder="To"
-          onChange={(e) => setD({ ...d, handed_over_to: e.target.value })}
-          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") reset(); }}
-          className="w-full bg-transparent border-0 px-2 py-1 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
+          onCommit={(v) => setD({ ...d, handed_over_to: v })}
         />
       </div>
       <div className="border-r border-border/60 flex items-center px-2">
@@ -613,20 +690,18 @@ export function ClientHandoverTracker({ clientName }: Props) {
       </div>
       {/* From */}
       <div className="border-r border-border/60 flex items-center min-w-0">
-        <Cell
+        <UserPickerCell
           value={t.handed_over_by}
           placeholder="—"
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_by: v.trim() || null } })}
-          className="text-sm"
         />
       </div>
       {/* To */}
       <div className="border-r border-border/60 flex items-center min-w-0">
-        <Cell
+        <UserPickerCell
           value={t.handed_over_to}
           placeholder="—"
           onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_to: v.trim() || null } })}
-          className="text-sm"
         />
       </div>
       {/* Link */}
