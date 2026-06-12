@@ -375,6 +375,7 @@ const handler = async (req: Request): Promise<Response> => {
       const { data: expiringPatterns } = await supabaseClient
         .from("recurring_shift_patterns")
         .select("id, user_id, client_name, end_date, shift_type")
+        .eq("is_overtime", false)
         .gte("end_date", todayStr)
         .lte("end_date", patternFutureDateStr)
         .order("end_date");
