@@ -6,6 +6,7 @@ const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
 const LOGO_URL = "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
 const BRAND_COLOR = "#5F17EB";
+const BIRTHDAY_IMAGE_URL = "https://cc-acdemy.lovable.app/images/birthday-celebration.png";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,87 +31,115 @@ const formatShortDate = (dateStr: string): string => {
   });
 };
 
-interface AlertResult {
+interface DigestSection {
   type: string;
   title: string;
-  items: string[];
-  emailSent: boolean;
-  error?: string;
+  icon: string;
+  accentColor: string;
+  itemsHtml: string[];
+  summary: string;
 }
 
-const BIRTHDAY_IMAGE_URL = "https://cc-acdemy.lovable.app/images/birthday-celebration.png";
-
-const sendIndividualAlert = async (
-  resendClient: typeof resend,
-  adminEmails: string[],
+const sendStandaloneAlert = async (
+  recipients: string[],
   subject: string,
   title: string,
   color: string,
   items: string[],
   todayStr: string,
-  options?: { hideDashboardButton?: boolean; showCelebrationImage?: boolean }
+  options?: { showCelebrationImage?: boolean }
 ): Promise<{ success: boolean; error?: string }> => {
+  if (recipients.length === 0) return { success: false, error: "no recipients" };
   const itemsHtml = items.map(item => `<li style="margin-bottom: 8px; font-size: 14px;">${item}</li>`).join("");
 
   const footerContent = options?.showCelebrationImage
     ? `<div style="text-align: center; margin-top: 24px;">
         <img src="${BIRTHDAY_IMAGE_URL}" alt="Celebration" width="150" height="150" style="display: inline-block;" />
       </div>`
-    : options?.hideDashboardButton
-    ? ''
-    : `<div style="text-align: center; margin-top: 24px;">
-        <a href="https://cc-acdemy.lovable.app" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
-          Go to Dashboard
-        </a>
-      </div>`;
+    : '';
 
   try {
-    await resendClient.emails.send({
+    await resend.emails.send({
       from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
-      to: adminEmails,
+      to: recipients,
       subject,
       html: `
 <!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin: 0; padding: 0; background-color: #f4f4f5; font-family: Arial, sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
-    <tr>
-      <td align="center">
-        <table width="500" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-          <tr>
-            <td style="background-color: ${BRAND_COLOR}; padding: 24px 40px; text-align: center;">
-              <img src="${LOGO_URL}" alt="Care Cuddle Academy" width="140" style="display: block; margin: 0 auto; margin-bottom: 16px;" />
-              <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 600;">${title}</h1>
-              <p style="color: rgba(255,255,255,0.9); margin: 6px 0 0 0; font-size: 13px;">${formatDate(todayStr)}</p>
-              <div style="width: 60px; height: 3px; background-color: ${color}; margin: 12px auto 0; border-radius: 2px;"></div>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 32px 40px;">
-              <ul style="margin: 0; padding-left: 20px; color: #374151;">
-                ${itemsHtml}
-              </ul>
-              ${footerContent}
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 20px 40px; background-color: #f9fafb; text-align: center; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0; color: #9ca3af; font-size: 12px;">© ${new Date().getFullYear()} Care Cuddle Academy. All rights reserved.</p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="500" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+        <tr><td style="background:${BRAND_COLOR};padding:24px 40px;text-align:center;">
+          <img src="${LOGO_URL}" alt="Care Cuddle Academy" width="140" style="display:block;margin:0 auto 16px;" />
+          <h1 style="margin:0;color:#fff;font-size:20px;font-weight:600;">${title}</h1>
+          <p style="color:rgba(255,255,255,0.9);margin:6px 0 0;font-size:13px;">${formatDate(todayStr)}</p>
+          <div style="width:60px;height:3px;background:${color};margin:12px auto 0;border-radius:2px;"></div>
+        </td></tr>
+        <tr><td style="padding:32px 40px;">
+          <ul style="margin:0;padding-left:20px;color:#374151;">${itemsHtml}</ul>
+          ${footerContent}
+        </td></tr>
+        <tr><td style="padding:20px 40px;background:#f9fafb;text-align:center;border-top:1px solid #e5e7eb;">
+          <p style="margin:0;color:#9ca3af;font-size:12px;">© ${new Date().getFullYear()} Care Cuddle Academy. All rights reserved.</p>
+        </td></tr>
+      </table>
+    </td></tr>
   </table>
-</body>
-</html>
-      `,
+</body></html>`,
     });
     return { success: true };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
   }
+};
+
+const buildDigestHtml = (sections: DigestSection[], todayStr: string): string => {
+  const tocHtml = sections.length > 1
+    ? `<div style="background:#f9fafb;padding:16px 20px;border-radius:8px;margin-bottom:24px;border:1px solid #e5e7eb;">
+        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">In this digest</p>
+        <ul style="margin:0;padding-left:18px;color:#374151;">
+          ${sections.map(s => `<li style="margin-bottom:4px;font-size:14px;">${s.icon} ${s.title} <span style="color:#9ca3af;">— ${s.summary}</span></li>`).join("")}
+        </ul>
+      </div>`
+    : '';
+
+  const sectionsHtml = sections.map(s => `
+    <div style="margin-bottom:28px;border-left:4px solid ${s.accentColor};padding:12px 16px;background:#fafafa;border-radius:0 8px 8px 0;">
+      <h2 style="margin:0 0 12px;font-size:16px;color:#111827;">${s.icon} ${s.title}</h2>
+      <ul style="margin:0;padding-left:20px;color:#374151;">
+        ${s.itemsHtml.map(i => `<li style="margin-bottom:8px;font-size:14px;">${i}</li>`).join("")}
+      </ul>
+    </div>
+  `).join("");
+
+  return `
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 20px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+        <tr><td style="background:${BRAND_COLOR};padding:24px 40px;text-align:center;">
+          <img src="${LOGO_URL}" alt="Care Cuddle Academy" width="140" style="display:block;margin:0 auto 16px;" />
+          <h1 style="margin:0;color:#fff;font-size:22px;font-weight:600;">📬 Daily Admin Digest</h1>
+          <p style="color:rgba(255,255,255,0.9);margin:6px 0 0;font-size:13px;">${formatDate(todayStr)}</p>
+        </td></tr>
+        <tr><td style="padding:32px 40px;">
+          ${tocHtml}
+          ${sectionsHtml}
+          <div style="text-align:center;margin-top:24px;">
+            <a href="https://cc-acdemy.lovable.app" style="display:inline-block;background:${BRAND_COLOR};color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Go to Dashboard</a>
+          </div>
+        </td></tr>
+        <tr><td style="padding:20px 40px;background:#f9fafb;text-align:center;border-top:1px solid #e5e7eb;">
+          <p style="margin:0;color:#9ca3af;font-size:12px;">© ${new Date().getFullYear()} Care Cuddle Academy. All rights reserved.</p>
+          <p style="margin:6px 0 0;color:#9ca3af;font-size:11px;">You can manage which sections appear in this digest from the Admin Notification Settings.</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
 };
 
 const handler = async (req: Request): Promise<Response> => {
@@ -124,191 +153,132 @@ const handler = async (req: Request): Promise<Response> => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    // Check if this is a test request for a specific type
     let testType: string | null = null;
     try {
       const body = await req.json();
       testType = body?.testType || null;
-    } catch {
-      // No body or invalid JSON, run all alerts
-    }
+    } catch { /* ignore */ }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayStr = today.toISOString().split("T")[0];
 
-    // Fetch notification settings
     const { data: notificationSettings } = await supabaseClient
-      .from("notification_settings")
-      .select("*");
-
+      .from("notification_settings").select("*");
     const settingsMap = new Map(notificationSettings?.map(s => [s.notification_type, s]) || []);
 
-    // Fetch admin emails
     const { data: adminProfiles } = await supabaseClient
-      .from("profiles")
-      .select("email, display_name")
-      .eq("role", "admin");
-
+      .from("profiles").select("email, display_name").eq("role", "admin");
     const adminEmails = adminProfiles?.filter(p => p.email).map(p => p.email as string) || [];
 
-    if (adminEmails.length === 0) {
-      return new Response(
-        JSON.stringify({ success: true, message: "No admin emails to notify" }),
-        { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
-      );
-    }
-
-    // Fetch common data
     const { data: profiles } = await supabaseClient
-      .from("profiles")
-      .select("user_id, display_name");
-
+      .from("profiles").select("user_id, display_name");
     const profileMap = new Map(profiles?.map(p => [p.user_id, p.display_name]) || []);
 
-    const results: AlertResult[] = [];
+    const sections: DigestSection[] = [];
+    const standaloneResults: Array<{ type: string; emailSent: boolean; error?: string; title: string }> = [];
 
-    // ===== 1. BIRTHDAYS (sent to ALL active staff, not just admins) =====
-    const birthdaySetting = settingsMap.get("birthday_today");
-    if ((birthdaySetting?.is_enabled || testType === "birthday_today") && (!testType || testType === "birthday_today")) {
+    const isEnabled = (type: string) => {
+      const s = settingsMap.get(type);
+      return s ? s.is_enabled : true;
+    };
+    const shouldRun = (type: string) => {
+      if (testType) return testType === type;
+      return isEnabled(type);
+    };
+
+    // ===== 1. BIRTHDAYS =====
+    // Standalone email to ALL active staff (celebratory). Also add a line to the admin digest.
+    if (shouldRun("birthday_today")) {
       const { data: onboardingDocs } = await supabaseClient
         .from("staff_onboarding_documents")
         .select("user_id, date_of_birth, full_name")
         .not("date_of_birth", "is", null);
 
       const todayBirthdays: string[] = [];
-      if (onboardingDocs) {
-        for (const doc of onboardingDocs) {
-          if (doc.date_of_birth) {
-            const dob = new Date(doc.date_of_birth);
-            if (dob.getDate() === today.getDate() && dob.getMonth() === today.getMonth()) {
-              const name = doc.full_name || profileMap.get(doc.user_id) || "Unknown";
-              todayBirthdays.push(name);
-            }
-          }
+      for (const doc of onboardingDocs || []) {
+        if (!doc.date_of_birth) continue;
+        const dob = new Date(doc.date_of_birth);
+        if (dob.getDate() === today.getDate() && dob.getMonth() === today.getMonth()) {
+          todayBirthdays.push(doc.full_name || profileMap.get(doc.user_id) || "Unknown");
         }
       }
 
       if (todayBirthdays.length > 0 || testType === "birthday_today") {
-        // Fetch all active staff emails (not clients) - same as clock change
+        const displayItems = todayBirthdays.length > 0 ? todayBirthdays : ["[TEST] John Smith", "[TEST] Jane Doe"];
+
+        // Send celebratory email to all active staff
         const { data: allStaffProfiles } = await supabaseClient
-          .from("profiles")
-          .select("user_id, email, display_name")
-          .neq("role", "client");
-
-        const { data: activeHrForBirthday } = await supabaseClient
-          .from("hr_profiles")
-          .select("user_id")
+          .from("profiles").select("user_id, email").neq("role", "client");
+        const { data: activeHr } = await supabaseClient
+          .from("hr_profiles").select("user_id")
           .in("employment_status", ["active", "onboarding_probation", "onboarding_passed"]);
+        const activeIds = new Set(activeHr?.map(h => h.user_id) || []);
+        const staffEmails = allStaffProfiles?.filter(p => p.email && activeIds.has(p.user_id)).map(p => p.email as string) || [];
+        const birthdayRecipients = staffEmails.length > 0 ? staffEmails : adminEmails;
 
-        const activeBirthdayUserIds = new Set(activeHrForBirthday?.map(h => h.user_id) || []);
-        const allStaffEmails = allStaffProfiles
-          ?.filter(p => p.email && activeBirthdayUserIds.has(p.user_id))
-          .map(p => p.email as string) || [];
-
-        // Fall back to admin emails if no active staff found
-        const birthdayRecipients = allStaffEmails.length > 0 ? allStaffEmails : adminEmails;
-
-        const displayItems = todayBirthdays.length > 0 
-          ? todayBirthdays 
-          : ["[TEST] John Smith", "[TEST] Jane Doe"];
         const message = displayItems.length === 1
           ? `🎂 ${displayItems[0]} has a birthday today!`
           : `🎂 ${displayItems.join(", ")} have birthdays today!`;
-        
-        // Build subject with names
-        const namesForSubject = displayItems.length <= 3 
+        const namesForSubject = displayItems.length <= 3
           ? displayItems.join(", ")
           : `${displayItems.slice(0, 2).join(", ")} + ${displayItems.length - 2} more`;
-        const isTest = testType === "birthday_today" && todayBirthdays.length === 0;
-        
-        const result = await sendIndividualAlert(
-          resend,
+
+        const r = await sendStandaloneAlert(
           birthdayRecipients,
-          isTest
-            ? `[TEST] 🎂 Birthday: John Smith, Jane Doe`
-            : `🎂 Birthday: ${namesForSubject}`,
-          "🎂 Happy Birthday!",
-          "#ec4899",
-          [message],
-          todayStr,
-          { showCelebrationImage: true }
+          `🎂 Birthday: ${namesForSubject}`,
+          "🎂 Happy Birthday!", "#ec4899",
+          [message], todayStr, { showCelebrationImage: true }
         );
-        
-        results.push({
+        standaloneResults.push({ type: "birthday_today", emailSent: r.success, error: r.error, title: "Birthdays (all staff)" });
+
+        // Also add to admin digest
+        sections.push({
           type: "birthday_today",
-          title: "Birthdays",
-          items: displayItems,
-          emailSent: result.success,
-          error: result.error
+          title: "Birthdays Today",
+          icon: "🎂",
+          accentColor: "#ec4899",
+          itemsHtml: displayItems.map(n => `${n}`),
+          summary: `${displayItems.length} today`,
         });
       }
     }
 
     // ===== 2. WORK ANNIVERSARIES =====
-    const anniversarySetting = settingsMap.get("anniversary_today");
-    if ((anniversarySetting?.is_enabled || testType === "anniversary_today") && (!testType || testType === "anniversary_today")) {
+    if (shouldRun("anniversary_today")) {
       const { data: hrProfiles } = await supabaseClient
-        .from("hr_profiles")
-        .select("user_id, start_date")
-        .not("start_date", "is", null);
+        .from("hr_profiles").select("user_id, start_date").not("start_date", "is", null);
 
       const todayAnniversaries: { name: string; years: number }[] = [];
-      if (hrProfiles) {
-        for (const hr of hrProfiles) {
-          if (hr.start_date) {
-            const startDate = new Date(hr.start_date);
-            if (startDate.getDate() === today.getDate() && startDate.getMonth() === today.getMonth()) {
-              const years = today.getFullYear() - startDate.getFullYear();
-              if (years > 0) {
-                const name = profileMap.get(hr.user_id) || "Unknown";
-                todayAnniversaries.push({ name, years });
-              }
-            }
+      for (const hr of hrProfiles || []) {
+        if (!hr.start_date) continue;
+        const startDate = new Date(hr.start_date);
+        if (startDate.getDate() === today.getDate() && startDate.getMonth() === today.getMonth()) {
+          const years = today.getFullYear() - startDate.getFullYear();
+          if (years > 0) {
+            todayAnniversaries.push({ name: profileMap.get(hr.user_id) || "Unknown", years });
           }
         }
       }
 
       if (todayAnniversaries.length > 0 || testType === "anniversary_today") {
-        const displayAnniversaries = todayAnniversaries.length > 0
+        const display = todayAnniversaries.length > 0
           ? todayAnniversaries
-          : [{ name: "[TEST] John Smith", years: 3 }, { name: "[TEST] Jane Doe", years: 5 }];
-        const items = displayAnniversaries.length === 1
-          ? [`🎉 ${displayAnniversaries[0].name} celebrates ${displayAnniversaries[0].years} year${displayAnniversaries[0].years > 1 ? "s" : ""} today!`]
-          : displayAnniversaries.map(a => `🎉 ${a.name} - ${a.years} year${a.years > 1 ? "s" : ""}`);
-        
-        // Build subject with names and years
-        const isTest = testType === "anniversary_today" && todayAnniversaries.length === 0;
-        const subjectNames = displayAnniversaries.length <= 2
-          ? displayAnniversaries.map(a => `${a.name} (${a.years}yr)`).join(", ")
-          : `${displayAnniversaries[0].name} (${displayAnniversaries[0].years}yr) + ${displayAnniversaries.length - 1} more`;
-        
-        const result = await sendIndividualAlert(
-          resend,
-          adminEmails,
-          isTest
-            ? `[TEST] 🎉 Anniversary: John Smith (3yr), Jane Doe (5yr)`
-            : `🎉 Anniversary: ${subjectNames}`,
-          "🎉 Work Anniversary",
-          "#8b5cf6",
-          items,
-          todayStr
-        );
-        
-        results.push({
+          : [{ name: "[TEST] John Smith", years: 3 }];
+        sections.push({
           type: "anniversary_today",
-          title: "Anniversaries",
-          items: displayAnniversaries.map(a => a.name),
-          emailSent: result.success,
-          error: result.error
+          title: "Work Anniversaries",
+          icon: "🎉",
+          accentColor: "#8b5cf6",
+          itemsHtml: display.map(a => `${a.name} — ${a.years} year${a.years > 1 ? "s" : ""} 🎉`),
+          summary: `${display.length} today`,
         });
       }
     }
 
     // ===== 3. UPCOMING APPROVED HOLIDAYS =====
-    const holidaySetting = settingsMap.get("upcoming_holidays");
-    const holidayDays = holidaySetting?.days_before || 7;
-    if ((holidaySetting?.is_enabled || testType === "upcoming_holidays") && (!testType || testType === "upcoming_holidays")) {
+    if (shouldRun("upcoming_holidays")) {
+      const holidayDays = settingsMap.get("upcoming_holidays")?.days_before || 7;
       const futureDate = new Date(today);
       futureDate.setDate(futureDate.getDate() + holidayDays);
       const futureDateStr = futureDate.toISOString().split("T")[0];
@@ -321,166 +291,99 @@ const handler = async (req: Request): Promise<Response> => {
         .lte("start_date", futureDateStr)
         .order("start_date");
 
-      const hasHolidays = upcomingHolidays && upcomingHolidays.length > 0;
-      if (hasHolidays || testType === "upcoming_holidays") {
-        // Build holiday data with names
-        const holidayData = hasHolidays
+      const has = upcomingHolidays && upcomingHolidays.length > 0;
+      if (has || testType === "upcoming_holidays") {
+        const data = has
           ? upcomingHolidays.map(h => ({
               name: profileMap.get(h.user_id) || "Unknown",
-              dateRange: h.start_date === h.end_date 
+              dateRange: h.start_date === h.end_date
                 ? formatShortDate(h.start_date)
-                : `${formatShortDate(h.start_date)} - ${formatShortDate(h.end_date)}`
+                : `${formatShortDate(h.start_date)} – ${formatShortDate(h.end_date)}`,
             }))
-          : [{ name: "[TEST] John Smith", dateRange: "25 Jan - 28 Jan" }, { name: "[TEST] Jane Doe", dateRange: "30 Jan" }];
+          : [{ name: "[TEST] John Smith", dateRange: "25 Jan – 28 Jan" }];
 
-        const holidayItems = holidayData.map(h => `📅 ${h.name}: ${h.dateRange}`);
-
-        // Build subject with names
-        const isTest = testType === "upcoming_holidays" && !hasHolidays;
-        const uniqueNames = [...new Set(holidayData.map(h => h.name))];
-        const subjectNames = uniqueNames.length <= 3
-          ? uniqueNames.join(", ")
-          : `${uniqueNames.slice(0, 2).join(", ")} + ${uniqueNames.length - 2} more`;
-
-        const result = await sendIndividualAlert(
-          resend,
-          adminEmails,
-          isTest
-            ? `[TEST] 📅 Upcoming Holiday: John Smith, Jane Doe`
-            : `📅 Upcoming Holiday: ${subjectNames}`,
-          "📅 Upcoming Holidays",
-          "#3b82f6",
-          holidayItems,
-          todayStr
-        );
-        
-        results.push({
+        sections.push({
           type: "upcoming_holidays",
-          title: "Upcoming Holidays",
-          items: holidayItems,
-          emailSent: result.success,
-          error: result.error
+          title: `Upcoming Holidays (next ${holidayDays} days)`,
+          icon: "📅",
+          accentColor: "#3b82f6",
+          itemsHtml: data.map(h => `<strong>${h.name}</strong>: ${h.dateRange}`),
+          summary: `${data.length} starting soon`,
         });
       }
     }
 
     // ===== 4. SHIFT PATTERNS EXPIRING =====
-    const patternSetting = settingsMap.get("pattern_expiring");
-    const patternDays = patternSetting?.days_before || 14;
-    if ((patternSetting?.is_enabled || testType === "pattern_expiring") && (!testType || testType === "pattern_expiring")) {
-      const patternFutureDate = new Date(today);
-      patternFutureDate.setDate(patternFutureDate.getDate() + patternDays);
-      const patternFutureDateStr = patternFutureDate.toISOString().split("T")[0];
+    if (shouldRun("pattern_expiring")) {
+      const patternDays = settingsMap.get("pattern_expiring")?.days_before || 14;
+      const futureDate = new Date(today);
+      futureDate.setDate(futureDate.getDate() + patternDays);
+      const futureDateStr = futureDate.toISOString().split("T")[0];
 
       const { data: expiringPatterns } = await supabaseClient
         .from("recurring_shift_patterns")
         .select("id, user_id, client_name, end_date, shift_type")
         .eq("is_overtime", false)
         .gte("end_date", todayStr)
-        .lte("end_date", patternFutureDateStr)
+        .lte("end_date", futureDateStr)
         .order("end_date");
 
       if (expiringPatterns && expiringPatterns.length > 0) {
-        const patternItems = expiringPatterns.map(p => {
-          const name = profileMap.get(p.user_id) || "Unknown";
-          return `⚠️ ${name} at ${p.client_name || "Unknown client"} - expires ${formatShortDate(p.end_date)}`;
-        });
-
-        const result = await sendIndividualAlert(
-          resend,
-          adminEmails,
-          `⚠️ ${expiringPatterns.length} Shift Pattern${expiringPatterns.length > 1 ? "s" : ""} Expiring Soon`,
-          "⚠️ Shift Patterns Expiring",
-          "#f59e0b",
-          patternItems,
-          todayStr
-        );
-        
-        results.push({
+        sections.push({
           type: "pattern_expiring",
-          title: "Patterns Expiring",
-          items: patternItems,
-          emailSent: result.success,
-          error: result.error
-        });
-      } else if (testType === "pattern_expiring") {
-        results.push({
-          type: "pattern_expiring",
-          title: "Patterns Expiring",
-          items: [],
-          emailSent: false
+          title: `Shift Patterns Expiring (next ${patternDays} days)`,
+          icon: "⚠️",
+          accentColor: "#f59e0b",
+          itemsHtml: expiringPatterns.map(p => {
+            const name = profileMap.get(p.user_id) || "Unknown";
+            return `<strong>${name}</strong> at ${p.client_name || "Unknown client"} — expires ${formatShortDate(p.end_date)}`;
+          }),
+          summary: `${expiringPatterns.length} expiring`,
         });
       }
     }
 
     // ===== 5. HOLIDAYS WITHOUT CLIENT NOTIFICATION =====
-    const clientNotifSetting = settingsMap.get("holiday_no_client_notification");
-    const clientNotifDays = clientNotifSetting?.days_before || 14;
-    if ((clientNotifSetting?.is_enabled || testType === "holiday_no_client_notification") && (!testType || testType === "holiday_no_client_notification")) {
-      const clientNotifFutureDate = new Date(today);
-      clientNotifFutureDate.setDate(clientNotifFutureDate.getDate() + clientNotifDays);
-      const clientNotifFutureDateStr = clientNotifFutureDate.toISOString().split("T")[0];
+    if (shouldRun("holiday_no_client_notification")) {
+      const days = settingsMap.get("holiday_no_client_notification")?.days_before || 14;
+      const futureDate = new Date(today);
+      futureDate.setDate(futureDate.getDate() + days);
+      const futureDateStr = futureDate.toISOString().split("T")[0];
 
-      const { data: pendingClientNotification } = await supabaseClient
+      const { data: pending } = await supabaseClient
         .from("staff_requests")
         .select("id, user_id, start_date, end_date, client_informed")
         .in("request_type", ["holiday_paid", "holiday_unpaid", "holiday"])
         .eq("status", "approved")
         .or(`client_informed.is.null,client_informed.eq.false`)
         .gte("start_date", todayStr)
-        .lte("start_date", clientNotifFutureDateStr)
+        .lte("start_date", futureDateStr)
         .order("start_date");
 
-      const hasPendingNotifications = pendingClientNotification && pendingClientNotification.length > 0;
-      if (hasPendingNotifications || testType === "holiday_no_client_notification") {
-        // Build notification data with names
-        const notifData = hasPendingNotifications
-          ? pendingClientNotification.map(r => {
+      const has = pending && pending.length > 0;
+      if (has || testType === "holiday_no_client_notification") {
+        const data = has
+          ? pending.map(r => {
               const name = profileMap.get(r.user_id) || "Unknown";
               const daysUntil = Math.ceil((new Date(r.start_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
               return { name, daysUntil, date: formatShortDate(r.start_date) };
             })
-          : [{ name: "[TEST] John Smith", daysUntil: 3, date: "27 Jan" }, { name: "[TEST] Jane Doe", daysUntil: 5, date: "29 Jan" }];
+          : [{ name: "[TEST] John Smith", daysUntil: 3, date: "27 Jan" }];
 
-        const notificationItems = notifData.map(r => 
-          `🚨 ${r.name} - holiday starts in ${r.daysUntil} day${r.daysUntil !== 1 ? "s" : ""} (${r.date}) - CLIENT NOT NOTIFIED`
-        );
-
-        // Build subject with names
-        const isTest = testType === "holiday_no_client_notification" && !hasPendingNotifications;
-        const uniqueNames = [...new Set(notifData.map(n => n.name))];
-        const subjectNames = uniqueNames.length <= 2
-          ? uniqueNames.join(", ")
-          : `${uniqueNames[0]} + ${uniqueNames.length - 1} more`;
-
-        const result = await sendIndividualAlert(
-          resend,
-          adminEmails,
-          isTest
-            ? `[TEST] 🚨 Missing Client Notification: John Smith, Jane Doe`
-            : `🚨 Missing Client Notification: ${subjectNames}`,
-          "🚨 Action Required: Client Notification Missing",
-          "#ef4444",
-          notificationItems,
-          todayStr
-        );
-        
-        results.push({
+        sections.push({
           type: "holiday_no_client_notification",
-          title: "Missing Client Notifications",
-          items: notificationItems,
-          emailSent: result.success,
-          error: result.error
+          title: "Client Notification Missing",
+          icon: "🚨",
+          accentColor: "#ef4444",
+          itemsHtml: data.map(r => `<strong>${r.name}</strong> — holiday in ${r.daysUntil} day${r.daysUntil !== 1 ? "s" : ""} (${r.date}) — <span style="color:#ef4444;font-weight:600;">CLIENT NOT NOTIFIED</span>`),
+          summary: `${data.length} action needed`,
         });
       }
     }
 
-    // ===== 5b. 3-DAY HOLIDAY COUNTDOWN REMINDERS =====
-    // Sends daily reminders 3, 2, and 1 days before each approved holiday
-    // to: all admins, the staff member on holiday, and any assigned cover staff.
+    // ===== 6. HOLIDAY COUNTDOWN (3/2/1 days) =====
+    // Personal emails to taker/cover stay separate. Admin copy goes in the digest.
     if (!testType || testType === "holiday_countdown") {
-      const isCountdownTest = testType === "holiday_countdown";
-
       const targetDates: string[] = [];
       for (const offset of [1, 2, 3]) {
         const d = new Date(today);
@@ -497,31 +400,8 @@ const handler = async (req: Request): Promise<Response> => {
 
       const holidays = upcoming || [];
 
-      if (isCountdownTest && holidays.length === 0) {
-        const daysUntil = 1;
-        const sampleItems = [
-          `👤 [TEST] John Smith is on holiday: ${formatShortDate(targetDates[0])}`,
-          `⏳ Starts in ${daysUntil} day`,
-          `🤝 Cover assigned: [TEST] Jane Doe`,
-        ];
-        const result = await sendIndividualAlert(
-          resend, adminEmails,
-          `[TEST] 📅 Holiday starts in ${daysUntil} day: John Smith`,
-          "📅 Upcoming Holiday Reminder", "#0ea5e9",
-          sampleItems, todayStr
-        );
-        results.push({
-          type: "holiday_countdown",
-          title: "Holiday Countdown (test)",
-          items: sampleItems,
-          emailSent: result.success,
-          error: result.error,
-        });
-      }
-
       if (holidays.length > 0) {
         const holidayUserIds = [...new Set(holidays.map(h => h.user_id))];
-
         const { data: covers } = await supabaseClient
           .from("staff_requests")
           .select("user_id, swap_with_user_id, coverage_metadata, start_date, end_date")
@@ -530,106 +410,98 @@ const handler = async (req: Request): Promise<Response> => {
           .in("swap_with_user_id", holidayUserIds);
 
         const { data: emailProfiles } = await supabaseClient
-          .from("profiles")
-          .select("user_id, email, display_name");
+          .from("profiles").select("user_id, email, display_name");
         const emailMap = new Map(
           emailProfiles?.map(p => [p.user_id, { email: p.email, name: p.display_name }]) || []
         );
 
+        const adminCountdownItems: string[] = [];
+
         for (const h of holidays) {
-          const daysUntil = Math.round(
-            (new Date(h.start_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-          );
+          const daysUntil = Math.round((new Date(h.start_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
           const takerInfo = emailMap.get(h.user_id);
           const takerName = takerInfo?.name || "Unknown";
-          const holidayStart = h.start_date;
-          const holidayEnd = h.end_date;
+          const dayWord = daysUntil === 1 ? "day" : "days";
+          const dateRange = h.start_date === h.end_date
+            ? formatShortDate(h.start_date)
+            : `${formatShortDate(h.start_date)} – ${formatShortDate(h.end_date)}`;
 
           const matchingCovers = (covers || []).filter(c => {
             if (c.swap_with_user_id !== h.user_id) return false;
             const dates: string[] = (c.coverage_metadata as any)?.covered_dates || [];
-            if (dates.length === 0) {
-              return !(c.end_date < holidayStart || c.start_date > holidayEnd);
-            }
-            return dates.some(d => d >= holidayStart && d <= holidayEnd);
+            if (dates.length === 0) return !(c.end_date < h.start_date || c.start_date > h.end_date);
+            return dates.some(d => d >= h.start_date && d <= h.end_date);
           });
-
           const coverPeople = matchingCovers
             .map(c => ({ id: c.user_id, ...emailMap.get(c.user_id) }))
             .filter(c => c.email);
           const coverNames = coverPeople.map(c => c.name || "Unknown");
 
-          const dateRange = holidayStart === holidayEnd
-            ? formatShortDate(holidayStart)
-            : `${formatShortDate(holidayStart)} - ${formatShortDate(holidayEnd)}`;
+          // Admin digest line
+          adminCountdownItems.push(
+            `<strong>${takerName}</strong> on holiday in <strong>${daysUntil} ${dayWord}</strong> (${dateRange}) — ${coverNames.length > 0 ? `cover: ${coverNames.join(", ")}` : `<span style="color:#ef4444;font-weight:600;">no cover assigned</span>`}`
+          );
 
-          const dayWord = daysUntil === 1 ? "day" : "days";
-          const subjectBase = `📅 Holiday starts in ${daysUntil} ${dayWord}: ${takerName}`;
-
-          const adminItems = [
-            `👤 ${takerName} is on holiday: ${dateRange}`,
-            `⏳ Starts in ${daysUntil} ${dayWord}`,
-            coverNames.length > 0
-              ? `🤝 Cover assigned: ${coverNames.join(", ")}`
-              : `⚠️ No cover assigned`,
-          ];
-
-          if (adminEmails.length > 0) {
-            await sendIndividualAlert(
-              resend, adminEmails, subjectBase,
-              "📅 Upcoming Holiday Reminder", "#0ea5e9",
-              adminItems, todayStr
-            );
-          }
-
+          // Personal email to the staff member on holiday
           if (takerInfo?.email) {
-            const takerItems = [
-              `Your holiday starts in ${daysUntil} ${dayWord}.`,
-              `🗓️ ${dateRange}`,
-              coverNames.length > 0
-                ? `🤝 Your cover: ${coverNames.join(", ")}`
-                : `⚠️ No cover has been assigned yet — please check with the admin team.`,
-              `Have a great break! 🌴`,
-            ];
-            await sendIndividualAlert(
-              resend, [takerInfo.email as string],
+            await sendStandaloneAlert(
+              [takerInfo.email as string],
               `📅 Your holiday starts in ${daysUntil} ${dayWord}`,
               "📅 Your Holiday is Coming Up", "#0ea5e9",
-              takerItems, todayStr
+              [
+                `Your holiday starts in ${daysUntil} ${dayWord}.`,
+                `🗓️ ${dateRange}`,
+                coverNames.length > 0 ? `🤝 Your cover: ${coverNames.join(", ")}` : `⚠️ No cover has been assigned yet — please check with the admin team.`,
+                `Have a great break! 🌴`,
+              ],
+              todayStr
             );
           }
 
+          // Personal emails to each cover person
           for (const cover of coverPeople) {
-            const coverItems = [
-              `You're covering ${takerName}'s holiday in ${daysUntil} ${dayWord}.`,
-              `🗓️ Holiday dates: ${dateRange}`,
-              `Please review your schedule for the covered shifts.`,
-            ];
-            await sendIndividualAlert(
-              resend, [cover.email as string],
+            await sendStandaloneAlert(
+              [cover.email as string],
               `🤝 Covering ${takerName} in ${daysUntil} ${dayWord}`,
               "🤝 Upcoming Cover Reminder", "#0ea5e9",
-              coverItems, todayStr
+              [
+                `You're covering ${takerName}'s holiday in ${daysUntil} ${dayWord}.`,
+                `🗓️ Holiday dates: ${dateRange}`,
+                `Please review your schedule for the covered shifts.`,
+              ],
+              todayStr
             );
           }
+        }
 
-          results.push({
+        if (adminCountdownItems.length > 0) {
+          sections.push({
             type: "holiday_countdown",
-            title: `Holiday T-${daysUntil}: ${takerName}`,
-            items: adminItems,
-            emailSent: true,
+            title: "Holidays Starting Soon (3-day countdown)",
+            icon: "📅",
+            accentColor: "#0ea5e9",
+            itemsHtml: adminCountdownItems,
+            summary: `${adminCountdownItems.length} imminent`,
           });
         }
+      } else if (testType === "holiday_countdown") {
+        sections.push({
+          type: "holiday_countdown",
+          title: "Holidays Starting Soon (3-day countdown)",
+          icon: "📅",
+          accentColor: "#0ea5e9",
+          itemsHtml: [`<strong>[TEST] John Smith</strong> on holiday in <strong>1 day</strong> (${formatShortDate(targetDates[0])}) — cover: [TEST] Jane Doe`],
+          summary: "1 imminent",
+        });
       }
     }
 
-    // ===== 6. UK CLOCK CHANGE REMINDERS (Always on, sent to all staff) =====
+    // ===== 7. UK CLOCK CHANGE REMINDERS =====
+    // Always sent as standalone to all staff (educational personal email).
     if (!testType || testType === "clock_change") {
-      // Calculate UK clock change dates for this year and next
       const getLastSundayOfMonth = (year: number, month: number): Date => {
-        // month is 0-indexed (2 = March, 9 = October)
-        const lastDay = new Date(year, month + 1, 0); // last day of month
-        const dayOfWeek = lastDay.getDay(); // 0 = Sunday
+        const lastDay = new Date(year, month + 1, 0);
+        const dayOfWeek = lastDay.getDay();
         const lastSunday = new Date(year, month + 1, 0 - (dayOfWeek === 0 ? 0 : dayOfWeek));
         lastSunday.setHours(0, 0, 0, 0);
         return lastSunday;
@@ -637,204 +509,78 @@ const handler = async (req: Request): Promise<Response> => {
 
       const currentYear = today.getFullYear();
       const clockChangeDates: { date: Date; type: "spring_forward" | "fall_back" }[] = [];
-      
-      // Check current and next year to handle edge cases near year boundary
       for (const year of [currentYear, currentYear + 1]) {
         clockChangeDates.push(
-          { date: getLastSundayOfMonth(year, 2), type: "spring_forward" }, // Last Sunday March
-          { date: getLastSundayOfMonth(year, 9), type: "fall_back" }       // Last Sunday October
+          { date: getLastSundayOfMonth(year, 2), type: "spring_forward" },
+          { date: getLastSundayOfMonth(year, 9), type: "fall_back" }
         );
       }
 
       for (const clockChange of clockChangeDates) {
         const daysUntil = Math.round((clockChange.date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        
-        // Send 7 days before and 1 day before
         if (daysUntil === 7 || daysUntil === 1 || testType === "clock_change") {
-          // Fetch all active staff emails (not clients)
           const { data: allProfiles } = await supabaseClient
-            .from("profiles")
-            .select("user_id, email, display_name")
-            .neq("role", "client");
-
-          // Filter to active employment status
-          const { data: activeHrProfiles } = await supabaseClient
-            .from("hr_profiles")
-            .select("user_id")
+            .from("profiles").select("user_id, email").neq("role", "client");
+          const { data: activeHr } = await supabaseClient
+            .from("hr_profiles").select("user_id")
             .in("employment_status", ["active", "onboarding_probation", "onboarding_passed"]);
-
-          const activeUserIds = new Set(activeHrProfiles?.map(h => h.user_id) || []);
-          const staffEmails = allProfiles
-            ?.filter(p => p.email && activeUserIds.has(p.user_id))
-            .map(p => p.email as string) || [];
+          const activeIds = new Set(activeHr?.map(h => h.user_id) || []);
+          const staffEmails = allProfiles?.filter(p => p.email && activeIds.has(p.user_id)).map(p => p.email as string) || [];
 
           if (staffEmails.length === 0 && testType !== "clock_change") break;
 
-          const isTest = testType === "clock_change";
-          
-          // For test mode, find the actual next upcoming clock change
           let actualDaysUntil = daysUntil;
           let changeType = clockChange.type;
           let changeDate = clockChange.date;
-          
-          if (isTest) {
-            // Find the nearest future clock change date
+          if (testType === "clock_change") {
             const futureChanges = clockChangeDates
-              .filter(c => {
-                const d = Math.round((c.date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                return d >= 0;
-              })
+              .filter(c => Math.round((c.date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) >= 0)
               .sort((a, b) => a.date.getTime() - b.date.getTime());
-            
             if (futureChanges.length > 0) {
               changeDate = futureChanges[0].date;
               changeType = futureChanges[0].type;
               actualDaysUntil = Math.round((changeDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-            } else {
-              // Fallback: next year's spring forward
-              changeDate = getLastSundayOfMonth(currentYear + 1, 2);
-              changeType = "spring_forward";
-              actualDaysUntil = Math.round((changeDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
             }
           }
-          const changeDateStr = formatDate(changeDate.toISOString().split("T")[0]);
-          
-          const isSpringForward = changeType === "spring_forward";
-          const direction = isSpringForward ? "forward" : "back";
-          const emoji = isSpringForward ? "⏰🌸" : "⏰🍂";
-          
-          // Nigeria is WAT (UTC+1) permanently
-          // UK GMT (winter) = UTC+0, BST (summer) = UTC+1
-          // During GMT: UK 9am = Nigeria 10am (1hr difference)
-          // During BST: UK 9am = Nigeria 9am (same time)
-          const scheduleImpact = isSpringForward
-            ? `<p style="font-size: 14px; color: #374151; margin-bottom: 12px;">
-                <strong>What this means for you:</strong> The UK moves from GMT (UTC+0) to BST (UTC+1).
-               </p>
-               <p style="font-size: 14px; color: #374151; margin-bottom: 12px;">
-                 Currently, when it's <strong>9:00 AM in the UK</strong>, it's <strong>10:00 AM in Nigeria</strong> (1 hour ahead).
-               </p>
-               <p style="font-size: 14px; color: #374151; margin-bottom: 12px;">
-                 After the change, UK and Nigeria will be on the <strong>same time</strong>. So <strong>9:00 AM UK = 9:00 AM Nigeria</strong>.
-               </p>
-               <p style="font-size: 14px; color: #ef4444; font-weight: 600; margin-bottom: 12px;">
-                 ⚠️ Your working day will effectively start <strong>1 hour earlier</strong> in Nigeria time.
-               </p>`
-            : `<p style="font-size: 14px; color: #374151; margin-bottom: 12px;">
-                <strong>What this means for you:</strong> The UK moves from BST (UTC+1) to GMT (UTC+0).
-               </p>
-               <p style="font-size: 14px; color: #374151; margin-bottom: 12px;">
-                 Currently, UK and Nigeria are on the <strong>same time</strong> (<strong>9:00 AM UK = 9:00 AM Nigeria</strong>).
-               </p>
-               <p style="font-size: 14px; color: #374151; margin-bottom: 12px;">
-                 After the change, when it's <strong>9:00 AM in the UK</strong>, it will be <strong>10:00 AM in Nigeria</strong> (1 hour ahead).
-               </p>
-               <p style="font-size: 14px; color: #22c55e; font-weight: 600; margin-bottom: 12px;">
-                 ✓ Your working day will effectively start <strong>1 hour later</strong> in Nigeria time.
-               </p>`;
 
+          const direction = changeType === "spring_forward" ? "forward" : "back";
+          const emoji = changeType === "spring_forward" ? "⏰🌸" : "⏰🍂";
           const urgency = actualDaysUntil === 1 ? "TOMORROW" : `in ${actualDaysUntil} days`;
-          const subject = isTest 
-            ? `[TEST] ${emoji} UK Clock Change ${urgency} - Clocks go ${direction}`
-            : `${emoji} UK Clock Change ${urgency} - Clocks go ${direction}`;
+          const targets = staffEmails.length > 0 ? staffEmails : adminEmails;
 
-          const emailTargets = staffEmails.length > 0 ? staffEmails : adminEmails;
+          await sendStandaloneAlert(
+            targets,
+            `${emoji} UK Clock Change ${urgency} - Clocks go ${direction}`,
+            `${emoji} UK Clock Change Reminder`, "#6366f1",
+            [
+              `On ${formatDate(changeDate.toISOString().split("T")[0])}, UK clocks go <strong>${direction} by 1 hour</strong>.`,
+              changeType === "spring_forward"
+                ? `UK moves from GMT to BST. After the change, UK 9am = Nigeria 9am (currently 10am Nigeria). Your day starts <strong>1 hour earlier</strong> in Nigeria time.`
+                : `UK moves from BST to GMT. After the change, UK 9am = Nigeria 10am (currently 9am Nigeria). Your day starts <strong>1 hour later</strong> in Nigeria time.`,
+            ],
+            todayStr
+          );
 
-          try {
-            await resend.emails.send({
-              from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
-              to: emailTargets,
-              subject,
-              html: `
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin: 0; padding: 0; background-color: #f4f4f5; font-family: Arial, sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
-    <tr>
-      <td align="center">
-        <table width="500" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-          <tr>
-            <td style="background-color: ${BRAND_COLOR}; padding: 24px 40px; text-align: center;">
-              <img src="${LOGO_URL}" alt="Care Cuddle Academy" width="140" style="display: block; margin: 0 auto; margin-bottom: 16px;" />
-              <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 600;">${emoji} UK Clock Change Reminder</h1>
-              <p style="color: rgba(255,255,255,0.9); margin: 6px 0 0 0; font-size: 13px;">
-                ${actualDaysUntil === 1 ? '⚡ This happens TOMORROW!' : `This happens ${urgency}`}
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 32px 40px;">
-              <p style="font-size: 16px; color: #111827; font-weight: 600; margin: 0 0 16px;">
-                On ${changeDateStr}, UK clocks go <strong>${direction} by 1 hour</strong>.
-              </p>
-              
-              <div style="background-color: #f9fafb; padding: 16px; border-radius: 8px; border: 1px solid #e5e7eb; margin-bottom: 20px;">
-                ${scheduleImpact}
-              </div>
+          standaloneResults.push({ type: "clock_change", emailSent: true, title: `Clock change ${direction}` });
 
-              <div style="background-color: #f3f0ff; padding: 16px; border-radius: 8px; margin-bottom: 20px;">
-                <p style="font-size: 14px; color: #374151; margin: 0; font-weight: 600;">📋 Quick Reference:</p>
-                <table style="width: 100%; border-collapse: collapse; margin-top: 8px;">
-                  <tr>
-                    <td style="padding: 4px 0; font-size: 13px; color: #6b7280;">Before change:</td>
-                    <td style="padding: 4px 0; font-size: 13px; color: #111827; font-weight: 600;">${isSpringForward ? 'UK 9am = Nigeria 10am' : 'UK 9am = Nigeria 9am'}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 4px 0; font-size: 13px; color: #6b7280;">After change:</td>
-                    <td style="padding: 4px 0; font-size: 13px; color: #111827; font-weight: 600;">${isSpringForward ? 'UK 9am = Nigeria 9am' : 'UK 9am = Nigeria 10am'}</td>
-                  </tr>
-                </table>
-              </div>
-              
-              <p style="color: #6b7280; font-size: 13px;">
-                Please adjust your schedule accordingly. If you have any questions, contact your manager.
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <td style="padding: 20px 40px; background-color: #f9fafb; text-align: center; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0; color: #9ca3af; font-size: 12px;">© ${new Date().getFullYear()} Care Cuddle Academy. All rights reserved.</p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-              `,
-            });
+          // Also add admin reference line to digest
+          sections.push({
+            type: "clock_change",
+            title: "UK Clock Change Reminder",
+            icon: emoji,
+            accentColor: "#6366f1",
+            itemsHtml: [`UK clocks go <strong>${direction}</strong> on ${formatDate(changeDate.toISOString().split("T")[0])} (${urgency}). Staff have been notified directly.`],
+            summary: urgency,
+          });
 
-            results.push({
-              type: "clock_change",
-              title: `Clock Change (${direction})`,
-              items: [`${emoji} UK clocks go ${direction} on ${changeDateStr} - ${actualDaysUntil === 1 ? 'TOMORROW' : `${actualDaysUntil} days away`}`],
-              emailSent: true,
-            });
-          } catch (error) {
-            results.push({
-              type: "clock_change",
-              title: `Clock Change (${direction})`,
-              items: [`${emoji} UK clocks go ${direction} on ${changeDateStr}`],
-              emailSent: false,
-              error: error instanceof Error ? error.message : "Unknown error",
-            });
-          }
-
-          // Only send one clock change alert per run (the nearest one)
-          if (!isTest) break;
+          if (testType !== "clock_change") break;
         }
       }
     }
 
-    // ===== 7. OUTSTANDING HANDOVERS =====
-    // Daily summary of incomplete handover tasks (progress < 100), highlighting any
-    // whose target date (leave start) is today, past, or imminent and not yet acknowledged.
-    const handoverSetting = settingsMap.get("outstanding_handovers");
-    const handoverLeadDays = handoverSetting?.days_before ?? 3;
-    const handoverEnabled = handoverSetting ? handoverSetting.is_enabled : true;
-    if ((handoverEnabled || testType === "outstanding_handovers") && (!testType || testType === "outstanding_handovers")) {
+    // ===== 8. OUTSTANDING HANDOVERS =====
+    if (shouldRun("outstanding_handovers")) {
+      const handoverLeadDays = settingsMap.get("outstanding_handovers")?.days_before ?? 3;
       const { data: openTasks } = await supabaseClient
         .from("client_handover_tasks")
         .select("id, client_name, task_name, handed_over_by, handed_over_to, progress, target_date")
@@ -854,73 +600,85 @@ const handler = async (req: Request): Promise<Response> => {
       const isTest = testType === "outstanding_handovers" && !hasAny;
 
       if (hasAny || isTest) {
-        const fmtItem = (t: { client_name: string; task_name: string; handed_over_by: string | null; handed_over_to: string | null; progress: number; target_date: string | null }, prefix: string) => {
+        const fmtItem = (t: any, prefix: string) => {
           const dateLabel = t.target_date ? formatShortDate(t.target_date) : "no due date";
-          const from = t.handed_over_by || "—";
-          const to = t.handed_over_to || "unassigned";
-          return `${prefix} <strong>${t.client_name}</strong> — ${t.task_name} (${t.progress}%) · from ${from} → ${to} · leave starts ${dateLabel}`;
+          return `${prefix} <strong>${t.client_name}</strong> — ${t.task_name} (${t.progress}%) · from ${t.handed_over_by || "—"} → ${t.handed_over_to || "unassigned"} · leave starts ${dateLabel}`;
         };
 
-        const items: string[] = [];
         const display = isTest
           ? {
               overdue: [{ client_name: "[TEST] Comfort", task_name: "Medication handover", handed_over_by: "Jane Doe", handed_over_to: "John Smith", progress: 40, target_date: todayStr }],
               upcoming: [{ client_name: "[TEST] Hope", task_name: "Care plan briefing", handed_over_by: "Mary K", handed_over_to: "Peter O", progress: 20, target_date: horizonStr }],
-              other: [] as typeof tasks,
+              other: [] as any[],
             }
           : { overdue, upcoming, other };
 
+        const items: string[] = [];
         if (display.overdue.length > 0) {
           items.push(`<span style="color:#ef4444;font-weight:700;">⚠️ Not acknowledged before leave start (${display.overdue.length}):</span>`);
-          display.overdue.forEach(t => items.push(fmtItem(t, "🔴")));
+          display.overdue.forEach((t: any) => items.push(fmtItem(t, "🔴")));
         }
         if (display.upcoming.length > 0) {
           items.push(`<span style="color:#f59e0b;font-weight:700;">⏳ Due within ${handoverLeadDays} day${handoverLeadDays === 1 ? "" : "s"} (${display.upcoming.length}):</span>`);
-          display.upcoming.forEach(t => items.push(fmtItem(t, "🟠")));
+          display.upcoming.forEach((t: any) => items.push(fmtItem(t, "🟠")));
         }
         if (display.other.length > 0) {
           items.push(`<span style="color:#6b7280;font-weight:700;">📋 Other outstanding (${display.other.length}):</span>`);
-          display.other.slice(0, 20).forEach(t => items.push(fmtItem(t, "•")));
+          display.other.slice(0, 20).forEach((t: any) => items.push(fmtItem(t, "•")));
           if (display.other.length > 20) items.push(`…and ${display.other.length - 20} more`);
         }
 
         const totalCount = display.overdue.length + display.upcoming.length + display.other.length;
-        const subject = display.overdue.length > 0
-          ? `⚠️ ${display.overdue.length} handover${display.overdue.length === 1 ? "" : "s"} not acknowledged before leave start`
-          : `📋 ${totalCount} outstanding handover${totalCount === 1 ? "" : "s"}`;
-
-        const result = await sendIndividualAlert(
-          resend,
-          adminEmails,
-          isTest ? `[TEST] ${subject}` : subject,
-          "📋 Outstanding Handovers",
-          display.overdue.length > 0 ? "#ef4444" : "#f59e0b",
-          items,
-          todayStr
-        );
-
-        results.push({
+        sections.push({
           type: "outstanding_handovers",
           title: "Outstanding Handovers",
-          items: items,
-          emailSent: result.success,
-          error: result.error,
+          icon: "📋",
+          accentColor: display.overdue.length > 0 ? "#ef4444" : "#f59e0b",
+          itemsHtml: items,
+          summary: `${totalCount} open${display.overdue.length > 0 ? `, ${display.overdue.length} overdue` : ""}`,
         });
       }
     }
 
-    const emailsSent = results.filter(r => r.emailSent).length;
-    const hasItems = results.some(r => r.items.length > 0);
+    // ===== SEND THE DIGEST =====
+    let digestSent = false;
+    let digestError: string | undefined;
+    if (sections.length > 0 && adminEmails.length > 0) {
+      // If a specific test was requested, prefix subject
+      const isTestRun = !!testType;
+      const subjectCount = sections.length;
+      const subject = `${isTestRun ? "[TEST] " : ""}📬 Daily Admin Digest — ${subjectCount} update${subjectCount === 1 ? "" : "s"} (${formatShortDate(todayStr)})`;
+      try {
+        await resend.emails.send({
+          from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
+          to: adminEmails,
+          subject,
+          html: buildDigestHtml(sections, todayStr),
+        });
+        digestSent = true;
+      } catch (e) {
+        digestError = e instanceof Error ? e.message : "Unknown error";
+      }
+    }
 
-    console.log("Daily alerts processed:", JSON.stringify(results, null, 2));
+    console.log("Daily digest processed:", JSON.stringify({
+      sectionCount: sections.length,
+      sectionTypes: sections.map(s => s.type),
+      digestSent,
+      digestError,
+      standaloneResults,
+    }, null, 2));
 
     return new Response(
-      JSON.stringify({ 
-        success: true, 
-        alertCount: results.length,
-        emailsSent,
-        emailSent: hasItems && emailsSent > 0,
-        results 
+      JSON.stringify({
+        success: true,
+        digestSent,
+        digestError,
+        sectionCount: sections.length,
+        sections: sections.map(s => ({ type: s.type, title: s.title, summary: s.summary })),
+        standaloneResults,
+        // back-compat for the UI test handler
+        emailSent: digestSent || standaloneResults.some(r => r.emailSent),
       }),
       { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
