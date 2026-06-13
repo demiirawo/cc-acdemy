@@ -384,7 +384,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     // ===== 6. HOLIDAY COUNTDOWN (3/2/1 days) =====
     // Personal emails to taker/cover stay separate. Admin copy goes in the digest.
-    if (!testType || testType === "holiday_countdown") {
+    if (!testType || testType === "holiday_countdown" || testType === "digest") {
       const targetDates: string[] = [];
       for (const offset of [1, 2, 3]) {
         const d = new Date(today);
