@@ -179,11 +179,11 @@ export function AdminNotificationSettings() {
       const response = await supabase.functions.invoke("daily-admin-alerts", {
         body: { testType: type }
       });
-      
+
       if (response.error) {
         throw new Error(response.error.message);
       }
-      
+
       if (response.data?.success) {
         if (response.data.emailSent) {
           toast.success(`Test email sent for ${NOTIFICATION_CONFIG[type]?.title}`);
@@ -195,6 +195,33 @@ export function AdminNotificationSettings() {
       }
     } catch (error: any) {
       toast.error("Test failed: " + error.message);
+    } finally {
+      setIsTesting(null);
+    }
+  };
+
+  const handleTestDigest = async () => {
+    setIsTesting("digest");
+    try {
+      const response = await supabase.functions.invoke("daily-admin-alerts", {
+        body: { testType: "digest" }
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      if (response.data?.success) {
+        if (response.data.digestSent) {
+          toast.success(`Daily digest test email sent — ${response.data.sectionCount} section(s)`);
+        } else {
+          toast.info("No sections enabled for digest at this time");
+        }
+      } else {
+        throw new Error(response.data?.error || "Unknown error");
+      }
+    } catch (error: any) {
+      toast.error("Digest test failed: " + error.message);
     } finally {
       setIsTesting(null);
     }
@@ -232,6 +259,30 @@ export function AdminNotificationSettings() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h3 className="font-medium text-sm">Daily Digest Preview</h3>
+            <p className="text-xs text-muted-foreground">
+              Send a test email containing all enabled sections in one digest
+            </p>
+          </div>
+          <Button
+            variant="default"
+            size="sm"
+            onClick={handleTestDigest}
+            disabled={isTesting === "digest"}
+          >
+            {isTesting === "digest" ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Play className="h-4 w-4 mr-1" />
+            )}
+            Test Daily Digest
+          </Button>
+        </div>
+
+        <Separator />
+
         {Object.entries(NOTIFICATION_CONFIG).map(([type, config], index) => {
           const setting = localSettings[type];
           if (!setting) return null;

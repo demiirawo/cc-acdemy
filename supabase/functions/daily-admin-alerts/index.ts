@@ -183,6 +183,7 @@ const handler = async (req: Request): Promise<Response> => {
       return s ? s.is_enabled : true;
     };
     const shouldRun = (type: string) => {
+      if (testType === "digest") return isEnabled(type);
       if (testType) return testType === type;
       return isEnabled(type);
     };
@@ -383,7 +384,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     // ===== 6. HOLIDAY COUNTDOWN (3/2/1 days) =====
     // Personal emails to taker/cover stay separate. Admin copy goes in the digest.
-    if (!testType || testType === "holiday_countdown") {
+    if (!testType || testType === "holiday_countdown" || testType === "digest") {
       const targetDates: string[] = [];
       for (const offset of [1, 2, 3]) {
         const d = new Date(today);
@@ -498,7 +499,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     // ===== 7. UK CLOCK CHANGE REMINDERS =====
     // Always sent as standalone to all staff (educational personal email).
-    if (!testType || testType === "clock_change") {
+    if (!testType || testType === "clock_change" || testType === "digest") {
       const getLastSundayOfMonth = (year: number, month: number): Date => {
         const lastDay = new Date(year, month + 1, 0);
         const dayOfWeek = lastDay.getDay();
