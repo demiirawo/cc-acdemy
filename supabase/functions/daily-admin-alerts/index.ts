@@ -499,7 +499,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     // ===== 7. UK CLOCK CHANGE REMINDERS =====
     // Always sent as standalone to all staff (educational personal email).
-    if (!testType || testType === "clock_change") {
+    if (!testType || testType === "clock_change" || testType === "digest") {
       const getLastSundayOfMonth = (year: number, month: number): Date => {
         const lastDay = new Date(year, month + 1, 0);
         const dayOfWeek = lastDay.getDay();
