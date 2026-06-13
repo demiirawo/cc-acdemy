@@ -179,11 +179,11 @@ export function AdminNotificationSettings() {
       const response = await supabase.functions.invoke("daily-admin-alerts", {
         body: { testType: type }
       });
-      
+
       if (response.error) {
         throw new Error(response.error.message);
       }
-      
+
       if (response.data?.success) {
         if (response.data.emailSent) {
           toast.success(`Test email sent for ${NOTIFICATION_CONFIG[type]?.title}`);
@@ -195,6 +195,33 @@ export function AdminNotificationSettings() {
       }
     } catch (error: any) {
       toast.error("Test failed: " + error.message);
+    } finally {
+      setIsTesting(null);
+    }
+  };
+
+  const handleTestDigest = async () => {
+    setIsTesting("digest");
+    try {
+      const response = await supabase.functions.invoke("daily-admin-alerts", {
+        body: { testType: "digest" }
+      });
+
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+
+      if (response.data?.success) {
+        if (response.data.digestSent) {
+          toast.success(`Daily digest test email sent — ${response.data.sectionCount} section(s)`);
+        } else {
+          toast.info("No sections enabled for digest at this time");
+        }
+      } else {
+        throw new Error(response.data?.error || "Unknown error");
+      }
+    } catch (error: any) {
+      toast.error("Digest test failed: " + error.message);
     } finally {
       setIsTesting(null);
     }
