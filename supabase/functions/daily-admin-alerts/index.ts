@@ -183,6 +183,7 @@ const handler = async (req: Request): Promise<Response> => {
       return s ? s.is_enabled : true;
     };
     const shouldRun = (type: string) => {
+      if (testType === "digest") return isEnabled(type);
       if (testType) return testType === type;
       return isEnabled(type);
     };
