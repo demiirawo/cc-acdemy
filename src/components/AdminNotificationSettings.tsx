@@ -228,7 +228,7 @@ export function AdminNotificationSettings() {
           Admin Email Alerts
         </CardTitle>
         <CardDescription>
-          Configure individual email alerts sent to all admin users. Each alert type sends a separate email when triggered.
+          All enabled alerts below are combined into a <strong>single daily digest email</strong> sent to admins at <strong>09:00 UTC</strong>. Toggle a section off to remove it from the digest. Per-alert send times no longer apply — the digest goes out once a day.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
