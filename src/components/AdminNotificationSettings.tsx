@@ -228,7 +228,7 @@ export function AdminNotificationSettings() {
           Admin Email Alerts
         </CardTitle>
         <CardDescription>
-          Configure individual email alerts sent to all admin users. Each alert type sends a separate email when triggered.
+          All enabled alerts below are combined into a <strong>single daily digest email</strong> sent to admins at <strong>09:00 UTC</strong>. Toggle a section off to remove it from the digest. Per-alert send times no longer apply — the digest goes out once a day.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -399,7 +399,7 @@ export function AdminNotificationSettings() {
         <Separator />
         
         <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
-          <strong>Note:</strong> Alerts are sent daily at the configured times. The "New Request" alert (holiday, shift cover, etc.) is sent immediately when a request is submitted. UK Clock Change reminders are always active and sent automatically.
+          <strong>Note:</strong> The enabled alerts above are combined into one daily admin digest sent at 09:00 UTC. The "New Request" alert (holiday, shift cover, etc.) is still sent immediately when a request is submitted. UK Clock Change reminders go directly to all staff and are also summarised in the digest.
         </div>
       </CardContent>
     </Card>
