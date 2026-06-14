@@ -8,7 +8,9 @@ import { HRProfileManager } from "./HRProfileManager";
 import { MyHRProfile } from "./MyHRProfile";
 import { OnboardingManager } from "./OnboardingManager";
 import { StaffOnboardingForm } from "./StaffOnboardingForm";
-import { DollarSign, Users, User, GraduationCap, FileText } from "lucide-react";
+import { ContractsAdmin } from "./contracts/ContractsAdmin";
+import { MyContracts } from "./contracts/MyContracts";
+import { DollarSign, Users, User, GraduationCap, FileText, FileSignature } from "lucide-react";
 
 interface HRSectionProps {
   initialUserId?: string | null;
@@ -24,6 +26,8 @@ const TAB_ALIASES: Record<string, string> = {
   "onboarding-form": "onboarding-form",
   "my-profile": "my-profile",
   me: "my-profile",
+  contracts: "contracts",
+  "my-contracts": "my-contracts",
 };
 
 export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {}) {
@@ -61,12 +65,14 @@ export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {
   const adminTabs = [
     { value: "profiles", label: "Staff Profiles", icon: Users },
     { value: "pay", label: "Payroll", icon: DollarSign },
+    { value: "contracts", label: "Contracts", icon: FileSignature },
     { value: "onboarding", label: "Onboarding Steps", icon: GraduationCap },
     { value: "onboarding-form", label: "Onboarding Form", icon: FileText },
     { value: "my-profile", label: "My Profile", icon: User },
   ];
   const staffTabs = [
     { value: "my-profile", label: "My Profile", icon: User },
+    { value: "my-contracts", label: "My Contracts", icon: FileSignature },
     { value: "onboarding-form", label: "Onboarding Form", icon: FileText },
     { value: "onboarding", label: "Onboarding Steps", icon: GraduationCap },
   ];
@@ -143,7 +149,16 @@ export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {
               <TabsContent value="pay" className="mt-0">
                 <StaffPayManager />
               </TabsContent>
+              <TabsContent value="contracts" className="mt-0">
+                <ContractsAdmin />
+              </TabsContent>
             </>
+          )}
+
+          {!isAdmin && (
+            <TabsContent value="my-contracts" className="mt-0">
+              <MyContracts />
+            </TabsContent>
           )}
 
           <TabsContent value="onboarding" className="mt-0">

@@ -3,132 +3,155 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Care Cuddle Academy Design System - Professional & Modern */
+/* Care Cuddle Academy — design language aligned with CCForms */
 
 @layer base {
   :root {
     /* Core Background & Text */
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    --background: 220 15% 98%;
+    --foreground: 225 15% 15%;
 
-    /* Card Components */
+    /* Card & Surface */
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --card-foreground: 225 15% 15%;
 
-    /* Popover Components */
+    /* Popover */
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
+    --popover-foreground: 225 15% 15%;
 
-    /* Primary Brand Colors - Updated to #5E18EB */
-    --primary: 256 83% 51%;
+    /* Primary Brand — purple #5E18EA */
+    --primary: 262 84% 51%;
     --primary-foreground: 0 0% 100%;
-    --primary-light: 256 83% 61%;
-    --primary-dark: 256 83% 41%;
+    --primary-hover: 262 84% 45%;
+    --primary-glow: 262 84% 60%;
+    /* kept for backward compat */
+    --primary-light: 262 84% 61%;
+    --primary-dark: 262 84% 41%;
 
-    /* Secondary Colors - Soft Purple */
-    --secondary: 270 20% 95%;
-    --secondary-foreground: 240 10% 3.9%;
+    /* Secondary */
+    --secondary: 220 15% 96%;
+    --secondary-foreground: 225 15% 25%;
 
-    /* Muted Colors */
-    --muted: 270 20% 95%;
-    --muted-foreground: 240 3.8% 46.1%;
+    /* Muted */
+    --muted: 220 15% 95%;
+    --muted-foreground: 225 10% 50%;
 
-    /* Accent Colors - Pink Accent */
-    --accent: 328 85% 70%;
-    --accent-foreground: 240 10% 3.9%;
-    --accent-light: 328 85% 80%;
+    /* Accent — pink #D24D91, white text */
+    --accent: 333 60% 56%;
+    --accent-foreground: 0 0% 100%;
+    --accent-hover: 333 60% 50%;
+    --accent-light: 333 60% 70%;
 
-    /* Status Colors */
-    --destructive: 354 84% 57%;
-    --destructive-foreground: 0 0% 100%;
-    --success: 152 69% 45%;
+    /* Action button (same pink) */
+    --action: 333 60% 56%;
+    --action-foreground: 0 0% 100%;
+
+    /* Status */
+    --success: 142 76% 36%;
     --success-foreground: 0 0% 100%;
-    --warning: 45 93% 58%;
-    --warning-foreground: 215 27% 14%;
+    --save-ready: 143 71% 45%;
+    --save-ready-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
 
     /* UI Elements */
-    --border: 210 20% 90%;
-    --input: 210 20% 90%;
-    --ring: 212 96% 54%;
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 262 84% 51%;
 
-    /* Sidebar Colors */
-    --sidebar-background: 256 83% 51%;
+    /* Navigation / Header */
+    --nav-background: 262 84% 51%;
+    --header-background: 262 84% 51%;
+
+    /* Sidebar */
+    --sidebar-background: 262 84% 51%;
     --sidebar-foreground: 0 0% 100%;
-    --sidebar-accent: 256 83% 61%;
+    --sidebar-primary: 262 84% 51%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 262 84% 60%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 256 83% 41%;
+    --sidebar-border: 262 84% 45%;
+    --sidebar-ring: 262 84% 60%;
 
     /* Layout */
     --radius: 0.75rem;
 
     /* Shadows */
-    --shadow-sm: 0 1px 2px 0 hsl(215 27% 14% / 0.05);
-    --shadow-md: 0 4px 6px -1px hsl(215 27% 14% / 0.1), 0 2px 4px -1px hsl(215 27% 14% / 0.06);
-    --shadow-lg: 0 10px 15px -3px hsl(215 27% 14% / 0.1), 0 4px 6px -2px hsl(215 27% 14% / 0.05);
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --shadow-glow: 0 0 30px hsl(262 84% 51% / 0.2);
+    --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
 
     /* Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--primary-light)));
-    --gradient-accent: linear-gradient(135deg, hsl(var(--accent)), hsl(var(--accent-light)));
-    --gradient-subtle: linear-gradient(180deg, hsl(var(--background)), hsl(var(--muted)));
-    --gradient-hero: linear-gradient(135deg, hsl(256 83% 51%), hsl(328 85% 70%));
+    --gradient-primary: linear-gradient(135deg, hsl(262 84% 51%), hsl(262 84% 60%));
+    --gradient-secondary: linear-gradient(135deg, hsl(220 15% 98%), hsl(220 15% 95%));
+    --gradient-hero: linear-gradient(135deg, hsl(262 84% 51%) 0%, hsl(333 60% 56%) 100%);
+    --gradient-brand: linear-gradient(135deg, hsl(262 84% 51%) 0%, hsl(262 84% 60%) 50%, hsl(333 60% 56%) 100%);
+    /* backward compat */
+    --gradient-accent: linear-gradient(135deg, hsl(333 60% 56%), hsl(333 60% 70%));
+    --gradient-subtle: linear-gradient(180deg, hsl(220 15% 98%), hsl(220 15% 95%));
 
     /* Animations */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     --transition-fast: all 0.15s ease-out;
-
   }
 
   .dark {
-    /* Core Background & Text */
-    --background: 240 10% 3.9%;
-    --foreground: 0 0% 98%;
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
 
-    /* Card Components */
-    --card: 240 10% 3.9%;
-    --card-foreground: 0 0% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
 
-    /* Popover Components */
-    --popover: 240 10% 3.9%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
 
-    /* Primary Brand Colors - Updated to #5E18EB */
-    --primary: 256 83% 61%;
-    --primary-foreground: 0 0% 98%;
-    --primary-light: 256 83% 71%;
-    --primary-dark: 256 83% 51%;
+    --primary: 262 84% 65%;
+    --primary-foreground: 0 0% 100%;
+    --primary-hover: 262 84% 58%;
+    --primary-glow: 262 84% 70%;
+    --primary-light: 262 84% 71%;
+    --primary-dark: 262 84% 51%;
 
-    /* Secondary Colors */
-    --secondary: 240 3.7% 15.9%;
-    --secondary-foreground: 0 0% 98%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
 
-    /* Muted Colors */
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
 
-    /* Accent Colors */
-    --accent: 328 85% 75%;
-    --accent-foreground: 240 10% 3.9%;
-    --accent-light: 328 85% 85%;
+    --accent: 333 60% 65%;
+    --accent-foreground: 0 0% 100%;
+    --accent-hover: 333 60% 58%;
+    --accent-light: 333 60% 75%;
 
-    /* Status Colors */
-    --destructive: 354 84% 67%;
-    --destructive-foreground: 215 27% 8%;
-    --success: 152 69% 55%;
-    --success-foreground: 215 27% 8%;
-    --warning: 45 93% 68%;
-    --warning-foreground: 215 27% 8%;
+    --action: 333 60% 65%;
+    --action-foreground: 0 0% 100%;
 
-    /* UI Elements */
-    --border: 215 20% 25%;
-    --input: 215 20% 25%;
-    --ring: 212 96% 65%;
+    --success: 142 76% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 60%;
+    --warning-foreground: 0 0% 100%;
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 210 40% 98%;
 
-    /* Sidebar Colors */
-    --sidebar-background: 215 27% 6%;
-    --sidebar-foreground: 210 11% 85%;
-    --sidebar-accent: 212 96% 65%;
-    --sidebar-accent-foreground: 215 27% 8%;
-    --sidebar-border: 215 20% 15%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 262 84% 60%;
+
+    --nav-background: 212 27% 17%;
+    --header-background: 207 29% 17%;
+
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
   }
 }
 
@@ -156,4 +179,157 @@
   .glossary-term:hover {
     border-bottom-color: hsl(var(--primary-light));
   }
+}
+
+/* Normalize date inputs on mobile */
+input[type="date"],
+input[type="datetime-local"] {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  text-align: left;
+}
+input[type="date"]::-webkit-date-and-time-value,
+input[type="datetime-local"]::-webkit-date-and-time-value {
+  text-align: left;
+}
+
+/* Hidden scrollbar — keeps functionality */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+@layer components {
+  /* Glassmorphism utilities */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 1rem;
+  }
+
+  .glass-card-solid {
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 1rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+  }
+
+  .glass-nav {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  }
+
+  /* Floating orb decoration */
+  .floating-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(60px);
+    opacity: 0.3;
+    pointer-events: none;
+  }
+
+  /* Hero entrance stagger delays */
+  .hero-delay-1 { animation-delay: 0.1s; }
+  .hero-delay-2 { animation-delay: 0.3s; }
+  .hero-delay-3 { animation-delay: 0.5s; }
+  .hero-delay-4 { animation-delay: 0.7s; }
+
+  /* Animated brand gradient (for CTA buttons etc.) */
+  .cta-gradient-animated {
+    background: linear-gradient(270deg, hsl(262 84% 48%), hsl(262 84% 55%), hsl(280 70% 50%), hsl(262 84% 48%));
+    background-size: 300% 300%;
+  }
+}
+
+/* Self-contained typography for the contract rich text editor & rendered
+   document. Scoped to .cc-rich so it never affects the rest of the app
+   (the @tailwindcss/typography "prose" plugin is not enabled globally). */
+.cc-rich {
+  color: hsl(var(--foreground));
+  line-height: 1.65;
+  user-select: text;
+}
+.cc-rich :where(h1) {
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 1.2rem 0 0.6rem;
+}
+.cc-rich :where(h2) {
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 1.1rem 0 0.5rem;
+}
+.cc-rich :where(h3) {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 1rem 0 0.4rem;
+}
+.cc-rich :where(p) {
+  margin: 0.6rem 0;
+}
+.cc-rich :where(ul) {
+  list-style: disc;
+  padding-left: 1.5rem;
+  margin: 0.6rem 0;
+}
+.cc-rich :where(ol) {
+  list-style: decimal;
+  padding-left: 1.5rem;
+  margin: 0.6rem 0;
+}
+.cc-rich :where(li) {
+  margin: 0.25rem 0;
+}
+.cc-rich :where(a) {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+}
+.cc-rich :where(blockquote) {
+  border-left: 3px solid hsl(var(--border));
+  padding-left: 1rem;
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+  margin: 0.8rem 0;
+}
+.cc-rich :where(strong) {
+  font-weight: 700;
+}
+.cc-rich :where(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.8rem 0;
+}
+.cc-rich :where(th, td) {
+  border: 1px solid hsl(var(--border));
+  padding: 0.5rem 0.65rem;
+  text-align: left;
+}
+.cc-rich :where(th) {
+  background: hsl(var(--muted));
+  font-weight: 600;
+}
+.cc-rich :where(.ProseMirror) {
+  outline: none;
+}
+/* Placeholder text for the empty editor */
+.cc-rich :where(.ProseMirror p.is-editor-empty:first-child::before) {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: hsl(var(--muted-foreground));
 }

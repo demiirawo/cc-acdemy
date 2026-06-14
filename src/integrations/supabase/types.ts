@@ -473,6 +473,39 @@ export type Database = {
           },
         ]
       }
+      contract_templates: {
+        Row: {
+          body_html: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          is_archived: boolean
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          body_html?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_archived?: boolean
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          body_html?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_archived?: boolean
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       contractor_invoice_details: {
         Row: {
           bank_account_name: string | null
@@ -526,6 +559,80 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      contracts: {
+        Row: {
+          body_html: string
+          created_at: string
+          created_by: string | null
+          decline_reason: string | null
+          declined_at: string | null
+          id: string
+          recipient_email: string | null
+          recipient_name: string | null
+          recipient_user_id: string | null
+          sent_at: string
+          signature_image_url: string | null
+          signature_ip: string | null
+          signed_at: string | null
+          signed_name: string | null
+          status: string
+          template_id: string | null
+          title: string
+          updated_at: string
+          viewed_at: string | null
+        }
+        Insert: {
+          body_html: string
+          created_at?: string
+          created_by?: string | null
+          decline_reason?: string | null
+          declined_at?: string | null
+          id?: string
+          recipient_email?: string | null
+          recipient_name?: string | null
+          recipient_user_id?: string | null
+          sent_at?: string
+          signature_image_url?: string | null
+          signature_ip?: string | null
+          signed_at?: string | null
+          signed_name?: string | null
+          status?: string
+          template_id?: string | null
+          title: string
+          updated_at?: string
+          viewed_at?: string | null
+        }
+        Update: {
+          body_html?: string
+          created_at?: string
+          created_by?: string | null
+          decline_reason?: string | null
+          declined_at?: string | null
+          id?: string
+          recipient_email?: string | null
+          recipient_name?: string | null
+          recipient_user_id?: string | null
+          sent_at?: string
+          signature_image_url?: string | null
+          signature_ip?: string | null
+          signed_at?: string | null
+          signed_name?: string | null
+          status?: string
+          template_id?: string | null
+          title?: string
+          updated_at?: string
+          viewed_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contracts_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "contract_templates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       conversations: {
         Row: {
@@ -2549,6 +2656,36 @@ export type Database = {
         Args: { p_page_id: string; p_snapshot_type?: string }
         Returns: string
       }
+      decline_contract: {
+        Args: { _contract_id: string; _reason?: string }
+        Returns: {
+          body_html: string
+          created_at: string
+          created_by: string | null
+          decline_reason: string | null
+          declined_at: string | null
+          id: string
+          recipient_email: string | null
+          recipient_name: string | null
+          recipient_user_id: string | null
+          sent_at: string
+          signature_image_url: string | null
+          signature_ip: string | null
+          signed_at: string | null
+          signed_name: string | null
+          status: string
+          template_id: string | null
+          title: string
+          updated_at: string
+          viewed_at: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "contracts"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       get_current_user_role: { Args: never; Returns: string }
       get_next_sort_order: {
         Args: { p_parent_page_id: string; p_space_id: string }
@@ -2601,6 +2738,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      mark_contract_viewed: {
+        Args: { _contract_id: string }
+        Returns: undefined
+      }
       move_page_down: { Args: { page_id: string }; Returns: boolean }
       move_page_down_enhanced: {
         Args: { p_expected_version?: number; p_page_id: string }
@@ -2629,6 +2770,41 @@ export type Database = {
       }
       permanently_delete_page: { Args: { p_page_id: string }; Returns: Json }
       restore_page: { Args: { p_page_id: string }; Returns: Json }
+      sign_contract: {
+        Args: {
+          _contract_id: string
+          _signature_image_url?: string
+          _signature_ip?: string
+          _signed_name: string
+        }
+        Returns: {
+          body_html: string
+          created_at: string
+          created_by: string | null
+          decline_reason: string | null
+          declined_at: string | null
+          id: string
+          recipient_email: string | null
+          recipient_name: string | null
+          recipient_user_id: string | null
+          sent_at: string
+          signature_image_url: string | null
+          signature_ip: string | null
+          signed_at: string | null
+          signed_name: string | null
+          status: string
+          template_id: string | null
+          title: string
+          updated_at: string
+          viewed_at: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "contracts"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       sync_missing_profiles: {
         Args: never
         Returns: {

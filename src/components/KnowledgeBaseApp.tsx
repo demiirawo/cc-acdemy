@@ -16,7 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy, FileText, FolderOpen, ChevronRight } from "lucide-react";
+import { LogOut, Settings as SettingsIcon, Shield, Globe, Lock, Copy, FileText, FolderOpen, ChevronRight, Menu } from "lucide-react";
 import { UserManagement } from "./UserManagement";
 import { ChatPage } from "./ChatPage";
 import { RecommendedReadingSection } from "./RecommendedReadingSection";
@@ -475,6 +475,7 @@ export function KnowledgeBaseApp() {
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbData[]>([]);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [selectedHRUserId, setSelectedHRUserId] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const { pageId, viewName } = useParams();
   const {
@@ -1058,18 +1059,50 @@ export function KnowledgeBaseApp() {
     }
   };
   return <div className="flex h-screen bg-background">
-      <ResizableSidebar onItemSelect={handleItemSelect} selectedId={selectedItemId} onCreatePage={handleCreatePage} onCreateSubPage={handleCreateSubPage} onCreatePageInEditor={handleCreatePageInEditor} />
+      <ResizableSidebar
+        onItemSelect={handleItemSelect}
+        selectedId={selectedItemId}
+        onCreatePage={handleCreatePage}
+        onCreateSubPage={handleCreateSubPage}
+        onCreatePageInEditor={handleCreatePageInEditor}
+        mobileOpen={mobileMenuOpen}
+        onMobileClose={() => setMobileMenuOpen(false)}
+      />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        {/* Header with user info */}
-        <div className="border-b border-border p-4 bg-background/95 backdrop-blur-sm">
+        {/* Mobile top bar — purple, hamburger, logo */}
+        <div className="sticky top-0 z-40 flex h-14 items-center gap-3 px-4 bg-[hsl(var(--nav-background))] lg:hidden">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-white hover:bg-white/10 flex-shrink-0"
+            onClick={() => setMobileMenuOpen(true)}
+            aria-label="Open menu"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+          <span className="text-white font-semibold text-base truncate">Care Cuddle Academy</span>
+          <div className="flex-1" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-white hover:bg-white/10 flex-shrink-0"
+            onClick={signOut}
+            aria-label="Sign out"
+          >
+            <LogOut className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* Desktop header with breadcrumbs / user */}
+        <div className="hidden lg:block border-b border-border px-4 py-3 bg-background/95 backdrop-blur-sm">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               {(currentView === 'page' || currentView === 'editor') && currentPage && breadcrumbs.length > 0 ? <Breadcrumb>
                   <BreadcrumbList>
                     {breadcrumbs.map((crumb, index) => <div key={crumb.id} className="flex items-center">
                         <BreadcrumbItem>
-                          <BreadcrumbLink 
-                            className="cursor-pointer text-muted-foreground hover:text-foreground" 
+                          <BreadcrumbLink
+                            className="cursor-pointer text-muted-foreground hover:text-foreground"
                             onClick={() => handleItemSelect({
                               id: crumb.id,
                               title: crumb.title,
@@ -1088,14 +1121,14 @@ export function KnowledgeBaseApp() {
                       </BreadcrumbPage>
                     </BreadcrumbItem>
                   </BreadcrumbList>
-                </Breadcrumb> : <h2 className="text-lg font-semibold text-black/0">
-                  {currentView === 'dashboard' ? 'Dashboard' : currentView === 'tags' ? 'Tags' : currentView === 'settings' ? 'Settings' : currentView === 'whiteboard' ? 'Whiteboard' : currentView === 'user-management' ? 'User Management' : currentView === 'chat' ? 'Care Cuddle AI' : 'Care Cuddle Academy'}
+                </Breadcrumb> : <h2 className="text-lg font-semibold text-foreground/0 select-none">
+                  Care Cuddle Academy
                 </h2>}
             </div>
             <div className="flex items-center gap-2">
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="text-sm text-muted-foreground hover:text-foreground px-2"
                 onClick={() => setCurrentView('settings')}
               >
