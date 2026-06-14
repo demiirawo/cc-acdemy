@@ -277,39 +277,78 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
-    // ===== 3. UPCOMING APPROVED HOLIDAYS =====
+    // ===== 3. UPCOMING APPROVED HOLIDAYS (next 3 months, with cover status) =====
     if (shouldRun("upcoming_holidays")) {
-      const holidayDays = settingsMap.get("upcoming_holidays")?.days_before || 7;
-      const futureDate = new Date(today);
-      futureDate.setDate(futureDate.getDate() + holidayDays);
-      const futureDateStr = futureDate.toISOString().split("T")[0];
+      const horizon = new Date(today);
+      horizon.setMonth(horizon.getMonth() + 3);
+      const horizonStr = horizon.toISOString().split("T")[0];
 
       const { data: upcomingHolidays } = await supabaseClient
         .from("staff_holidays")
-        .select("user_id, start_date, end_date, holiday_type")
+        .select("id, user_id, start_date, end_date, holiday_type")
         .eq("status", "approved")
         .gte("start_date", todayStr)
-        .lte("start_date", futureDateStr)
+        .lte("start_date", horizonStr)
         .order("start_date");
+
+      const holidayUserIdsForCovers = [...new Set((upcomingHolidays || []).map(h => h.user_id))];
+      const { data: holidayCovers } = holidayUserIdsForCovers.length > 0
+        ? await supabaseClient
+            .from("staff_requests")
+            .select("user_id, swap_with_user_id, coverage_metadata, start_date, end_date")
+            .eq("request_type", "shift_swap")
+            .eq("status", "approved")
+            .in("swap_with_user_id", holidayUserIdsForCovers)
+        : { data: [] as any[] };
 
       const has = upcomingHolidays && upcomingHolidays.length > 0;
       if (has || testType === "upcoming_holidays") {
-        const data = has
-          ? upcomingHolidays.map(h => ({
-              name: profileMap.get(h.user_id) || "Unknown",
-              dateRange: h.start_date === h.end_date
+        const enumerateDates = (start: string, end: string): string[] => {
+          const out: string[] = [];
+          const s = new Date(start); const e = new Date(end);
+          for (const d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+            out.push(d.toISOString().split("T")[0]);
+          }
+          return out;
+        };
+
+        const items = has
+          ? upcomingHolidays.map(h => {
+              const name = profileMap.get(h.user_id) || "Unknown";
+              const allDates = enumerateDates(h.start_date, h.end_date);
+              const coveredSet = new Set<string>();
+              for (const c of holidayCovers || []) {
+                if (c.swap_with_user_id !== h.user_id) continue;
+                const dates: string[] = (c.coverage_metadata as any)?.covered_dates || [];
+                if (dates.length > 0) {
+                  dates.forEach(d => { if (allDates.includes(d)) coveredSet.add(d); });
+                } else {
+                  allDates.forEach(d => { if (d >= c.start_date && d <= c.end_date) coveredSet.add(d); });
+                }
+              }
+              const total = allDates.length;
+              const covered = coveredSet.size;
+              let status: string;
+              if (covered === 0) status = `<span style="color:#ef4444;font-weight:600;">Not covered</span>`;
+              else if (covered >= total) status = `<span style="color:#10b981;font-weight:600;">Fully covered</span>`;
+              else status = `<span style="color:#f59e0b;font-weight:600;">Partially covered (${covered}/${total} days)</span>`;
+              const dateRange = h.start_date === h.end_date
                 ? formatShortDate(h.start_date)
-                : `${formatShortDate(h.start_date)} – ${formatShortDate(h.end_date)}`,
-            }))
-          : [{ name: "[TEST] John Smith", dateRange: "25 Jan – 28 Jan" }];
+                : `${formatShortDate(h.start_date)} – ${formatShortDate(h.end_date)}`;
+              const daysUntil = Math.ceil((new Date(h.start_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+              return { sortKey: h.start_date, html: `<strong>${name}</strong> — ${dateRange} (in ${daysUntil} day${daysUntil === 1 ? "" : "s"}) — ${status}` };
+            })
+          : [{ sortKey: "0", html: `<strong>[TEST] John Smith</strong> — 25 Jan – 28 Jan (in 5 days) — <span style="color:#f59e0b;font-weight:600;">Partially covered (2/4 days)</span>` }];
+
+        items.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
         sections.push({
           type: "upcoming_holidays",
-          title: `Upcoming Holidays (next ${holidayDays} days)`,
+          title: "Upcoming Holidays (next 3 months)",
           icon: "📅",
           accentColor: "#3b82f6",
-          itemsHtml: data.map(h => `<strong>${h.name}</strong>: ${h.dateRange}`),
-          summary: `${data.length} starting soon`,
+          itemsHtml: items.map(i => i.html),
+          summary: `${items.length} upcoming`,
         });
       }
     }
