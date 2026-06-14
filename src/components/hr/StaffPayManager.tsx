@@ -1098,16 +1098,23 @@ export function StaffPayManager() {
           const yearsEmployedAtYearEnd = (holidayYearEnd.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
           const annualAllowance = yearsEmployedAtYearEnd >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
 
-          if (start > holidayYearEnd) {
+          // Cap accrual by employment_end_date if the employee left during the year
+          const employmentEndStr = userHRFull?.employment_end_date || null;
+          const employmentEnd = employmentEndStr ? parseISO(employmentEndStr) : null;
+          const effectiveYearEnd = employmentEnd && employmentEnd < holidayYearEnd ? employmentEnd : holidayYearEnd;
+
+          if (start > holidayYearEnd || (employmentEnd && employmentEnd < holidayYearStart)) {
+            // Employee was not employed during this holiday year
             accruedAllowance = 0;
           } else {
             const accrualStart = start > holidayYearStart ? start : holidayYearStart;
-            const daysAccruing = Math.max(0, Math.ceil((holidayYearEnd.getTime() - accrualStart.getTime()) / (1000 * 60 * 60 * 24)));
+            const daysAccruing = Math.max(0, Math.ceil((effectiveYearEnd.getTime() - accrualStart.getTime()) / (1000 * 60 * 60 * 24)));
             const fraction = Math.min(daysAccruing / totalDaysInYear, 1);
             accruedAllowance = Math.round(annualAllowance * fraction * 10) / 10;
           }
         } else {
-          accruedAllowance = DEFAULT_ALLOWANCE;
+          // No start date on file — we cannot verify entitlement, so do not assume a full allowance
+          accruedAllowance = 0;
         }
 
         const holidayBalance = accruedAllowance - userHolidaysTaken;
