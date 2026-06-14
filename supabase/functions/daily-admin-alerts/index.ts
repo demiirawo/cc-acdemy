@@ -618,64 +618,64 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
-    // ===== 8. OUTSTANDING HANDOVERS =====
+    // ===== 8. OUTSTANDING HANDOVERS (high-level per client) =====
     if (shouldRun("outstanding_handovers")) {
-      const handoverLeadDays = settingsMap.get("outstanding_handovers")?.days_before ?? 3;
       const { data: openTasks } = await supabaseClient
         .from("client_handover_tasks")
-        .select("id, client_name, task_name, handed_over_by, handed_over_to, progress, target_date")
-        .lt("progress", 100)
-        .order("target_date", { ascending: true, nullsFirst: false });
+        .select("client_name, progress, target_date")
+        .lt("progress", 100);
 
       const tasks = openTasks || [];
-      const horizon = new Date(today);
-      horizon.setDate(horizon.getDate() + handoverLeadDays);
-      const horizonStr = horizon.toISOString().split("T")[0];
+      const isTest = testType === "outstanding_handovers" && tasks.length === 0;
 
-      const overdue = tasks.filter(t => t.target_date && t.target_date <= todayStr);
-      const upcoming = tasks.filter(t => t.target_date && t.target_date > todayStr && t.target_date <= horizonStr);
-      const other = tasks.filter(t => !t.target_date || t.target_date > horizonStr);
+      type ClientAgg = { client: string; avgProgress: number; latestTarget: string | null; count: number };
+      const grouped = new Map<string, { sum: number; count: number; latest: string | null }>();
+      for (const t of tasks) {
+        if (!t.client_name) continue;
+        const cur = grouped.get(t.client_name) || { sum: 0, count: 0, latest: null };
+        cur.sum += t.progress ?? 0;
+        cur.count += 1;
+        if (t.target_date && (!cur.latest || t.target_date > cur.latest)) cur.latest = t.target_date;
+        grouped.set(t.client_name, cur);
+      }
 
-      const hasAny = overdue.length > 0 || upcoming.length > 0 || other.length > 0;
-      const isTest = testType === "outstanding_handovers" && !hasAny;
+      const clients: ClientAgg[] = isTest
+        ? [
+            { client: "[TEST] Comfort", avgProgress: 40, latestTarget: todayStr, count: 2 },
+            { client: "[TEST] Hope", avgProgress: 70, latestTarget: null, count: 1 },
+          ]
+        : Array.from(grouped.entries()).map(([client, v]) => ({
+            client,
+            avgProgress: Math.round(v.sum / v.count),
+            latestTarget: v.latest,
+            count: v.count,
+          }));
 
-      if (hasAny || isTest) {
-        const fmtItem = (t: any, prefix: string) => {
-          const dateLabel = t.target_date ? formatShortDate(t.target_date) : "no due date";
-          return `${prefix} <strong>${t.client_name}</strong> — ${t.task_name} (${t.progress}%) · from ${t.handed_over_by || "—"} → ${t.handed_over_to || "unassigned"} · leave starts ${dateLabel}`;
-        };
+      if (clients.length > 0) {
+        // Sort: ones with target dates first (soonest first), then no-date
+        clients.sort((a, b) => {
+          if (a.latestTarget && b.latestTarget) return a.latestTarget.localeCompare(b.latestTarget);
+          if (a.latestTarget) return -1;
+          if (b.latestTarget) return 1;
+          return 0;
+        });
 
-        const display = isTest
-          ? {
-              overdue: [{ client_name: "[TEST] Comfort", task_name: "Medication handover", handed_over_by: "Jane Doe", handed_over_to: "John Smith", progress: 40, target_date: todayStr }],
-              upcoming: [{ client_name: "[TEST] Hope", task_name: "Care plan briefing", handed_over_by: "Mary K", handed_over_to: "Peter O", progress: 20, target_date: horizonStr }],
-              other: [] as any[],
-            }
-          : { overdue, upcoming, other };
+        const items = clients.map(c => {
+          const dateLabel = c.latestTarget ? formatShortDate(c.latestTarget) : "no due date";
+          const overdue = c.latestTarget && c.latestTarget <= todayStr;
+          const dateHtml = overdue
+            ? `<span style="color:#ef4444;font-weight:600;">due ${dateLabel}</span>`
+            : `due ${dateLabel}`;
+          return `<strong>${c.client}</strong> — ${c.avgProgress}% complete · ${dateHtml}`;
+        });
 
-        const items: string[] = [];
-        if (display.overdue.length > 0) {
-          items.push(`<span style="color:#ef4444;font-weight:700;">⚠️ Not acknowledged before leave start (${display.overdue.length}):</span>`);
-          display.overdue.forEach((t: any) => items.push(fmtItem(t, "🔴")));
-        }
-        if (display.upcoming.length > 0) {
-          items.push(`<span style="color:#f59e0b;font-weight:700;">⏳ Due within ${handoverLeadDays} day${handoverLeadDays === 1 ? "" : "s"} (${display.upcoming.length}):</span>`);
-          display.upcoming.forEach((t: any) => items.push(fmtItem(t, "🟠")));
-        }
-        if (display.other.length > 0) {
-          items.push(`<span style="color:#6b7280;font-weight:700;">📋 Other outstanding (${display.other.length}):</span>`);
-          display.other.slice(0, 20).forEach((t: any) => items.push(fmtItem(t, "•")));
-          if (display.other.length > 20) items.push(`…and ${display.other.length - 20} more`);
-        }
-
-        const totalCount = display.overdue.length + display.upcoming.length + display.other.length;
         sections.push({
           type: "outstanding_handovers",
           title: "Outstanding Handovers",
           icon: "📋",
-          accentColor: display.overdue.length > 0 ? "#ef4444" : "#f59e0b",
+          accentColor: "#f59e0b",
           itemsHtml: items,
-          summary: `${totalCount} open${display.overdue.length > 0 ? `, ${display.overdue.length} overdue` : ""}`,
+          summary: `${clients.length} client${clients.length === 1 ? "" : "s"}`,
         });
       }
     }
