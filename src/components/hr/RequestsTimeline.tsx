@@ -28,6 +28,7 @@ interface TimelineRequest {
   status: string;
   linked_holiday_id: string | null;
   details: string | null;
+  client_informed?: boolean | null;
 }
 
 interface UserProfile {
@@ -385,6 +386,13 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                       palette = "bg-rose-100 dark:bg-rose-900/40 border-rose-500 text-rose-900 dark:text-rose-50";
                     }
 
+                    // Second outline conveys client-notification status:
+                    // blue = client has been notified, red = not yet notified.
+                    const clientNotified = !!req.client_informed;
+                    const notifyOutline = clientNotified
+                      ? "outline outline-2 outline-offset-1 outline-blue-500"
+                      : "outline outline-2 outline-offset-1 outline-red-500";
+
                     // Render one bar per contiguous working-day segment.
                     // Show the name on the widest segment only to avoid clutter.
                     const widestIdx = segments.reduce(
@@ -408,7 +416,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                             <button
                               type="button"
                               onClick={() => onSelectRequest?.(req.id)}
-                              className={`absolute rounded-md border-2 ${palette} ${
+                              className={`absolute rounded-md border-2 ${palette} ${notifyOutline} ${
                                 isPending ? "opacity-70 border-dashed" : ""
                               } flex items-center gap-2 px-2.5 text-xs font-medium overflow-hidden hover:ring-2 hover:ring-primary hover:z-10 transition`}
                               style={{ left: startOff * DAY_WIDTH + 2, top, width, height: ROW_HEIGHT }}
@@ -443,6 +451,13 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                                 <span className="text-rose-600 dark:text-rose-400">No cover assigned</span>
                               )}
                             </div>
+                            <div className="mt-1">
+                              {clientNotified ? (
+                                <span className="text-blue-600 dark:text-blue-400">Client notified ✓</span>
+                              ) : (
+                                <span className="text-red-600 dark:text-red-400">Client not notified</span>
+                              )}
+                            </div>
                           </TooltipContent>
                         </Tooltip>
                       );
@@ -473,6 +488,14 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded border-2 border-dashed border-muted-foreground" />
             Pending
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded outline outline-2 outline-offset-1 outline-blue-500" />
+            Client notified
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded outline outline-2 outline-offset-1 outline-red-500" />
+            Client not notified
           </div>
           <div className="flex items-center gap-1.5 ml-auto">
             <div className="w-px h-3 bg-red-500" /> Today

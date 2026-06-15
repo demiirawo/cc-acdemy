@@ -283,6 +283,8 @@ export function OnboardingStepsManager() {
         return 'External Link';
       case 'acknowledgement':
         return 'Acknowledgement';
+      case 'training':
+        return 'Training';
       default:
         return 'Task';
     }
@@ -560,6 +562,7 @@ export function OnboardingStepsManager() {
                     <SelectItem value="acknowledgement">Acknowledgement (information to acknowledge)</SelectItem>
                     <SelectItem value="internal_page">Academy Page (requires acknowledgement)</SelectItem>
                     <SelectItem value="external_link">External Link</SelectItem>
+                    <SelectItem value="training">Training (auto-completes from training matrix)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

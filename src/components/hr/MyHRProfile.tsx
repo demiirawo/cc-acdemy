@@ -10,13 +10,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2 } from "lucide-react";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay } from "date-fns";
+import { cn } from "@/lib/utils";
+import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay, differenceInCalendarDays } from "date-fns";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
+import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItemsManager";
+import { allTrainingUpToDate } from "@/lib/trainingStatus";
 interface UserProfile {
   user_id: string;
   display_name: string | null;
@@ -75,6 +79,7 @@ interface HRProfile {
   annual_holiday_allowance: number | null;
   unlimited_holiday: boolean;
   notes: string | null;
+  performance_rating: string | null;
 }
 interface Holiday {
   id: string;
@@ -143,6 +148,26 @@ interface RecurringBonus {
   start_date: string;
   end_date: string | null;
 }
+interface OnboardingOwner {
+  id: string;
+  name: string;
+  role: string | null;
+  email: string | null;
+  phone: string | null;
+}
+
+interface OnboardingStep {
+  id: string;
+  title: string;
+  description: string | null;
+  sort_order: number;
+  step_type: string;
+  target_page_id: string | null;
+  external_url: string | null;
+  stage: string;
+  owner?: OnboardingOwner | null;
+}
+
 interface OnboardingFormData {
   id: string;
   employment_start_date: string | null;
@@ -242,6 +267,41 @@ const REQUEST_TYPES: Record<string, {
     icon: 'refresh'
   }
 };
+
+// Unified high-level status pill used across the profile accordions.
+type StatusTone = 'success' | 'warning' | 'danger' | 'neutral';
+const STATUS_TONE_CLASS: Record<StatusTone, string> = {
+  success: 'bg-green-100 text-green-700 border-green-200',
+  warning: 'bg-amber-100 text-amber-700 border-amber-200',
+  danger: 'bg-red-100 text-red-700 border-red-200',
+  neutral: 'bg-muted text-muted-foreground border-border',
+};
+const STATUS_DOT_CLASS: Record<StatusTone, string> = {
+  success: 'bg-green-500',
+  warning: 'bg-amber-500',
+  danger: 'bg-red-500',
+  neutral: 'bg-muted-foreground/60',
+};
+// Performance rating tiers (tier-list style). Order defines the click cycle.
+const RANK_ORDER = ['S', 'A', 'B', 'C', 'D'] as const;
+type Rank = typeof RANK_ORDER[number];
+const RANK_STYLES: Record<Rank, { label: string; tile: string; glow: string; emoji: string }> = {
+  S: { label: 'S Rank', tile: 'bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-500 text-amber-950', glow: 'shadow-[0_0_18px_rgba(251,191,36,0.7)]', emoji: '👑' },
+  A: { label: 'A Rank', tile: 'bg-gradient-to-br from-emerald-300 to-green-500 text-emerald-950', glow: 'shadow-[0_0_16px_rgba(16,185,129,0.55)]', emoji: '⭐' },
+  B: { label: 'B Rank', tile: 'bg-gradient-to-br from-sky-300 to-blue-500 text-sky-950', glow: 'shadow-[0_0_16px_rgba(59,130,246,0.5)]', emoji: '✨' },
+  C: { label: 'C Rank', tile: 'bg-gradient-to-br from-violet-300 to-purple-500 text-violet-950', glow: 'shadow-[0_0_14px_rgba(168,85,247,0.45)]', emoji: '🔧' },
+  D: { label: 'D Rank', tile: 'bg-gradient-to-br from-slate-300 to-slate-500 text-slate-900', glow: '', emoji: '🌱' },
+};
+
+function StatusPill({ tone, children }: { tone: StatusTone; children: React.ReactNode }) {
+  return (
+    <span className={cn("ml-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium", STATUS_TONE_CLASS[tone])}>
+      <span className={cn("h-1.5 w-1.5 rounded-full", STATUS_DOT_CLASS[tone])} />
+      {children}
+    </span>
+  );
+}
+
 export function MyHRProfile() {
   const {
     user
@@ -265,6 +325,11 @@ export function MyHRProfile() {
   const [coveredUserPatterns, setCoveredUserPatterns] = useState<RecurringShiftPattern[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [onboardingData, setOnboardingData] = useState<OnboardingFormData | null>(null);
+  const [onboardingSteps, setOnboardingSteps] = useState<OnboardingStep[]>([]);
+  const [onboardingCompletedIds, setOnboardingCompletedIds] = useState<Set<string>>(new Set());
+  const [trainingItems, setTrainingItems] = useState<TrainingItem[]>([]);
+  const [trainingRecords, setTrainingRecords] = useState<{ training_item_id: string; completed_date: string }[]>([]);
+  const [hasContractorDetails, setHasContractorDetails] = useState(false);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
   const [documentPreview, setDocumentPreview] = useState<{
     open: boolean;
@@ -412,6 +477,73 @@ export function MyHRProfile() {
         data: onboardingFormData
       } = await supabase.from('staff_onboarding_documents').select('*').eq('user_id', targetUserId).maybeSingle();
       setOnboardingData(onboardingFormData);
+
+      // Fetch onboarding steps + user progress
+      const { data: stepsData } = await supabase
+        .from('onboarding_steps')
+        .select('id, title, description, sort_order, step_type, target_page_id, external_url, stage, owner:onboarding_owners(id, name, role, email, phone)')
+        .order('stage', { ascending: true })
+        .order('sort_order', { ascending: true });
+
+      const { data: completionsData } = await supabase
+        .from('onboarding_completions')
+        .select('step_id')
+        .eq('user_id', targetUserId);
+
+      const internalPageIds = (stepsData || [])
+        .filter(s => s.step_type === 'internal_page' && s.target_page_id)
+        .map(s => s.target_page_id as string);
+
+      let acknowledgedPageIds: string[] = [];
+      if (internalPageIds.length > 0) {
+        const { data: ackData } = await supabase
+          .from('page_acknowledgements')
+          .select('page_id')
+          .eq('user_id', targetUserId)
+          .in('page_id', internalPageIds);
+        acknowledgedPageIds = (ackData || []).map(a => a.page_id);
+      }
+
+      // Fetch training items + this user's training records (also drives the
+      // training-linked onboarding step's completion).
+      const { data: tItems } = await supabase
+        .from('training_items')
+        .select('id, name, description, refresh_frequency_months, sort_order, is_active, category')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+      const { data: tRecords } = await supabase
+        .from('training_records')
+        .select('training_item_id, completed_date')
+        .eq('user_id', targetUserId);
+      setTrainingItems((tItems || []) as TrainingItem[]);
+      setTrainingRecords(tRecords || []);
+
+      const trainingDone = allTrainingUpToDate(
+        (tItems || []).map(t => ({ id: t.id, refresh_frequency_months: t.refresh_frequency_months })),
+        new Map((tRecords || []).map(r => [r.training_item_id, r.completed_date]))
+      );
+
+      const completedIds = new Set<string>([
+        ...((completionsData || []).map(c => c.step_id)),
+        // For internal_page steps, treat acknowledged pages as completed
+        ...((stepsData || [])
+          .filter(s => s.step_type === 'internal_page' && s.target_page_id && acknowledgedPageIds.includes(s.target_page_id))
+          .map(s => s.id)),
+        // Training-linked steps complete when all active training is up to date
+        ...((stepsData || [])
+          .filter(s => s.step_type === 'training' && trainingDone)
+          .map(s => s.id)),
+      ]);
+
+      setOnboardingSteps((stepsData || []) as OnboardingStep[]);
+      setOnboardingCompletedIds(completedIds);
+
+      // Whether contractor/invoicing details are on file for this user
+      const { count: contractorCount } = await supabase
+        .from('contractor_invoice_details')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', targetUserId);
+      setHasContractorDetails((contractorCount ?? 0) > 0);
 
       // Fetch public holidays for next 12 months (current year + next year if needed)
       await fetchPublicHolidays();
@@ -969,6 +1101,24 @@ export function MyHRProfile() {
       return next;
     });
   };
+  // Cycle the performance rating S → A → B → C → D → S on click (admin only).
+  const cyclePerformanceRating = async () => {
+    if (!hrProfile || !isAdmin) return;
+    const cur = hrProfile.performance_rating as Rank | null;
+    const idx = RANK_ORDER.indexOf(cur as Rank);
+    const next = RANK_ORDER[(idx + 1) % RANK_ORDER.length];
+    const prev = hrProfile;
+    setHRProfile({ ...hrProfile, performance_rating: next }); // optimistic
+    const { error } = await supabase
+      .from('hr_profiles')
+      .update({ performance_rating: next })
+      .eq('id', hrProfile.id);
+    if (error) {
+      setHRProfile(prev);
+      toast({ title: "Couldn't update rating", description: error.message, variant: "destructive" });
+    }
+  };
+
   const formatCurrency = (amount: number, currency: string) => {
     const symbol = CURRENCIES[currency] || '';
     return `${symbol}${amount.toLocaleString(undefined, {
@@ -1054,7 +1204,7 @@ export function MyHRProfile() {
         </Card>}
 
       {/* Profile Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -1121,18 +1271,239 @@ export function MyHRProfile() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Performance Rating — click to cycle tiers (admin) */}
+        {(() => {
+          const rank = (hrProfile.performance_rating as Rank | null);
+          const style = rank ? RANK_STYLES[rank] : null;
+          return (
+            <Card
+              onClick={cyclePerformanceRating}
+              title={isAdmin ? "Click to change performance rating" : undefined}
+              className={cn(
+                "overflow-hidden transition-all duration-200",
+                isAdmin && "cursor-pointer hover:shadow-lg hover:-translate-y-0.5 active:scale-[0.98]"
+              )}
+            >
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div
+                    key={rank || 'none'}
+                    className={cn(
+                      "flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg text-xl font-extrabold animate-in zoom-in-50 duration-300",
+                      style ? cn(style.tile, style.glow) : "bg-primary/10 text-primary"
+                    )}
+                  >
+                    {rank ?? "?"}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm text-muted-foreground">Performance Rating</p>
+                    <p className="font-medium flex items-center gap-1.5">
+                      {style ? (
+                        <>
+                          <span>{style.emoji}</span>
+                          {style.label}
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground">{isAdmin ? "Tap to rate" : "Not rated"}</span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })()}
       </div>
+
+      {/* Onboarding Steps Progress */}
+      {onboardingSteps.length > 0 && (() => {
+        const STAGE_ORDER = ["Getting Started", "System & Tools", "Company Policies", "Training", "Final Checks"];
+        const stepsByStage = onboardingSteps.reduce((acc, step) => {
+          const key = step.stage || "Getting Started";
+          if (!acc[key]) acc[key] = [];
+          acc[key].push(step);
+          return acc;
+        }, {} as Record<string, OnboardingStep[]>);
+        const stages = STAGE_ORDER.filter(s => stepsByStage[s]?.length > 0);
+        const totalSteps = onboardingSteps.length;
+        const completedSteps = onboardingSteps.filter(s => onboardingCompletedIds.has(s.id)).length;
+        const progressPct = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+        const allDone = completedSteps === totalSteps;
+
+        return (
+          <Accordion type="single" collapsible className="w-full">
+            <AccordionItem value="onboarding-steps" className="border-2 border-primary/20 rounded-lg bg-card">
+              <AccordionTrigger className="px-6 py-4 hover:no-underline">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <ListChecks className="h-5 w-5 text-primary flex-shrink-0" />
+                  <span className="text-lg font-semibold">Onboarding Progress</span>
+                  <StatusPill tone={allDone ? "success" : completedSteps > 0 ? "warning" : "neutral"}>
+                    {allDone ? "Complete" : `${completedSteps} / ${totalSteps} steps`}
+                  </StatusPill>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="px-6 pb-6">
+                {/* Overall progress bar */}
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-muted-foreground">Overall completion</span>
+                    <span className="text-sm font-semibold text-primary">{progressPct}%</span>
+                  </div>
+                  <Progress value={progressPct} className="h-2.5" />
+                  {allDone && (
+                    <p className="text-sm text-green-600 font-medium mt-2 flex items-center gap-1.5">
+                      <CheckCircle2 className="h-4 w-4" /> All onboarding steps complete!
+                    </p>
+                  )}
+                </div>
+
+                {/* Stages */}
+                <div className="space-y-5">
+                  {stages.map(stageName => {
+                    const stageSteps = stepsByStage[stageName];
+                    const stageDone = stageSteps.filter(s => onboardingCompletedIds.has(s.id)).length;
+                    const stageTotal = stageSteps.length;
+                    const stageComplete = stageDone === stageTotal;
+
+                    return (
+                      <div key={stageName}>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="text-sm font-semibold text-foreground">{stageName}</h4>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                            stageComplete
+                              ? "bg-green-100 text-green-700"
+                              : "bg-muted text-muted-foreground"
+                          }`}>
+                            {stageDone}/{stageTotal}
+                          </span>
+                        </div>
+                        <div className="space-y-2">
+                          {stageSteps.map(step => {
+                            const done = onboardingCompletedIds.has(step.id);
+                            return (
+                              <div
+                                key={step.id}
+                                className={`flex items-start gap-3 rounded-lg px-3 py-2.5 ${
+                                  done ? "bg-green-50 border border-green-200" : "bg-muted/40 border border-border"
+                                }`}
+                              >
+                                {done
+                                  ? <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0 mt-0.5" />
+                                  : <Circle className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />}
+                                <div className="min-w-0">
+                                  <p className={`text-sm font-medium leading-snug ${done ? "text-green-800" : "text-foreground"}`}>
+                                    {step.title}
+                                  </p>
+                                  {step.description && (
+                                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                                      {step.description.replace(/(https?:\/\/[^\s]+)/g, '[link]')}
+                                    </p>
+                                  )}
+                                </div>
+                                {done && (
+                                  <span className="ml-auto flex-shrink-0 text-xs text-green-700 font-medium">Done</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        );
+      })()}
+
+      {/* Training Matrix (per-staff view) */}
+      {trainingItems.length > 0 && (() => {
+        const recFor = (id: string) => trainingRecords.find(r => r.training_item_id === id) || null;
+        const statusOf = (item: TrainingItem): 'none' | 'valid' | 'due_soon' | 'expired' | 'complete' => {
+          const rec = recFor(item.id);
+          if (!rec) return 'none';
+          if (item.refresh_frequency_months == null) return 'complete';
+          const exp = addMonths(parseISO(rec.completed_date), item.refresh_frequency_months);
+          const days = differenceInCalendarDays(exp, new Date());
+          if (days < 0) return 'expired';
+          if (days <= 30) return 'due_soon';
+          return 'valid';
+        };
+        const STATUS_CLASS: Record<string, string> = {
+          complete: "bg-green-100 text-green-800 border-green-300",
+          valid: "bg-green-100 text-green-800 border-green-300",
+          due_soon: "bg-amber-100 text-amber-800 border-amber-300",
+          expired: "bg-red-100 text-red-800 border-red-300",
+          none: "bg-muted text-muted-foreground border-dashed",
+        };
+        const total = trainingItems.length;
+        const upToDate = trainingItems.filter(it => ['complete', 'valid', 'due_soon'].includes(statusOf(it))).length;
+        const expiredCount = trainingItems.filter(it => statusOf(it) === 'expired').length;
+        const recordedCount = trainingItems.filter(it => statusOf(it) !== 'none').length;
+        const pct = total ? Math.round((upToDate / total) * 100) : 0;
+        const trainingTone: StatusTone =
+          expiredCount > 0 ? 'danger' : upToDate === total ? 'success' : recordedCount > 0 ? 'warning' : 'neutral';
+
+        const grouped: Record<string, TrainingItem[]> = {};
+        trainingItems.forEach(it => {
+          const k = it.category || 'Other';
+          (grouped[k] ||= []).push(it);
+        });
+        const cats = [...TRAINING_CATEGORIES, ...Object.keys(grouped).filter(c => !(TRAINING_CATEGORIES as readonly string[]).includes(c) && c !== 'Other'), 'Other']
+          .filter(c => grouped[c]?.length);
+
+        return (
+          <Accordion type="single" collapsible className="w-full">
+            <AccordionItem value="training" className="border-2 border-primary/20 rounded-lg bg-card">
+              <AccordionTrigger className="px-6 py-4 hover:no-underline">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <Award className="h-5 w-5 text-primary flex-shrink-0" />
+                  <span className="text-lg font-semibold">Training</span>
+                  <StatusPill tone={trainingTone}>
+                    {expiredCount > 0 ? `${expiredCount} overdue` : `${pct}% up to date`}
+                  </StatusPill>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="px-6 pb-6">
+                <div className="space-y-5">
+                  {cats.map(cat => (
+                    <div key={cat}>
+                      <h4 className="text-sm font-semibold text-foreground mb-2">{cat}</h4>
+                      <div className="space-y-2">
+                        {grouped[cat].map(item => {
+                          const rec = recFor(item.id);
+                          const st = statusOf(item);
+                          return (
+                            <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2">
+                              <span className="text-sm font-medium">{item.name}</span>
+                              <span className={cn("flex-shrink-0 rounded border px-2 py-0.5 text-xs font-medium", STATUS_CLASS[st])}>
+                                {rec ? format(parseISO(rec.completed_date), "d MMM yyyy") : "Not recorded"}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        );
+      })()}
 
       {/* Personal Details Section - from onboarding form */}
       {onboardingData && <Accordion type="single" collapsible className="w-full">
-          <AccordionItem value="personal-details" className="border-2 border-primary/20 rounded-lg">
+          <AccordionItem value="personal-details" className="border-2 border-primary/20 rounded-lg bg-card">
             <AccordionTrigger className="px-6 py-4 hover:no-underline">
               <div className="flex items-center gap-2">
                 <User className="h-5 w-5 text-primary" />
                 <span className="text-lg font-semibold">Personal Details</span>
-                <Badge variant={onboardingData.form_status === 'complete' ? 'default' : 'secondary'} className="ml-2">
-                  {onboardingData.form_status === 'complete' ? 'Complete' : 'In Progress'}
-                </Badge>
+                <StatusPill tone={onboardingData.form_status === 'complete' ? 'success' : 'warning'}>
+                  {onboardingData.form_status === 'complete' ? 'Complete' : 'In progress'}
+                </StatusPill>
               </div>
             </AccordionTrigger>
             <AccordionContent className="px-6 pb-4">
@@ -1367,11 +1738,19 @@ export function MyHRProfile() {
 
       {/* 12-Month Pay Forecast Section */}
       {monthlyPreviews.length > 0 && <Accordion type="single" collapsible className="w-full">
-          <AccordionItem value="pay-forecast" className="border-2 border-primary/20 rounded-lg">
+          <AccordionItem value="pay-forecast" className="border-2 border-primary/20 rounded-lg bg-card">
             <AccordionTrigger className="px-6 py-4 hover:no-underline">
               <div className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5 text-primary" />
                 <span className="text-lg font-semibold">12-Month Pay Forecast</span>
+                {(() => {
+                  const nowKey = format(new Date(), 'yyyy-MM');
+                  const current = monthlyPreviews.find(p => format(p.month, 'yyyy-MM') === nowKey) || monthlyPreviews[0];
+                  const st = current?.payrollStatus;
+                  const tone: StatusTone = st === 'paid' ? 'success' : st === 'ready' ? 'warning' : 'neutral';
+                  const label = st === 'paid' ? 'Paid this month' : st === 'ready' ? 'Ready to pay' : 'Pending';
+                  return <StatusPill tone={tone}>{label}</StatusPill>;
+                })()}
               </div>
             </AccordionTrigger>
             <AccordionContent className="px-6 pb-4">
@@ -1593,11 +1972,14 @@ export function MyHRProfile() {
       {/* Contractor / Invoicing Details Section */}
       {selectedUserId && (
         <Accordion type="single" collapsible className="w-full">
-          <AccordionItem value="contractor-details" className="border-2 border-primary/20 rounded-lg">
+          <AccordionItem value="contractor-details" className="border-2 border-primary/20 rounded-lg bg-card">
             <AccordionTrigger className="px-6 py-4 hover:no-underline">
               <div className="flex items-center gap-2">
                 <Building2 className="h-5 w-5 text-primary" />
                 <span className="text-lg font-semibold">Contractor / Invoicing Details</span>
+                <StatusPill tone={hasContractorDetails ? 'success' : 'neutral'}>
+                  {hasContractorDetails ? 'On file' : 'Not set'}
+                </StatusPill>
               </div>
             </AccordionTrigger>
             <AccordionContent className="px-6 pb-4">
@@ -1613,7 +1995,7 @@ export function MyHRProfile() {
 
       {/* My Requests Section */}
       <Accordion type="single" collapsible className="w-full">
-        <AccordionItem value="my-requests" className="border-2 border-primary/20 rounded-lg">
+        <AccordionItem value="my-requests" className="border-2 border-primary/20 rounded-lg bg-card">
           <AccordionTrigger className="px-6 py-4 hover:no-underline">
             <div className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" />

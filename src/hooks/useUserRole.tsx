@@ -42,12 +42,17 @@ export const useUserRole = () => {
   const isAdmin = role === 'admin';
   const isEditor = role === 'editor' || role === 'admin';
   const isViewer = role === 'viewer' || role === 'editor' || role === 'admin';
+  const isTrainingManager = role === 'training_manager';
+  // Who may view & edit the training matrix.
+  const canManageTraining = isAdmin || isTrainingManager;
 
   return {
     role,
     loading,
     isAdmin,
     isEditor,
-    isViewer
+    isViewer,
+    isTrainingManager,
+    canManageTraining
   };
 };

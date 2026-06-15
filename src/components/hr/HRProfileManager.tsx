@@ -10,7 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Edit, UserCircle, CheckCircle2, X, Users, Trash2, Mail, Eye, BookOpen, Clock, CheckCircle, Shield, FileCheck, FileText, User, Phone, Home, CreditCard, Image as ImageIcon, Infinity } from "lucide-react";
+import { Plus, Edit, UserCircle, CheckCircle2, X, Users, Trash2, Mail, Eye, BookOpen, Clock, CheckCircle, Shield, FileCheck, FileText, User, Phone, Home, CreditCard, Image as ImageIcon, Infinity, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { StaffDocumentationMatrix } from "./StaffDocumentationMatrix";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -81,13 +81,7 @@ interface Client {
   name: string;
 }
 
-interface EmailException {
-  id: string;
-  email: string;
-  reason: string | null;
-  created_by: string;
-  created_at: string;
-}
+type SortKey = 'name' | 'employee_id' | 'status' | 'role' | 'scheduling' | 'clients';
 
 interface PageView {
   page_id: string;
@@ -146,6 +140,7 @@ const PAY_FREQUENCIES = [
 const APP_ROLES = [
   { value: 'viewer', label: 'Viewer', description: 'Read-only access to knowledge base' },
   { value: 'editor', label: 'Editor', description: 'Can edit pages and content' },
+  { value: 'training_manager', label: 'Training Manager', description: 'Can view and update the training matrix' },
   { value: 'admin', label: 'Admin', description: 'Full administrative access' },
 ];
 
@@ -167,11 +162,10 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
   const [staffClients, setStaffClients] = useState<string[]>([]);
   const [selectedClient, setSelectedClient] = useState<string>('');
   
-  // User management state
-  const [emailExceptions, setEmailExceptions] = useState<EmailException[]>([]);
-  const [newEmail, setNewEmail] = useState('');
-  const [newReason, setNewReason] = useState('');
-  const [addEmailDialogOpen, setAddEmailDialogOpen] = useState(false);
+  // Sorting state for the staff table
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
   const [selectedUserPageViews, setSelectedUserPageViews] = useState<PageView[]>([]);
   const [pageViewsDialogOpen, setPageViewsDialogOpen] = useState(false);
   const [pageViewsLoading, setPageViewsLoading] = useState(false);
@@ -204,7 +198,6 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
 
   useEffect(() => {
     fetchData();
-    fetchEmailExceptions();
 
     // Set up real-time listening for profile changes
     const channel = supabase
@@ -218,17 +211,6 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
         },
         () => {
           fetchData();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'email_exceptions'
-        },
-        () => {
-          fetchEmailExceptions();
         }
       )
       .subscribe();
@@ -355,20 +337,6 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
       });
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchEmailExceptions = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('email_exceptions')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setEmailExceptions(data || []);
-    } catch (error) {
-      console.error('Error fetching email exceptions:', error);
     }
   };
 
@@ -591,6 +559,30 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
         if (insertError) throw insertError;
       }
 
+      // On creation of a new staff member in an onboarding status, automatically
+      // email them a link to start their onboarding (they kick off the offer
+      // email + contract themselves from the onboarding page).
+      if (!editingProfile && String(formData.employment_status).startsWith('onboarding')) {
+        const recipient = userProfiles.find(u => u.user_id === formData.user_id);
+        if (recipient?.email) {
+          try {
+            await supabase.functions.invoke('send-onboarding-offer', {
+              body: {
+                recipientEmail: recipient.email,
+                recipientName: formData.display_name || recipient.display_name,
+                subject: 'Welcome to Care Cuddle — start your onboarding',
+                bodyHtml: "<p>Your Care Cuddle account is ready. Click below to begin your onboarding — you'll be guided through each step, and you can request your offer letter and employment contract from there.</p>",
+              },
+            });
+            await supabase.from('hr_profiles')
+              .update({ onboarding_started_at: new Date().toISOString() })
+              .eq('user_id', formData.user_id);
+          } catch (e) {
+            console.error('onboarding invite failed', e);
+          }
+        }
+      }
+
       toast({ title: "Success", description: editingProfile ? "Staff profile updated" : "Staff profile created" });
       setDialogOpen(false);
       fetchData();
@@ -663,68 +655,6 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
       toast({
         title: "Error",
         description: `Failed to delete user: ${error.message}`,
-        variant: "destructive"
-      });
-    }
-  };
-
-  const addEmailException = async () => {
-    if (!newEmail.trim()) {
-      toast({
-        title: "Error",
-        description: "Email address is required",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from('email_exceptions')
-        .insert({
-          email: newEmail.toLowerCase().trim(),
-          reason: newReason.trim() || null,
-          created_by: (await supabase.auth.getUser()).data.user?.id
-        });
-
-      if (error) throw error;
-
-      toast({
-        title: "Success",
-        description: "Email exception added successfully"
-      });
-
-      setNewEmail('');
-      setNewReason('');
-      setAddEmailDialogOpen(false);
-    } catch (error) {
-      console.error('Error adding email exception:', error);
-      toast({
-        title: "Error",
-        description: "Failed to add email exception",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const deleteEmailException = async (id: string) => {
-    try {
-      const { error } = await supabase
-        .from('email_exceptions')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
-      toast({
-        title: "Success",
-        description: "Email exception removed successfully"
-      });
-    } catch (error) {
-      console.error('Error deleting email exception:', error);
-      toast({
-        title: "Error",
-        description: "Failed to remove email exception",
         variant: "destructive"
       });
     }
@@ -820,6 +750,73 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
   const usersWithHR = hrProfiles.length;
   const usersWithoutHR = totalUsers - usersWithHR;
 
+  // ---- Sorting ----
+  const STATUS_ORDER = EMPLOYMENT_STATUSES.map(s => s.value);
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+
+  const sortedProfiles = [...userProfiles].sort((a, b) => {
+    const hrA = getHRProfile(a.user_id);
+    const hrB = getHRProfile(b.user_id);
+    let va: string | number = '';
+    let vb: string | number = '';
+    switch (sortKey) {
+      case 'name':
+        va = (a.display_name || a.email || '').toLowerCase();
+        vb = (b.display_name || b.email || '').toLowerCase();
+        break;
+      case 'employee_id':
+        va = (hrA?.employee_id || '').toLowerCase();
+        vb = (hrB?.employee_id || '').toLowerCase();
+        break;
+      case 'status':
+        va = STATUS_ORDER.indexOf(hrA?.employment_status || 'onboarding_probation');
+        vb = STATUS_ORDER.indexOf(hrB?.employment_status || 'onboarding_probation');
+        break;
+      case 'role':
+        va = (a.role || 'viewer').toLowerCase();
+        vb = (b.role || 'viewer').toLowerCase();
+        break;
+      case 'scheduling':
+        va = (hrA?.scheduling_role || 'viewer').toLowerCase();
+        vb = (hrB?.scheduling_role || 'viewer').toLowerCase();
+        break;
+      case 'clients':
+        va = getClientsForUser(a.user_id).length;
+        vb = getClientsForUser(b.user_id).length;
+        break;
+    }
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const SortHeader = ({ label, sortKey: key, className }: { label: string; sortKey: SortKey; className?: string }) => (
+    <TableHead className={className}>
+      <button
+        type="button"
+        onClick={() => toggleSort(key)}
+        className="flex items-center gap-1 hover:text-foreground transition-colors group"
+      >
+        {label}
+        {sortKey === key ? (
+          sortDir === 'asc'
+            ? <ArrowUp className="h-3.5 w-3.5 text-primary" />
+            : <ArrowDown className="h-3.5 w-3.5 text-primary" />
+        ) : (
+          <ArrowUpDown className="h-3.5 w-3.5 opacity-40 group-hover:opacity-70" />
+        )}
+      </button>
+    </TableHead>
+  );
+
   if (loading) {
     return (
       <Card>
@@ -861,10 +858,6 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
             <FileCheck className="h-4 w-4" />
             Documentation Matrix
           </TabsTrigger>
-          <TabsTrigger value="exceptions" className="flex items-center gap-2">
-            <Mail className="h-4 w-4" />
-            Email Exceptions
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="staff" className="space-y-4">
@@ -873,28 +866,29 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Staff Member</TableHead>
-                    <TableHead>Employment Status</TableHead>
-                    <TableHead>App Role</TableHead>
-                    <TableHead>Scheduling</TableHead>
-                    <TableHead>Clients</TableHead>
+                    <SortHeader label="Staff Member" sortKey="name" />
+                    <SortHeader label="Employee ID" sortKey="employee_id" />
+                    <SortHeader label="Employment Status" sortKey="status" />
+                    <SortHeader label="App Role" sortKey="role" />
+                    <SortHeader label="Scheduling" sortKey="scheduling" />
+                    <SortHeader label="Clients" sortKey="clients" />
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {userProfiles.length === 0 ? (
+                  {sortedProfiles.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                         No staff members found.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    userProfiles.map(user => {
+                    sortedProfiles.map(user => {
                       const hrProfile = getHRProfile(user.user_id);
                       const userClients = getClientsForUser(user.user_id);
                       const confirmStatus = getConfirmationStatus(user.email_confirmed_at);
                       const StatusIcon = confirmStatus.icon;
-                      
+
                       return (
                         <TableRow key={user.user_id}>
                           <TableCell className="font-medium">
@@ -910,6 +904,13 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
                                 <div className="text-xs text-muted-foreground">{user.email}</div>
                               </div>
                             </div>
+                          </TableCell>
+                          <TableCell>
+                            {hrProfile?.employee_id ? (
+                              <span className="text-sm font-mono">{hrProfile.employee_id}</span>
+                            ) : (
+                              <span className="text-muted-foreground text-sm">-</span>
+                            )}
                           </TableCell>
                           <TableCell>
                             <Select
@@ -990,100 +991,6 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
 
         <TabsContent value="matrix" className="space-y-4">
           <StaffDocumentationMatrix />
-        </TabsContent>
-
-        <TabsContent value="exceptions" className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-semibold">Email Exceptions</h3>
-              <p className="text-sm text-muted-foreground">Allow specific email addresses to access the platform</p>
-            </div>
-            <Dialog open={addEmailDialogOpen} onOpenChange={setAddEmailDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Exception
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add Email Exception</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div>
-                    <Label htmlFor="email">Email Address</Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      placeholder="user@example.com"
-                      value={newEmail}
-                      onChange={(e) => setNewEmail(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="reason">Reason (Optional)</Label>
-                    <Textarea
-                      id="reason"
-                      placeholder="Explain why this email should have access..."
-                      value={newReason}
-                      onChange={(e) => setNewReason(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <Button variant="outline" onClick={() => setAddEmailDialogOpen(false)}>
-                      Cancel
-                    </Button>
-                    <Button onClick={addEmailException}>
-                      Add Exception
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          <div className="grid gap-4">
-            {emailExceptions.map((exception) => (
-              <Card key={exception.id}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                        <Mail className="h-5 w-5 text-blue-600" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-lg">{exception.email}</CardTitle>
-                        {exception.reason && (
-                          <p className="text-sm text-muted-foreground">{exception.reason}</p>
-                        )}
-                      </div>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => deleteEmailException(exception.id)}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="text-sm text-muted-foreground">
-                    Added: {new Date(exception.created_at).toLocaleDateString()}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {emailExceptions.length === 0 && (
-            <div className="text-center py-12">
-              <Mail className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">No email exceptions</h3>
-              <p className="text-muted-foreground">No email exceptions have been added yet.</p>
-            </div>
-          )}
         </TabsContent>
       </Tabs>
 

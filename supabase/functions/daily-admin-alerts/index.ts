@@ -680,6 +680,159 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
+    // ===== 9. ONBOARDING — daily next-step reminders + admin digest =====
+    // Only staff currently IN onboarding (probation or passed) are included.
+    // Active / inactive staff are excluded entirely.
+    if (shouldRun("onboarding_pending")) {
+      const ONBOARDING_STATUSES = ["onboarding_probation", "onboarding_passed"];
+      const STAGE_ORDER = ["Getting Started", "System & Tools", "Company Policies", "Training", "Final Checks"];
+
+      // Who is in onboarding?
+      const { data: onboardingHr } = await supabaseClient
+        .from("hr_profiles")
+        .select("user_id, employment_status")
+        .in("employment_status", ONBOARDING_STATUSES);
+      const onboardingUserIds = (onboardingHr || []).map(h => h.user_id);
+
+      const isTest = testType === "onboarding_pending";
+
+      if (onboardingUserIds.length > 0 || isTest) {
+        // All onboarding steps in canonical order.
+        const { data: steps } = await supabaseClient
+          .from("onboarding_steps")
+          .select("id, title, stage, sort_order, step_type, target_page_id");
+        const orderedSteps = (steps || []).slice().sort((a, b) => {
+          const sa = STAGE_ORDER.indexOf(a.stage || "Getting Started");
+          const sb = STAGE_ORDER.indexOf(b.stage || "Getting Started");
+          if (sa !== sb) return sa - sb;
+          return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+        });
+
+        // Completions + page acknowledgements for the onboarding cohort.
+        const { data: completions } = await supabaseClient
+          .from("onboarding_completions")
+          .select("step_id, user_id")
+          .in("user_id", onboardingUserIds.length > 0 ? onboardingUserIds : ["no-match"]);
+        const internalPageIds = orderedSteps
+          .filter(s => s.step_type === "internal_page" && s.target_page_id)
+          .map(s => s.target_page_id as string);
+        const { data: acks } = internalPageIds.length > 0
+          ? await supabaseClient
+              .from("page_acknowledgements")
+              .select("page_id, user_id")
+              .in("user_id", onboardingUserIds.length > 0 ? onboardingUserIds : ["no-match"])
+              .in("page_id", internalPageIds)
+          : { data: [] as any[] };
+
+        const completionSet = new Set((completions || []).map(c => `${c.step_id}::${c.user_id}`));
+        const ackSet = new Set((acks || []).map(a => `${a.page_id}::${a.user_id}`));
+
+        // Training-linked steps: complete when all active training is in date.
+        const hasTrainingStep = orderedSteps.some(s => s.step_type === "training");
+        let trainingItemsList: any[] = [];
+        const trainingRecsByUser = new Map<string, Map<string, string>>();
+        if (hasTrainingStep) {
+          const { data: tItems } = await supabaseClient
+            .from("training_items").select("id, refresh_frequency_months").eq("is_active", true);
+          trainingItemsList = tItems || [];
+          const { data: tRecs } = await supabaseClient
+            .from("training_records")
+            .select("training_item_id, user_id, completed_date")
+            .in("user_id", onboardingUserIds.length > 0 ? onboardingUserIds : ["no-match"]);
+          for (const r of tRecs || []) {
+            if (!trainingRecsByUser.has(r.user_id)) trainingRecsByUser.set(r.user_id, new Map());
+            trainingRecsByUser.get(r.user_id)!.set(r.training_item_id, r.completed_date);
+          }
+        }
+        const trainingUpToDate = (userId: string): boolean => {
+          if (trainingItemsList.length === 0) return true;
+          const m = trainingRecsByUser.get(userId) || new Map<string, string>();
+          return trainingItemsList.every(it => {
+            const d = m.get(it.id);
+            if (!d) return false;
+            if (it.refresh_frequency_months == null) return true;
+            const exp = new Date(d);
+            exp.setMonth(exp.getMonth() + it.refresh_frequency_months);
+            return exp.getTime() >= Date.now();
+          });
+        };
+
+        const isStepDone = (step: any, userId: string): boolean => {
+          if (step.step_type === "training") {
+            return trainingUpToDate(userId);
+          }
+          if (step.step_type === "internal_page" && step.target_page_id) {
+            return ackSet.has(`${step.target_page_id}::${userId}`);
+          }
+          return completionSet.has(`${step.id}::${userId}`);
+        };
+
+        // Emails / names for the onboarding cohort.
+        const { data: cohortProfiles } = await supabaseClient
+          .from("profiles")
+          .select("user_id, email, display_name")
+          .in("user_id", onboardingUserIds.length > 0 ? onboardingUserIds : ["no-match"]);
+        const cohortMap = new Map((cohortProfiles || []).map(p => [p.user_id, p]));
+
+        const adminItems: { html: string; sortKey: number }[] = [];
+
+        if (orderedSteps.length > 0) {
+          for (const userId of onboardingUserIds) {
+            const profile = cohortMap.get(userId);
+            const name = profile?.display_name || profileMap.get(userId) || "Unknown";
+            const total = orderedSteps.length;
+            const completed = orderedSteps.filter(s => isStepDone(s, userId)).length;
+            const nextStep = orderedSteps.find(s => !isStepDone(s, userId));
+
+            // Admin digest line
+            if (nextStep) {
+              adminItems.push({
+                sortKey: completed / total,
+                html: `<strong>${name}</strong> — ${completed}/${total} steps · next: <em>${nextStep.title}</em> <span style="color:#9ca3af;">(${nextStep.stage})</span>`,
+              });
+            } else {
+              adminItems.push({
+                sortKey: 1,
+                html: `<strong>${name}</strong> — <span style="color:#10b981;font-weight:600;">all ${total} steps complete 🎉</span>`,
+              });
+            }
+
+            // Personal daily reminder to the onboarding staff member (only if steps remain).
+            if (nextStep && profile?.email) {
+              const remaining = total - completed;
+              await sendStandaloneAlert(
+                [profile.email as string],
+                `📚 Your next onboarding step: ${nextStep.title}`,
+                "📚 Onboarding Reminder", BRAND_COLOR,
+                [
+                  `Hi ${name.split(" ")[0] || name}, here's your next onboarding step:`,
+                  `👉 <strong>${nextStep.title}</strong> <span style="color:#6b7280;">(${nextStep.stage})</span>`,
+                  `You've completed <strong>${completed} of ${total}</strong> steps — ${remaining} to go. Keep it up!`,
+                  `Open the Academy and head to <strong>HR → Onboarding Steps</strong> to complete it.`,
+                ],
+                todayStr
+              );
+            }
+          }
+        }
+
+        const digestItems = isTest && adminItems.length === 0
+          ? [`<strong>[TEST] John Smith</strong> — 3/12 steps · next: <em>Read Health &amp; Safety Policy</em> <span style="color:#9ca3af;">(Company Policies)</span>`]
+          : adminItems.sort((a, b) => a.sortKey - b.sortKey).map(i => i.html);
+
+        if (digestItems.length > 0) {
+          sections.push({
+            type: "onboarding_pending",
+            title: "Staff in Onboarding",
+            icon: "📚",
+            accentColor: BRAND_COLOR,
+            itemsHtml: digestItems,
+            summary: `${digestItems.length} onboarding`,
+          });
+        }
+      }
+    }
+
     // ===== SEND THE DIGEST =====
     let digestSent = false;
     let digestError: string | undefined;

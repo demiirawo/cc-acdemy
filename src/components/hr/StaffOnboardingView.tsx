@@ -6,8 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Check, Clock, ExternalLink, FileText, User, Mail, Phone, Briefcase, CheckCircle2 } from "lucide-react";
+import { Check, Clock, ExternalLink, FileText, User, Mail, Phone, Briefcase, CheckCircle2, Loader2, Rocket } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { allTrainingUpToDate } from "@/lib/trainingStatus";
 
 interface OnboardingOwner {
   id: string;
@@ -69,6 +70,9 @@ export function StaffOnboardingView() {
   const [steps, setSteps] = useState<OnboardingStep[]>([]);
   const [completions, setCompletions] = useState<Completion[]>([]);
   const [acknowledgements, setAcknowledgements] = useState<PageAcknowledgement[]>([]);
+  const [trainingComplete, setTrainingComplete] = useState(false);
+  const [requesting, setRequesting] = useState(false);
+  const [offerRequested, setOfferRequested] = useState(false);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState<string | null>(null);
   const { user } = useAuth();
@@ -122,6 +126,26 @@ export function StaffOnboardingView() {
         ackData = data || [];
       }
 
+      // Training-linked steps auto-complete when all active training is in date.
+      const { data: tItems } = await supabase
+        .from('training_items')
+        .select('id, refresh_frequency_months')
+        .eq('is_active', true);
+      const { data: tRecords } = await supabase
+        .from('training_records')
+        .select('training_item_id, completed_date')
+        .eq('user_id', user.id);
+      const dateByItem = new Map((tRecords || []).map(r => [r.training_item_id, r.completed_date]));
+      setTrainingComplete(allTrainingUpToDate(tItems || [], dateByItem));
+
+      // Has the offer/contract already been requested?
+      const { data: hrSelf } = await supabase
+        .from('hr_profiles')
+        .select('offer_email_sent_at, onboarding_contract_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      setOfferRequested(!!(hrSelf?.offer_email_sent_at || hrSelf?.onboarding_contract_id));
+
       setSteps(stepsData || []);
       setCompletions(completionsData || []);
       setAcknowledgements(ackData);
@@ -138,6 +162,10 @@ export function StaffOnboardingView() {
   };
 
   const isStepCompleted = (step: OnboardingStep): boolean => {
+    // Training-linked steps complete automatically when training is up to date.
+    if (step.step_type === 'training') {
+      return trainingComplete;
+    }
     // For internal page steps, check acknowledgements
     if (step.step_type === 'internal_page' && step.target_page_id) {
       return acknowledgements.some(ack => ack.page_id === step.target_page_id);
@@ -166,8 +194,37 @@ export function StaffOnboardingView() {
   // Use predefined order, only including stages that have steps
   const stageOrder = STAGE_ORDER.filter(stage => stepsByStage[stage] && stepsByStage[stage].length > 0);
 
+  const handleRequestOffer = async () => {
+    setRequesting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("start-onboarding");
+      if (error) throw error;
+      if (data?.alreadyStarted) {
+        toast({ title: "Already sent", description: "Your offer and contract have already been emailed to you." });
+      } else {
+        toast({ title: "On its way!", description: "We've emailed your offer letter and employment contract — check your inbox." });
+      }
+      setOfferRequested(true);
+      fetchData();
+    } catch (e: any) {
+      toast({ title: "Couldn't send", description: e.message ?? String(e), variant: "destructive" });
+    } finally {
+      setRequesting(false);
+    }
+  };
+
   const handleCompleteStep = async (step: OnboardingStep) => {
     if (!user) return;
+
+    // Training steps complete automatically from the training matrix — they
+    // can't be ticked off manually; direct the person to their training instead.
+    if (step.step_type === 'training') {
+      toast({
+        title: "Tracked automatically",
+        description: "This step completes once all your training is up to date. Your manager records training in the matrix.",
+      });
+      return;
+    }
 
     // For internal page steps, navigate to the page
     if (step.step_type === 'internal_page' && step.target_page_id) {
@@ -249,6 +306,29 @@ export function StaffOnboardingView() {
             </div>
             <Progress value={progressPercent} className="h-3" />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Offer letter & contract — staff-initiated */}
+      <Card className="border-primary/30 bg-primary/5">
+        <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4">
+          <div className="flex items-start gap-3">
+            <Rocket className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">
+                {offerRequested ? "Offer letter & contract sent" : "Get your offer letter & contract"}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {offerRequested
+                  ? "Check your inbox, then review and sign your contract under My Contracts."
+                  : "Click to receive your offer letter and employment contract by email to begin."}
+              </p>
+            </div>
+          </div>
+          <Button onClick={handleRequestOffer} disabled={requesting || offerRequested} className="flex-shrink-0">
+            {requesting && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+            {offerRequested ? "Sent ✓" : "Receive my offer & contract"}
+          </Button>
         </CardContent>
       </Card>
 

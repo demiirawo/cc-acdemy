@@ -781,7 +781,11 @@ export type Database = {
           id: string
           job_title: string | null
           notes: string | null
+          offer_email_sent_at: string | null
+          onboarding_contract_id: string | null
+          onboarding_started_at: string | null
           pay_frequency: string | null
+          performance_rating: string | null
           public_holiday_pay_disabled: boolean
           scheduling_role: string
           start_date: string | null
@@ -802,7 +806,11 @@ export type Database = {
           id?: string
           job_title?: string | null
           notes?: string | null
+          offer_email_sent_at?: string | null
+          onboarding_contract_id?: string | null
+          onboarding_started_at?: string | null
           pay_frequency?: string | null
+          performance_rating?: string | null
           public_holiday_pay_disabled?: boolean
           scheduling_role?: string
           start_date?: string | null
@@ -823,7 +831,11 @@ export type Database = {
           id?: string
           job_title?: string | null
           notes?: string | null
+          offer_email_sent_at?: string | null
+          onboarding_contract_id?: string | null
+          onboarding_started_at?: string | null
           pay_frequency?: string | null
+          performance_rating?: string | null
           public_holiday_pay_disabled?: boolean
           scheduling_role?: string
           start_date?: string | null
@@ -832,7 +844,15 @@ export type Database = {
           user_id?: string
           work_phone?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "hr_profiles_onboarding_contract_id_fkey"
+            columns: ["onboarding_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       invoice_bill_to_settings: {
         Row: {
@@ -982,6 +1002,47 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      onboarding_settings: {
+        Row: {
+          contract_enabled: boolean
+          contract_template_id: string | null
+          id: string
+          offer_email_body_html: string
+          offer_email_enabled: boolean
+          offer_email_subject: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          contract_enabled?: boolean
+          contract_template_id?: string | null
+          id?: string
+          offer_email_body_html?: string
+          offer_email_enabled?: boolean
+          offer_email_subject?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          contract_enabled?: boolean
+          contract_template_id?: string | null
+          id?: string
+          offer_email_body_html?: string
+          offer_email_enabled?: boolean
+          offer_email_subject?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_settings_contract_template_id_fkey"
+            columns: ["contract_template_id"]
+            isOneToOne: false
+            referencedRelation: "contract_templates"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       onboarding_steps: {
         Row: {
@@ -2552,6 +2613,86 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      training_items: {
+        Row: {
+          category: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          refresh_frequency_months: number | null
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          refresh_frequency_months?: number | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          refresh_frequency_months?: number | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      training_records: {
+        Row: {
+          completed_date: string
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          training_item_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_date: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          training_item_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_date?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          training_item_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "training_records_training_item_id_fkey"
+            columns: ["training_item_id"]
+            isOneToOne: false
+            referencedRelation: "training_items"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {

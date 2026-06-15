@@ -8,9 +8,9 @@ import { HRProfileManager } from "./HRProfileManager";
 import { MyHRProfile } from "./MyHRProfile";
 import { OnboardingManager } from "./OnboardingManager";
 import { StaffOnboardingForm } from "./StaffOnboardingForm";
-import { ContractsAdmin } from "./contracts/ContractsAdmin";
 import { MyContracts } from "./contracts/MyContracts";
-import { DollarSign, Users, User, GraduationCap, FileText, FileSignature } from "lucide-react";
+import { TrainingMatrix } from "./training/TrainingMatrix";
+import { DollarSign, Users, User, GraduationCap, FileText, FileSignature, Award } from "lucide-react";
 
 interface HRSectionProps {
   initialUserId?: string | null;
@@ -24,6 +24,7 @@ const TAB_ALIASES: Record<string, string> = {
   staff: "profiles",
   onboarding: "onboarding",
   "onboarding-form": "onboarding-form",
+  training: "training",
   "my-profile": "my-profile",
   me: "my-profile",
   contracts: "contracts",
@@ -31,7 +32,7 @@ const TAB_ALIASES: Record<string, string> = {
 };
 
 export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {}) {
-  const { isAdmin } = useUserRole();
+  const { isAdmin, isTrainingManager } = useUserRole();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
   const initialTab =
@@ -63,15 +64,15 @@ export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {
   };
 
   const adminTabs = [
-    { value: "profiles", label: "Staff Profiles", icon: Users },
+    { value: "profiles", label: "Staffing Settings", icon: Users },
     { value: "pay", label: "Payroll", icon: DollarSign },
-    { value: "contracts", label: "Contracts", icon: FileSignature },
-    { value: "onboarding", label: "Onboarding Steps", icon: GraduationCap },
-    { value: "onboarding-form", label: "Onboarding Form", icon: FileText },
-    { value: "my-profile", label: "My Profile", icon: User },
+    { value: "training", label: "Training", icon: Award },
+    { value: "my-profile", label: "Staff Profile", icon: User },
   ];
   const staffTabs = [
-    { value: "my-profile", label: "My Profile", icon: User },
+    { value: "my-profile", label: "Staff Profile", icon: User },
+    // Training managers (non-admins) get access to the training matrix.
+    ...(isTrainingManager ? [{ value: "training", label: "Training", icon: Award }] : []),
     { value: "my-contracts", label: "My Contracts", icon: FileSignature },
     { value: "onboarding-form", label: "Onboarding Form", icon: FileText },
     { value: "onboarding", label: "Onboarding Steps", icon: GraduationCap },
@@ -149,10 +150,14 @@ export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {
               <TabsContent value="pay" className="mt-0">
                 <StaffPayManager />
               </TabsContent>
-              <TabsContent value="contracts" className="mt-0">
-                <ContractsAdmin />
-              </TabsContent>
             </>
+          )}
+
+          {/* Training matrix — admins and training managers */}
+          {(isAdmin || isTrainingManager) && (
+            <TabsContent value="training" className="mt-0">
+              <TrainingMatrix />
+            </TabsContent>
           )}
 
           {!isAdmin && (

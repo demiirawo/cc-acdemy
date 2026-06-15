@@ -11,12 +11,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { User, Mail, Shield, Bell, Palette, Download, Upload, Trash2, Key, Settings as SettingsIcon, Database, Globe, Eye, EyeOff, Save, X } from "lucide-react";
+import { User, Mail, Shield, Bell, Palette, Download, Upload, Trash2, Key, Settings as SettingsIcon, Database, Globe, Eye, EyeOff, Save, X, SlidersHorizontal, GraduationCap, FileSignature, ClipboardList, Award } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { AdminNotificationSettings } from "./AdminNotificationSettings";
 import { HandoverTemplatesManager } from "./HandoverTemplatesManager";
+import { OnboardingManager } from "./hr/OnboardingManager";
+import { ContractsAdmin } from "./hr/contracts/ContractsAdmin";
+import { TrainingItemsManager } from "./hr/training/TrainingItemsManager";
+import { EmailExceptionsManager } from "./hr/EmailExceptionsManager";
+import { OnboardingAutomationSettings } from "./hr/OnboardingAutomationSettings";
 interface UserProfile {
   id: string;
   user_id: string;
@@ -229,18 +234,87 @@ export function SettingsPage({
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList
+            className="grid w-full"
+            style={{ gridTemplateColumns: `repeat(${profile?.role === 'admin' ? 6 : 5}, minmax(0, 1fr))` }}
+          >
             <TabsTrigger value="profile">Profile</TabsTrigger>
             <TabsTrigger value="security">Security</TabsTrigger>
             <TabsTrigger value="notifications">Notifications</TabsTrigger>
-            <TabsTrigger value="handover">Handover</TabsTrigger>
             <TabsTrigger value="preferences">Preferences</TabsTrigger>
             <TabsTrigger value="data">Data & Privacy</TabsTrigger>
+            {profile?.role === 'admin' && (
+              <TabsTrigger value="configuration" className="flex items-center gap-1.5">
+                <SlidersHorizontal className="h-4 w-4" />
+                Configuration
+              </TabsTrigger>
+            )}
           </TabsList>
 
-          <TabsContent value="handover" className="space-y-6">
-            <HandoverTemplatesManager />
-          </TabsContent>
+          {/* Configuration Tab — admin only */}
+          {profile?.role === 'admin' && (
+            <TabsContent value="configuration" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <SlidersHorizontal className="h-5 w-5" />
+                    Configuration
+                  </CardTitle>
+                  <CardDescription>
+                    Configure onboarding steps, contracts, handover templates and training for your team.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Tabs defaultValue="onboarding-config" className="w-full">
+                    <TabsList className="mb-4 flex flex-wrap h-auto">
+                      <TabsTrigger value="onboarding-config" className="flex items-center gap-2">
+                        <GraduationCap className="h-4 w-4" />
+                        Onboarding Steps
+                      </TabsTrigger>
+                      <TabsTrigger value="onboarding-automation" className="flex items-center gap-2">
+                        <SlidersHorizontal className="h-4 w-4" />
+                        Onboarding Automation
+                      </TabsTrigger>
+                      <TabsTrigger value="contracts-config" className="flex items-center gap-2">
+                        <FileSignature className="h-4 w-4" />
+                        Contracts
+                      </TabsTrigger>
+                      <TabsTrigger value="handover-config" className="flex items-center gap-2">
+                        <ClipboardList className="h-4 w-4" />
+                        Handover
+                      </TabsTrigger>
+                      <TabsTrigger value="training-config" className="flex items-center gap-2">
+                        <Award className="h-4 w-4" />
+                        Training
+                      </TabsTrigger>
+                      <TabsTrigger value="email-exceptions-config" className="flex items-center gap-2">
+                        <Mail className="h-4 w-4" />
+                        Email Exceptions
+                      </TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="onboarding-config" className="mt-0">
+                      <OnboardingManager />
+                    </TabsContent>
+                    <TabsContent value="onboarding-automation" className="mt-0">
+                      <OnboardingAutomationSettings />
+                    </TabsContent>
+                    <TabsContent value="contracts-config" className="mt-0">
+                      <ContractsAdmin />
+                    </TabsContent>
+                    <TabsContent value="handover-config" className="mt-0">
+                      <HandoverTemplatesManager />
+                    </TabsContent>
+                    <TabsContent value="training-config" className="mt-0">
+                      <TrainingItemsManager />
+                    </TabsContent>
+                    <TabsContent value="email-exceptions-config" className="mt-0">
+                      <EmailExceptionsManager />
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
 
 
           {/* Profile Tab */}

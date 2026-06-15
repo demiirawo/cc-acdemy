@@ -4,6 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Check, Clock } from "lucide-react";
+import { allTrainingUpToDate } from "@/lib/trainingStatus";
 
 interface OnboardingOwner {
   id: string;
@@ -66,6 +67,8 @@ export function OnboardingMatrix() {
   const [hrProfiles, setHRProfiles] = useState<HRProfile[]>([]);
   const [completions, setCompletions] = useState<Completion[]>([]);
   const [acknowledgements, setAcknowledgements] = useState<PageAcknowledgement[]>([]);
+  const [trainingItems, setTrainingItems] = useState<{ id: string; refresh_frequency_months: number | null }[]>([]);
+  const [trainingRecords, setTrainingRecords] = useState<{ training_item_id: string; user_id: string; completed_date: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
@@ -131,10 +134,21 @@ export function OnboardingMatrix() {
         ackData = data || [];
       }
 
+      // Training data for any training-linked steps.
+      const { data: tItems } = await supabase
+        .from('training_items')
+        .select('id, refresh_frequency_months')
+        .eq('is_active', true);
+      const { data: tRecords } = await supabase
+        .from('training_records')
+        .select('training_item_id, user_id, completed_date');
+
       setSteps(stepsData || []);
       setStaff(staffData || []);
       setCompletions(completionsData || []);
       setAcknowledgements(ackData);
+      setTrainingItems(tItems || []);
+      setTrainingRecords(tRecords || []);
     } catch (error) {
       console.error('Error fetching data:', error);
       toast({
@@ -148,6 +162,13 @@ export function OnboardingMatrix() {
   };
 
   const isStepCompleted = (stepId: string, userId: string, step: OnboardingStep): boolean => {
+    // Training-linked steps complete when the user's training is all up to date.
+    if (step.step_type === 'training') {
+      const dateByItem = new Map(
+        trainingRecords.filter(r => r.user_id === userId).map(r => [r.training_item_id, r.completed_date])
+      );
+      return allTrainingUpToDate(trainingItems, dateByItem);
+    }
     // For internal page steps, check acknowledgements
     if (step.step_type === 'internal_page' && step.target_page_id) {
       return acknowledgements.some(

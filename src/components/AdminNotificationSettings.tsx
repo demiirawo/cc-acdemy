@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Bell, Cake, Award, Calendar, AlertTriangle, Users, Save, Play, Loader2 } from "lucide-react";
+import { Bell, Cake, Award, Calendar, AlertTriangle, Users, Save, Play, Loader2, GraduationCap } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -76,6 +76,13 @@ const NOTIFICATION_CONFIG: Record<string, {
     description: "Email the affected staff member whenever their shift or recurring pattern is created, modified, or deleted",
     icon: <Bell className="h-5 w-5" />,
     color: "text-purple-500",
+    showDaysBefore: false,
+  },
+  onboarding_pending: {
+    title: "Onboarding Reminders",
+    description: "Daily email to each staff member in onboarding with their next step, plus a summary in the admin digest. Active staff are excluded.",
+    icon: <GraduationCap className="h-5 w-5" />,
+    color: "text-violet-500",
     showDaysBefore: false,
   },
 };
