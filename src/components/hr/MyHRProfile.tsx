@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award } from "lucide-react";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -80,6 +80,7 @@ interface HRProfile {
   unlimited_holiday: boolean;
   notes: string | null;
   performance_rating: string | null;
+  employment_status: string | null;
 }
 interface Holiday {
   id: string;
@@ -330,6 +331,7 @@ export function MyHRProfile() {
   const [trainingItems, setTrainingItems] = useState<TrainingItem[]>([]);
   const [trainingRecords, setTrainingRecords] = useState<{ training_item_id: string; completed_date: string }[]>([]);
   const [hasContractorDetails, setHasContractorDetails] = useState(false);
+  const [scheduleClients, setScheduleClients] = useState<string[]>([]);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
   const [documentPreview, setDocumentPreview] = useState<{
     open: boolean;
@@ -544,6 +546,23 @@ export function MyHRProfile() {
         .select('id', { count: 'exact', head: true })
         .eq('user_id', targetUserId);
       setHasContractorDetails((contractorCount ?? 0) > 0);
+
+      // Clients this person is scheduled to work with over the next 4 weeks
+      // (derived from recurring shift patterns active in the window).
+      const todayISO = format(new Date(), 'yyyy-MM-dd');
+      const horizon = new Date();
+      horizon.setDate(horizon.getDate() + 28);
+      const horizonISO = format(horizon, 'yyyy-MM-dd');
+      const { data: clientPatterns } = await supabase
+        .from('recurring_shift_patterns')
+        .select('client_name, start_date, end_date')
+        .eq('user_id', targetUserId)
+        .lte('start_date', horizonISO)
+        .or(`end_date.is.null,end_date.gte.${todayISO}`);
+      const clientNames = Array.from(
+        new Set((clientPatterns || []).map(p => (p.client_name || '').trim()).filter(Boolean))
+      ).sort((a, b) => a.localeCompare(b));
+      setScheduleClients(clientNames);
 
       // Fetch public holidays for next 12 months (current year + next year if needed)
       await fetchPublicHolidays();
@@ -1316,8 +1335,10 @@ export function MyHRProfile() {
         })()}
       </div>
 
-      {/* Onboarding Steps Progress */}
-      {onboardingSteps.length > 0 && (() => {
+      {/* Onboarding Steps Progress — only for staff currently in onboarding */}
+      {onboardingSteps.length > 0
+        && ['onboarding_probation', 'onboarding_passed'].includes(hrProfile.employment_status || '')
+        && (() => {
         const STAGE_ORDER = ["Getting Started", "System & Tools", "Company Policies", "Training", "Final Checks"];
         const stepsByStage = onboardingSteps.reduce((acc, step) => {
           const key = step.stage || "Getting Started";
@@ -1493,6 +1514,48 @@ export function MyHRProfile() {
           </Accordion>
         );
       })()}
+
+      {/* Clients — scheduled over the next 4 weeks */}
+      <Accordion type="single" collapsible className="w-full">
+        <AccordionItem value="clients" className="border-2 border-primary/20 rounded-lg bg-card">
+          <AccordionTrigger className="px-6 py-4 hover:no-underline">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <MapPin className="h-5 w-5 text-primary flex-shrink-0" />
+              <span className="text-lg font-semibold">Clients</span>
+              <StatusPill tone={scheduleClients.length > 0 ? 'success' : 'neutral'}>
+                {scheduleClients.length} in next 4 weeks
+              </StatusPill>
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="px-6 pb-6">
+            <p className="text-sm text-muted-foreground mb-3">
+              Clients this team member is scheduled to work with over the next 4 weeks, from their recurring shifts.
+            </p>
+            {scheduleClients.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No scheduled client shifts in the next 4 weeks.</p>
+            ) : (
+              <div className="grid gap-2">
+                {scheduleClients.map(name => (
+                  <div key={name} className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Building2 className="h-4 w-4 text-primary flex-shrink-0" />
+                      <span className="text-sm font-medium truncate">{name}</span>
+                    </div>
+                    <a
+                      href={`/public/schedule/${encodeURIComponent(name)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-sm text-primary hover:underline flex-shrink-0"
+                    >
+                      Public page <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  </div>
+                ))}
+              </div>
+            )}
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
 
       {/* Personal Details Section - from onboarding form */}
       {onboardingData && <Accordion type="single" collapsible className="w-full">
