@@ -818,9 +818,15 @@ export function RealKnowledgeBaseSidebar({
       {/* Header */}
       <div className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2 mb-4">
-          <div className="w-40 h-40 bg-[#5e18eb] rounded-lg flex items-center justify-center overflow-hidden mx-auto">
+          <button
+            type="button"
+            onClick={() => handleItemSelect({ id: 'home', title: 'Home', type: 'space' })}
+            title="Go to home"
+            aria-label="Go to home"
+            className="w-40 h-40 bg-[#5e18eb] rounded-lg flex items-center justify-center overflow-hidden mx-auto cursor-pointer transition-transform hover:scale-[1.02] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+          >
             <img src="/lovable-uploads/d434f96d-1ac3-4f74-a546-93f9f1b3c09b.png" alt="Care Cuddle Logo" className="h-32 w-32 object-contain" />
-          </div>
+          </button>
         </div>
         
         {/* Search */}
