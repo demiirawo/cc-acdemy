@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { StaffBonusEditor } from "./StaffBonusEditor";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
@@ -1683,130 +1684,8 @@ export function StaffPayManager() {
       const payPeriodStart = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
       const payPeriodEnd = payDate;
 
-      // Handle bonus changes for current month
-      const existingBonusRecord = staff.records.find(r => r.record_type === 'bonus');
-      
-      // Calculate the recurring bonus amount for this staff
-      const monthStartStr = format(monthStart, 'yyyy-MM-dd');
-      const monthEndStr = format(monthEnd, 'yyyy-MM-dd');
-      const activeRecurringBonus = recurringBonuses.find(rb => {
-        if (rb.user_id !== staff.userId) return false;
-        if (rb.start_date > monthEndStr) return false;
-        if (rb.end_date && rb.end_date < monthStartStr) return false;
-        return true;
-      });
-      const recurringBonusAmount = activeRecurringBonus?.amount || 0;
-      
-      // The one-off bonus is the total bonus minus the recurring bonus
-      const oneOffBonusAmount = adjustmentEdit.bonusRecurring 
-        ? 0  // If recurring, no one-off record needed
-        : adjustmentEdit.bonusAmount;
-      
-      // Handle recurring bonus - create or update recurring bonus pattern
-      if (adjustmentEdit.bonusRecurring && adjustmentEdit.bonusAmount > 0) {
-        if (adjustmentEdit.existingRecurringBonusId) {
-          // Update existing recurring bonus
-          const { error } = await supabase
-            .from('recurring_bonuses')
-            .update({
-              amount: adjustmentEdit.bonusAmount,
-              description: adjustmentEdit.bonusComment || 'Recurring bonus',
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', adjustmentEdit.existingRecurringBonusId);
-          if (error) throw error;
-        } else {
-          // Create new recurring bonus (indefinite - no end_date)
-          const { error } = await supabase
-            .from('recurring_bonuses')
-            .insert({
-              user_id: adjustmentEdit.staffId,
-              amount: adjustmentEdit.bonusAmount,
-              currency: staff.currency,
-              description: adjustmentEdit.bonusComment || 'Recurring bonus',
-              start_date: format(startOfMonth(selectedMonth), 'yyyy-MM-dd'),
-              end_date: null, // Indefinite
-              created_by: user?.id!
-            });
-          if (error) throw error;
-        }
-        
-        // If switching to recurring, remove any existing one-off bonus record
-        if (existingBonusRecord) {
-          const { error } = await supabase
-            .from('staff_pay_records')
-            .delete()
-            .eq('id', existingBonusRecord.id);
-          if (error) throw error;
-        }
-      } else if (!adjustmentEdit.bonusRecurring) {
-        // Not recurring - handle as one-off bonus pay record
-        if (adjustmentEdit.existingRecurringBonusId) {
-          // Cancel recurring bonus by setting end_date to previous month
-          const { error } = await supabase
-            .from('recurring_bonuses')
-            .update({
-              end_date: format(endOfMonth(subMonths(selectedMonth, 1)), 'yyyy-MM-dd'),
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', adjustmentEdit.existingRecurringBonusId);
-          if (error) throw error;
-        }
-        
-        if (oneOffBonusAmount > 0) {
-          if (existingBonusRecord) {
-            const { error } = await supabase
-              .from('staff_pay_records')
-              .update({
-                amount: oneOffBonusAmount,
-                description: adjustmentEdit.bonusComment || null
-              })
-              .eq('id', existingBonusRecord.id);
-            if (error) throw error;
-          } else {
-            const { error } = await supabase
-              .from('staff_pay_records')
-              .insert({
-                user_id: adjustmentEdit.staffId,
-                record_type: 'bonus' as any,
-                amount: oneOffBonusAmount,
-                currency: staff.currency,
-                description: adjustmentEdit.bonusComment || null,
-                pay_date: payDate,
-                pay_period_start: payPeriodStart,
-                pay_period_end: payPeriodEnd,
-                created_by: user?.id!
-              });
-            if (error) throw error;
-          }
-        } else if (existingBonusRecord) {
-          // Zero amount - delete the record
-          const { error } = await supabase
-            .from('staff_pay_records')
-            .delete()
-            .eq('id', existingBonusRecord.id);
-          if (error) throw error;
-        }
-      } else if (adjustmentEdit.bonusAmount === 0) {
-        // Zero recurring - cancel it
-        if (adjustmentEdit.existingRecurringBonusId) {
-          const { error } = await supabase
-            .from('recurring_bonuses')
-            .update({
-              end_date: format(endOfMonth(subMonths(selectedMonth, 1)), 'yyyy-MM-dd'),
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', adjustmentEdit.existingRecurringBonusId);
-          if (error) throw error;
-        }
-        if (existingBonusRecord) {
-          const { error } = await supabase
-            .from('staff_pay_records')
-            .delete()
-            .eq('id', existingBonusRecord.id);
-          if (error) throw error;
-        }
-      }
+      // Bonuses (one-off + recurring) are managed inline via the itemised
+      // StaffBonusEditor in the dialog, so nothing to persist here.
 
       // Handle overtime override
       const existingOvertimeRecord = staff.records.find(r => r.record_type === 'overtime');
@@ -1895,11 +1774,7 @@ export function StaffPayManager() {
         if (error) throw error;
       }
 
-      const successMessage = adjustmentEdit.bonusRecurring
-        ? "Adjustments saved. Bonus will recur indefinitely until cancelled."
-        : "Adjustments saved";
-      
-      toast({ title: "Success", description: successMessage });
+      toast({ title: "Success", description: "Adjustments saved" });
       setAdjustmentDialogOpen(false);
       setAdjustmentEdit(null);
       fetchData();
@@ -2872,66 +2747,36 @@ export function StaffPayManager() {
                 </div>
               </div>
 
-              {/* Bonus Section */}
+              {/* Bonus Section — itemised, one-off vs recurring */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-success" />
-                  <Label className="text-base font-medium">Bonus</Label>
+                  <Label className="text-base font-medium">Bonuses</Label>
                 </div>
-                <div className="space-y-3 pl-6">
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">
-                      {CURRENCIES.find(c => c.code === adjustmentEdit.currency)?.symbol || '£'}
-                    </span>
-                    <Input
-                      type="number"
-                      value={adjustmentEdit.bonusAmount || ''}
-                      onChange={(e) => setAdjustmentEdit({
-                        ...adjustmentEdit,
-                        bonusAmount: parseFloat(e.target.value) || 0
-                      })}
-                      className="w-32"
-                      step="0.01"
-                      min="0"
-                      placeholder="0.00"
-                    />
-                  </div>
-                  <Textarea
-                    value={adjustmentEdit.bonusComment}
-                    onChange={(e) => setAdjustmentEdit({
-                      ...adjustmentEdit,
-                      bonusComment: e.target.value
-                    })}
-                    placeholder="Reason for bonus (visible to staff)..."
-                    rows={2}
-                    className="text-sm"
-                  />
-                  
-                  {/* Recurring Bonus Option */}
-                  {adjustmentEdit.bonusAmount > 0 && (
-                    <div className="border rounded-lg p-3 bg-muted/30 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          id="bonus-recurring"
-                          checked={adjustmentEdit.bonusRecurring}
-                          onCheckedChange={(checked) => setAdjustmentEdit({
-                            ...adjustmentEdit,
-                            bonusRecurring: checked === true
-                          })}
-                        />
-                        <Label htmlFor="bonus-recurring" className="text-sm flex items-center gap-1 cursor-pointer">
-                          <Repeat className="h-3 w-3" />
-                          Make this bonus recurring
-                        </Label>
-                      </div>
-                      
-                      {adjustmentEdit.bonusRecurring && (
-                        <p className="text-xs text-muted-foreground pl-6">
-                          This bonus will be applied every month indefinitely until cancelled.
-                        </p>
-                      )}
-                    </div>
-                  )}
+                <div className="pl-6">
+                  {(() => {
+                    const staff = payrollSummary.find(s => s.userId === adjustmentEdit.staffId);
+                    const monthStartStr = format(monthStart, 'yyyy-MM-dd');
+                    const monthEndStr = format(monthEnd, 'yyyy-MM-dd');
+                    const oneOff = (staff?.records || [])
+                      .filter(r => r.record_type === 'bonus')
+                      .map(r => ({ id: r.id, amount: r.amount, description: r.description }));
+                    const recurring = recurringBonuses
+                      .filter(rb => rb.user_id === adjustmentEdit.staffId
+                        && rb.start_date <= monthEndStr
+                        && (!rb.end_date || rb.end_date >= monthStartStr))
+                      .map(rb => ({ id: rb.id, amount: rb.amount, description: rb.description }));
+                    return (
+                      <StaffBonusEditor
+                        staffId={adjustmentEdit.staffId}
+                        currency={adjustmentEdit.currency}
+                        selectedMonth={selectedMonth}
+                        oneOffBonuses={oneOff}
+                        recurringBonuses={recurring}
+                        onChanged={fetchData}
+                      />
+                    );
+                  })()}
                 </div>
               </div>
 
