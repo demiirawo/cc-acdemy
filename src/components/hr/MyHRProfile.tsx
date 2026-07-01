@@ -15,6 +15,7 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay, differenceInCalendarDays } from "date-fns";
+import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
@@ -865,7 +866,19 @@ export function MyHRProfile() {
             ? coveredUserPatterns.filter(p => p.user_id === targetUserId && !p.is_overtime)
             : recurringPatterns.filter(p => !p.is_overtime);
 
-          const daysInRange = eachDayOfInterval({ start: overlapStart, end: overlapEnd });
+          // Count only the dates actually assigned for cover (structured covered_dates),
+          // clamped to this month's overlap -- never the full start->end span, which would
+          // refill days a non-contiguous cover deliberately excluded and over-pay OT.
+          // Mirrors the authoritative payroll engine (StaffPayManager.getGranularCoveredDates).
+          const granularCoveredDates = getCoveredDatesFromRequest({
+            start_date: req.start_date,
+            end_date: req.end_date,
+            coverage_metadata: (req as any).coverage_metadata ?? null,
+          }).filter(d => d >= format(overlapStart, 'yyyy-MM-dd') && d <= format(overlapEnd, 'yyyy-MM-dd'));
+
+          const daysInRange = granularCoveredDates.length > 0
+            ? granularCoveredDates.map(d => parseISO(d))
+            : eachDayOfInterval({ start: overlapStart, end: overlapEnd });
 
           // Only count days where the target user actually has a working shift pattern
           for (const day of daysInRange) {
