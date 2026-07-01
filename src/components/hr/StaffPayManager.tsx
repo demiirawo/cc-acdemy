@@ -819,6 +819,12 @@ export function StaffPayManager() {
       
       const recurringBonusTotal = activeRecurringBonuses.reduce((sum, rb) => sum + rb.amount, 0);
       bonuses += recurringBonusTotal;
+
+      // Itemised bonus lines for display (one-off records + active recurring); sums to `bonuses`.
+      const bonusItems = [
+        ...bonusRecords.map(r => ({ amount: r.amount, description: r.description ?? null, recurring: false })),
+        ...activeRecurringBonuses.map(rb => ({ amount: rb.amount, description: rb.description ?? null, recurring: true })),
+      ];
       
       const overtimeManualRecords = overtimeRecords.reduce((sum, r) => sum + r.amount, 0);
       const expenses = expenseRecords.reduce((sum, r) => sum + r.amount, 0);
@@ -1222,6 +1228,7 @@ export function StaffPayManager() {
         baseSalary: monthlyBaseSalary,
         salaryPaid,
         bonuses,
+        bonusItems,
         overtime,
         overtimeDays,
         standardOvertimeDays: totalStandardOTDays,
@@ -2164,7 +2171,23 @@ export function StaffPayManager() {
                       
                       <TableCell className="text-right">{formatCurrency(staff.baseSalary, staff.currency)}</TableCell>
                       <TableCell className="text-right text-success">
-                        {staff.bonuses > 0 ? `+${formatCurrency(staff.bonuses, staff.currency)}` : '-'}
+                        {staff.bonuses > 0 ? (() => {
+                          const items = staff.bonusItems || [];
+                          const showItems = items.length > 1 || items.some(b => b.description || b.recurring);
+                          return (
+                            <div className="flex flex-col items-end">
+                              <span>+{formatCurrency(staff.bonuses, staff.currency)}</span>
+                              {showItems && items.map((b, i) => {
+                                const line = `${formatCurrency(b.amount, staff.currency)} · ${b.description || 'Bonus'}${b.recurring ? ' · monthly' : ''}`;
+                                return (
+                                  <span key={i} className="text-[10px] font-normal text-muted-foreground max-w-[170px] truncate" title={line}>
+                                    {line}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          );
+                        })() : '-'}
                       </TableCell>
                       <TableCell className="text-right">
                         {staff.overtime > 0 ? (
