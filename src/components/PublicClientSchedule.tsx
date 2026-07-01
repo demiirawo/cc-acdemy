@@ -3,6 +3,7 @@ import { isShiftCoveredByRequest } from "@/lib/coverageUtils";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useUserRole } from "@/hooks/useUserRole";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -163,7 +164,12 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
   const { clientName } = useParams<{ clientName: string }>();
   const decodedClientName = decodeURIComponent(clientName || "");
   const queryClient = useQueryClient();
-  
+  // Only admins may edit or delete an approved holiday. Non-admins (staff, editors,
+  // and anonymous public viewers) can view the details read-only. This prevents
+  // staff shrinking/removing their approved holidays to inflate their unused-holiday
+  // refund; the database also enforces this via RLS + the protect trigger.
+  const { isAdmin } = useUserRole();
+
   const [weekOffset, setWeekOffset] = useState(0);
   
   // Holiday management state
@@ -386,8 +392,9 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
   // Update holiday mutation
   const updateHolidayMutation = useMutation({
     mutationFn: async () => {
+      if (!isAdmin) throw new Error("Only an administrator can modify a holiday.");
       if (!selectedHoliday) throw new Error("No holiday selected");
-      
+
       const { error } = await supabase
         .from("staff_holidays")
         .update({
@@ -416,8 +423,9 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
   // Delete holiday mutation
   const deleteHolidayMutation = useMutation({
     mutationFn: async () => {
+      if (!isAdmin) throw new Error("Only an administrator can delete a holiday.");
       if (!selectedHoliday) throw new Error("No holiday selected");
-      
+
       const { error } = await supabase
         .from("staff_holidays")
         .delete()
@@ -1356,20 +1364,24 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
               </>
             ) : (
               <>
-                <Button 
-                  variant="destructive" 
-                  onClick={() => setHolidayDeleteConfirmOpen(true)}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Delete
-                </Button>
-                <Button 
-                  variant="outline"
-                  onClick={() => setIsEditingHoliday(true)}
-                >
-                  <Pencil className="h-4 w-4 mr-2" />
-                  Edit
-                </Button>
+                {isAdmin && (
+                  <>
+                    <Button
+                      variant="destructive"
+                      onClick={() => setHolidayDeleteConfirmOpen(true)}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsEditingHoliday(true)}
+                    >
+                      <Pencil className="h-4 w-4 mr-2" />
+                      Edit
+                    </Button>
+                  </>
+                )}
                 <Button onClick={() => setHolidayDialogOpen(false)}>
                   Close
                 </Button>
