@@ -7,6 +7,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Clock, Palmtree, RefreshCw, Calendar, Bell, BellOff } from "lucide-react";
 import { format, addDays, parseISO } from "date-fns";
 import { useBatchWorkingDays } from "@/hooks/useWorkingDays";
+import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
 interface StaffRequest {
   id: string;
@@ -133,18 +134,6 @@ export function UpcomingRequestsPreview({
   const holidayRequests = requests.filter(r => r.request_type === 'holiday' || r.request_type === 'holiday_paid' || r.request_type === 'holiday_unpaid');
   const workingDaysMap = useBatchWorkingDays(holidayRequests);
 
-  // For shift cover requests, compute working days based on the COVERED person's patterns
-  const coverRequests = requests.filter(r => 
-    r.request_type === 'shift_swap' && r.swap_with_user_id
-  );
-  const coverRequestsForPatternLookup = coverRequests.map(r => ({
-    id: r.id,
-    user_id: r.swap_with_user_id!, // The person being covered
-    start_date: r.start_date,
-    end_date: r.end_date
-  }));
-  const coverWorkingDaysMap = useBatchWorkingDays(coverRequestsForPatternLookup);
-
   // Helper to get display days (working days if available, otherwise calendar days)
   const getDisplayDays = (req: StaffRequest): number => {
     const isHoliday = req.request_type === 'holiday' || req.request_type === 'holiday_paid' || req.request_type === 'holiday_unpaid';
@@ -154,22 +143,14 @@ export function UpcomingRequestsPreview({
       return workingDays !== null && workingDays !== undefined ? workingDays : req.days_requested;
     }
     
-    // For shift cover, count unique calendar days from shift details if available
-    if ((req.request_type === 'shift_swap') && req.details) {
-      const shiftsMatch = req.details.match(/Shifts:\s*(.+)/s);
-      if (shiftsMatch) {
-        const dateMatches = shiftsMatch[1].match(/\d{2} \w{3} \d{4}/g);
-        if (dateMatches && dateMatches.length > 0) {
-          const uniqueDates = new Set(dateMatches);
-          return uniqueDates.size;
-        }
-      }
-    }
-
-    // For shift cover, use the covered person's working days
-    if (req.request_type === 'shift_swap' && req.swap_with_user_id) {
-      const coverWorkingDays = coverWorkingDaysMap.get(req.id);
-      return coverWorkingDays !== null && coverWorkingDays !== undefined ? coverWorkingDays : req.days_requested;
+    // For shift cover, count the dates actually assigned (structured covered_dates,
+    // else parsed "Shifts:"/"Covered days:" text). Never recompute across the
+    // start->end span: a non-contiguous selection like {18th, 20th} is stored as an
+    // 18->20 range, and walking the span would refill the excluded 19th (showing 3
+    // instead of 2). This matches what payroll uses (coverage_metadata.covered_dates).
+    if (req.request_type === 'shift_swap') {
+      const coveredDates = getCoveredDatesFromRequest(req);
+      if (coveredDates.length > 0) return coveredDates.length;
     }
     
     return req.days_requested;

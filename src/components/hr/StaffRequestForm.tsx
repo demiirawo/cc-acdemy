@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification";
-import { invalidateAllCoverageQueries, buildCoverageMetadata } from "@/lib/coverageUtils";
+import { invalidateAllCoverageQueries, buildCoverageMetadata, getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 
 
 type RequestType = 'overtime' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap' | 'overtime_standard' | 'overtime_double_up';
@@ -524,16 +524,12 @@ export function StaffRequestForm() {
   });
 
   const getDisplayDays = (req: StaffRequest): number => {
-    // For shift cover with individual shifts, count unique calendar days from details
-    if (req.request_type === 'shift_swap' && req.details) {
-      const shiftsMatch = req.details.match(/Shifts:\s*(.+)/s);
-      if (shiftsMatch) {
-        const dateMatches = shiftsMatch[1].match(/\d{2} \w{3} \d{4}/g);
-        if (dateMatches && dateMatches.length > 0) {
-          const uniqueDates = new Set(dateMatches);
-          return uniqueDates.size;
-        }
-      }
+    // For shift cover, count the dates actually assigned (structured covered_dates,
+    // else parsed "Shifts:"/"Covered days:" text) rather than the stored span, so a
+    // non-contiguous selection like {18th, 20th} shows 2, not a span-refilled 3.
+    if (req.request_type === 'shift_swap') {
+      const coveredDates = getCoveredDatesFromRequest(req);
+      if (coveredDates.length > 0) return coveredDates.length;
     }
     return req.days_requested;
   };
