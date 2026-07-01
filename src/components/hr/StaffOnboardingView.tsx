@@ -268,8 +268,14 @@ export function StaffOnboardingView() {
     }
   };
 
-  const completedCount = steps.filter(s => isStepCompleted(s)).length;
-  const progressPercent = steps.length > 0 ? Math.round((completedCount / steps.length) * 100) : 0;
+  // Only count steps that are actually shown (in a known stage). Steps in an
+  // unrecognised/typo stage are hidden from the list, so they must not inflate
+  // the denominator.
+  const STAGE_SET = new Set(STAGE_ORDER);
+  const countableSteps = steps.filter(s => STAGE_SET.has(s.stage || 'Getting Started'));
+  const totalSteps = countableSteps.length;
+  const completedCount = countableSteps.filter(s => isStepCompleted(s)).length;
+  const progressPercent = totalSteps > 0 ? Math.round((completedCount / totalSteps) * 100) : 0;
 
   if (loading) {
     return <div className="text-center py-8 text-muted-foreground">Loading your onboarding progress...</div>;
@@ -301,7 +307,7 @@ export function StaffOnboardingView() {
         <CardContent>
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span>{completedCount} of {steps.length} steps completed</span>
+              <span>{completedCount} of {totalSteps} steps completed</span>
               <span className="font-medium">{progressPercent}%</span>
             </div>
             <Progress value={progressPercent} className="h-3" />
@@ -534,7 +540,7 @@ export function StaffOnboardingView() {
       </Accordion>
 
       {/* Completion message */}
-      {completedCount === steps.length && steps.length > 0 && (
+      {completedCount === totalSteps && totalSteps > 0 && (
         <Card className="border-green-200 dark:border-green-900 bg-green-50 dark:bg-green-950/30">
           <CardContent className="py-6 text-center">
             <CheckCircle2 className="h-12 w-12 text-green-600 dark:text-green-400 mx-auto mb-3" />

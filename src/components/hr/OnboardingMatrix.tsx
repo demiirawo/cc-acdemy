@@ -181,14 +181,19 @@ export function OnboardingMatrix() {
     );
   };
 
+  // Only count steps in a known stage (shown on the matrix). Steps in an
+  // unrecognised/typo stage are hidden, so must not affect the totals.
+  const STAGE_SET = new Set(STAGE_ORDER);
+  const countableSteps = steps.filter(s => STAGE_SET.has(s.stage || 'Getting Started'));
+
   const getCompletionStats = (userId: string): { completed: number; total: number } => {
     let completed = 0;
-    steps.forEach(step => {
+    countableSteps.forEach(step => {
       if (isStepCompleted(step.id, userId, step)) {
         completed++;
       }
     });
-    return { completed, total: steps.length };
+    return { completed, total: countableSteps.length };
   };
 
   // Group steps by stage

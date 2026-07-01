@@ -1347,8 +1347,12 @@ export function MyHRProfile() {
           return acc;
         }, {} as Record<string, OnboardingStep[]>);
         const stages = STAGE_ORDER.filter(s => stepsByStage[s]?.length > 0);
-        const totalSteps = onboardingSteps.length;
-        const completedSteps = onboardingSteps.filter(s => onboardingCompletedIds.has(s.id)).length;
+        // Count only steps in a known stage (those shown); steps in an
+        // unrecognised/typo stage are hidden and must not inflate the total.
+        const STAGE_SET = new Set(STAGE_ORDER);
+        const countableSteps = onboardingSteps.filter(s => STAGE_SET.has(s.stage || 'Getting Started'));
+        const totalSteps = countableSteps.length;
+        const completedSteps = countableSteps.filter(s => onboardingCompletedIds.has(s.id)).length;
         const progressPct = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
         const allDone = completedSteps === totalSteps;
 
