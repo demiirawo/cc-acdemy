@@ -250,6 +250,18 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
       // Send email notification to the requester
       const requesterProfile = userProfiles.find(p => p.user_id === request.user_id);
       const reviewerProfile = userProfiles.find(p => p.user_id === user.id);
+      // On holiday approval, list the clients this person is scheduled for so the
+      // approval email links each one's handover tracker.
+      let impactedClients: string[] = [];
+      if (status === 'approved' && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type)) {
+        const { data: patterns } = await supabase
+          .from("recurring_shift_patterns")
+          .select("client_name")
+          .eq("user_id", request.user_id);
+        impactedClients = Array.from(new Set((patterns || [])
+          .map(p => p.client_name)
+          .filter((c): c is string => !!c && c !== 'Care Cuddle')));
+      }
       if (requesterProfile?.email) {
         sendReviewEmail({
           type: status === 'approved' ? 'request_approved' : 'request_rejected',
@@ -261,6 +273,7 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
           daysRequested: request.days_requested,
           reviewNotes: reviewNotes || undefined,
           reviewerName: reviewerProfile?.display_name || user.email,
+          impactedClients,
         }).catch(err => console.error("Failed to send email notification:", err));
       }
     },

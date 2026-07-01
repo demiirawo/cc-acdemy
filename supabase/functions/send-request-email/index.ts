@@ -11,22 +11,44 @@ const corsHeaders = {
 
 const LOGO_URL = "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
 const BRAND_COLOR = "#5F17EB";
+const APP_URL = "https://cc-acdemy.pages.dev";
 
 interface EmailRequest {
-  type: "new_request" | "request_approved" | "request_rejected";
-  requestId: string;
-  requestType: string;
-  requesterName: string;
-  requesterEmail: string;
-  startDate: string;
-  endDate: string;
-  daysRequested: number;
+  type: "new_request" | "request_approved" | "request_rejected" | "cover_assigned";
+  requestId?: string;
+  requestType?: string;
+  requesterName?: string;
+  requesterEmail?: string;
+  startDate?: string;
+  endDate?: string;
+  daysRequested?: number;
   details?: string;
   reviewNotes?: string;
   reviewerName?: string;
+  // Handover / cover fields
+  impactedClients?: string[];
+  assigneeName?: string;
+  assigneeEmail?: string;
+  coveredForName?: string;
+  coveredForEmail?: string;
+  coveredDates?: string[];
 }
 
-const getRequestTypeLabel = (requestType: string): string => {
+const isHolidayType = (rt: string | undefined): boolean =>
+  ["holiday", "holiday_paid", "holiday_unpaid"].includes(rt || "");
+
+const clientHandoverButton = (client: string): string =>
+  `<a href="${APP_URL}/public/schedule/${encodeURIComponent(client)}" style="display:inline-block; background-color:${BRAND_COLOR}; color:#ffffff; padding:10px 18px; border-radius:8px; text-decoration:none; font-weight:600; font-size:13px; margin:4px 8px 4px 0;">Open ${client} handover →</a>`;
+
+const handoverBlock = (title: string, intro: string, clients: string[]): string =>
+  clients.length === 0 ? "" : `
+    <div style="background:#f5f3ff; border:1px solid #ddd6fe; border-radius:8px; padding:16px 18px; margin-bottom:24px;">
+      <p style="color:#4c1d95; font-size:15px; font-weight:600; margin:0 0 8px;">📋 ${title}</p>
+      <p style="color:#374151; font-size:14px; margin:0 0 14px;">${intro}</p>
+      <div>${clients.map(clientHandoverButton).join("")}</div>
+    </div>`;
+
+const getRequestTypeLabel = (requestType: string | undefined): string => {
   const labels: Record<string, string> = {
     holiday_paid: "Paid Holiday",
     holiday_unpaid: "Unpaid Holiday",
@@ -36,10 +58,11 @@ const getRequestTypeLabel = (requestType: string): string => {
     overtime_standard: "Standard Overtime",
     overtime_double_up: "Double-Up Overtime",
   };
-  return labels[requestType] || requestType;
+  return labels[requestType || ""] || requestType || "";
 };
 
-const formatDate = (dateStr: string): string => {
+const formatDate = (dateStr: string | undefined): string => {
+  if (!dateStr) return "";
   const date = new Date(dateStr);
   return date.toLocaleDateString("en-GB", {
     weekday: "short",
@@ -114,6 +137,12 @@ const handler = async (req: Request): Promise<Response> => {
       details,
       reviewNotes,
       reviewerName,
+      impactedClients,
+      assigneeName,
+      assigneeEmail,
+      coveredForName,
+      coveredForEmail,
+      coveredDates,
     } = emailRequest;
 
     const requestTypeLabel = getRequestTypeLabel(requestType);
@@ -183,7 +212,7 @@ const handler = async (req: Request): Promise<Response> => {
         </p>
         
         <div style="text-align: center;">
-          <a href="https://cc-acdemy.lovable.app" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+          <a href="${APP_URL}" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
             Review Request
           </a>
         </div>
@@ -242,9 +271,17 @@ const handler = async (req: Request): Promise<Response> => {
           If you have any questions about this decision, please speak to your manager.
         </p>
         `}
-        
+
+        ${isApproved && isHolidayType(requestType)
+          ? handoverBlock(
+              "Start your handover",
+              "Before your leave, please start the handover for the client(s) below so your cover is set up. Open each client's handover tracker:",
+              impactedClients || []
+            )
+          : ""}
+
         <div style="text-align: center;">
-          <a href="https://cc-acdemy.lovable.app" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+          <a href="${APP_URL}" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
             View My Requests
           </a>
         </div>
@@ -255,6 +292,44 @@ const handler = async (req: Request): Promise<Response> => {
         to: [requesterEmail],
         subject: `Your ${requestTypeLabel} Request has been ${statusText}`,
         html: emailWrapper(`Request ${statusText}`, requestTypeLabel, bodyContent, statusColor),
+      });
+    } else if (type === "cover_assigned") {
+      if (!assigneeEmail) {
+        return new Response(
+          JSON.stringify({ success: true, message: "No assignee email to notify" }),
+          { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+      const clients = impactedClients || [];
+      const dates = coveredDates || [];
+      const datesLabel = dates.length > 0 ? dates.map(formatDate).join(", ") : "";
+      const coveredFor = coveredForName || "a colleague";
+
+      const bodyContent = `
+        <p style="color: #374151; font-size: 16px; margin: 0 0 20px;">Hi ${assigneeName || "there"},</p>
+        <p style="color: #374151; font-size: 16px; margin: 0 0 20px;">
+          You've been assigned to cover <strong>${coveredFor}</strong>'s shifts${datesLabel ? ` on <strong>${datesLabel}</strong>` : ""}.
+        </p>
+        <p style="color: #374151; font-size: 15px; margin: 0 0 20px;">
+          Please reach out to ${coveredFor}${coveredForEmail ? ` (<a href="mailto:${coveredForEmail}" style="color:${BRAND_COLOR};">${coveredForEmail}</a>)` : ""} to start the handover so you're set up for their client(s).
+        </p>
+        ${handoverBlock(
+          "Handover tracker",
+          "Open the handover tracker for each client you'll be covering:",
+          clients
+        )}
+        <div style="text-align: center;">
+          <a href="${APP_URL}" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+            View My Schedule
+          </a>
+        </div>
+      `;
+
+      emailResult = await resend.emails.send({
+        from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
+        to: [assigneeEmail],
+        subject: `You're covering ${coveredFor}${dates.length ? ` — ${dates.length} day${dates.length !== 1 ? "s" : ""}` : ""}`,
+        html: emailWrapper("You've been assigned cover", coveredFor, bodyContent, BRAND_COLOR),
       });
     } else {
       throw new Error(`Unknown email type: ${type}`);

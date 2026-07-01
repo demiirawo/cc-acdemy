@@ -9,6 +9,7 @@ const corsHeaders = {
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
 const LOGO_URL = "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
 const BRAND_COLOR = "#5F17EB";
+const APP_URL = "https://cc-acdemy.pages.dev";
 
 interface ShiftAuditLog {
   id: string;
@@ -23,8 +24,9 @@ interface ShiftAuditLog {
 
 const formatTime = (time: string | null | undefined): string => {
   if (!time) return "N/A";
-  const [hours, minutes] = time.split(":");
+  const [hours, minutes] = String(time).split(":");
   const hour = parseInt(hours);
+  if (isNaN(hour)) return String(time);
   const ampm = hour >= 12 ? "PM" : "AM";
   const hour12 = hour % 12 || 12;
   return `${hour12}:${minutes} ${ampm}`;
@@ -49,58 +51,119 @@ const getActionColor = (action: string): string => {
   }
 };
 
-const getActionLabel = (action: string): string => {
-  switch (action) {
-    case "INSERT": return "New shift added";
-    case "UPDATE": return "Shift updated";
-    case "DELETE": return "Shift removed";
-    default: return action;
-  }
-};
-
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+const daysLabel = (arr: unknown): string =>
+  Array.isArray(arr) ? arr.slice().sort((a, b) => Number(a) - Number(b)).map((d) => DAY_NAMES[Number(d)] ?? d).join(", ") : String(arr ?? "N/A");
+
+const escapeHtml = (s: unknown): string =>
+  String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+// Fields we render/diff for a shift or recurring pattern, in display order.
+const FIELD_SPECS: Array<{ key: string; label: string; fmt: (v: unknown) => string }> = [
+  { key: "client_name", label: "Client", fmt: (v) => escapeHtml(v ?? "N/A") },
+  { key: "shift_date", label: "Date", fmt: (v) => formatDate(v as string) },
+  { key: "start_date", label: "Start date", fmt: (v) => formatDate(v as string) },
+  { key: "end_date", label: "End date", fmt: (v) => (v ? formatDate(v as string) : "ongoing") },
+  { key: "days_of_week", label: "Days", fmt: (v) => daysLabel(v) },
+  { key: "start_time", label: "Start time", fmt: (v) => formatTime(v as string) },
+  { key: "end_time", label: "End time", fmt: (v) => formatTime(v as string) },
+  { key: "shift_type", label: "Type", fmt: (v) => escapeHtml(v ?? "N/A") },
+  { key: "is_overtime", label: "Overtime", fmt: (v) => (v ? "Yes" : "No") },
+  { key: "overtime_subtype", label: "Overtime type", fmt: (v) => escapeHtml(v ?? "—") },
+  { key: "notes", label: "Notes", fmt: (v) => escapeHtml(v ?? "—") },
+];
+
+const valuesEqual = (a: unknown, b: unknown): boolean => {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    const as = Array.isArray(a) ? a.slice().sort() : a;
+    const bs = Array.isArray(b) ? b.slice().sort() : b;
+    return JSON.stringify(as) === JSON.stringify(bs);
+  }
+  return (a ?? null) === (b ?? null);
+};
+
+const line = (label: string, value: string): string =>
+  `<p style="margin: 4px 0; color: #4b5563;"><strong>${label}:</strong> ${value}</p>`;
+
 const buildChangeBlock = (log: ShiftAuditLog, changedByName: string): string => {
-  const data = log.action === "DELETE" ? log.old_data : log.new_data;
-  const tableLabel = log.table_name === "staff_schedules" ? "Shift" : "Recurring Pattern";
+  const color = getActionColor(log.action);
+  const when = new Date(log.changed_at).toLocaleString("en-GB");
 
-  let details = "";
-  if (data) {
-    const clientName = data.client_name || "N/A";
-    const startTime = formatTime(data.start_time);
-    const endTime = formatTime(data.end_time);
-    const date = data.shift_date
-      ? formatDate(data.shift_date)
-      : data.start_date
-      ? `${formatDate(data.start_date)}${data.end_date ? " → " + formatDate(data.end_date) : " (ongoing)"}`
-      : "N/A";
-
-    let daysLine = "";
-    if (Array.isArray(data.days_of_week) && data.days_of_week.length > 0) {
-      const days = data.days_of_week.map((d: number) => DAY_NAMES[d]).join(", ");
-      daysLine = `<p style="margin: 4px 0;"><strong>Days:</strong> ${days}</p>`;
+  // Single-shift exceptions (cancel a day, toggle a day to/from overtime).
+  if (log.table_name === "shift_pattern_exceptions") {
+    const d = log.new_data || log.old_data || {};
+    const dateStr = formatDate(d.exception_date as string);
+    const client = escapeHtml(d.client_name || "a client");
+    const removed = log.action === "DELETE";
+    const et = d.exception_type;
+    let title = "Schedule change";
+    let accent = "#6b7280";
+    if (et === "deleted") {
+      title = removed ? `Shift reinstated — ${dateStr}` : `Shift cancelled — ${dateStr}`;
+      accent = removed ? "#22c55e" : "#ef4444";
+    } else if (et === "overtime") {
+      title = removed ? `Overtime removed — ${dateStr}` : `Marked as overtime — ${dateStr}`;
+      accent = "#f59e0b";
+    } else if (et === "not_overtime") {
+      title = removed ? `Overtime override removed — ${dateStr}` : `Marked as non-overtime — ${dateStr}`;
+      accent = "#f59e0b";
     }
-
-    details = `
-      <div style="margin-left: 8px; color: #4b5563;">
-        <p style="margin: 4px 0;"><strong>Client:</strong> ${clientName}</p>
-        <p style="margin: 4px 0;"><strong>Date:</strong> ${date}</p>
-        ${daysLine}
-        <p style="margin: 4px 0;"><strong>Time:</strong> ${startTime} - ${endTime}</p>
-        ${data.shift_type ? `<p style="margin: 4px 0;"><strong>Type:</strong> ${data.shift_type}</p>` : ""}
-        ${data.notes ? `<p style="margin: 4px 0;"><strong>Notes:</strong> ${data.notes}</p>` : ""}
+    return `
+      <div style="border-left: 4px solid ${accent}; padding: 12px; margin: 12px 0; background: #f9fafb; border-radius: 4px;">
+        <div>
+          <span style="font-weight: bold; color: ${accent};">${title}</span>
+          <span style="color: #6b7280; font-size: 12px; float: right;">${when}</span>
+        </div>
+        <div style="margin-left: 8px; margin-top: 6px;">
+          ${line("Client", client)}
+          ${line("Date", dateStr)}
+        </div>
+        <p style="color: #374151; margin: 8px 0 0; font-size: 13px;">Changed by: <strong>${escapeHtml(changedByName)}</strong></p>
       </div>
     `;
   }
 
+  const tableLabel = log.table_name === "staff_schedules" ? "Shift" : "Recurring pattern";
+  let title = "";
+  let body = "";
+
+  if (log.action === "UPDATE" && log.old_data && log.new_data) {
+    // Field-by-field diff so staff see exactly what moved/changed.
+    title = `${tableLabel} updated`;
+    const diffs: string[] = [];
+    for (const spec of FIELD_SPECS) {
+      const before = (log.old_data as Record<string, unknown>)[spec.key];
+      const after = (log.new_data as Record<string, unknown>)[spec.key];
+      if (before === undefined && after === undefined) continue;
+      if (!valuesEqual(before, after)) {
+        diffs.push(line(spec.label, `${spec.fmt(before)} <span style="color:#9ca3af;">→</span> <strong>${spec.fmt(after)}</strong>`));
+      }
+    }
+    body = diffs.length > 0
+      ? `<div style="margin-left: 8px; margin-top: 6px;">${diffs.join("")}</div>`
+      : `<p style="margin: 6px 0 0 8px; color: #6b7280; font-size: 13px;">Minor update.</p>`;
+  } else {
+    // INSERT / DELETE: show the full picture of the added/removed shift.
+    title = log.action === "INSERT" ? `New ${tableLabel.toLowerCase()} added` : `${tableLabel} removed`;
+    const data = (log.action === "DELETE" ? log.old_data : log.new_data) || {};
+    const rows: string[] = [];
+    for (const spec of FIELD_SPECS) {
+      const v = (data as Record<string, unknown>)[spec.key];
+      if (v === undefined || v === null || v === "") continue;
+      rows.push(line(spec.label, spec.fmt(v)));
+    }
+    body = `<div style="margin-left: 8px; margin-top: 6px;">${rows.join("")}</div>`;
+  }
+
   return `
-    <div style="border-left: 4px solid ${getActionColor(log.action)}; padding: 12px; margin: 12px 0; background: #f9fafb; border-radius: 4px;">
+    <div style="border-left: 4px solid ${color}; padding: 12px; margin: 12px 0; background: #f9fafb; border-radius: 4px;">
       <div>
-        <span style="font-weight: bold; color: ${getActionColor(log.action)};">${getActionLabel(log.action)} (${tableLabel})</span>
-        <span style="color: #6b7280; font-size: 12px; float: right;">${new Date(log.changed_at).toLocaleString("en-GB")}</span>
+        <span style="font-weight: bold; color: ${color};">${title}</span>
+        <span style="color: #6b7280; font-size: 12px; float: right;">${when}</span>
       </div>
-      <p style="color: #374151; margin: 8px 0; font-size: 13px;">Updated by: <strong>${changedByName}</strong></p>
-      ${details}
+      ${body}
+      <p style="color: #374151; margin: 8px 0 0; font-size: 13px;">Changed by: <strong>${escapeHtml(changedByName)}</strong></p>
     </div>
   `;
 };
@@ -132,7 +195,7 @@ serve(async (req) => {
       .from("shift_audit_log")
       .select("*")
       .gte("changed_at", sinceIso)
-      .in("table_name", ["staff_schedules", "recurring_shift_patterns"])
+      .in("table_name", ["staff_schedules", "recurring_shift_patterns", "shift_pattern_exceptions"])
       .order("changed_at", { ascending: false });
 
     if (auditError) throw auditError;
@@ -201,11 +264,11 @@ serve(async (req) => {
           <p style="color: rgba(255,255,255,0.9); margin: 6px 0 0 0; font-size: 13px;">${logs.length} change(s) to your shifts</p>
         </td></tr>
         <tr><td style="padding: 32px 40px;">
-          <p style="color: #374151; font-size: 15px; margin: 0 0 16px;">Hi ${profile.name?.split(" ")[0] || "there"},</p>
+          <p style="color: #374151; font-size: 15px; margin: 0 0 16px;">Hi ${escapeHtml(profile.name?.split(" ")[0] || "there")},</p>
           <p style="color: #4b5563; font-size: 14px; margin: 0 0 20px;">The following change(s) have been made to your schedule:</p>
           ${changeBlocks}
           <div style="text-align: center; margin-top: 28px;">
-            <a href="https://cc-acdemy.lovable.app" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+            <a href="${APP_URL}" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
               View My Schedule
             </a>
           </div>

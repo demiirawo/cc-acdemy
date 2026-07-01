@@ -20,6 +20,17 @@ interface SendReviewEmailParams {
   daysRequested: number;
   reviewNotes?: string;
   reviewerName?: string;
+  /** Clients impacted by this leave — renders handover-tracker links on holiday approvals. */
+  impactedClients?: string[];
+}
+
+interface SendCoverAssignmentEmailParams {
+  assigneeName: string;
+  assigneeEmail: string;
+  coveredForName: string;
+  coveredForEmail?: string;
+  coveredDates?: string[];
+  impactedClients?: string[];
 }
 
 export const useRequestEmailNotification = () => {
@@ -64,8 +75,28 @@ export const useRequestEmailNotification = () => {
     }
   };
 
+  const sendCoverAssignmentEmail = async (params: SendCoverAssignmentEmailParams) => {
+    try {
+      const { data, error } = await supabase.functions.invoke("send-request-email", {
+        body: { type: "cover_assigned", ...params },
+      });
+
+      if (error) {
+        console.error("Failed to send cover assignment email:", error);
+        return { success: false, error };
+      }
+
+      console.log("Cover assignment email sent:", data);
+      return { success: true, data };
+    } catch (err) {
+      console.error("Error sending cover assignment email:", err);
+      return { success: false, error: err };
+    }
+  };
+
   return {
     sendNewRequestEmail,
     sendReviewEmail,
+    sendCoverAssignmentEmail,
   };
 };

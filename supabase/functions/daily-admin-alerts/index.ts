@@ -6,6 +6,7 @@ const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
 const LOGO_URL = "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
 const BRAND_COLOR = "#5F17EB";
+const APP_URL = "https://cc-acdemy.pages.dev";
 const BIRTHDAY_IMAGE_URL = "https://cc-acdemy.lovable.app/images/birthday-celebration.png";
 
 const corsHeaders = {
@@ -436,11 +437,11 @@ const handler = async (req: Request): Promise<Response> => {
       }
     }
 
-    // ===== 6. HOLIDAY COUNTDOWN (3/2/1 days) =====
+    // ===== 6. HOLIDAY COUNTDOWN (7/3/1 days) + HANDOVER REMINDER =====
     // Personal emails to taker/cover stay separate. Admin copy goes in the digest.
     if (!testType || testType === "holiday_countdown" || testType === "digest") {
       const targetDates: string[] = [];
-      for (const offset of [1, 2, 3]) {
+      for (const offset of [1, 3, 7]) {
         const d = new Date(today);
         d.setDate(d.getDate() + offset);
         targetDates.push(d.toISOString().split("T")[0]);
@@ -492,6 +493,18 @@ const handler = async (req: Request): Promise<Response> => {
             .filter(c => c.email);
           const coverNames = coverPeople.map(c => c.name || "Unknown");
 
+          // Clients impacted by this person's leave → handover-tracker deep links.
+          const { data: takerPatterns } = await supabaseClient
+            .from("recurring_shift_patterns")
+            .select("client_name")
+            .eq("user_id", h.user_id);
+          const handoverClients = [...new Set((takerPatterns || [])
+            .map(p => p.client_name)
+            .filter((c): c is string => !!c && c !== "Care Cuddle"))];
+          const handoverLinkItems = handoverClients.map(c =>
+            `🔗 <a href="${APP_URL}/public/schedule/${encodeURIComponent(c)}" style="color:${BRAND_COLOR};font-weight:600;text-decoration:none;">Open ${c} handover tracker</a>`
+          );
+
           // Admin digest line
           adminCountdownItems.push(
             `<strong>${takerName}</strong> on holiday in <strong>${daysUntil} ${dayWord}</strong> (${dateRange}) — ${coverNames.length > 0 ? `cover: ${coverNames.join(", ")}` : `<span style="color:#ef4444;font-weight:600;">no cover assigned</span>`}`
@@ -507,6 +520,9 @@ const handler = async (req: Request): Promise<Response> => {
                 `Your holiday starts in ${daysUntil} ${dayWord}.`,
                 `🗓️ ${dateRange}`,
                 coverNames.length > 0 ? `🤝 Your cover: ${coverNames.join(", ")}` : `⚠️ No cover has been assigned yet — please check with the admin team.`,
+                ...(handoverLinkItems.length > 0
+                  ? [`📋 <strong>Please complete your handover before you leave</strong> so your cover is set up:`, ...handoverLinkItems]
+                  : []),
                 `Have a great break! 🌴`,
               ],
               todayStr
@@ -523,6 +539,10 @@ const handler = async (req: Request): Promise<Response> => {
                 `You're covering ${takerName}'s holiday in ${daysUntil} ${dayWord}.`,
                 `🗓️ Holiday dates: ${dateRange}`,
                 `Please review your schedule for the covered shifts.`,
+                `💬 <strong>Reach out to ${takerName}</strong> to complete the handover before their leave.`,
+                ...(handoverLinkItems.length > 0
+                  ? [`📋 Open the handover tracker for each client:`, ...handoverLinkItems]
+                  : []),
               ],
               todayStr
             );
@@ -532,7 +552,7 @@ const handler = async (req: Request): Promise<Response> => {
         if (adminCountdownItems.length > 0) {
           sections.push({
             type: "holiday_countdown",
-            title: "Holidays Starting Soon (3-day countdown)",
+            title: "Holidays Starting Soon",
             icon: "📅",
             accentColor: "#0ea5e9",
             itemsHtml: adminCountdownItems,
@@ -542,7 +562,7 @@ const handler = async (req: Request): Promise<Response> => {
       } else if (testType === "holiday_countdown") {
         sections.push({
           type: "holiday_countdown",
-          title: "Holidays Starting Soon (3-day countdown)",
+          title: "Holidays Starting Soon",
           icon: "📅",
           accentColor: "#0ea5e9",
           itemsHtml: [`<strong>[TEST] John Smith</strong> on holiday in <strong>1 day</strong> (${formatShortDate(targetDates[0])}) — cover: [TEST] Jane Doe`],

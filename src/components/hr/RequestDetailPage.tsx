@@ -106,7 +106,8 @@ export function RequestDetailPage({
   } = useAuth();
   const queryClient = useQueryClient();
   const {
-    sendReviewEmail
+    sendReviewEmail,
+    sendCoverAssignmentEmail
   } = useRequestEmailNotification();
   const [reviewNotes, setReviewNotes] = useState("");
   const [emailCopied, setEmailCopied] = useState(false);
@@ -501,6 +502,16 @@ export function RequestDetailPage({
         ? selectedDates.slice().sort()
         : allWorkingDates;
 
+      // Clients the cover will actually work (for handover-tracker links in their email).
+      const coveredSet = new Set(coveredDates);
+      const impactedClients = Array.from(new Set(
+        affectedShifts
+          .filter(s => coveredSet.has(s.date.toISOString().split('T')[0]))
+          .map(s => s.clientName)
+          .filter(c => c && c !== 'Care Cuddle')
+      ));
+      const coverResult = { coverUserId, coveredDates, impactedClients };
+
       const daysRequested = coveredDates.length > 0
         ? coveredDates.length
         : (linkedHoliday?.days_taken ?? request.days_requested);
@@ -545,7 +556,7 @@ export function RequestDetailPage({
           error
         } = await supabase.from("staff_requests").update(payload).eq("id", existing[0].id);
         if (error) throw error;
-        return;
+        return coverResult;
       }
 
       // Create a shift_swap request for the covering staff member
@@ -561,12 +572,29 @@ export function RequestDetailPage({
           .update({ no_cover_required: false })
           .eq("id", linkedHoliday.id);
       }
+
+      return coverResult;
     },
-    onSuccess: () => {
+    onSuccess: (coverResult) => {
       refetchLinkedHoliday();
       refetchCoveringStaff();
       invalidateAllCoverageQueries(queryClient);
       toast.success("Cover assigned successfully");
+      // Email the cover person with handover-tracker links + a prompt to reach out.
+      if (coverResult && request) {
+        const coverProfile = userProfiles.find(p => p.user_id === coverResult.coverUserId);
+        const coveredForProfile = userProfiles.find(p => p.user_id === request.user_id);
+        if (coverProfile?.email) {
+          sendCoverAssignmentEmail({
+            assigneeName: coverProfile.display_name || coverProfile.email,
+            assigneeEmail: coverProfile.email,
+            coveredForName: getStaffName(request.user_id),
+            coveredForEmail: coveredForProfile?.email || undefined,
+            coveredDates: coverResult.coveredDates,
+            impactedClients: coverResult.impactedClients,
+          }).catch(err => console.error("Failed to send cover assignment email:", err));
+        }
+      }
     },
     onError: error => {
       toast.error("Failed to assign cover: " + error.message);
@@ -667,6 +695,11 @@ export function RequestDetailPage({
       // Send email notification to the requester
       const requesterProfile = userProfiles.find(p => p.user_id === request.user_id);
       const reviewerProfile = userProfiles.find(p => p.user_id === user.id);
+      // On holiday approval, include the clients impacted by the leave so the email
+      // links the requester straight to each client's handover tracker.
+      const impactedClients = (status === 'approved' && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type))
+        ? Array.from(new Set(getAffectedShiftsByDay().map(s => s.clientName).filter(c => c && c !== 'Care Cuddle')))
+        : [];
       if (requesterProfile?.email) {
         sendReviewEmail({
           type: status === 'approved' ? 'request_approved' : 'request_rejected',
@@ -677,7 +710,8 @@ export function RequestDetailPage({
           endDate: request.end_date,
           daysRequested: request.days_requested,
           reviewNotes: reviewNotes || undefined,
-          reviewerName: reviewerProfile?.display_name || user.email
+          reviewerName: reviewerProfile?.display_name || user.email,
+          impactedClients,
         }).catch(err => console.error("Failed to send email notification:", err));
       }
     },
