@@ -159,6 +159,21 @@ const handler = async (req: Request): Promise<Response> => {
       testType = body?.testType || null;
     } catch { /* ignore */ }
 
+    // Only send on the real (cron) run when it's 9am UK time. The cron fires at
+    // both 08:00 and 09:00 UTC so that exactly one of them lands on 09:00 in
+    // Europe/London regardless of BST/GMT. Test runs bypass this gate.
+    if (!testType) {
+      const londonHour = Number(
+        new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", hour: "numeric", hourCycle: "h23" }).format(new Date())
+      );
+      if (londonHour !== 9) {
+        return new Response(
+          JSON.stringify({ skipped: true, reason: "not 9am UK time", londonHour }),
+          { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const todayStr = today.toISOString().split("T")[0];
@@ -701,7 +716,10 @@ const handler = async (req: Request): Promise<Response> => {
         const { data: steps } = await supabaseClient
           .from("onboarding_steps")
           .select("id, title, stage, sort_order, step_type, target_page_id");
-        const orderedSteps = (steps || []).slice().sort((a, b) => {
+        // Only count steps in a known stage; steps in an unrecognised/typo
+        // stage are hidden from staff and must not affect totals.
+        const STAGE_SET = new Set(STAGE_ORDER);
+        const orderedSteps = (steps || []).filter(s => STAGE_SET.has(s.stage || "Getting Started")).slice().sort((a, b) => {
           const sa = STAGE_ORDER.indexOf(a.stage || "Getting Started");
           const sb = STAGE_ORDER.indexOf(b.stage || "Getting Started");
           if (sa !== sb) return sa - sb;
@@ -840,7 +858,22 @@ const handler = async (req: Request): Promise<Response> => {
       // If a specific test was requested, prefix subject
       const isTestRun = !!testType;
       const subjectCount = sections.length;
-      const subject = `${isTestRun ? "[TEST] " : ""}📬 Daily Admin Digest — ${subjectCount} update${subjectCount === 1 ? "" : "s"} (${formatShortDate(todayStr)})`;
+
+      // Surface birthdays / work anniversaries in the subject line.
+      const birthdaySection = sections.find(s => s.type === "birthday_today");
+      const anniversarySection = sections.find(s => s.type === "anniversary_today");
+      const celebratoryBits: string[] = [];
+      if (birthdaySection) {
+        celebratoryBits.push(`🎂 ${birthdaySection.itemsHtml.join(", ")}'s birthday`);
+      }
+      if (anniversarySection) {
+        // itemsHtml look like "Name — 3 years 🎉"; take just the names.
+        const names = anniversarySection.itemsHtml.map(h => h.split(" — ")[0]).join(", ");
+        celebratoryBits.push(`🎉 ${names}'s work anniversary`);
+      }
+      const celebratoryPrefix = celebratoryBits.length ? celebratoryBits.join(" · ") + " · " : "";
+
+      const subject = `${isTestRun ? "[TEST] " : ""}${celebratoryPrefix}📬 Daily Admin Digest — ${subjectCount} update${subjectCount === 1 ? "" : "s"} (${formatShortDate(todayStr)})`;
       try {
         await resend.emails.send({
           from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
