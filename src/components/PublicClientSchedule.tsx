@@ -85,6 +85,7 @@ interface StaffHoliday {
   days_taken: number;
   notes: string | null;
   no_cover_required: boolean;
+  no_cover_dates: string[] | null;
 }
 
 interface StaffRequest {
@@ -349,7 +350,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
     queryFn: async () => {
       const { data, error } = await supabase
         .from("staff_holidays")
-        .select("id, user_id, start_date, end_date, status, absence_type, days_taken, notes, no_cover_required")
+        .select("id, user_id, start_date, end_date, status, absence_type, days_taken, notes, no_cover_required, no_cover_dates")
         .eq("status", "approved")
         .lte("start_date", format(currentWeekEnd, "yyyy-MM-dd"))
         .gte("end_date", format(currentWeekStart, "yyyy-MM-dd"));
@@ -941,7 +942,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                               <div className="text-sm text-green-700 bg-green-100 rounded px-2 py-1">
                                 <span className="font-medium">Cover:</span> {coverage.map(c => c.name).join(', ')}
                               </div>
-                            ) : holidayInfo?.no_cover_required ? (
+                            ) : (holidayInfo?.no_cover_required || holidayInfo?.no_cover_dates?.includes(format(day, 'yyyy-MM-dd'))) ? (
                               <div className="text-sm text-blue-600 bg-blue-50 rounded px-2 py-1">
                                 No cover needed
                               </div>
@@ -1081,7 +1082,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                                 <div className="text-[10px] text-green-700 bg-green-50 rounded px-1 py-0.5 mt-0.5">
                                   <span className="font-medium">Cover:</span> {coverage.map(c => c.name).join(', ')}
                                 </div>
-                              ) : holidayInfo?.no_cover_required ? (
+                              ) : (holidayInfo?.no_cover_required || holidayInfo?.no_cover_dates?.includes(format(day, 'yyyy-MM-dd'))) ? (
                                 <div className="text-[10px] text-blue-600 bg-blue-50 rounded px-1 py-0.5 mt-0.5">
                                   No cover needed
                                 </div>
@@ -1457,7 +1458,7 @@ const UpcomingHolidaysCard = ({
       
       const { data, error } = await supabase
         .from("staff_holidays")
-        .select("id, user_id, start_date, end_date, status, absence_type, days_taken, notes, no_cover_required")
+        .select("id, user_id, start_date, end_date, status, absence_type, days_taken, notes, no_cover_required, no_cover_dates")
         .eq("status", "approved")
         .in("user_id", staffUserIds)
         .gte("end_date", format(today, "yyyy-MM-dd"))
@@ -1794,7 +1795,7 @@ const UpcomingHolidaysCard = ({
                               <span className="text-xs text-green-700 bg-green-50 rounded px-2 py-0.5">
                                 Cover: {dayCover.join(', ')}
                               </span>
-                            ) : !holiday.no_cover_required && (
+                            ) : !(holiday.no_cover_required || holiday.no_cover_dates?.includes(format(day.date, 'yyyy-MM-dd'))) && (
                               <span className="text-xs text-red-600 bg-red-50 rounded px-2 py-0.5 flex items-center gap-1">
                                 <AlertTriangle className="h-3 w-3" />
                                 No cover

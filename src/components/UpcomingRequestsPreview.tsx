@@ -124,7 +124,7 @@ export function UpcomingRequestsPreview({
       const {
         data,
         error
-      } = await supabase.from("staff_holidays").select("id, user_id, start_date, end_date, no_cover_required, status").eq("status", "approved").gte("end_date", todayISO).lte("start_date", thirtyDaysISO);
+      } = await supabase.from("staff_holidays").select("id, user_id, start_date, end_date, no_cover_required, no_cover_dates, status").eq("status", "approved").gte("end_date", todayISO).lte("start_date", thirtyDaysISO);
       if (error) throw error;
       return data || [];
     }
@@ -169,6 +169,15 @@ export function UpcomingRequestsPreview({
       h.end_date === request.end_date
     );
     return linkedHoliday?.no_cover_required || false;
+  };
+
+  const getLinkedHoliday = (request: StaffRequest) => {
+    if (!['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type)) return undefined;
+    return staffHolidays.find(h =>
+      h.user_id === request.user_id &&
+      h.start_date === request.start_date &&
+      h.end_date === request.end_date
+    );
   };
 
   // Use the already-filtered requests directly
@@ -275,12 +284,24 @@ export function UpcomingRequestsPreview({
                     const TypeIcon = typeInfo.icon;
                     const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
                     const covers = isHolidayRequest ? findCoverForHoliday(request) : [];
-                    const hasCover = covers.length > 0;
                     const noCoverRequired = isNoCoverRequired(request);
+                    const linkedHoliday = getLinkedHoliday(request);
+                    const noCoverDates = new Set(linkedHoliday?.no_cover_dates ?? []);
+                    const coveredDateSet = new Set<string>();
+                    covers.forEach(cover => {
+                      const dates = (cover as any).coverage_metadata?.covered_dates;
+                      if (Array.isArray(dates) && dates.length) dates.forEach((d: string) => coveredDateSet.add(d));
+                      else {
+                        const s = new Date(cover.start_date); const e = new Date(cover.end_date);
+                        for (const d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) coveredDateSet.add(d.toISOString().split('T')[0]);
+                      }
+                    });
+                    const requiredDaysCount = Math.max(0, getDisplayDays(request) - noCoverDates.size);
+                    const fullyCovered = requiredDaysCount === 0 || coveredDateSet.size >= requiredDaysCount;
 
-                    // Green if has cover OR no cover required, red otherwise for holidays
-                    const rowHighlightClass = isHolidayRequest 
-                      ? (hasCover || noCoverRequired) 
+                    // Green if fully covered OR no cover required, red otherwise for holidays
+                    const rowHighlightClass = isHolidayRequest
+                      ? (fullyCovered || noCoverRequired)
                         ? 'bg-green-100 dark:bg-green-950/30 hover:bg-green-200 dark:hover:bg-green-950/50' 
                         : 'bg-red-100 dark:bg-red-950/30 hover:bg-red-200 dark:hover:bg-red-950/50' 
                       : 'hover:bg-muted/50';

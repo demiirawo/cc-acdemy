@@ -23,6 +23,7 @@ interface Holiday {
   status: string;
   notes: string | null;
   no_cover_required: boolean;
+  no_cover_dates: string[] | null;
   approved_by: string | null;
   approved_at: string | null;
   created_at: string;
@@ -356,8 +357,14 @@ export function StaffHolidaysManager() {
         return holiday.status === 'pending';
       case 'shift_cover':
         return holiday.hasCover;
-      case 'no_cover':
-        return holiday.status === 'approved' && !holiday.hasCover && !holiday.no_cover_required;
+      case 'no_cover': {
+        const start = new Date(holiday.start_date);
+        const end = new Date(holiday.end_date);
+        const spanDays = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+        const fullyNoCover = (holiday.no_cover_dates?.length ?? 0) >= spanDays;
+        return holiday.status === 'approved' && !holiday.hasCover
+          && !holiday.no_cover_required && !fullyNoCover;
+      }
       default:
         return true;
     }

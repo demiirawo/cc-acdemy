@@ -57,6 +57,7 @@ interface Holiday {
   absence_type: string;
   notes: string | null;
   no_cover_required: boolean;
+  no_cover_dates: string[] | null;
   days_taken: number;
 }
 
@@ -267,7 +268,8 @@ export function StaffScheduleManager() {
     end_date: '',
     days_taken: 1,
     notes: '',
-    no_cover_required: false
+    no_cover_required: false,
+    no_cover_dates: [] as string[]
   });
   const [isDeleteHolidayConfirmOpen, setIsDeleteHolidayConfirmOpen] = useState(false);
 
@@ -428,7 +430,7 @@ export function StaffScheduleManager() {
       const weekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 1 });
       const { data, error } = await supabase
         .from("staff_holidays")
-        .select("id, user_id, start_date, end_date, status, absence_type, notes, no_cover_required, days_taken")
+        .select("id, user_id, start_date, end_date, status, absence_type, notes, no_cover_required, no_cover_dates, days_taken")
         .or(`start_date.lte.${format(weekEnd, "yyyy-MM-dd")},end_date.gte.${format(currentWeekStart, "yyyy-MM-dd")}`)
         .in("status", ["approved", "pending"]);
       
@@ -1223,7 +1225,8 @@ export function StaffScheduleManager() {
       end_date: holiday.end_date,
       days_taken: holiday.days_taken,
       notes: holiday.notes || '',
-      no_cover_required: holiday.no_cover_required
+      no_cover_required: holiday.no_cover_required,
+      no_cover_dates: holiday.no_cover_dates ?? []
     });
     setIsViewingHoliday(true);
     setIsEditHolidayDialogOpen(true);
@@ -1243,7 +1246,8 @@ export function StaffScheduleManager() {
           end_date: editHolidayForm.end_date,
           days_taken: editHolidayForm.days_taken,
           notes: editHolidayForm.notes || null,
-          no_cover_required: editHolidayForm.no_cover_required
+          no_cover_required: editHolidayForm.no_cover_required,
+          no_cover_dates: editHolidayForm.no_cover_dates
         })
         .eq("id", editingHoliday.id);
       
@@ -2430,7 +2434,8 @@ export function StaffScheduleManager() {
                     const coveringFor = getCoveringForInfo(staff.user_id, day);
 
                     const hasCoverage = coverage && coverage.length > 0;
-                    const needsCoverage = onHoliday && holidayInfo?.status === 'approved' && !hasCoverage && !holidayInfo?.no_cover_required;
+                    const dayInNoCoverDates = Array.isArray(holidayInfo?.no_cover_dates) && holidayInfo.no_cover_dates.includes(format(day, "yyyy-MM-dd"));
+                    const needsCoverage = onHoliday && holidayInfo?.status === 'approved' && !hasCoverage && !holidayInfo?.no_cover_required && !dayInNoCoverDates;
 
                     return (
                       <div 
@@ -2457,7 +2462,7 @@ export function StaffScheduleManager() {
                               {holidayInfo?.status === 'pending' && (
                                 <Badge variant="outline" className="text-[10px] py-0 px-1">Pending</Badge>
                               )}
-                              {holidayInfo?.no_cover_required && (
+                              {(holidayInfo?.no_cover_required || dayInNoCoverDates) && (
                                 <Badge variant="outline" className="text-[10px] py-0 px-1 bg-blue-50 border-blue-200 text-blue-700">No cover needed</Badge>
                               )}
                             </div>

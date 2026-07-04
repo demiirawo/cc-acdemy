@@ -301,7 +301,7 @@ const handler = async (req: Request): Promise<Response> => {
 
       const { data: upcomingHolidays } = await supabaseClient
         .from("staff_holidays")
-        .select("id, user_id, start_date, end_date, holiday_type")
+        .select("id, user_id, start_date, end_date, holiday_type, no_cover_dates, no_cover_required")
         .eq("status", "approved")
         .gte("start_date", todayStr)
         .lte("start_date", horizonStr)
@@ -332,20 +332,23 @@ const handler = async (req: Request): Promise<Response> => {
           ? upcomingHolidays.map(h => {
               const name = profileMap.get(h.user_id) || "Unknown";
               const allDates = enumerateDates(h.start_date, h.end_date);
+              const noCoverDates = new Set<string>((h.no_cover_dates as string[] | null) || []);
+              const datesNeedingCover = allDates.filter(d => !noCoverDates.has(d));
               const coveredSet = new Set<string>();
               for (const c of holidayCovers || []) {
                 if (c.swap_with_user_id !== h.user_id) continue;
                 const dates: string[] = (c.coverage_metadata as any)?.covered_dates || [];
                 if (dates.length > 0) {
-                  dates.forEach(d => { if (allDates.includes(d)) coveredSet.add(d); });
+                  dates.forEach(d => { if (datesNeedingCover.includes(d)) coveredSet.add(d); });
                 } else {
-                  allDates.forEach(d => { if (d >= c.start_date && d <= c.end_date) coveredSet.add(d); });
+                  datesNeedingCover.forEach(d => { if (d >= c.start_date && d <= c.end_date) coveredSet.add(d); });
                 }
               }
-              const total = allDates.length;
+              const total = datesNeedingCover.length;
               const covered = coveredSet.size;
               let status: string;
-              if (covered === 0) status = `<span style="color:#ef4444;font-weight:600;">Not covered</span>`;
+              if ((h as any).no_cover_required === true || total === 0) status = `<span style="color:#10b981;font-weight:600;">No cover needed</span>`;
+              else if (covered === 0) status = `<span style="color:#ef4444;font-weight:600;">Not covered</span>`;
               else if (covered >= total) status = `<span style="color:#10b981;font-weight:600;">Fully covered</span>`;
               else status = `<span style="color:#f59e0b;font-weight:600;">Partially covered (${covered}/${total} days)</span>`;
               const dateRange = h.start_date === h.end_date
@@ -465,6 +468,22 @@ const handler = async (req: Request): Promise<Response> => {
           .eq("status", "approved")
           .in("swap_with_user_id", holidayUserIds);
 
+        // Per-day no-cover info from staff_holidays (joined by user_id|start|end).
+        const holidayStartDates = [...new Set(holidays.map(h => h.start_date))];
+        const { data: holidayRows } = await supabaseClient
+          .from("staff_holidays")
+          .select("user_id, start_date, end_date, no_cover_dates, no_cover_required")
+          .eq("status", "approved")
+          .in("user_id", holidayUserIds)
+          .in("start_date", holidayStartDates);
+        const noCoverInfoMap = new Map<string, { noCoverDates: Set<string>; noCoverRequired: boolean }>();
+        for (const r of holidayRows || []) {
+          noCoverInfoMap.set(`${r.user_id}|${r.start_date}|${r.end_date}`, {
+            noCoverDates: new Set<string>((r.no_cover_dates as string[] | null) || []),
+            noCoverRequired: r.no_cover_required === true,
+          });
+        }
+
         const { data: emailProfiles } = await supabaseClient
           .from("profiles").select("user_id, email, display_name");
         const emailMap = new Map(
@@ -481,6 +500,15 @@ const handler = async (req: Request): Promise<Response> => {
           const dateRange = h.start_date === h.end_date
             ? formatShortDate(h.start_date)
             : `${formatShortDate(h.start_date)} – ${formatShortDate(h.end_date)}`;
+
+          const noCoverInfo = noCoverInfoMap.get(`${h.user_id}|${h.start_date}|${h.end_date}`)
+            || { noCoverDates: new Set<string>(), noCoverRequired: false };
+          const holidayDates: string[] = [];
+          for (const d = new Date(h.start_date); d <= new Date(h.end_date); d.setDate(d.getDate() + 1)) {
+            holidayDates.push(d.toISOString().split("T")[0]);
+          }
+          const datesNeedingCover = holidayDates.filter(d => !noCoverInfo.noCoverDates.has(d));
+          const coverNotNeeded = noCoverInfo.noCoverRequired || datesNeedingCover.length === 0;
 
           const matchingCovers = (covers || []).filter(c => {
             if (c.swap_with_user_id !== h.user_id) return false;
@@ -507,7 +535,13 @@ const handler = async (req: Request): Promise<Response> => {
 
           // Admin digest line
           adminCountdownItems.push(
-            `<strong>${takerName}</strong> on holiday in <strong>${daysUntil} ${dayWord}</strong> (${dateRange}) — ${coverNames.length > 0 ? `cover: ${coverNames.join(", ")}` : `<span style="color:#ef4444;font-weight:600;">no cover assigned</span>`}`
+            `<strong>${takerName}</strong> on holiday in <strong>${daysUntil} ${dayWord}</strong> (${dateRange}) — ${
+              coverNames.length > 0
+                ? `cover: ${coverNames.join(", ")}`
+                : coverNotNeeded
+                  ? `<span style="color:#10b981;font-weight:600;">no cover needed</span>`
+                  : `<span style="color:#ef4444;font-weight:600;">no cover assigned</span>`
+            }`
           );
 
           // Personal email to the staff member on holiday
@@ -519,7 +553,11 @@ const handler = async (req: Request): Promise<Response> => {
               [
                 `Your holiday starts in ${daysUntil} ${dayWord}.`,
                 `🗓️ ${dateRange}`,
-                coverNames.length > 0 ? `🤝 Your cover: ${coverNames.join(", ")}` : `⚠️ No cover has been assigned yet — please check with the admin team.`,
+                coverNames.length > 0
+                  ? `🤝 Your cover: ${coverNames.join(", ")}`
+                  : coverNotNeeded
+                    ? `✅ No cover is needed for this holiday.`
+                    : `⚠️ No cover has been assigned yet — please check with the admin team.`,
                 ...(handoverLinkItems.length > 0
                   ? [`📋 <strong>Please complete your handover before you leave</strong> so your cover is set up:`, ...handoverLinkItems]
                   : []),

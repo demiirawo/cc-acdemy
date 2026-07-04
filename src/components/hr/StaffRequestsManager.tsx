@@ -147,10 +147,10 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
     queryFn: async () => {
       const { data, error } = await supabase
         .from("staff_holidays")
-        .select("id, user_id, start_date, end_date, days_taken, absence_type, no_cover_required");
+        .select("id, user_id, start_date, end_date, days_taken, absence_type, no_cover_required, no_cover_dates");
       
       if (error) throw error;
-      return data as (LinkedHoliday & { no_cover_required?: boolean })[];
+      return data as (LinkedHoliday & { no_cover_required?: boolean; no_cover_dates?: string[] | null })[];
     }
   });
 
@@ -193,6 +193,15 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
       h.end_date === request.end_date
     );
     return linkedHoliday?.no_cover_required || false;
+  };
+
+  const getLinkedHoliday = (request: StaffRequest) => {
+    if (!['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type)) return undefined;
+    return linkedHolidays.find(h =>
+      h.user_id === request.user_id &&
+      h.start_date === request.start_date &&
+      h.end_date === request.end_date
+    );
   };
 
   const reviewMutation = useMutation({
@@ -586,9 +595,11 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                               }
                             }
                           });
+                          const linkedHoliday = getLinkedHoliday(request);
+                          const noCoverDates = new Set(linkedHoliday?.no_cover_dates ?? []);
                           const coveredDaysCount = coveredDateSet.size;
-                          const requiredDaysCount = getDisplayDays(request);
-                          const fullyCovered = coveredDaysCount >= requiredDaysCount && requiredDaysCount > 0;
+                          const requiredDaysCount = Math.max(0, getDisplayDays(request) - noCoverDates.size);
+                          const fullyCovered = requiredDaysCount === 0 || coveredDaysCount >= requiredDaysCount;
                           const partiallyCovered = coveredDaysCount > 0 && !fullyCovered;
                           const noCoverRequired = isNoCoverRequired(request);
                           const rowHighlightClass = isHolidayRequest 
