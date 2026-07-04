@@ -2230,6 +2230,7 @@ export type Database = {
           end_date: string
           id: string
           no_cover_required: boolean
+          no_cover_dates: string[]
           notes: string | null
           start_date: string
           status: string
@@ -2245,6 +2246,7 @@ export type Database = {
           end_date: string
           id?: string
           no_cover_required?: boolean
+          no_cover_dates?: string[]
           notes?: string | null
           start_date: string
           status?: string
@@ -2260,6 +2262,7 @@ export type Database = {
           end_date?: string
           id?: string
           no_cover_required?: boolean
+          no_cover_dates?: string[]
           notes?: string | null
           start_date?: string
           status?: string

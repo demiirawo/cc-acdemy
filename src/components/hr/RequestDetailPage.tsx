@@ -663,6 +663,35 @@ export function RequestDetailPage({
     }
   });
 
+  // Toggle "no cover required" for a single day of the holiday
+  const setDayNoCoverMutation = useMutation({
+    mutationFn: async ({ date, noCover }: { date: string; noCover: boolean }) => {
+      if (!linkedHoliday) throw new Error("No linked holiday found");
+      const current: string[] = linkedHoliday.no_cover_dates || [];
+      const next = noCover
+        ? Array.from(new Set([...current, date])).sort()
+        : current.filter((d) => d !== date);
+      const { error } = await supabase
+        .from("staff_holidays")
+        .update({ no_cover_dates: next })
+        .eq("id", linkedHoliday.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      refetchLinkedHoliday();
+      queryClient.invalidateQueries({ queryKey: ["staff-holidays"] });
+      queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-cover-status"] });
+      queryClient.invalidateQueries({ queryKey: ["linked-holidays-for-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["linked-holiday", request?.id] });
+      queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
+      invalidateAllCoverageQueries(queryClient);
+      toast.success("Cover requirement updated");
+    },
+    onError: (error) => {
+      toast.error("Failed to update: " + error.message);
+    }
+  });
+
   const reviewMutation = useMutation({
     mutationFn: async (status: 'approved' | 'rejected') => {
       if (!user) throw new Error("Not authenticated");
@@ -1135,6 +1164,72 @@ Care Cuddle Team`;
                     </div>}
                 </>
               )}
+
+              {/* Day-by-day cover status with per-day "no cover needed" toggle */}
+              {isHolidayRequest && linkedHoliday && !linkedHoliday.no_cover_required && (() => {
+                const affected = getAffectedShiftsByDay();
+                if (affected.length === 0) return null;
+                const dateClients = new Map<string, string[]>();
+                affected.forEach(s => {
+                  const d = s.date.toISOString().split('T')[0];
+                  const arr = dateClients.get(d) || [];
+                  if (s.clientName && !arr.includes(s.clientName)) arr.push(s.clientName);
+                  dateClients.set(d, arr);
+                });
+                const dates = Array.from(dateClients.keys()).sort();
+                const noCoverDates: string[] = linkedHoliday.no_cover_dates || [];
+                const coverByDate = new Map<string, string>();
+                (coveringStaff || []).forEach(cover => {
+                  const meta = cover.coverage_metadata as { covered_dates?: string[] } | null | undefined;
+                  const cds = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0 ? meta!.covered_dates! : null;
+                  dates.forEach(d => {
+                    const covers = cds ? cds.includes(d) : (d >= cover.start_date && d <= cover.end_date);
+                    if (covers && !coverByDate.has(d)) coverByDate.set(d, cover.staffName);
+                  });
+                });
+                const busy = setDayNoCoverMutation.isPending;
+                return (
+                  <div className="space-y-3">
+                    <Separator />
+                    <div className="flex items-center justify-between">
+                      <Label className="text-muted-foreground text-sm">Day-by-day cover</Label>
+                      <span className="text-xs text-muted-foreground">{dates.length} day{dates.length !== 1 ? 's' : ''}</span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {dates.map(d => {
+                        const coveredName = coverByDate.get(d);
+                        const isNoCover = noCoverDates.includes(d);
+                        const clients = dateClients.get(d) || [];
+                        return (
+                          <div key={d} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">{format(new Date(d), 'EEE d MMM')}</p>
+                              {clients.length > 0 && <p className="text-xs text-muted-foreground truncate">{clients.join(', ')}</p>}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {coveredName ? (
+                                <Badge variant="outline" className="bg-success/10 text-success border-success/30">Covered · {coveredName}</Badge>
+                              ) : isNoCover ? (
+                                <>
+                                  <Badge variant="outline" className="bg-muted text-muted-foreground border-muted-foreground/30">No cover needed</Badge>
+                                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setDayNoCoverMutation.mutate({ date: d, noCover: false })} disabled={busy}>Require cover</Button>
+                                </>
+                              ) : (
+                                <>
+                                  <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">Needs cover</Badge>
+                                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setDayNoCoverMutation.mutate({ date: d, noCover: true })} disabled={busy}>
+                                    <UserX className="h-3.5 w-3.5 mr-1" /> No cover needed
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Assign Cover Section - always show for holiday requests */}
               {isHolidayRequest && <div className="space-y-4">
