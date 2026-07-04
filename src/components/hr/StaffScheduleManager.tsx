@@ -1381,6 +1381,52 @@ export function StaffScheduleManager() {
     });
   };
 
+  // Days within a holiday range where the staff member has a scheduled shift
+  // (from recurring patterns, respecting recurrence + deleted exceptions). Used
+  // for the per-day "no cover needed" list in the holiday edit dialog. Works for
+  // the whole range, not just the visible week.
+  const getHolidayShiftDays = (userId: string, startISO: string, endISO: string): { date: string; clients: string[] }[] => {
+    if (!startISO || !endISO) return [];
+    const start = parseISO(startISO);
+    const end = parseISO(endISO);
+    if (isAfter(start, end)) return [];
+    const deleted = new Set(
+      shiftExceptions.filter(e => e.exception_type === 'deleted').map(e => `${e.pattern_id}-${e.exception_date}`)
+    );
+    const out: { date: string; clients: string[] }[] = [];
+    for (const day of eachDayOfInterval({ start, end })) {
+      const dateStr = format(day, 'yyyy-MM-dd');
+      const dayOfWeek = getDay(day);
+      const clients = new Set<string>();
+      for (const pattern of recurringPatterns) {
+        if (pattern.user_id !== userId) continue;
+        const pStart = parseISO(pattern.start_date);
+        const pEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
+        if (isBefore(day, pStart)) continue;
+        if (pEnd && isAfter(day, pEnd)) continue;
+        const ri = pattern.recurrence_interval || 'weekly';
+        let include = false;
+        if (ri === 'daily') include = true;
+        else if (ri === 'biweekly') {
+          if (pattern.days_of_week.includes(dayOfWeek)) {
+            include = differenceInWeeks(startOfWeek(day, { weekStartsOn: 1 }), startOfWeek(pStart, { weekStartsOn: 1 })) % 2 === 0;
+          }
+        } else if (ri === 'monthly') {
+          if (pattern.days_of_week.includes(dayOfWeek)) {
+            include = Math.ceil(getDate(pStart) / 7) === Math.ceil(getDate(day) / 7);
+          }
+        } else {
+          include = pattern.days_of_week.includes(dayOfWeek);
+        }
+        if (!include) continue;
+        if (deleted.has(`${pattern.id}-${dateStr}`)) continue;
+        if (pattern.client_name) clients.add(pattern.client_name);
+      }
+      if (clients.size > 0) out.push({ date: dateStr, clients: Array.from(clients) });
+    }
+    return out;
+  };
+
   // Generate cover schedules from approved shift_swap and overtime cover requests
   const coverSchedulesForClientView = useMemo(() => {
     const coverSchedules: (Schedule & { isCoverShift: true; coveringForName: string; coverOvertimeType: string | null })[] = [];
@@ -3106,6 +3152,33 @@ export function StaffScheduleManager() {
                     No cover required for this absence
                   </Label>
                 </div>
+
+                {editingHoliday && !editHolidayForm.no_cover_required && (() => {
+                  const shiftDays = getHolidayShiftDays(editingHoliday.user_id, editHolidayForm.start_date, editHolidayForm.end_date);
+                  if (shiftDays.length === 0) return null;
+                  const noCover = new Set(editHolidayForm.no_cover_dates);
+                  const toggle = (date: string, checked: boolean) => {
+                    const next = checked
+                      ? Array.from(new Set([...editHolidayForm.no_cover_dates, date])).sort()
+                      : editHolidayForm.no_cover_dates.filter(d => d !== date);
+                    setEditHolidayForm({ ...editHolidayForm, no_cover_dates: next });
+                  };
+                  return (
+                    <div className="space-y-2 rounded-md border p-3">
+                      <Label className="text-sm">Days that don't need cover</Label>
+                      <p className="text-xs text-muted-foreground">Tick any shift days that don't need covering. Saved when you update the holiday.</p>
+                      <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                        {shiftDays.map(({ date, clients }) => (
+                          <label key={date} className="flex items-center gap-2 text-sm cursor-pointer rounded px-1 py-1 hover:bg-muted/50">
+                            <Checkbox checked={noCover.has(date)} onCheckedChange={(c) => toggle(date, !!c)} />
+                            <span className="font-medium">{format(parseISO(date), 'EEE d MMM')}</span>
+                            <span className="text-xs text-muted-foreground truncate">{clients.join(', ')}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="space-y-2">
                   <Label>Notes</Label>
