@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { MovePageDialog } from "./MovePageDialog";
 import { useUserRole } from "@/hooks/useUserRole";
+import { smartSearch } from "@/lib/smartSearch";
 
 interface SidebarItem {
   id: string;
@@ -21,6 +22,9 @@ interface SidebarItem {
   parent_page_id?: string | null;
   space_id?: string | null;
   sort_order?: number;
+  // Search-result decorations (highlighted title + context snippet as safe HTML)
+  titleHtml?: string;
+  snippetHtml?: string;
 }
 
 interface Space {
@@ -572,46 +576,52 @@ export function RealKnowledgeBaseSidebar({
       return;
     }
 
-    const query = searchQuery.toLowerCase();
-    const results: SidebarItem[] = [];
+    // Rank pages and spaces together by relevance: title matches beat content
+    // matches, typos are tolerated, and content-only hits get a highlighted snippet.
+    const pageHits = smartSearch(
+      searchQuery,
+      pages.map(p => ({ id: p.id, title: p.title, content: p.content, _page: p })),
+      { limit: 20 }
+    );
+    const spaceHits = smartSearch(
+      searchQuery,
+      spaces.map(s => ({ id: s.id, title: s.name, content: s.description, _space: s })),
+      { limit: 6 }
+    );
 
-    // Search pages
-    pages
-      .filter(page => 
-        page.title.toLowerCase().includes(query) || 
-        page.content.toLowerCase().includes(query)
-      )
-      .slice(0, 10)
-      .forEach(page => {
-        results.push({
-          id: page.id,
-          title: page.title,
-          type: 'page',
+    const merged = [
+      ...pageHits.map(h => ({
+        score: h.score,
+        item: {
+          id: h.item._page.id,
+          title: h.item._page.title,
+          type: 'page' as const,
           icon: FileText,
-          parent_page_id: page.parent_page_id,
-          space_id: page.space_id,
-          is_public: page.is_public,
-          sort_order: page.sort_order
-        });
-      });
+          parent_page_id: h.item._page.parent_page_id,
+          space_id: h.item._page.space_id,
+          is_public: h.item._page.is_public,
+          sort_order: h.item._page.sort_order,
+          titleHtml: h.titleHtml,
+          snippetHtml: h.snippetHtml,
+        } as SidebarItem,
+      })),
+      ...spaceHits.map(h => ({
+        score: h.score,
+        item: {
+          id: h.item._space.id,
+          title: h.item._space.name,
+          type: 'space' as const,
+          icon: Folder,
+          titleHtml: h.titleHtml,
+          snippetHtml: h.snippetHtml,
+        } as SidebarItem,
+      })),
+    ]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 12)
+      .map(x => x.item);
 
-    // Search spaces
-    spaces
-      .filter(space => 
-        space.name.toLowerCase().includes(query) || 
-        (space.description && space.description.toLowerCase().includes(query))
-      )
-      .slice(0, 5)
-      .forEach(space => {
-        results.push({
-          id: space.id,
-          title: space.name,
-          type: 'space',
-          icon: Folder
-        });
-      });
-
-    setSearchResults(results);
+    setSearchResults(merged);
     setShowSearchResults(true);
   }, [searchQuery, pages, spaces]);
 
@@ -849,20 +859,31 @@ export function RealKnowledgeBaseSidebar({
                 {searchResults.map((result) => {
                   const Icon = result.type === 'space' ? Folder : FileText;
                   return (
-                    <div 
+                    <div
                       key={result.id}
-                      className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-sidebar-accent/50 transition-colors"
+                      className="flex items-start gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-sidebar-accent/50 transition-colors"
                       onClick={() => {
                         onItemSelect(result);
                         setSearchQuery("");
                         setShowSearchResults(false);
                       }}
                     >
-                      <Icon className="h-4 w-4 text-sidebar-foreground/70 flex-shrink-0" />
-                      <span className="truncate text-sidebar-foreground">{result.title}</span>
-                      <span className="text-xs text-sidebar-foreground/50 ml-auto">
-                        {result.type}
-                      </span>
+                      <Icon className="h-4 w-4 text-sidebar-foreground/70 flex-shrink-0 mt-0.5" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          {result.titleHtml ? (
+                            <span className="truncate text-sidebar-foreground" dangerouslySetInnerHTML={{ __html: result.titleHtml }} />
+                          ) : (
+                            <span className="truncate text-sidebar-foreground">{result.title}</span>
+                          )}
+                          <span className="text-xs text-sidebar-foreground/50 ml-auto flex-shrink-0 capitalize">
+                            {result.type}
+                          </span>
+                        </div>
+                        {result.snippetHtml && (
+                          <p className="text-xs text-sidebar-foreground/60 line-clamp-2 mt-0.5" dangerouslySetInnerHTML={{ __html: result.snippetHtml }} />
+                        )}
+                      </div>
                     </div>
                   );
                 })}
