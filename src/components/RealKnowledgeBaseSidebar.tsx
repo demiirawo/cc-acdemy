@@ -78,6 +78,14 @@ const navigationItems = [{
       </svg>,
   href: '/hr'
 }, {
+  id: 'training',
+  title: 'Training',
+  icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
+        <path d="M6 12v5c3 3 9 3 12 0v-5"/>
+      </svg>,
+  href: '/training'
+}, {
   id: 'clients',
   title: 'Clients',
   icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -466,7 +474,7 @@ export function RealKnowledgeBaseSidebar({
   const [pageToMove, setPageToMove] = useState<{ id: string; title: string } | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const { toast } = useToast();
-  const { isAdmin, isEditor } = useUserRole();
+  const { isAdmin, isEditor, canManageTraining } = useUserRole();
 
   const toggleExpanded = (itemId: string) => {
     setExpandedItems(prev => {
@@ -723,7 +731,8 @@ export function RealKnowledgeBaseSidebar({
       item.id === 'hr' ||
       item.id === 'clients' ||
       item.id === 'schedule' ||
-      item.id === 'recruitment'
+      item.id === 'recruitment' ||
+      item.id === 'training'
     ) {
       onItemSelect(item);
     } else if (item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
@@ -905,7 +914,7 @@ export function RealKnowledgeBaseSidebar({
       <div className="p-4 border-b border-sidebar-border">
         <div className="space-y-1">
           {navigationItems
-            .filter(item => (item.id !== 'clients' || isAdmin) && (!('adminOnly' in item) || !item.adminOnly || isAdmin))
+            .filter(item => (item.id !== 'clients' || isAdmin) && (item.id !== 'training' || canManageTraining) && (!('adminOnly' in item) || !item.adminOnly || isAdmin))
             .map((item) => {
             const Icon = item.icon;
             const isSelected = selectedId === item.id;

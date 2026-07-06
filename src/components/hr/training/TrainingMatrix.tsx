@@ -5,7 +5,8 @@ import { useUserRole } from "@/hooks/useUserRole";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
-import { Loader2, GraduationCap } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Loader2, GraduationCap, Link2 } from "lucide-react";
 import { addMonths, format, parseISO, differenceInCalendarDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./TrainingItemsManager";
@@ -70,10 +71,12 @@ function pctColor(pct: number): string {
   return "text-red-600";
 }
 
-export function TrainingMatrix() {
+export function TrainingMatrix({ publicMode = false }: { publicMode?: boolean }) {
   const { user } = useAuth();
   const { canManageTraining } = useUserRole();
   const { toast } = useToast();
+  // Editing is only for training managers/admins, never on the public page.
+  const canEdit = !publicMode && canManageTraining;
   const [items, setItems] = useState<TrainingItem[]>([]);
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [records, setRecords] = useState<TrainingRecord[]>([]);
@@ -93,10 +96,12 @@ export function TrainingMatrix() {
         .order("sort_order", { ascending: true })
         .order("name", { ascending: true });
 
+      // Public page reads the column-scoped public sources (no notes, no HR PII);
+      // the authenticated view reads the base tables as before.
       const { data: hrData } = await supabase
-        .from("hr_profiles")
+        .from(publicMode ? ("training_matrix_staff_public" as any) : "hr_profiles")
         .select("user_id, employment_status");
-      const visibleIds = (hrData ?? [])
+      const visibleIds = ((hrData ?? []) as { user_id: string; employment_status: string }[])
         .filter(hr => VISIBLE_STATUSES.includes(hr.employment_status as EmploymentStatus))
         .map(hr => hr.user_id);
 
@@ -106,13 +111,17 @@ export function TrainingMatrix() {
         .in("user_id", visibleIds.length > 0 ? visibleIds : ["no-match"])
         .order("display_name");
 
-      const { data: recordsData } = await supabase
-        .from("training_records")
-        .select("id, training_item_id, user_id, completed_date, notes");
+      const { data: recordsData } = publicMode
+        ? await supabase
+            .from("training_records_public" as any)
+            .select("id, training_item_id, user_id, completed_date")
+        : await supabase
+            .from("training_records")
+            .select("id, training_item_id, user_id, completed_date, notes");
 
       setItems((itemsData ?? []) as TrainingItem[]);
       setStaff((staffData ?? []) as StaffMember[]);
-      setRecords((recordsData ?? []) as TrainingRecord[]);
+      setRecords(((recordsData ?? []) as any[]).map(r => ({ notes: null, ...r })) as TrainingRecord[]);
     } catch (e: any) {
       toast({ title: "Could not load training matrix", description: e.message ?? String(e), variant: "destructive" });
     } finally {
@@ -128,7 +137,7 @@ export function TrainingMatrix() {
     records.find(r => r.training_item_id === itemId && r.user_id === userId) ?? null;
 
   const startEdit = (itemId: string, userId: string) => {
-    if (!canManageTraining) return;
+    if (!canEdit) return;
     setEditKey(`${itemId}::${userId}`);
     setEditValue(recordFor(itemId, userId)?.completed_date ?? "");
   };
@@ -229,7 +238,23 @@ export function TrainingMatrix() {
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded bg-amber-100 border border-amber-300" /> Due soon (&lt; 1 month)</span>
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded bg-red-100 border border-red-300" /> Overdue</span>
         <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded border border-dashed border-border" /> Not recorded</span>
-        {canManageTraining && <span className="ml-auto italic">Click a cell to enter the completion date</span>}
+        {canEdit && (
+          <span className="ml-auto flex items-center gap-3">
+            <span className="italic">Click a cell to enter the completion date</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7"
+              onClick={() => {
+                navigator.clipboard.writeText(`${window.location.origin}/public/training-matrix`);
+                toast({ title: "Public link copied", description: "Anyone with this link can view (not edit) the matrix." });
+              }}
+            >
+              <Link2 className="h-3.5 w-3.5 mr-1.5" /> Copy public link
+            </Button>
+          </span>
+        )}
       </div>
 
       <Card>
@@ -320,7 +345,7 @@ export function TrainingMatrix() {
                                   <button
                                     type="button"
                                     onClick={() => startEdit(item.id, member.user_id)}
-                                    disabled={!canManageTraining}
+                                    disabled={!canEdit}
                                     title={
                                       info.record
                                         ? `Completed ${format(parseISO(info.record.completed_date), "d MMM yyyy")}` +
@@ -330,7 +355,7 @@ export function TrainingMatrix() {
                                     className={cn(
                                       "w-full min-w-[68px] rounded border px-1.5 py-0.5 text-xs font-medium transition-colors",
                                       STATUS_CLASSES[info.status],
-                                      canManageTraining ? "cursor-pointer hover:brightness-95" : "cursor-default"
+                                      canEdit ? "cursor-pointer hover:brightness-95" : "cursor-default"
                                     )}
                                   >
                                     {info.record

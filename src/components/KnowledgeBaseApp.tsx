@@ -24,6 +24,7 @@ import { GlossaryPage } from "./GlossaryPage";
 import { RecyclingBin } from "./RecyclingBin";
 import { HRSection } from "./hr/HRSection";
 import { RecruitmentSection } from "./recruitment/RecruitmentSection";
+import { TrainingMatrix } from "./hr/training/TrainingMatrix";
 import { ClientsSection } from "./clients/ClientsSection";
 import { SchedulePage } from "./SchedulePage";
 import { useGlossary } from "@/hooks/useGlossary";
@@ -430,7 +431,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'clients' | 'schedule' | 'recruitment';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'clients' | 'schedule' | 'recruitment' | 'training';
 interface SidebarItem {
   id: string;
   title: string;
@@ -486,7 +487,7 @@ export function KnowledgeBaseApp() {
   const {
     toast
   } = useToast();
-  const { isAdmin } = useUserRole();
+  const { isAdmin, canManageTraining } = useUserRole();
 
   // Handle URL parameters for email confirmation and password reset on component mount
   useEffect(() => {
@@ -551,7 +552,8 @@ export function KnowledgeBaseApp() {
         'hr': 'hr',
         'clients': 'clients',
         'schedule': 'schedule',
-        'recruitment': 'recruitment'
+        'recruitment': 'recruitment',
+        'training': 'training'
       };
         
         if (viewMap[viewName]) {
@@ -692,6 +694,12 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
       setBreadcrumbs([]);
       navigate('/view/recruitment');
+    } else if (item.id === 'training') {
+      if (!canManageTraining) return;
+      setCurrentView('training');
+      setCurrentPage(null);
+      setBreadcrumbs([]);
+      navigate('/view/training');
     } else if (item.type === 'page') {
       try {
         // Fetch real page data from Supabase
@@ -1173,6 +1181,22 @@ export function KnowledgeBaseApp() {
         />}
         {currentView === 'recruitment' && isAdmin && <RecruitmentSection />}
         {currentView === 'recruitment' && !isAdmin && (
+          <div className="p-8 text-center text-muted-foreground">
+            You do not have permission to view this page.
+          </div>
+        )}
+        {currentView === 'training' && canManageTraining && (
+          <div className="flex-1 overflow-auto p-4 md:p-6">
+            <div className="max-w-7xl mx-auto space-y-4">
+              <div>
+                <h1 className="text-2xl font-bold">Training</h1>
+                <p className="text-muted-foreground">Staff training matrix</p>
+              </div>
+              <TrainingMatrix />
+            </div>
+          </div>
+        )}
+        {currentView === 'training' && !canManageTraining && (
           <div className="p-8 text-center text-muted-foreground">
             You do not have permission to view this page.
           </div>
