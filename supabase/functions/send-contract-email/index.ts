@@ -12,7 +12,7 @@ const corsHeaders = {
 const LOGO_URL =
   "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
 const BRAND_COLOR = "#5F17EB";
-const APP_URL = Deno.env.get("APP_URL") || "https://care-cuddle.co.uk";
+const APP_URL = Deno.env.get("APP_URL") || "https://www.care-cuddle-academy.co.uk";
 const FROM = "Care Cuddle Academy <onboarding@resend.dev>";
 
 interface ContractEmailRequest {

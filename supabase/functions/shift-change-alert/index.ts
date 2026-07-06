@@ -173,7 +173,7 @@ serve(async (req) => {
             <td style="padding: 32px 40px;">
               ${changes}
               <div style="text-align: center; margin-top: 24px;">
-                <a href="https://cc-acdemy.lovable.app" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+                <a href="https://www.care-cuddle-academy.co.uk" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
                   Go to Dashboard
                 </a>
               </div>

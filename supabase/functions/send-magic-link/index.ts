@@ -11,6 +11,27 @@ const LOGO_URL = "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and
 const BRAND_COLOR = "#5F17EB";
 const BRAND_DARK = "#4A0FC0";
 
+const APP_URL = 'https://www.care-cuddle-academy.co.uk';
+// Domains that used to serve the app. They host stale builds, so a magic link
+// must never send staff back to them: any redirect they request is rewritten to
+// the current domain (path preserved). The apex is normalised to www too.
+const LEGACY_HOSTS = new Set([
+  'cc-academy.care-cuddle.co.uk',
+  'cc-acdemy.lovable.app',
+  'care-cuddle-academy.co.uk',
+]);
+
+const normalizeRedirect = (raw: unknown): string => {
+  if (typeof raw !== 'string' || raw.length === 0) return `${APP_URL}/`;
+  try {
+    const u = new URL(raw);
+    if (LEGACY_HOSTS.has(u.hostname)) return `${APP_URL}${u.pathname}${u.search}`;
+    return raw;
+  } catch {
+    return `${APP_URL}/`;
+  }
+};
+
 const emailWrapper = (content: string) => `
 <!DOCTYPE html>
 <html>
@@ -85,7 +106,7 @@ serve(async (req) => {
       type: 'magiclink',
       email: email,
       options: {
-        redirectTo: redirectTo || 'https://cc-acdemy.lovable.app/',
+        redirectTo: normalizeRedirect(redirectTo),
       },
     });
 

@@ -6,8 +6,8 @@ const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
 const LOGO_URL = "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
 const BRAND_COLOR = "#5F17EB";
-const APP_URL = "https://cc-acdemy.pages.dev";
-const BIRTHDAY_IMAGE_URL = "https://cc-acdemy.lovable.app/images/birthday-celebration.png";
+const APP_URL = "https://www.care-cuddle-academy.co.uk";
+const BIRTHDAY_IMAGE_URL = "https://www.care-cuddle-academy.co.uk/images/birthday-celebration.png";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -130,7 +130,7 @@ const buildDigestHtml = (sections: DigestSection[], todayStr: string): string =>
           ${tocHtml}
           ${sectionsHtml}
           <div style="text-align:center;margin-top:24px;">
-            <a href="https://cc-acdemy.lovable.app" style="display:inline-block;background:${BRAND_COLOR};color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Go to Dashboard</a>
+            <a href="https://www.care-cuddle-academy.co.uk" style="display:inline-block;background:${BRAND_COLOR};color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Go to Dashboard</a>
           </div>
         </td></tr>
         <tr><td style="padding:20px 40px;background:#f9fafb;text-align:center;border-top:1px solid #e5e7eb;">

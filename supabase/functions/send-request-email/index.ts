@@ -11,7 +11,7 @@ const corsHeaders = {
 
 const LOGO_URL = "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
 const BRAND_COLOR = "#5F17EB";
-const APP_URL = "https://cc-acdemy.pages.dev";
+const APP_URL = "https://www.care-cuddle-academy.co.uk";
 
 interface EmailRequest {
   type: "new_request" | "request_approved" | "request_rejected" | "cover_assigned";
