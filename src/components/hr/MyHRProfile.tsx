@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink } from "lucide-react";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink, Handshake } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,12 @@ interface UserProfile {
   user_id: string;
   display_name: string | null;
   email: string | null;
+}
+interface HandoverClientSummary {
+  client: string;
+  avgProgress: number;
+  taskCount: number;
+  latestTarget: string | null;
 }
 interface MonthlyPayPreview {
   month: Date;
@@ -333,6 +339,8 @@ export function MyHRProfile() {
   const [trainingRecords, setTrainingRecords] = useState<{ training_item_id: string; completed_date: string }[]>([]);
   const [hasContractorDetails, setHasContractorDetails] = useState(false);
   const [scheduleClients, setScheduleClients] = useState<string[]>([]);
+  const [ownHandovers, setOwnHandovers] = useState<HandoverClientSummary[]>([]);
+  const [coveringHandovers, setCoveringHandovers] = useState<(HandoverClientSummary & { coveredName: string })[]>([]);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
   const [documentPreview, setDocumentPreview] = useState<{
     open: boolean;
@@ -564,6 +572,92 @@ export function MyHRProfile() {
         new Set((clientPatterns || []).map(p => (p.client_name || '').trim()).filter(Boolean))
       ).sort((a, b) => a.localeCompare(b));
       setScheduleClients(clientNames);
+
+      // Handover tracker relevant to this staff member: their own clients'
+      // in-progress handovers, plus any clients they're currently covering for
+      // someone else's approved holiday (so a covering staff member can jump
+      // straight to the tracker for the person they're covering).
+      const aggregateHandovers = (tasks: { client_name: string; progress: number | null; target_date: string | null }[]) => {
+        const grouped = new Map<string, { sum: number; count: number; latest: string | null }>();
+        for (const t of tasks) {
+          if (!t.client_name) continue;
+          const cur = grouped.get(t.client_name) || { sum: 0, count: 0, latest: null };
+          cur.sum += t.progress ?? 0;
+          cur.count += 1;
+          if (t.target_date && (!cur.latest || t.target_date > cur.latest)) cur.latest = t.target_date;
+          grouped.set(t.client_name, cur);
+        }
+        return grouped;
+      };
+
+      // Own clients — only show ones with an actual handover in progress
+      // (avoids duplicating the Clients section above for clients with no handover activity).
+      const { data: ownTasks } = clientNames.length > 0
+        ? await supabase
+            .from('client_handover_tasks')
+            .select('client_name, progress, target_date')
+            .in('client_name', clientNames)
+        : { data: [] as { client_name: string; progress: number | null; target_date: string | null }[] };
+      const ownGrouped = aggregateHandovers(ownTasks || []);
+      setOwnHandovers(
+        Array.from(ownGrouped.entries())
+          .map(([client, v]) => ({ client, avgProgress: Math.round(v.sum / v.count), taskCount: v.count, latestTarget: v.latest }))
+          .sort((a, b) => a.client.localeCompare(b.client))
+      );
+
+      // Clients covered for someone else (active/upcoming approved shift_swap where
+      // this person is the covering party).
+      const { data: coverRequests } = await supabase
+        .from('staff_requests')
+        .select('swap_with_user_id, end_date')
+        .eq('request_type', 'shift_swap')
+        .eq('status', 'approved')
+        .eq('user_id', targetUserId)
+        .gte('end_date', todayISO);
+
+      const coveredUserIds = Array.from(new Set((coverRequests || []).map(r => r.swap_with_user_id).filter(Boolean))) as string[];
+      const coveringList: (HandoverClientSummary & { coveredName: string })[] = [];
+      if (coveredUserIds.length > 0) {
+        const { data: coveredProfiles } = await supabase
+          .from('profiles')
+          .select('user_id, display_name, email')
+          .in('user_id', coveredUserIds);
+        const coveredNameMap = new Map((coveredProfiles || []).map(p => [p.user_id, p.display_name || p.email || 'Unknown']));
+
+        const { data: coveredPatterns } = await supabase
+          .from('recurring_shift_patterns')
+          .select('user_id, client_name')
+          .in('user_id', coveredUserIds);
+
+        const clientsByCoveredUser = new Map<string, Set<string>>();
+        (coveredPatterns || []).forEach(p => {
+          if (!p.client_name || p.client_name === 'Care Cuddle') return;
+          if (!clientsByCoveredUser.has(p.user_id)) clientsByCoveredUser.set(p.user_id, new Set());
+          clientsByCoveredUser.get(p.user_id)!.add(p.client_name);
+        });
+
+        const allCoveringClients = Array.from(new Set(Array.from(clientsByCoveredUser.values()).flatMap(s => Array.from(s))));
+        const { data: coveringTasks } = allCoveringClients.length > 0
+          ? await supabase.from('client_handover_tasks').select('client_name, progress, target_date').in('client_name', allCoveringClients)
+          : { data: [] as { client_name: string; progress: number | null; target_date: string | null }[] };
+        const coveringGrouped = aggregateHandovers(coveringTasks || []);
+
+        for (const [coveredUserId, clients] of clientsByCoveredUser.entries()) {
+          const coveredName = coveredNameMap.get(coveredUserId) || 'Unknown';
+          for (const client of clients) {
+            const agg = coveringGrouped.get(client);
+            coveringList.push({
+              client,
+              coveredName,
+              avgProgress: agg ? Math.round(agg.sum / agg.count) : 0,
+              taskCount: agg ? agg.count : 0,
+              latestTarget: agg ? agg.latest : null,
+            });
+          }
+        }
+        coveringList.sort((a, b) => a.coveredName.localeCompare(b.coveredName) || a.client.localeCompare(b.client));
+      }
+      setCoveringHandovers(coveringList);
 
       // Fetch public holidays for next 12 months (current year + next year if needed)
       await fetchPublicHolidays();
@@ -1573,6 +1667,81 @@ export function MyHRProfile() {
           </AccordionContent>
         </AccordionItem>
       </Accordion>
+
+      {/* Handover — this person's own clients' in-progress handovers, plus any
+          clients they're currently covering for someone else's holiday */}
+      {(ownHandovers.length > 0 || coveringHandovers.length > 0) && (() => {
+        const progressTone = (pct: number): StatusTone => pct >= 100 ? 'success' : pct > 0 ? 'warning' : 'neutral';
+        const HandoverRow = ({ client, avgProgress, taskCount, latestTarget, subtitle }: HandoverClientSummary & { subtitle?: string }) => (
+          <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <Building2 className="h-4 w-4 text-primary flex-shrink-0" />
+              <div className="min-w-0">
+                <span className="text-sm font-medium truncate block">{client}</span>
+                {subtitle && <span className="text-xs text-muted-foreground truncate block">{subtitle}</span>}
+              </div>
+            </div>
+            <div className="flex items-center gap-3 flex-shrink-0">
+              {taskCount > 0 ? (
+                <StatusPill tone={progressTone(avgProgress)}>
+                  {avgProgress}% · {taskCount} task{taskCount !== 1 ? 's' : ''}
+                  {latestTarget ? ` · due ${format(parseISO(latestTarget), 'd MMM')}` : ''}
+                </StatusPill>
+              ) : (
+                <StatusPill tone="neutral">Not started</StatusPill>
+              )}
+              <a
+                href={`/public/schedule/${encodeURIComponent(client)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
+              >
+                Open tracker <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </div>
+          </div>
+        );
+        return (
+          <Accordion type="single" collapsible className="w-full">
+            <AccordionItem value="handover" className="border-2 border-primary/20 rounded-lg bg-card">
+              <AccordionTrigger className="px-6 py-4 hover:no-underline">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <Handshake className="h-5 w-5 text-primary flex-shrink-0" />
+                  <span className="text-lg font-semibold">Handover</span>
+                  <StatusPill tone={ownHandovers.length + coveringHandovers.length > 0 ? 'warning' : 'neutral'}>
+                    {ownHandovers.length + coveringHandovers.length} relevant
+                  </StatusPill>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="px-6 pb-6 space-y-4">
+                {coveringHandovers.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Covering for someone else</p>
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Reach out to the person you're covering and open each client's handover tracker below.
+                    </p>
+                    <div className="grid gap-2">
+                      {coveringHandovers.map(h => (
+                        <HandoverRow key={`${h.coveredName}-${h.client}`} {...h} subtitle={`Covering ${h.coveredName}`} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {ownHandovers.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">Your clients</p>
+                    <div className="grid gap-2">
+                      {ownHandovers.map(h => (
+                        <HandoverRow key={h.client} {...h} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        );
+      })()}
 
       {/* Personal Details Section - from onboarding form */}
       {onboardingData && <Accordion type="single" collapsible className="w-full">
