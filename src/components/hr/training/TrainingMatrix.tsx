@@ -80,14 +80,14 @@ export function TrainingMatrix({ publicMode = false }: { publicMode?: boolean })
   const [items, setItems] = useState<TrainingItem[]>([]);
   const [staff, setStaff] = useState<StaffMember[]>([]);
   const [records, setRecords] = useState<TrainingRecord[]>([]);
-  // Per-staff target completion date: user_id -> yyyy-MM-dd
+  // Per-staff, per-part target completion date: `${category}::${userId}` -> yyyy-MM-dd
   const [targets, setTargets] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
   // Inline cell editing: key is `${itemId}::${userId}`.
   const [editKey, setEditKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
-  // Inline editing of the target-date row: key is the userId.
+  // Inline editing of a target-date cell: key is `${category}::${userId}`.
   const [targetEditKey, setTargetEditKey] = useState<string | null>(null);
   const [targetEditValue, setTargetEditValue] = useState("");
 
@@ -126,13 +126,13 @@ export function TrainingMatrix({ publicMode = false }: { publicMode?: boolean })
 
       const { data: targetsData } = await supabase
         .from("training_targets" as any)
-        .select("user_id, target_date");
+        .select("user_id, category, target_date");
 
       setItems((itemsData ?? []) as TrainingItem[]);
       setStaff((staffData ?? []) as StaffMember[]);
       setRecords(((recordsData ?? []) as any[]).map(r => ({ notes: null, ...r })) as TrainingRecord[]);
       setTargets(Object.fromEntries(
-        ((targetsData ?? []) as any[]).map(t => [t.user_id, t.target_date])
+        ((targetsData ?? []) as any[]).map(t => [`${t.category}::${t.user_id}`, t.target_date])
       ));
     } catch (e: any) {
       toast({ title: "Could not load training matrix", description: e.message ?? String(e), variant: "destructive" });
@@ -186,22 +186,23 @@ export function TrainingMatrix({ publicMode = false }: { publicMode?: boolean })
     }
   };
 
-  // Save (or clear) a staff member's target completion date.
-  const saveTarget = async (userId: string, val: string) => {
-    if ((targets[userId] ?? "") === val) return; // no change
+  // Save (or clear) a staff member's target completion date for one part.
+  const saveTarget = async (userId: string, category: string, val: string) => {
+    const key = `${category}::${userId}`;
+    if ((targets[key] ?? "") === val) return; // no change
     try {
       if (val) {
         const { error } = await supabase
           .from("training_targets" as any)
-          .upsert({ user_id: userId, target_date: val, updated_by: user?.id ?? null, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+          .upsert({ user_id: userId, category, target_date: val, updated_by: user?.id ?? null, updated_at: new Date().toISOString() }, { onConflict: "user_id,category" });
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("training_targets" as any).delete().eq("user_id", userId);
+        const { error } = await supabase.from("training_targets" as any).delete().eq("user_id", userId).eq("category", category);
         if (error) throw error;
       }
       setTargets(prev => {
         const next = { ...prev };
-        if (val) next[userId] = val; else delete next[userId];
+        if (val) next[key] = val; else delete next[key];
         return next;
       });
     } catch (e: any) {
@@ -217,6 +218,16 @@ export function TrainingMatrix({ publicMode = false }: { publicMode?: boolean })
       if (isUpToDate(info.status)) up++;
     });
     return Math.round((up / items.length) * 100);
+  };
+
+  // % up to date within one part/category, for target-date colouring.
+  const groupPct = (userId: string, groupItems: TrainingItem[]): number => {
+    if (groupItems.length === 0) return 0;
+    let up = 0;
+    groupItems.forEach(it => {
+      if (isUpToDate(computeCell(it, recordFor(it.id, userId)).status)) up++;
+    });
+    return Math.round((up / groupItems.length) * 100);
   };
 
   if (loading) {
@@ -322,67 +333,6 @@ export function TrainingMatrix({ publicMode = false }: { publicMode?: boolean })
                   </tr>
                 </thead>
                 <tbody>
-                  {/* Target completion date row (per staff member) */}
-                  <tr className="border-b">
-                    <td className="sticky left-0 bg-card z-20 px-3 py-2 border-r font-semibold text-sm">
-                      Target completion
-                    </td>
-                    {staff.map(member => {
-                      const target = targets[member.user_id];
-                      const isEditingTarget = targetEditKey === member.user_id;
-                      const pct = memberPct(member.user_id);
-                      const overdue = !!target && pct < 100 && differenceInCalendarDays(parseISO(target), new Date()) < 0;
-                      const met = !!target && pct === 100;
-                      return (
-                        <td key={member.user_id} className="px-1 py-1 text-center align-middle">
-                          {isEditingTarget ? (
-                            <input
-                              type="date"
-                              autoFocus
-                              value={targetEditValue}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                setTargetEditValue(v);
-                                saveTarget(member.user_id, v);
-                              }}
-                              onBlur={() => setTargetEditKey(null)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") e.currentTarget.blur();
-                                if (e.key === "Escape") setTargetEditKey(null);
-                              }}
-                              className="w-[120px] text-xs border rounded px-1 py-0.5 bg-background"
-                            />
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!canEdit) return;
-                                setTargetEditKey(member.user_id);
-                                setTargetEditValue(target ?? "");
-                              }}
-                              disabled={!canEdit}
-                              title={target
-                                ? `Target: complete all training by ${format(parseISO(target), "d MMM yyyy")}${overdue ? " · overdue" : met ? " · met" : ""}`
-                                : "No target set"}
-                              className={cn(
-                                "w-full min-w-[68px] rounded border px-1.5 py-0.5 text-xs font-medium transition-colors",
-                                target
-                                  ? overdue
-                                    ? "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-300"
-                                    : met
-                                      ? "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-300"
-                                      : "bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300"
-                                  : "bg-transparent text-muted-foreground border-dashed border-border",
-                                canEdit ? "cursor-pointer hover:brightness-95" : "cursor-default"
-                              )}
-                            >
-                              {target ? format(parseISO(target), "d MMM yy") : "—"}
-                            </button>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
                   {/* Percentage completion summary row */}
                   <tr className="bg-muted border-b-2">
                     <td className="sticky left-0 bg-muted z-20 px-3 py-2 border-r font-semibold text-sm">
@@ -407,6 +357,68 @@ export function TrainingMatrix({ publicMode = false }: { publicMode?: boolean })
                         {staff.map(member => (
                           <td key={member.user_id} className="bg-muted/50 border-b" />
                         ))}
+                      </tr>
+                      {/* Per-part target completion date row */}
+                      <tr className="border-b">
+                        <td className="sticky left-0 bg-card z-20 px-3 py-1.5 border-b border-r text-xs font-medium text-muted-foreground">
+                          Target completion
+                        </td>
+                        {staff.map(member => {
+                          const tKey = `${group.category}::${member.user_id}`;
+                          const target = targets[tKey];
+                          const isEditingTarget = targetEditKey === tKey;
+                          const pct = groupPct(member.user_id, group.items);
+                          const overdue = !!target && pct < 100 && differenceInCalendarDays(parseISO(target), new Date()) < 0;
+                          const met = !!target && pct === 100;
+                          return (
+                            <td key={member.user_id} className="px-1 py-1 text-center align-middle border-b">
+                              {isEditingTarget ? (
+                                <input
+                                  type="date"
+                                  autoFocus
+                                  value={targetEditValue}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    setTargetEditValue(v);
+                                    saveTarget(member.user_id, group.category, v);
+                                  }}
+                                  onBlur={() => setTargetEditKey(null)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") e.currentTarget.blur();
+                                    if (e.key === "Escape") setTargetEditKey(null);
+                                  }}
+                                  className="w-[120px] text-xs border rounded px-1 py-0.5 bg-background"
+                                />
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!canEdit) return;
+                                    setTargetEditKey(tKey);
+                                    setTargetEditValue(target ?? "");
+                                  }}
+                                  disabled={!canEdit}
+                                  title={target
+                                    ? `Target: complete ${group.category} by ${format(parseISO(target), "d MMM yyyy")}${overdue ? " · overdue" : met ? " · met" : ""}`
+                                    : `No ${group.category} target set`}
+                                  className={cn(
+                                    "w-full min-w-[68px] rounded border px-1.5 py-0.5 text-xs font-medium transition-colors",
+                                    target
+                                      ? overdue
+                                        ? "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-300"
+                                        : met
+                                          ? "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-300"
+                                          : "bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300"
+                                      : "bg-transparent text-muted-foreground border-dashed border-border",
+                                    canEdit ? "cursor-pointer hover:brightness-95" : "cursor-default"
+                                  )}
+                                >
+                                  {target ? format(parseISO(target), "d MMM yy") : "—"}
+                                </button>
+                              )}
+                            </td>
+                          );
+                        })}
                       </tr>
                       {group.items.map(item => (
                         <tr key={item.id} className="hover:bg-muted/30">
