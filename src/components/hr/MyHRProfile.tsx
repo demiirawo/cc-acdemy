@@ -22,6 +22,7 @@ import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItemsManager";
 import { allTrainingUpToDate } from "@/lib/trainingStatus";
+import { computeHolidayHandoverStatus } from "@/lib/handoverStatus";
 interface UserProfile {
   user_id: string;
   display_name: string | null;
@@ -341,6 +342,7 @@ export function MyHRProfile() {
   const [scheduleClients, setScheduleClients] = useState<string[]>([]);
   const [ownHandovers, setOwnHandovers] = useState<HandoverClientSummary[]>([]);
   const [coveringHandovers, setCoveringHandovers] = useState<(HandoverClientSummary & { coveredName: string })[]>([]);
+  const [nextHoliday, setNextHoliday] = useState<{ start_date: string; end_date: string } | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
   const [documentPreview, setDocumentPreview] = useState<{
     open: boolean;
@@ -573,10 +575,13 @@ export function MyHRProfile() {
       ).sort((a, b) => a.localeCompare(b));
       setScheduleClients(clientNames);
 
-      // Handover tracker relevant to this staff member: their own clients'
-      // in-progress handovers, plus any clients they're currently covering for
-      // someone else's approved holiday (so a covering staff member can jump
-      // straight to the tracker for the person they're covering).
+      // Handover tracker relevant to this staff member: handover for THEIR next
+      // upcoming/current approved leave (must be complete before it starts —
+      // uses the shared status utility so this matches the definition used on
+      // the request page, schedule, admin lists, and reminder emails), plus any
+      // clients they're currently covering for someone else's approved holiday
+      // (so a covering staff member can jump straight to the tracker for the
+      // person they're covering).
       const aggregateHandovers = (tasks: { client_name: string; progress: number | null; target_date: string | null }[]) => {
         const grouped = new Map<string, { sum: number; count: number; latest: string | null }>();
         for (const t of tasks) {
@@ -590,20 +595,25 @@ export function MyHRProfile() {
         return grouped;
       };
 
-      // Own clients — only show ones with an actual handover in progress
-      // (avoids duplicating the Clients section above for clients with no handover activity).
-      const { data: ownTasks } = clientNames.length > 0
-        ? await supabase
-            .from('client_handover_tasks')
-            .select('client_name, progress, target_date')
-            .in('client_name', clientNames)
-        : { data: [] as { client_name: string; progress: number | null; target_date: string | null }[] };
-      const ownGrouped = aggregateHandovers(ownTasks || []);
-      setOwnHandovers(
-        Array.from(ownGrouped.entries())
-          .map(([client, v]) => ({ client, avgProgress: Math.round(v.sum / v.count), taskCount: v.count, latestTarget: v.latest }))
-          .sort((a, b) => a.client.localeCompare(b.client))
-      );
+      const upcomingOrCurrentHoliday = (holidayData || [])
+        .filter(h => h.status === 'approved' && h.end_date >= todayISO)
+        .sort((a, b) => a.start_date.localeCompare(b.start_date))[0] || null;
+      setNextHoliday(upcomingOrCurrentHoliday
+        ? { start_date: upcomingOrCurrentHoliday.start_date, end_date: upcomingOrCurrentHoliday.end_date }
+        : null);
+
+      if (upcomingOrCurrentHoliday) {
+        const { clients } = await computeHolidayHandoverStatus(
+          targetUserId, upcomingOrCurrentHoliday.start_date, upcomingOrCurrentHoliday.end_date
+        );
+        setOwnHandovers(
+          clients
+            .map(c => ({ client: c.client, avgProgress: c.avgProgress, taskCount: c.taskCount, latestTarget: null }))
+            .sort((a, b) => a.client.localeCompare(b.client))
+        );
+      } else {
+        setOwnHandovers([]);
+      }
 
       // Clients covered for someone else (active/upcoming approved shift_swap where
       // this person is the covering party).
@@ -1701,6 +1711,13 @@ export function MyHRProfile() {
             </div>
           </div>
         );
+        const ownComplete = ownHandovers.length > 0 && ownHandovers.every(h => h.taskCount > 0 && h.avgProgress >= 100);
+        const daysUntilLeave = nextHoliday ? differenceInCalendarDays(parseISO(nextHoliday.start_date), new Date()) : null;
+        const leaveUrgent = daysUntilLeave !== null && !ownComplete && daysUntilLeave <= 3;
+        const overallTone: StatusTone =
+          (ownHandovers.length > 0 && !ownComplete) || coveringHandovers.length > 0
+            ? (leaveUrgent ? 'danger' : 'warning')
+            : 'neutral';
         return (
           <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="handover" className="border-2 border-primary/20 rounded-lg bg-card">
@@ -1708,7 +1725,7 @@ export function MyHRProfile() {
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <Handshake className="h-5 w-5 text-primary flex-shrink-0" />
                   <span className="text-lg font-semibold">Handover</span>
-                  <StatusPill tone={ownHandovers.length + coveringHandovers.length > 0 ? 'warning' : 'neutral'}>
+                  <StatusPill tone={overallTone}>
                     {ownHandovers.length + coveringHandovers.length} relevant
                   </StatusPill>
                 </div>
@@ -1729,7 +1746,19 @@ export function MyHRProfile() {
                 )}
                 {ownHandovers.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-sm font-medium">Your clients</p>
+                    <p className="text-sm font-medium">Before your leave</p>
+                    <p className={cn(
+                      "text-xs mb-1",
+                      leaveUrgent ? "text-destructive font-medium" : "text-muted-foreground"
+                    )}>
+                      {nextHoliday && daysUntilLeave !== null
+                        ? ownComplete
+                          ? `Your handover is complete for your leave starting ${format(parseISO(nextHoliday.start_date), 'd MMM yyyy')}.`
+                          : daysUntilLeave >= 0
+                            ? `Handover must be completed before your leave starts on ${format(parseISO(nextHoliday.start_date), 'd MMM yyyy')} (${daysUntilLeave} day${daysUntilLeave !== 1 ? 's' : ''} left).`
+                            : `Your leave has already started and handover is not yet complete.`
+                        : "Handover status for the clients you're scheduled for."}
+                    </p>
                     <div className="grid gap-2">
                       {ownHandovers.map(h => (
                         <HandoverRow key={h.client} {...h} />

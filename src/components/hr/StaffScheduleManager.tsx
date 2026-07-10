@@ -18,7 +18,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay, subDays } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, Calendar, Link2, Check, X } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, AlertCircle, Calendar, Link2, Check, X } from "lucide-react";
+import { computeHolidayHandoverStatusBatch, type HolidayHandoverStatus } from "@/lib/handoverStatus";
 import { UnifiedShiftEditor, ShiftToEdit } from "./UnifiedShiftEditor";
 import { invalidateAllCoverageQueries, filterSchedulesByCoverageMetadata, isShiftCoveredByRequest } from "@/lib/coverageUtils";
 import { LiveTimelineView } from "./LiveTimelineView";
@@ -437,6 +438,17 @@ export function StaffScheduleManager() {
       if (error) throw error;
       return data as Holiday[];
     }
+  });
+
+  // Handover status per approved holiday visible this week (batched — avoids
+  // one query per cell). Must be complete before the leave starts.
+  const approvedHolidayIds = holidays.filter(h => h.status === 'approved').map(h => h.id).join(",");
+  const { data: handoverStatusMap } = useQuery({
+    queryKey: ["holiday-handover-status-batch", approvedHolidayIds],
+    queryFn: () => computeHolidayHandoverStatusBatch(
+      holidays.filter(h => h.status === 'approved').map(h => ({ id: h.id, userId: h.user_id, startDate: h.start_date, endDate: h.end_date }))
+    ),
+    enabled: approvedHolidayIds.length > 0,
   });
 
   // Fetch staff requests (pending and approved) with linked holiday info
@@ -2511,6 +2523,23 @@ export function StaffScheduleManager() {
                               {(holidayInfo?.no_cover_required || dayInNoCoverDates) && (
                                 <Badge variant="outline" className="text-[10px] py-0 px-1 bg-blue-50 border-blue-200 text-blue-700">No cover needed</Badge>
                               )}
+                              {holidayInfo && (() => {
+                                const hs = handoverStatusMap?.get(holidayInfo.id);
+                                if (!hs || hs.status === 'complete' || hs.status === 'none') return null;
+                                return (
+                                  <Badge
+                                    variant="outline"
+                                    title="Handover must be completed before this leave"
+                                    className={`text-[10px] py-0 px-1 flex items-center gap-0.5 ${
+                                      hs.status === 'not_started'
+                                        ? 'bg-red-50 border-red-300 text-red-700'
+                                        : 'bg-amber-50 border-amber-300 text-amber-700'
+                                    }`}
+                                  >
+                                    <AlertCircle className="h-2.5 w-2.5" /> Handover {hs.status === 'not_started' ? 'not started' : 'in progress'}
+                                  </Badge>
+                                );
+                              })()}
                             </div>
                             {hasCoverage ? (
                               <div className="text-[10px] text-green-700 bg-green-100 rounded px-1 py-0.5 mt-0.5">

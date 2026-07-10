@@ -12,11 +12,13 @@ import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Check, X, Clock, Palmtree, RefreshCw, Bell, BellOff, Copy, Calendar, User, FileText, CheckCircle2, AlertCircle, Trash2, Pencil, UserX, Search } from "lucide-react";
-import { format } from "date-fns";
+import { format, parseISO, differenceInCalendarDays } from "date-fns";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification";
 import { invalidateAllCoverageQueries } from "@/lib/coverageUtils";
+import { computeHolidayHandoverStatus, HANDOVER_STATUS_LABEL, HANDOVER_STATUS_TONE } from "@/lib/handoverStatus";
 type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
 interface StaffRequest {
   id: string;
@@ -423,6 +425,15 @@ export function RequestDetailPage({
       if (error) throw error;
       return data;
     }
+  });
+  // Handover status for this leave — must be complete before the leave starts.
+  const {
+    data: handoverStatus,
+    refetch: refetchHandoverStatus
+  } = useQuery({
+    queryKey: ["holiday-handover-status", request?.user_id, request?.start_date, request?.end_date],
+    enabled: !!request && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type) && request.status === 'approved',
+    queryFn: () => computeHolidayHandoverStatus(request!.user_id, request!.start_date, request!.end_date),
   });
   useEffect(() => {
     if (request) {
@@ -1062,6 +1073,75 @@ Care Cuddle Team`;
                 </>}
             </CardContent>
           </Card>
+
+          {/* Handover Status — must be complete before this leave starts */}
+          {isHolidayRequest && request.status === 'approved' && handoverStatus && handoverStatus.status !== 'none' && (() => {
+            const daysUntil = differenceInCalendarDays(parseISO(request.start_date), new Date());
+            const isReady = handoverStatus.status === 'complete';
+            const urgent = !isReady && daysUntil <= 3;
+            return (
+              <Card className={cn(!isReady && (urgent ? "border-destructive/50 border-2" : "border-amber-400/50 border-2"))}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 flex-wrap">
+                    {isReady ? (
+                      <CheckCircle2 className="h-5 w-5 text-success" />
+                    ) : (
+                      <AlertCircle className={cn("h-5 w-5", urgent ? "text-destructive" : "text-amber-500")} />
+                    )}
+                    Handover Status
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        isReady
+                          ? "bg-success/20 text-success border-success"
+                          : urgent
+                            ? "bg-destructive/20 text-destructive border-destructive"
+                            : "bg-amber-500/20 text-amber-700 border-amber-500"
+                      )}
+                    >
+                      {HANDOVER_STATUS_LABEL[handoverStatus.status]}
+                    </Badge>
+                  </CardTitle>
+                  <CardDescription>
+                    {isReady
+                      ? "All relevant clients' handovers are complete."
+                      : daysUntil >= 0
+                        ? `Handover must be completed before leave starts${daysUntil <= 7 ? ` — ${daysUntil} day${daysUntil !== 1 ? 's' : ''} left` : ''}.`
+                        : "This leave has already started and handover is not yet complete."}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {handoverStatus.clients.map(c => (
+                    <div key={c.client} className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
+                      <span className="text-sm font-medium truncate">{c.client}</span>
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            c.avgProgress >= 100 && c.taskCount > 0
+                              ? "bg-success/20 text-success border-success"
+                              : c.avgProgress > 0
+                                ? "bg-amber-500/20 text-amber-700 border-amber-500"
+                                : "bg-destructive/20 text-destructive border-destructive"
+                          )}
+                        >
+                          {c.taskCount > 0 ? `${c.avgProgress}% · ${c.taskCount} task${c.taskCount !== 1 ? 's' : ''}` : 'Not started'}
+                        </Badge>
+                        <a
+                          href={`/public/schedule/${encodeURIComponent(c.client)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-primary hover:underline"
+                        >
+                          Open tracker
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           {/* Cover Arrangements */}
           <Card>

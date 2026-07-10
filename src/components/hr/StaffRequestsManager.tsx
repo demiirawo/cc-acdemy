@@ -17,6 +17,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification";
 import { useBatchWorkingDays } from "@/hooks/useWorkingDays";
 import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
+import { computeHolidayHandoverStatusBatch, HANDOVER_STATUS_LABEL } from "@/lib/handoverStatus";
 import { RequestsTimeline } from "./RequestsTimeline";
 
 type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
@@ -152,6 +153,16 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
       if (error) throw error;
       return data as (LinkedHoliday & { no_cover_required?: boolean; no_cover_dates?: string[] | null })[];
     }
+  });
+
+  // Handover status per linked holiday — must be complete before the leave.
+  const linkedHolidayIds = linkedHolidays.map(h => h.id).join(",");
+  const { data: handoverStatusMap } = useQuery({
+    queryKey: ["holiday-handover-status-batch", linkedHolidayIds],
+    queryFn: () => computeHolidayHandoverStatusBatch(
+      linkedHolidays.map(h => ({ id: h.id, userId: h.user_id, startDate: h.start_date, endDate: h.end_date }))
+    ),
+    enabled: linkedHolidays.length > 0,
   });
 
   // Calculate working days for all holiday requests
@@ -705,9 +716,30 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                                   )}
                                 </TableCell>
                                 <TableCell className="py-4">
-                                  <Badge variant="outline" className={STATUS_COLORS[req.status] || ''}>
-                                    {req.status}
-                                  </Badge>
+                                  <div className="flex flex-col gap-1 items-start">
+                                    <Badge variant="outline" className={STATUS_COLORS[req.status] || ''}>
+                                      {req.status}
+                                    </Badge>
+                                    {!isNested && reqIsHoliday && req.status === 'approved' && (() => {
+                                      const linked = getLinkedHoliday(req);
+                                      const hs = linked ? handoverStatusMap?.get(linked.id) : undefined;
+                                      if (!hs || hs.status === 'none') return null;
+                                      return (
+                                        <Badge
+                                          variant="outline"
+                                          className={
+                                            hs.status === 'complete'
+                                              ? 'bg-success/20 text-success border-success text-[10px]'
+                                              : hs.status === 'in_progress'
+                                                ? 'bg-amber-500/20 text-amber-700 border-amber-500 text-[10px]'
+                                                : 'bg-destructive/20 text-destructive border-destructive text-[10px]'
+                                          }
+                                        >
+                                          Handover: {HANDOVER_STATUS_LABEL[hs.status]}
+                                        </Badge>
+                                      );
+                                    })()}
+                                  </div>
                                 </TableCell>
                                 <TableCell className="text-sm text-muted-foreground py-4">
                                   {format(new Date(req.created_at), 'dd MMM yyyy')}

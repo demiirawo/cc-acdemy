@@ -491,6 +491,7 @@ const handler = async (req: Request): Promise<Response> => {
         );
 
         const adminCountdownItems: string[] = [];
+        const handoverEscalationItems: string[] = [];
 
         for (const h of holidays) {
           const daysUntil = Math.round((new Date(h.start_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
@@ -521,7 +522,10 @@ const handler = async (req: Request): Promise<Response> => {
             .filter(c => c.email);
           const coverNames = coverPeople.map(c => c.name || "Unknown");
 
-          // Clients impacted by this person's leave → handover-tracker deep links.
+          // Clients impacted by this person's leave, with REAL handover completion
+          // status (not just links) — this is what "must be complete before annual
+          // leave" is measured against. A client with zero tasks counts as
+          // not-started, matching the shared status definition used elsewhere.
           const { data: takerPatterns } = await supabaseClient
             .from("recurring_shift_patterns")
             .select("client_name")
@@ -529,11 +533,30 @@ const handler = async (req: Request): Promise<Response> => {
           const handoverClients = [...new Set((takerPatterns || [])
             .map(p => p.client_name)
             .filter((c): c is string => !!c && c !== "Care Cuddle"))];
-          const handoverLinkItems = handoverClients.map(c =>
-            `🔗 <a href="${APP_URL}/public/schedule/${encodeURIComponent(c)}" style="color:${BRAND_COLOR};font-weight:600;text-decoration:none;">Open ${c} handover tracker</a>`
-          );
 
-          // Admin digest line
+          const { data: handoverTasksData } = handoverClients.length > 0
+            ? await supabaseClient.from("client_handover_tasks").select("client_name, progress").in("client_name", handoverClients)
+            : { data: [] as { client_name: string; progress: number | null }[] };
+          const handoverAgg = new Map<string, { sum: number; count: number }>();
+          for (const t of handoverTasksData || []) {
+            if (!t.client_name) continue;
+            const cur = handoverAgg.get(t.client_name) || { sum: 0, count: 0 };
+            cur.sum += t.progress ?? 0;
+            cur.count += 1;
+            handoverAgg.set(t.client_name, cur);
+          }
+          const handoverClientStatuses = handoverClients.map(c => {
+            const agg = handoverAgg.get(c);
+            return { client: c, avgProgress: agg ? Math.round(agg.sum / agg.count) : 0, taskCount: agg ? agg.count : 0 };
+          });
+          const handoverComplete = handoverClientStatuses.length > 0
+            && handoverClientStatuses.every(c => c.taskCount > 0 && c.avgProgress >= 100);
+          const handoverLinkItems = handoverClientStatuses.map(c => {
+            const label = c.taskCount > 0 ? `${c.avgProgress}% complete` : "not started";
+            return `🔗 <a href="${APP_URL}/public/schedule/${encodeURIComponent(c.client)}" style="color:${BRAND_COLOR};font-weight:600;text-decoration:none;">Open ${c.client} handover tracker</a> <span style="color:#6b7280;">(${label})</span>`;
+          });
+
+          // Admin digest line — now flags real handover status, not just a link.
           adminCountdownItems.push(
             `<strong>${takerName}</strong> on holiday in <strong>${daysUntil} ${dayWord}</strong> (${dateRange}) — ${
               coverNames.length > 0
@@ -541,14 +564,43 @@ const handler = async (req: Request): Promise<Response> => {
                 : coverNotNeeded
                   ? `<span style="color:#10b981;font-weight:600;">no cover needed</span>`
                   : `<span style="color:#ef4444;font-weight:600;">no cover assigned</span>`
+            }${
+              handoverClientStatuses.length > 0
+                ? ` — handover: ${handoverComplete ? `<span style="color:#10b981;font-weight:600;">complete</span>` : `<span style="color:#ef4444;font-weight:600;">not ready</span>`}`
+                : ""
             }`
           );
 
-          // Personal email to the staff member on holiday
+          // Escalate to admins when leave is imminent (≤3 days) and handover isn't done.
+          if (handoverClientStatuses.length > 0 && !handoverComplete && daysUntil <= 3) {
+            const notStarted = handoverClientStatuses.filter(c => c.taskCount === 0).map(c => c.client);
+            const inProgress = handoverClientStatuses.filter(c => c.taskCount > 0 && c.avgProgress < 100).map(c => `${c.client} (${c.avgProgress}%)`);
+            handoverEscalationItems.push(
+              `<strong>${takerName}</strong> — leave in <strong>${daysUntil} ${dayWord}</strong> (${dateRange}): ` +
+              [
+                notStarted.length > 0 ? `not started: ${notStarted.join(", ")}` : null,
+                inProgress.length > 0 ? `in progress: ${inProgress.join(", ")}` : null,
+              ].filter(Boolean).join(" · ")
+            );
+          }
+
+          // Personal email to the staff member on holiday — wording escalates with urgency.
           if (takerInfo?.email) {
+            const handoverLines: string[] = handoverClientStatuses.length === 0
+              ? []
+              : handoverComplete
+                ? [`✅ <strong>Your handover is complete</strong> — thank you!`]
+                : [
+                    daysUntil <= 1
+                      ? `🚨 <strong>Your handover is NOT complete and your leave starts ${daysUntil <= 0 ? "today" : "tomorrow"}.</strong> Please finish it now:`
+                      : daysUntil <= 3
+                        ? `⚠️ <strong>Your handover is still incomplete — only ${daysUntil} days left.</strong> Please prioritise it:`
+                        : `📋 <strong>Please complete your handover before you leave</strong> so your cover is set up:`,
+                    ...handoverLinkItems,
+                  ];
             await sendStandaloneAlert(
               [takerInfo.email as string],
-              `📅 Your holiday starts in ${daysUntil} ${dayWord}`,
+              `📅 Your holiday starts in ${daysUntil} ${dayWord}${!handoverComplete && handoverClientStatuses.length > 0 && daysUntil <= 3 ? " — handover needed" : ""}`,
               "📅 Your Holiday is Coming Up", "#0ea5e9",
               [
                 `Your holiday starts in ${daysUntil} ${dayWord}.`,
@@ -558,16 +610,14 @@ const handler = async (req: Request): Promise<Response> => {
                   : coverNotNeeded
                     ? `✅ No cover is needed for this holiday.`
                     : `⚠️ No cover has been assigned yet — please check with the admin team.`,
-                ...(handoverLinkItems.length > 0
-                  ? [`📋 <strong>Please complete your handover before you leave</strong> so your cover is set up:`, ...handoverLinkItems]
-                  : []),
+                ...handoverLines,
                 `Have a great break! 🌴`,
               ],
               todayStr
             );
           }
 
-          // Personal emails to each cover person
+          // Personal emails to each cover person — mention the taker's actual handover status.
           for (const cover of coverPeople) {
             await sendStandaloneAlert(
               [cover.email as string],
@@ -577,7 +627,9 @@ const handler = async (req: Request): Promise<Response> => {
                 `You're covering ${takerName}'s holiday in ${daysUntil} ${dayWord}.`,
                 `🗓️ Holiday dates: ${dateRange}`,
                 `Please review your schedule for the covered shifts.`,
-                `💬 <strong>Reach out to ${takerName}</strong> to complete the handover before their leave.`,
+                handoverComplete
+                  ? `✅ ${takerName}'s handover is complete — you're good to go.`
+                  : `💬 <strong>Reach out to ${takerName}</strong> — their handover isn't finished yet.`,
                 ...(handoverLinkItems.length > 0
                   ? [`📋 Open the handover tracker for each client:`, ...handoverLinkItems]
                   : []),
@@ -595,6 +647,17 @@ const handler = async (req: Request): Promise<Response> => {
             accentColor: "#0ea5e9",
             itemsHtml: adminCountdownItems,
             summary: `${adminCountdownItems.length} imminent`,
+          });
+        }
+
+        if (handoverEscalationItems.length > 0) {
+          sections.push({
+            type: "handover_not_ready",
+            title: "Handovers Not Ready for Upcoming Leave",
+            icon: "🚨",
+            accentColor: "#ef4444",
+            itemsHtml: handoverEscalationItems,
+            summary: `${handoverEscalationItems.length} need attention`,
           });
         }
       } else if (testType === "holiday_countdown") {

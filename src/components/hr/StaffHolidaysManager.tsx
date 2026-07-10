@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Plus, Check, X, Calendar } from "lucide-react";
 import { format } from "date-fns";
+import { computeHolidayHandoverStatusBatch, HANDOVER_STATUS_LABEL, type HolidayHandoverStatus } from "@/lib/handoverStatus";
 
 interface Holiday {
   id: string;
@@ -160,6 +161,7 @@ export function StaffHolidaysManager() {
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
   const [hrProfiles, setHRProfiles] = useState<HRProfile[]>([]);
   const [shiftCoverMap, setShiftCoverMap] = useState<Map<string, ShiftCoverRequest>>(new Map());
+  const [handoverStatusMap, setHandoverStatusMap] = useState<Map<string, HolidayHandoverStatus>>(new Map());
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [filter, setFilter] = useState<FilterType>('all');
@@ -232,6 +234,12 @@ export function StaffHolidaysManager() {
       }));
 
       setHolidays(mergedHolidays);
+
+      // Handover status per approved holiday — must be complete before the leave.
+      const approvedHolidays = mergedHolidays.filter(h => h.status === 'approved');
+      setHandoverStatusMap(await computeHolidayHandoverStatusBatch(
+        approvedHolidays.map(h => ({ id: h.id, userId: h.user_id, startDate: h.start_date, endDate: h.end_date }))
+      ));
     } catch (error) {
       console.error('Error fetching holidays:', error);
       toast({
@@ -414,6 +422,7 @@ export function StaffHolidaysManager() {
                 <TableHead>Days</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Cover</TableHead>
+                <TableHead>Handover</TableHead>
                 <TableHead>Notes</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
@@ -454,6 +463,26 @@ export function StaffHolidaysManager() {
                         ) : (
                           <span className="text-xs text-warning">No cover</span>
                         )}
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const hs = handoverStatusMap.get(holiday.id);
+                          if (!hs || hs.status === 'none') return <span className="text-xs text-muted-foreground">-</span>;
+                          return (
+                            <Badge
+                              variant="outline"
+                              className={
+                                hs.status === 'complete'
+                                  ? 'bg-success/20 text-success border-success'
+                                  : hs.status === 'in_progress'
+                                    ? 'bg-amber-500/20 text-amber-700 border-amber-500'
+                                    : 'bg-destructive/20 text-destructive border-destructive'
+                              }
+                            >
+                              {HANDOVER_STATUS_LABEL[hs.status]}
+                            </Badge>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate">{holiday.notes || '-'}</TableCell>
                       <TableCell>
