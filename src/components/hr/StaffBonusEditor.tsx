@@ -128,10 +128,15 @@ export function StaffBonusEditor({
   };
 
   const Row = ({ b, recurring }: { b: BonusRow; recurring: boolean }) => (
-    <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/30 px-2.5 py-1.5">
-      <div className="min-w-0 flex items-baseline gap-2">
-        <span className="text-sm font-semibold text-foreground whitespace-nowrap">{fmtMoney(b.amount)}</span>
-        <span className="text-xs text-muted-foreground truncate">{b.description || "No description"}</span>
+    <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/30 px-2.5 py-1.5 max-w-full overflow-hidden">
+      <div className="min-w-0 flex-1 flex items-baseline gap-2">
+        <span className="text-sm font-semibold text-foreground whitespace-nowrap flex-shrink-0">{fmtMoney(b.amount)}</span>
+        <span
+          className="text-xs text-muted-foreground truncate min-w-0 flex-1"
+          title={b.description || undefined}
+        >
+          {b.description || "No description"}
+        </span>
       </div>
       <Button
         type="button"

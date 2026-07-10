@@ -625,19 +625,19 @@ export function MyHRProfile() {
         .eq('user_id', targetUserId)
         .gte('end_date', todayISO);
 
-      const coveredUserIds = Array.from(new Set((coverRequests || []).map(r => r.swap_with_user_id).filter(Boolean))) as string[];
+      const handoverCoveredUserIds = Array.from(new Set((coverRequests || []).map(r => r.swap_with_user_id).filter(Boolean))) as string[];
       const coveringList: (HandoverClientSummary & { coveredName: string })[] = [];
-      if (coveredUserIds.length > 0) {
+      if (handoverCoveredUserIds.length > 0) {
         const { data: coveredProfiles } = await supabase
           .from('profiles')
           .select('user_id, display_name, email')
-          .in('user_id', coveredUserIds);
+          .in('user_id', handoverCoveredUserIds);
         const coveredNameMap = new Map((coveredProfiles || []).map(p => [p.user_id, p.display_name || p.email || 'Unknown']));
 
         const { data: coveredPatterns } = await supabase
           .from('recurring_shift_patterns')
           .select('user_id, client_name')
-          .in('user_id', coveredUserIds);
+          .in('user_id', handoverCoveredUserIds);
 
         const clientsByCoveredUser = new Map<string, Set<string>>();
         (coveredPatterns || []).forEach(p => {

@@ -102,10 +102,12 @@ export function TrainingMatrix({ publicMode = false }: { publicMode?: boolean })
         .order("name", { ascending: true });
 
       // Public page reads the column-scoped public sources (no notes, no HR PII);
-      // the authenticated view reads the base tables as before.
-      const { data: hrData } = await supabase
-        .from(publicMode ? ("training_matrix_staff_public" as any) : "hr_profiles")
-        .select("user_id, employment_status");
+      // the authenticated view reads the base tables as before. Kept as two
+      // separate .from() calls (rather than a ternary table name) so each
+      // branch resolves its own Supabase generic type correctly.
+      const { data: hrData } = publicMode
+        ? await supabase.from("training_matrix_staff_public" as any).select("user_id, employment_status")
+        : await supabase.from("hr_profiles").select("user_id, employment_status");
       const visibleIds = ((hrData ?? []) as { user_id: string; employment_status: string }[])
         .filter(hr => VISIBLE_STATUSES.includes(hr.employment_status as EmploymentStatus))
         .map(hr => hr.user_id);
