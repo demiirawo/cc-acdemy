@@ -10,9 +10,10 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Trash2, ClipboardList } from "lucide-react";
+import { Trash2, ClipboardList, Plane } from "lucide-react";
 import { toast } from "sonner";
 import { ClientHandoverTracker } from "./ClientHandoverTracker";
+import { getUpcomingLeaveForClients, type UpcomingClientLeave } from "@/lib/handoverStatus";
 
 interface HandoverTaskRow {
   id: string;
@@ -51,7 +52,7 @@ export function HandoverTrackerSummaryCard() {
     onError: (e: any) => toast.error(e.message || "Failed to clear tracker"),
   });
 
-  const grouped = useMemo(() => {
+  const groupedBase = useMemo(() => {
     const map = new Map<string, HandoverTaskRow[]>();
     for (const t of tasks) {
       if (!t.client_name) continue;
@@ -74,9 +75,27 @@ export function HandoverTrackerSummaryCard() {
           .pop() ?? null;
         return { client, count: activeCount, overallProgress, latestTargetDate };
       })
-      .filter((g) => g.count > 0)
-      .sort((a, b) => b.count - a.count);
+      .filter((g) => g.count > 0);
   }, [tasks]);
+
+  const clientNamesKey = groupedBase.map((g) => g.client).sort().join("|");
+  const { data: leaveByClient = new Map<string, UpcomingClientLeave>() } = useQuery({
+    queryKey: ["handover-summary-upcoming-leave", clientNamesKey],
+    queryFn: () => getUpcomingLeaveForClients(groupedBase.map((g) => g.client)),
+    enabled: groupedBase.length > 0,
+    staleTime: 60 * 1000,
+  });
+
+  const grouped = useMemo(() => {
+    return groupedBase
+      .map((g) => ({ ...g, leave: leaveByClient.get(g.client) ?? null }))
+      .sort((a, b) => {
+        const aUrgent = a.leave ? (a.leave.ongoing ? -1 : a.leave.daysUntil) : Infinity;
+        const bUrgent = b.leave ? (b.leave.ongoing ? -1 : b.leave.daysUntil) : Infinity;
+        if (aUrgent !== bUrgent) return aUrgent - bUrgent;
+        return b.count - a.count;
+      });
+  }, [groupedBase, leaveByClient]);
 
   if (isLoading || grouped.length === 0) return null;
 
@@ -93,12 +112,12 @@ export function HandoverTrackerSummaryCard() {
       </CardHeader>
       <CardContent>
         <Accordion type="multiple" className="w-full">
-          {grouped.map(({ client, count, overallProgress, latestTargetDate }) => (
+          {grouped.map(({ client, count, overallProgress, latestTargetDate, leave }) => (
             <AccordionItem key={client} value={client}>
               <div className="flex items-center gap-2">
                 <AccordionTrigger className="flex-1">
                   <div className="flex items-center justify-between gap-2 w-full pr-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-foreground">{client}</span>
                       <Badge variant="outline">
                         {count} active task{count === 1 ? "" : "s"}
@@ -106,6 +125,22 @@ export function HandoverTrackerSummaryCard() {
                       {latestTargetDate && (
                         <Badge variant="secondary" className="font-normal">
                           Due {new Date(latestTargetDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                        </Badge>
+                      )}
+                      {leave && (
+                        <Badge
+                          className={`font-normal gap-1 ${
+                            leave.ongoing || leave.daysUntil <= 3
+                              ? "bg-destructive/10 text-destructive border-destructive/30 hover:bg-destructive/10"
+                              : leave.daysUntil <= 7
+                              ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
+                              : "bg-primary/5 text-primary border-primary/20 hover:bg-primary/5"
+                          }`}
+                          variant="outline"
+                        >
+                          <Plane className="h-3 w-3" />
+                          {leave.staffName}
+                          {leave.ongoing ? " · on leave now" : ` · leave in ${leave.daysUntil}d`}
                         </Badge>
                       )}
                     </div>
@@ -142,7 +177,7 @@ export function HandoverTrackerSummaryCard() {
                 </Button>
               </div>
               <AccordionContent>
-                <ClientHandoverTracker clientName={client} />
+                <ClientHandoverTracker clientName={client} upcomingLeave={leave} />
               </AccordionContent>
             </AccordionItem>
           ))}

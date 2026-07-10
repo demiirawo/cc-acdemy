@@ -6,12 +6,13 @@ import { Progress } from "@/components/ui/progress";
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Trash2, ExternalLink, Plus, Check, X, ChevronDown, ChevronRight, Type, Link2, BarChart3, Calendar, User, Hash } from "lucide-react";
+import { Trash2, ExternalLink, Plus, Check, X, ChevronDown, ChevronRight, Type, Link2, BarChart3, Calendar, User, Hash, Plane } from "lucide-react";
 import { HandoverTaskComments } from "@/components/HandoverTaskComments";
 import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
+import { getUpcomingLeaveForClient, type UpcomingClientLeave } from "@/lib/handoverStatus";
 
 // Shared hook: list of staff display names for the user picker
 function useHandoverUsers() {
@@ -121,6 +122,38 @@ interface HandoverTask {
 
 interface Props {
   clientName: string;
+  /**
+   * The client's nearest upcoming/ongoing approved leave, if already known
+   * by the caller (e.g. a batched fetch across many clients). Pass `null`
+   * explicitly to suppress the banner. Omit entirely to have this component
+   * fetch it itself.
+   */
+  upcomingLeave?: UpcomingClientLeave | null;
+}
+
+function LeaveBanner({ leave }: { leave: UpcomingClientLeave }) {
+  const fmt = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const urgent = !leave.ongoing && leave.daysUntil <= 3;
+  const soon = !leave.ongoing && leave.daysUntil <= 7;
+  const tone = leave.ongoing || urgent
+    ? "bg-destructive/10 text-destructive border-destructive/30"
+    : soon
+    ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
+    : "bg-primary/5 text-primary border-primary/20";
+  const timing = leave.ongoing
+    ? `on leave now — returns ${fmt(leave.endDate)}`
+    : leave.daysUntil === 0
+    ? "leave starts today"
+    : `${leave.daysUntil} day${leave.daysUntil === 1 ? "" : "s"} until leave starts`;
+
+  return (
+    <div className={`flex items-center gap-2 px-4 sm:px-6 py-2 border-b text-xs sm:text-sm font-medium ${tone}`}>
+      <Plane className="h-4 w-4 shrink-0" />
+      <span className="truncate">
+        Linked to <span className="font-semibold">{leave.staffName}</span>'s leave · {fmt(leave.startDate)}–{fmt(leave.endDate)} · {timing}
+      </span>
+    </div>
+  );
 }
 
 type DraftRow = {
@@ -403,9 +436,17 @@ function Cell({
   );
 }
 
-export function ClientHandoverTracker({ clientName }: Props) {
+export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<DraftRow>(newDraft());
+
+  const { data: fetchedLeave } = useQuery({
+    queryKey: ["client-upcoming-leave", clientName],
+    queryFn: () => getUpcomingLeaveForClient(clientName),
+    enabled: upcomingLeave === undefined,
+    staleTime: 60 * 1000,
+  });
+  const leave = upcomingLeave !== undefined ? upcomingLeave : fetchedLeave;
   const [collapsedCats, setCollapsedCats] = useState<Set<string>>(new Set());
   const toggleCat = (c: string) =>
     setCollapsedCats((prev) => {
@@ -913,6 +954,8 @@ export function ClientHandoverTracker({ clientName }: Props) {
           </div>
         </div>
       </CardHeader>
+
+      {leave && <LeaveBanner leave={leave} />}
 
       <CardContent className="p-0">
         {/* Task Library */}

@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { differenceInCalendarDays } from "date-fns";
 
 // Handover status linked to a specific period of annual leave: "relevant"
 // clients are the ones this staff member is actually scheduled for during
@@ -148,6 +149,99 @@ export async function computeHolidayHandoverStatusBatch(
   }
 
   return result;
+}
+
+export interface UpcomingClientLeave {
+  userId: string;
+  staffName: string;
+  startDate: string;
+  endDate: string;
+  /** 0 = starts today, negative = leave is already underway. */
+  daysUntil: number;
+  ongoing: boolean;
+}
+
+/**
+ * For each client, the soonest approved leave (upcoming or already underway)
+ * among staff currently scheduled there via recurring_shift_patterns. Used to
+ * surface "this handover relates to X's leave" context directly on the
+ * per-client tracker, since client_handover_tasks itself has no staff/leave
+ * linkage.
+ */
+export async function getUpcomingLeaveForClients(
+  clientNames: string[]
+): Promise<Map<string, UpcomingClientLeave>> {
+  const names = Array.from(new Set(clientNames.map(c => (c || "").trim()).filter(Boolean)));
+  const result = new Map<string, UpcomingClientLeave>();
+  if (names.length === 0) return result;
+
+  const todayISO = new Date().toISOString().slice(0, 10);
+
+  const { data: patterns } = await supabase
+    .from("recurring_shift_patterns")
+    .select("user_id, client_name")
+    .in("client_name", names)
+    .or(`end_date.is.null,end_date.gte.${todayISO}`);
+
+  const userIdsByClient = new Map<string, Set<string>>();
+  for (const p of patterns || []) {
+    const client = (p.client_name || "").trim();
+    if (!client) continue;
+    if (!userIdsByClient.has(client)) userIdsByClient.set(client, new Set());
+    userIdsByClient.get(client)!.add(p.user_id);
+  }
+
+  const allUserIds = Array.from(new Set(Array.from(userIdsByClient.values()).flatMap(s => Array.from(s))));
+  if (allUserIds.length === 0) return result;
+
+  const { data: holidays } = await supabase
+    .from("staff_holidays")
+    .select("user_id, start_date, end_date")
+    .in("user_id", allUserIds)
+    .eq("status", "approved")
+    .gte("end_date", todayISO)
+    .order("start_date", { ascending: true });
+  if (!holidays || holidays.length === 0) return result;
+
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("user_id, display_name, email")
+    .in("user_id", Array.from(new Set(holidays.map(h => h.user_id))));
+  const nameByUser = new Map((profiles || []).map(p => [p.user_id, (p.display_name || p.email || "Unknown").trim()]));
+
+  // Holidays are ordered by start_date ascending, so the first match per user is their soonest.
+  const earliestByUser = new Map<string, { start_date: string; end_date: string }>();
+  for (const h of holidays) {
+    if (!earliestByUser.has(h.user_id)) earliestByUser.set(h.user_id, h);
+  }
+
+  const today = new Date(todayISO);
+  for (const [client, userIds] of userIdsByClient.entries()) {
+    let best: { userId: string; start_date: string; end_date: string } | null = null;
+    for (const uid of userIds) {
+      const h = earliestByUser.get(uid);
+      if (!h) continue;
+      if (!best || h.start_date < best.start_date) best = { userId: uid, ...h };
+    }
+    if (!best) continue;
+    const daysUntil = differenceInCalendarDays(new Date(best.start_date), today);
+    result.set(client, {
+      userId: best.userId,
+      staffName: nameByUser.get(best.userId) || "Unknown",
+      startDate: best.start_date,
+      endDate: best.end_date,
+      daysUntil,
+      ongoing: daysUntil < 0,
+    });
+  }
+
+  return result;
+}
+
+/** Single-client convenience wrapper around {@link getUpcomingLeaveForClients}. */
+export async function getUpcomingLeaveForClient(clientName: string): Promise<UpcomingClientLeave | null> {
+  const map = await getUpcomingLeaveForClients([clientName]);
+  return map.get(clientName.trim()) ?? null;
 }
 
 export const HANDOVER_STATUS_LABEL: Record<HandoverStatus, string> = {
