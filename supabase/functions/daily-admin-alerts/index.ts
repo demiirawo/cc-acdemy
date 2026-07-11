@@ -5,6 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
 const LOGO_URL = "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
+const HANDOVER_VIDEO_URL = "https://www.youtube.com/watch?v=VGzR7cR1npA";
 const BRAND_COLOR = "#5F17EB";
 const APP_URL = "https://www.care-cuddle-academy.co.uk";
 const BIRTHDAY_IMAGE_URL = "https://www.care-cuddle-academy.co.uk/images/birthday-celebration.png";
@@ -656,6 +657,7 @@ const handler = async (req: Request): Promise<Response> => {
                           ? `⚠️ <strong>${intro}</strong>`
                           : `📋 ${intro}`,
                       ...handoverLinkItems,
+                      `📺 Not sure how the Handover Tracker works? <a href="${HANDOVER_VIDEO_URL}" style="color:${BRAND_COLOR};font-weight:600;text-decoration:none;">Watch this short guide</a>.`,
                       ask,
                     ];
             await sendStandaloneAlert(
@@ -691,7 +693,11 @@ const handler = async (req: Request): Promise<Response> => {
                   ? `✅ ${takerName}'s handover${handoverClientStatuses.length > 1 ? "s are" : " is"} complete — you're good to go.`
                   : `💬 <strong>Reach out to ${takerName}</strong> — their handover isn't finished yet${handoverCountLabel}.`,
                 ...(handoverLinkItems.length > 0
-                  ? [`📋 Open the handover tracker for each client:`, ...handoverLinkItems]
+                  ? [
+                      `📋 Open the handover tracker for each client:`,
+                      ...handoverLinkItems,
+                      `📺 New to the Handover Tracker? <a href="${HANDOVER_VIDEO_URL}" style="color:${BRAND_COLOR};font-weight:600;text-decoration:none;">Watch this short guide</a>.`,
+                    ]
                   : []),
               ],
               todayStr

@@ -16,6 +16,7 @@ import { ClientHandoverTracker } from "./ClientHandoverTracker";
 import { getUpcomingLeaveByAllClients, type UpcomingClientLeave } from "@/lib/handoverStatus";
 
 const APP_URL = "https://www.care-cuddle-academy.co.uk";
+const HANDOVER_VIDEO_URL = "https://www.youtube.com/watch?v=VGzR7cR1npA";
 
 interface HandoverTaskRow {
   id: string;
@@ -62,6 +63,7 @@ function buildWhatsAppMessage(staffName: string, leave: UpcomingClientLeave, ite
   return [
     `Hi ${firstName}, ${timing} (${dates}) and your client handover${items.length > 1 ? "s" : ""} ${items.length > 1 ? "aren't" : "isn't"} complete yet.`,
     clientLines.join("\n\n"),
+    `📺 Not sure how the Handover Tracker works? Watch this short guide:\n${HANDOVER_VIDEO_URL}`,
     `${ask} Thank you! 🙏`,
   ].join("\n\n");
 }
@@ -298,7 +300,16 @@ export function HandoverTrackerSummaryCard() {
                           <AccordionTrigger className="flex-1">
                             <div className="flex items-center justify-between gap-2 w-full pr-2">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-medium text-foreground">{client}</span>
+                                <a
+                                  href={`/public/schedule/${encodeURIComponent(client.trim())}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="font-medium text-foreground hover:text-primary hover:underline"
+                                  title={`Open ${client}'s public page`}
+                                >
+                                  {client}
+                                </a>
                                 {notStarted ? (
                                   <Badge variant="outline" className="font-normal bg-destructive/10 text-destructive border-destructive/30">
                                     Not started
