@@ -1345,20 +1345,26 @@ Care Cuddle Team`;
                   <Separator />
 
                   {(() => {
-                    const benchStaff = allStaffWithAssignments.filter(s => s.isBench && s.user_id !== request.user_id);
-                    const otherStaff = allStaffWithAssignments.filter(s => !s.isBench && s.user_id !== request.user_id);
                     const coveredUserIds = (coveringStaff || []).map(c => c.user_id);
                     const isPending = assignCoverMutation.isPending || unassignCoverMutation.isPending;
 
                     type Row = { user_id: string; display_name: string | null; email: string | null; isBench: boolean; clients: string[] };
-                    const rows: Row[] = [
-                      ...benchStaff.map(s => ({ user_id: s.user_id, display_name: s.display_name, email: s.email, isBench: true, clients: s.clientAssignments || [] })),
-                      ...otherStaff.map(s => ({ user_id: s.user_id, display_name: s.display_name, email: s.email, isBench: false, clients: s.clientAssignments || [] })),
-                    ].sort((a, b) => {
-                      // Bench first, then alphabetical
-                      if (a.isBench !== b.isBench) return a.isBench ? -1 : 1;
-                      return (a.display_name || a.email || '').localeCompare(b.display_name || b.email || '');
-                    });
+                    // "On the bench" = explicitly assigned to the Care Cuddle
+                    // placeholder OR no client allocation at all.
+                    const rows: Row[] = allStaffWithAssignments
+                      .filter(s => s.user_id !== request.user_id)
+                      .map(s => {
+                        const clients = s.clientAssignments || [];
+                        const realClients = clients.filter(c => c !== "Care Cuddle");
+                        return {
+                          user_id: s.user_id,
+                          display_name: s.display_name,
+                          email: s.email,
+                          isBench: s.isBench || realClients.length === 0,
+                          clients,
+                        };
+                      })
+                      .sort((a, b) => (a.display_name || a.email || '').localeCompare(b.display_name || b.email || ''));
 
                     if (rows.length === 0) return null;
 
@@ -1370,6 +1376,10 @@ Care Cuddle Team`;
                           r.clients.some(c => c.toLowerCase().includes(search))
                         )
                       : rows;
+                    const staffGroups = [
+                      { key: 'bench', title: 'On the bench — no client allocation', rows: filteredRows.filter(r => r.isBench) },
+                      { key: 'allocated', title: 'Allocated to clients', rows: filteredRows.filter(r => !r.isBench) },
+                    ].filter(g => g.rows.length > 0);
 
                     return (
                       <div className="space-y-2">
@@ -1406,7 +1416,15 @@ Care Cuddle Team`;
                                   </td>
                                 </tr>
                               )}
-                              {filteredRows.map((staff, idx) => {
+                              {staffGroups.map(group => [
+                                <tr key={`header-${group.key}`} className="border-t bg-muted/60">
+                                  <td colSpan={4} className="px-3 py-1.5">
+                                    <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                      {group.title} ({group.rows.length})
+                                    </span>
+                                  </td>
+                                </tr>,
+                                ...group.rows.map((staff, idx) => {
                                 const isAssigned = coveredUserIds.includes(staff.user_id);
                                 return (
                                   <tr
@@ -1457,7 +1475,8 @@ Care Cuddle Team`;
                                     </td>
                                   </tr>
                                 );
-                              })}
+                                }),
+                              ])}
                             </tbody>
                           </table>
                         </div>
