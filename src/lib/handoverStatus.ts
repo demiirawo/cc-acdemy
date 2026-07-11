@@ -244,6 +244,71 @@ export async function getUpcomingLeaveForClient(clientName: string): Promise<Upc
   return map.get(clientName.trim()) ?? null;
 }
 
+/**
+ * Same as {@link getUpcomingLeaveForClients} but scans every approved
+ * upcoming/ongoing leave rather than being scoped to a known client list —
+ * used to surface clients with pending leave whose handover hasn't been
+ * initiated at all yet (so they'd never appear in a client_handover_tasks-
+ * driven list).
+ */
+export async function getUpcomingLeaveByAllClients(): Promise<Map<string, UpcomingClientLeave>> {
+  const result = new Map<string, UpcomingClientLeave>();
+  const todayISO = new Date().toISOString().slice(0, 10);
+
+  const { data: holidays } = await supabase
+    .from("staff_holidays")
+    .select("user_id, start_date, end_date")
+    .eq("status", "approved")
+    .gte("end_date", todayISO)
+    .order("start_date", { ascending: true });
+  if (!holidays || holidays.length === 0) return result;
+
+  const userIds = Array.from(new Set(holidays.map(h => h.user_id)));
+  const { data: patterns } = await supabase
+    .from("recurring_shift_patterns")
+    .select("user_id, client_name, start_date, end_date")
+    .in("user_id", userIds);
+
+  const patternsByUser = new Map<string, { client_name: string; start_date: string; end_date: string | null }[]>();
+  (patterns || []).forEach(p => {
+    if (!patternsByUser.has(p.user_id)) patternsByUser.set(p.user_id, []);
+    patternsByUser.get(p.user_id)!.push(p);
+  });
+
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("user_id, display_name, email")
+    .in("user_id", userIds);
+  const nameByUser = new Map((profiles || []).map(p => [p.user_id, (p.display_name || p.email || "Unknown").trim()]));
+
+  const today = new Date(todayISO);
+  // Holidays are ordered by start_date ascending, so the first holiday that
+  // touches a given client is that client's soonest — later matches are skipped.
+  for (const h of holidays) {
+    const userPatterns = patternsByUser.get(h.user_id) || [];
+    const clients = new Set(
+      userPatterns
+        .filter(p => p.start_date <= h.end_date && (!p.end_date || p.end_date >= h.start_date))
+        .map(p => (p.client_name || "").trim())
+        .filter(c => c && c !== BENCH_SENTINEL)
+    );
+    const daysUntil = differenceInCalendarDays(new Date(h.start_date), today);
+    for (const client of clients) {
+      if (result.has(client)) continue;
+      result.set(client, {
+        userId: h.user_id,
+        staffName: nameByUser.get(h.user_id) || "Unknown",
+        startDate: h.start_date,
+        endDate: h.end_date,
+        daysUntil,
+        ongoing: daysUntil < 0,
+      });
+    }
+  }
+
+  return result;
+}
+
 export const HANDOVER_STATUS_LABEL: Record<HandoverStatus, string> = {
   none: "No handover needed",
   not_started: "Not started",

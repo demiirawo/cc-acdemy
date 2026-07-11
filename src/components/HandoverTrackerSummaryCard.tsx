@@ -13,7 +13,7 @@ import {
 import { Trash2, ClipboardList, Plane } from "lucide-react";
 import { toast } from "sonner";
 import { ClientHandoverTracker } from "./ClientHandoverTracker";
-import { getUpcomingLeaveForClients, type UpcomingClientLeave } from "@/lib/handoverStatus";
+import { getUpcomingLeaveByAllClients, type UpcomingClientLeave } from "@/lib/handoverStatus";
 
 interface HandoverTaskRow {
   id: string;
@@ -52,14 +52,14 @@ export function HandoverTrackerSummaryCard() {
     onError: (e: any) => toast.error(e.message || "Failed to clear tracker"),
   });
 
-  const groupedBase = useMemo(() => {
+  const { clientsWithAnyTasks, groupedBase } = useMemo(() => {
     const map = new Map<string, HandoverTaskRow[]>();
     for (const t of tasks) {
       if (!t.client_name) continue;
       if (!map.has(t.client_name)) map.set(t.client_name, []);
       map.get(t.client_name)!.push(t);
     }
-    return Array.from(map.entries())
+    const base = Array.from(map.entries())
       .map(([client, rows]) => {
         const activeRows = rows.filter((r) => (r.progress ?? 0) < 100);
         const activeCount = activeRows.length;
@@ -73,31 +73,41 @@ export function HandoverTrackerSummaryCard() {
           .filter((d): d is string => !!d)
           .sort()
           .pop() ?? null;
-        return { client, count: activeCount, overallProgress, latestTargetDate };
+        return { client, count: activeCount, overallProgress, latestTargetDate, notStarted: false as const };
       })
       .filter((g) => g.count > 0);
+    return { clientsWithAnyTasks: new Set(map.keys()), groupedBase: base };
   }, [tasks]);
 
-  const clientNamesKey = groupedBase.map((g) => g.client).sort().join("|");
-  const { data: leaveByClient = new Map<string, UpcomingClientLeave>() } = useQuery({
-    queryKey: ["handover-summary-upcoming-leave", clientNamesKey],
-    queryFn: () => getUpcomingLeaveForClients(groupedBase.map((g) => g.client)),
-    enabled: groupedBase.length > 0,
+  const { data: leaveByAllClients = new Map<string, UpcomingClientLeave>(), isLoading: leaveLoading } = useQuery({
+    queryKey: ["handover-summary-upcoming-leave-all"],
+    queryFn: getUpcomingLeaveByAllClients,
     staleTime: 60 * 1000,
   });
 
   const grouped = useMemo(() => {
-    return groupedBase
-      .map((g) => ({ ...g, leave: leaveByClient.get(g.client) ?? null }))
-      .sort((a, b) => {
-        const aUrgent = a.leave ? (a.leave.ongoing ? -1 : a.leave.daysUntil) : Infinity;
-        const bUrgent = b.leave ? (b.leave.ongoing ? -1 : b.leave.daysUntil) : Infinity;
-        if (aUrgent !== bUrgent) return aUrgent - bUrgent;
-        return b.count - a.count;
-      });
-  }, [groupedBase, leaveByClient]);
+    const withTasks = groupedBase.map((g) => ({ ...g, leave: leaveByAllClients.get(g.client) ?? null }));
+    // Clients with staff on/approaching leave but no handover tasks recorded
+    // at all yet — these never show up via client_handover_tasks grouping.
+    const notStarted = Array.from(leaveByAllClients.entries())
+      .filter(([client]) => !clientsWithAnyTasks.has(client))
+      .map(([client, leave]) => ({
+        client,
+        count: 0,
+        overallProgress: 0,
+        latestTargetDate: null as string | null,
+        leave: leave as UpcomingClientLeave | null,
+        notStarted: true as const,
+      }));
+    return [...withTasks, ...notStarted].sort((a, b) => {
+      const aUrgent = a.leave ? (a.leave.ongoing ? -1 : a.leave.daysUntil) : Infinity;
+      const bUrgent = b.leave ? (b.leave.ongoing ? -1 : b.leave.daysUntil) : Infinity;
+      if (aUrgent !== bUrgent) return aUrgent - bUrgent;
+      return b.count - a.count;
+    });
+  }, [groupedBase, leaveByAllClients, clientsWithAnyTasks]);
 
-  if (isLoading || grouped.length === 0) return null;
+  if (isLoading || leaveLoading || grouped.length === 0) return null;
 
   return (
     <Card className="mb-6">
@@ -112,16 +122,22 @@ export function HandoverTrackerSummaryCard() {
       </CardHeader>
       <CardContent>
         <Accordion type="multiple" className="w-full">
-          {grouped.map(({ client, count, overallProgress, latestTargetDate, leave }) => (
-            <AccordionItem key={client} value={client}>
+          {grouped.map(({ client, count, overallProgress, latestTargetDate, leave, notStarted }) => (
+            <AccordionItem key={client} value={client} className={notStarted ? "border-dashed" : undefined}>
               <div className="flex items-center gap-2">
                 <AccordionTrigger className="flex-1">
                   <div className="flex items-center justify-between gap-2 w-full pr-2">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-foreground">{client}</span>
-                      <Badge variant="outline">
-                        {count} active task{count === 1 ? "" : "s"}
-                      </Badge>
+                      {notStarted ? (
+                        <Badge variant="outline" className="font-normal bg-destructive/10 text-destructive border-destructive/30">
+                          Not started
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline">
+                          {count} active task{count === 1 ? "" : "s"}
+                        </Badge>
+                      )}
                       {latestTargetDate && (
                         <Badge variant="secondary" className="font-normal">
                           Due {new Date(latestTargetDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
@@ -157,24 +173,26 @@ export function HandoverTrackerSummaryCard() {
                     </div>
                   </div>
                 </AccordionTrigger>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (
-                      confirm(
-                        `Clear all handover tasks for ${client}? This cannot be undone.`
-                      )
-                    ) {
-                      clearMutation.mutate(client);
-                    }
-                  }}
-                  disabled={clearMutation.isPending}
-                >
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  Clear
-                </Button>
+                {!notStarted && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (
+                        confirm(
+                          `Clear all handover tasks for ${client}? This cannot be undone.`
+                        )
+                      ) {
+                        clearMutation.mutate(client);
+                      }
+                    }}
+                    disabled={clearMutation.isPending}
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    Clear
+                  </Button>
+                )}
               </div>
               <AccordionContent>
                 <ClientHandoverTracker clientName={client} upcomingLeave={leave} />
