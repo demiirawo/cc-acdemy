@@ -330,40 +330,68 @@ export function LiveTimelineView({
     });
   };
   
-  // Get holidays for today with staff-to-client mapping
+  // Get holidays for today, mapped to the shift segments the staff member
+  // WOULD have worked today (per client) — the holiday bar spans just those
+  // hours, not the whole day. A client where the person wasn't scheduled
+  // today gets no bar at all.
   const todayHolidaysByClient = useMemo(() => {
-    const map = new Map<string, { userId: string; staffName: string; absenceType: string }[]>();
-    
+    const map = new Map<string, { userId: string; staffName: string; absenceType: string; start: Date; end: Date }[]>();
+    const dateStr = format(today, "yyyy-MM-dd");
+    const dayOfWeek = getDay(today);
+
+    const patternRunsToday = (pattern: RecurringPattern): boolean => {
+      const patternStartDate = parseISO(pattern.start_date);
+      const patternEndDate = pattern.end_date ? parseISO(pattern.end_date) : null;
+      if (isBefore(today, patternStartDate)) return false;
+      if (patternEndDate && isAfter(today, patternEndDate)) return false;
+      if (pattern.recurrence_interval === 'daily') return true;
+      if (pattern.recurrence_interval === 'weekly') return pattern.days_of_week.includes(dayOfWeek);
+      if (pattern.recurrence_interval === 'biweekly') {
+        if (!pattern.days_of_week.includes(dayOfWeek)) return false;
+        const weeksDiff = differenceInWeeks(startOfWeek(today, { weekStartsOn: 1 }), startOfWeek(patternStartDate, { weekStartsOn: 1 }));
+        return weeksDiff % 2 === 0;
+      }
+      return false;
+    };
+
     const todayHolidays = holidays.filter(h => {
       if (!["approved", "pending"].includes(h.status)) return false;
       const start = startOfDay(parseISO(h.start_date));
       const end = endOfDay(parseISO(h.end_date));
       return isWithinInterval(today, { start, end });
     });
-    
+
     todayHolidays.forEach(h => {
-      // Find which clients this staff member works for via recurring patterns
-      const staffClients = new Set<string>();
-      recurringPatterns.forEach(p => {
-        if (p.user_id === h.user_id) staffClients.add(p.client_name);
-      });
-      // Also check today's schedules (in case of one-off shifts)
-      allSchedules.forEach(s => {
-        if (s.user_id === h.user_id) staffClients.add(s.client_name);
-      });
-      
-      staffClients.forEach(clientName => {
+      const seen = new Set<string>();
+      const addSegment = (clientName: string, start: Date, end: Date) => {
+        const key = `${h.user_id}|${clientName}|${format(start, "HH:mm")}-${format(end, "HH:mm")}`;
+        if (seen.has(key)) return;
+        seen.add(key);
         if (!map.has(clientName)) map.set(clientName, []);
         map.get(clientName)!.push({
           userId: h.user_id,
           staffName: getStaffName(h.user_id),
           absenceType: h.absence_type || 'holiday',
+          start,
+          end,
         });
+      };
+
+      recurringPatterns.forEach(p => {
+        if (p.user_id !== h.user_id || !patternRunsToday(p)) return;
+        addSegment(p.client_name, parseISO(`${dateStr}T${p.start_time}`), parseISO(`${dateStr}T${p.end_time}`));
+      });
+      // One-off shifts today (materialized schedules)
+      allSchedules.forEach(s => {
+        if (s.user_id !== h.user_id) return;
+        const sStart = parseISO(s.start_datetime);
+        const sEnd = parseISO(s.end_datetime);
+        if (sStart < todayEnd && sEnd > today) addSegment(s.client_name, sStart, sEnd);
       });
     });
-    
+
     return map;
-  }, [holidays, recurringPatterns, allSchedules, today, getStaffName]);
+  }, [holidays, recurringPatterns, allSchedules, today, todayEnd, getStaffName]);
 
   const relevantStaff = viewMode === "staff" ? getRelevantStaff() : [];
   const relevantClients = viewMode === "client" ? getRelevantClients() : [];
@@ -377,6 +405,20 @@ export function LiveTimelineView({
     });
     return Array.from(clientSet).sort();
   }, [viewMode, relevantClients, todayHolidaysByClient, filteredClients]);
+
+  // Group client rows: clients with someone actually working today first,
+  // then clients whose only presence today is staff away on leave.
+  const activeClients = useMemo(
+    () => allRelevantClients.filter(c =>
+      todaySchedules.some(s => s.client_name === c && !isStaffOnHoliday(s.user_id, now))
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allRelevantClients, todaySchedules]
+  );
+  const holidayOnlyClients = useMemo(
+    () => allRelevantClients.filter(c => !activeClients.includes(c)),
+    [allRelevantClients, activeClients]
+  );
 
   const isEmpty = viewMode === "staff" ? relevantStaff.length === 0 : allRelevantClients.length === 0;
   
@@ -482,8 +524,25 @@ export function LiveTimelineView({
           );
         })}
         
-        {/* Client rows */}
-        {viewMode === "client" && allRelevantClients.map(clientName => {
+        {/* Client rows — grouped: actively working clients first, then those
+            whose only presence today is staff away on leave */}
+        {viewMode === "client" && ([
+          { key: "working", title: "Working today", clients: activeClients },
+          { key: "on-holiday", title: "Staff on holiday", clients: holidayOnlyClients },
+        ] as const).filter(g => g.clients.length > 0).map(group => (
+          <div key={group.key}>
+            <div className="flex items-center gap-2 mt-4 mb-1.5 first:mt-1">
+              {group.key === "working" ? (
+                <span className="h-2 w-2 rounded-full bg-green-500 flex-shrink-0" />
+              ) : (
+                <Palmtree className="h-3.5 w-3.5 text-amber-600 flex-shrink-0" />
+              )}
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {group.title}
+              </span>
+              <span className="text-xs text-muted-foreground">({group.clients.length})</span>
+            </div>
+            {group.clients.map(clientName => {
           // Get all schedules for this client, excluding staff on holiday
           const clientSchedules = todaySchedules
             .filter(s => {
@@ -530,8 +589,9 @@ export function LiveTimelineView({
             }
           });
           
-          // Get holidays for this client
-          const clientHolidays = todayHolidaysByClient.get(clientName) || [];
+          // Get holidays for this client — only segments visible on the timeline
+          const clientHolidays = (todayHolidaysByClient.get(clientName) || [])
+            .filter(h => h.end > timelineStart && h.start < timelineEnd);
           
           const rowCount = Math.max(1, rows.length + clientHolidays.length);
           
@@ -644,16 +704,23 @@ export function LiveTimelineView({
                   </div>
                 ))}
                 
-                {/* Holiday bars */}
+                {/* Holiday bars — span just the hours the person would have
+                    been working, not the full day */}
                 {clientHolidays.map((holiday, hIdx) => {
                   const rowIdx = rows.length + hIdx;
-                  const absenceLabel = holiday.absenceType === 'sick' ? 'Sick' 
+                  const absenceLabel = holiday.absenceType === 'sick' ? 'Sick'
                     : holiday.absenceType === 'personal' ? 'Personal'
                     : holiday.absenceType === 'maternity' ? 'Maternity'
                     : holiday.absenceType === 'paternity' ? 'Paternity'
                     : holiday.absenceType === 'unpaid' ? 'Unpaid'
                     : 'Holiday';
-                  
+
+                  const clampedStart = holiday.start < timelineStart ? timelineStart : holiday.start;
+                  const clampedEnd = holiday.end > timelineEnd ? timelineEnd : holiday.end;
+                  const leftPercent = getPositionPercent(clampedStart);
+                  const widthPercent = getPositionPercent(clampedEnd) - leftPercent;
+                  if (widthPercent < 1) return null;
+
                   return (
                     <div
                       key={`holiday-${holiday.userId}-${hIdx}`}
@@ -664,14 +731,21 @@ export function LiveTimelineView({
                       }}
                     >
                       <div
-                        className="absolute top-0.5 bottom-0.5 left-0 right-0 rounded-md flex items-center px-2 overflow-hidden text-xs bg-amber-100 border-2 border-amber-400 border-dashed opacity-70"
-                        title={`${holiday.staffName} - ${absenceLabel}`}
+                        className="absolute top-0.5 bottom-0.5 rounded-md flex flex-col justify-center px-2 overflow-hidden text-xs bg-amber-100 border-2 border-amber-400 border-dashed opacity-70"
+                        style={{
+                          left: `${leftPercent}%`,
+                          width: `${widthPercent}%`,
+                          minWidth: '50px',
+                        }}
+                        title={`${holiday.staffName} - ${absenceLabel} · would have worked ${format(holiday.start, "HH:mm")} - ${format(holiday.end, "HH:mm")}`}
                       >
                         <div className="font-semibold truncate flex items-center gap-1">
                           <Palmtree className="h-3 w-3 text-amber-600 flex-shrink-0" />
                           {holiday.staffName}
                         </div>
-                        <span className="text-[10px] text-amber-700 ml-2">{absenceLabel}</span>
+                        <div className="text-[10px] text-amber-700 truncate">
+                          {absenceLabel} · {format(holiday.start, "HH:mm")} - {format(holiday.end, "HH:mm")}
+                        </div>
                       </div>
                     </div>
                   );
@@ -679,7 +753,9 @@ export function LiveTimelineView({
               </div>
             </div>
           );
-        })}
+            })}
+          </div>
+        ))}
       </div>
     </div>
   );
