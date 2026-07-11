@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink, Handshake } from "lucide-react";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink, Handshake, Settings } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,7 @@ import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterva
 import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
+import { StaffSettingsDialog } from "./StaffSettingsDialog";
 import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItemsManager";
@@ -360,6 +361,7 @@ export function MyHRProfile() {
   // Admin staff selection
   const [allStaff, setAllStaff] = useState<UserProfile[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
 
   // Fetch all staff for admin dropdown
   useEffect(() => {
@@ -1313,8 +1315,23 @@ export function MyHRProfile() {
           <p className="text-muted-foreground">
             {isAdmin && selectedUserId !== user?.id ? `${selectedUserName}'s HR profile has not been set up yet.` : 'Your HR profile has not been set up yet. Please contact your administrator.'}
           </p>
+          {isAdmin && selectedUserId && (
+            <Button className="mt-4" onClick={() => setSettingsDialogOpen(true)}>
+              <Settings className="h-4 w-4 mr-2" />
+              Set Up Profile
+            </Button>
+          )}
         </CardContent>
       </Card>
+
+      {isAdmin && (
+        <StaffSettingsDialog
+          userId={selectedUserId}
+          open={settingsDialogOpen}
+          onOpenChange={setSettingsDialogOpen}
+          onSaved={() => selectedUserId && fetchData(selectedUserId)}
+        />
+      )}
     </div>;
   }
   const allowanceInfo = calculateHolidayAllowance(hrProfile.start_date);
@@ -1339,9 +1356,22 @@ export function MyHRProfile() {
                   </SelectContent>
                 </Select>
               </div>
+              <Button variant="outline" onClick={() => setSettingsDialogOpen(true)} className="flex-shrink-0">
+                <Settings className="h-4 w-4 mr-2" />
+                Edit Settings
+              </Button>
             </div>
           </CardContent>
         </Card>}
+
+      {isAdmin && (
+        <StaffSettingsDialog
+          userId={selectedUserId}
+          open={settingsDialogOpen}
+          onOpenChange={setSettingsDialogOpen}
+          onSaved={() => selectedUserId && fetchData(selectedUserId)}
+        />
+      )}
 
       {/* Profile Overview */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
