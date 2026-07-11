@@ -271,6 +271,7 @@ export function handoverClientsSummary(s: HolidayHandoverStatus): string | null 
 export interface UpcomingClientLeave {
   userId: string;
   staffName: string;
+  staffEmail: string | null;
   startDate: string;
   endDate: string;
   /** 0 = starts today, negative = leave is already underway. */
@@ -332,6 +333,7 @@ export async function getUpcomingLeaveForClients(
     .select("user_id, display_name, email")
     .in("user_id", Array.from(new Set(holidays.map(h => h.user_id))));
   const nameByUser = new Map((profiles || []).map(p => [p.user_id, (p.display_name || p.email || "Unknown").trim()]));
+  const emailByUser = new Map((profiles || []).map(p => [p.user_id, p.email || null]));
 
   const holidaysByUser = new Map<string, { start_date: string; end_date: string; no_cover_dates: string[] | null }[]>();
   for (const h of holidays) {
@@ -357,6 +359,7 @@ export async function getUpcomingLeaveForClients(
     result.set(client, {
       userId: best.userId,
       staffName: nameByUser.get(best.userId) || "Unknown",
+      staffEmail: emailByUser.get(best.userId) ?? null,
       startDate: best.start_date,
       endDate: best.end_date,
       daysUntil,
@@ -411,6 +414,7 @@ export async function getUpcomingLeaveByAllClients(): Promise<Map<string, Upcomi
     .select("user_id, display_name, email")
     .in("user_id", userIds);
   const nameByUser = new Map((profiles || []).map(p => [p.user_id, (p.display_name || p.email || "Unknown").trim()]));
+  const emailByUser = new Map((profiles || []).map(p => [p.user_id, p.email || null]));
 
   const today = new Date(todayISO);
   // Holidays are ordered by start_date ascending, so the first holiday that
@@ -427,6 +431,7 @@ export async function getUpcomingLeaveByAllClients(): Promise<Map<string, Upcomi
       result.set(client, {
         userId: h.user_id,
         staffName: nameByUser.get(h.user_id) || "Unknown",
+        staffEmail: emailByUser.get(h.user_id) ?? null,
         startDate: h.start_date,
         endDate: h.end_date,
         daysUntil,

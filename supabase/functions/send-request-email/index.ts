@@ -40,12 +40,15 @@ const isHolidayType = (rt: string | undefined): boolean =>
 const clientHandoverButton = (client: string): string =>
   `<a href="${APP_URL}/public/schedule/${encodeURIComponent(client)}" style="display:inline-block; background-color:${BRAND_COLOR}; color:#ffffff; padding:10px 18px; border-radius:8px; text-decoration:none; font-weight:600; font-size:13px; margin:4px 8px 4px 0;">Open ${client} handover →</a>`;
 
+const HANDOVER_VIDEO_URL = "https://www.youtube.com/watch?v=VGzR7cR1npA";
+
 const handoverBlock = (title: string, intro: string, clients: string[]): string =>
   clients.length === 0 ? "" : `
     <div style="background:#f5f3ff; border:1px solid #ddd6fe; border-radius:8px; padding:16px 18px; margin-bottom:24px;">
       <p style="color:#4c1d95; font-size:15px; font-weight:600; margin:0 0 8px;">📋 ${title}</p>
       <p style="color:#374151; font-size:14px; margin:0 0 14px;">${intro}</p>
       <div>${clients.map(clientHandoverButton).join("")}</div>
+      <p style="color:#374151; font-size:13px; margin:14px 0 0;">📺 Not sure how the Handover Tracker works? <a href="${HANDOVER_VIDEO_URL}" style="color:${BRAND_COLOR}; font-weight:600; text-decoration:none;">Watch this short guide</a>.</p>
     </div>`;
 
 const getRequestTypeLabel = (requestType: string | undefined): string => {

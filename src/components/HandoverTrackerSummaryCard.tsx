@@ -10,7 +10,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Trash2, ClipboardList, Plane, MessageCircle } from "lucide-react";
+import { Trash2, ClipboardList, Plane, MessageCircle, Mail, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { ClientHandoverTracker } from "./ClientHandoverTracker";
 import { getUpcomingLeaveByAllClients, type UpcomingClientLeave } from "@/lib/handoverStatus";
@@ -96,6 +96,32 @@ export function HandoverTrackerSummaryCard() {
       toast.success(`Cleared handover tracker for ${clientName}`);
     },
     onError: (e: any) => toast.error(e.message || "Failed to clear tracker"),
+  });
+
+  // Email equivalent of the "Copy message" WhatsApp nudge.
+  const emailNudgeMutation = useMutation({
+    mutationFn: async ({ staffName, leave, items }: { staffName: string; leave: UpcomingClientLeave; items: GroupItem[] }) => {
+      if (!leave.staffEmail) throw new Error(`No email address on file for ${staffName}`);
+      const { error } = await supabase.functions.invoke("send-handover-nudge", {
+        body: {
+          recipientEmail: leave.staffEmail,
+          recipientName: staffName,
+          leaveStart: leave.startDate,
+          leaveEnd: leave.endDate,
+          daysUntil: leave.daysUntil,
+          ongoing: leave.ongoing,
+          anyStarted: items.some(i => !i.notStarted && i.overallProgress > 0),
+          clients: items.map(i => ({
+            client: i.client,
+            statusLabel: i.notStarted || i.overallProgress === 0 ? "not started" : `${i.overallProgress}% complete`,
+          })),
+        },
+      });
+      if (error) throw error;
+    },
+    onSuccess: (_d, { staffName, leave }) =>
+      toast.success(`Handover reminder emailed to ${staffName} (${leave.staffEmail})`),
+    onError: (e: any) => toast.error(e.message || "Failed to send email"),
   });
 
   const { clientsWithAnyTasks, groupedBase } = useMemo(() => {
@@ -273,23 +299,41 @@ export function HandoverTrackerSummaryCard() {
                     </div>
                   </AccordionTrigger>
                   {leave && staffName && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="flex-shrink-0"
-                      title="Copy a WhatsApp message asking them to start or finish their handover"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const msg = buildWhatsAppMessage(staffName, leave, items);
-                        navigator.clipboard
-                          .writeText(msg)
-                          .then(() => toast.success(`WhatsApp message for ${staffName} copied — paste it into your chat`))
-                          .catch(() => toast.error("Couldn't copy to clipboard"));
-                      }}
-                    >
-                      <MessageCircle className="h-4 w-4 mr-1" />
-                      Copy message
-                    </Button>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        title="Copy a WhatsApp message asking them to start or finish their handover"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const msg = buildWhatsAppMessage(staffName, leave, items);
+                          navigator.clipboard
+                            .writeText(msg)
+                            .then(() => toast.success(`WhatsApp message for ${staffName} copied — paste it into your chat`))
+                            .catch(() => toast.error("Couldn't copy to clipboard"));
+                        }}
+                      >
+                        <MessageCircle className="h-4 w-4 mr-1" />
+                        Copy message
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={emailNudgeMutation.isPending || !leave.staffEmail}
+                        title={leave.staffEmail
+                          ? `Email this reminder to ${leave.staffEmail}`
+                          : `No email address on file for ${staffName}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          emailNudgeMutation.mutate({ staffName, leave, items });
+                        }}
+                      >
+                        {emailNudgeMutation.isPending
+                          ? <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                          : <Mail className="h-4 w-4 mr-1" />}
+                        Send email
+                      </Button>
+                    </div>
                   )}
                 </div>
                 <AccordionContent className="pb-2">

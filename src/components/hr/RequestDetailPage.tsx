@@ -1092,107 +1092,108 @@ Care Cuddle Team`;
             </CardContent>
           </Card>
 
-          {/* Handover Status — must be complete before this leave starts */}
-          {isHolidayRequest && request.status === 'approved' && handoverStatus && handoverStatus.status === 'not_required' && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 flex-wrap">
-                  <CheckCircle2 className="h-5 w-5 text-success" />
-                  Handover Status
-                  <Badge variant="outline" className="bg-muted text-muted-foreground">
-                    Not required
-                  </Badge>
-                </CardTitle>
-                <CardDescription>
-                  This holiday is marked as <strong>no cover required</strong>, so no handover is needed.
-                </CardDescription>
-              </CardHeader>
-            </Card>
-          )}
-          {isHolidayRequest && request.status === 'approved' && handoverStatus && handoverStatus.status !== 'none' && handoverStatus.status !== 'not_required' && (() => {
-            const daysUntil = differenceInCalendarDays(parseISO(request.start_date), new Date());
-            const isReady = handoverStatus.status === 'complete';
-            const urgent = !isReady && daysUntil <= 3;
-            const readyCount = handoverStatus.clients.filter(c => c.taskCount > 0 && c.avgProgress >= 100).length;
-            const multiClient = handoverStatus.clients.length > 1;
-            return (
-              <Card className={cn(!isReady && (urgent ? "border-destructive/50 border-2" : "border-amber-400/50 border-2"))}>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 flex-wrap">
-                    {isReady ? (
-                      <CheckCircle2 className="h-5 w-5 text-success" />
-                    ) : (
-                      <AlertCircle className={cn("h-5 w-5", urgent ? "text-destructive" : "text-amber-500")} />
-                    )}
-                    Handover Status
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        isReady
-                          ? "bg-success/20 text-success border-success"
-                          : urgent
-                            ? "bg-destructive/20 text-destructive border-destructive"
-                            : "bg-amber-500/20 text-amber-700 border-amber-500"
-                      )}
-                    >
-                      {HANDOVER_STATUS_LABEL[handoverStatus.status]}
-                    </Badge>
-                  </CardTitle>
-                  <CardDescription>
-                    {multiClient && (
-                      <span className="block font-medium text-foreground mb-0.5">
-                        This leave requires {handoverStatus.clients.length} separate handovers (one per client) — {readyCount} of {handoverStatus.clients.length} ready.
-                      </span>
-                    )}
-                    {isReady
-                      ? "All relevant clients' handovers are complete."
-                      : daysUntil >= 0
-                        ? `Every client's handover must be completed before leave starts${daysUntil <= 7 ? ` — ${daysUntil} day${daysUntil !== 1 ? 's' : ''} left` : ''}.`
-                        : "This leave has already started and handover is not yet complete."}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {handoverStatus.clients.map(c => (
-                    <div key={c.client} className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
-                      <span className="text-sm font-medium truncate">{c.client}</span>
-                      <div className="flex items-center gap-3 flex-shrink-0">
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            c.avgProgress >= 100 && c.taskCount > 0
-                              ? "bg-success/20 text-success border-success"
-                              : c.avgProgress > 0
-                                ? "bg-amber-500/20 text-amber-700 border-amber-500"
-                                : "bg-destructive/20 text-destructive border-destructive"
-                          )}
-                        >
-                          {c.taskCount > 0 ? `${c.avgProgress}% · ${c.taskCount} task${c.taskCount !== 1 ? 's' : ''}` : 'Not started'}
-                        </Badge>
-                        <a
-                          href={`/public/schedule/${encodeURIComponent(c.client)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-primary hover:underline"
-                        >
-                          Open tracker
-                        </a>
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            );
-          })()}
-
-          {/* Cover Arrangements */}
+          {/* Cover & Handover — one combined view: handover status for the
+              leave first, then the cover arrangements that depend on it */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <User className="h-5 w-5" />
-                Cover Arrangements
+                Cover & Handover
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* Handover status — must be complete before this leave starts */}
+              {isHolidayRequest && request.status === 'approved' && handoverStatus && handoverStatus.status === 'not_required' && (
+                <>
+                  <div className="flex items-center gap-3 p-4 bg-muted/40 border rounded-lg">
+                    <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0" />
+                    <div>
+                      <p className="font-medium">Handover not required</p>
+                      <p className="text-sm text-muted-foreground">No cover is needed for this leave, so no handover is needed.</p>
+                    </div>
+                  </div>
+                  <Separator />
+                </>
+              )}
+              {isHolidayRequest && request.status === 'approved' && handoverStatus && handoverStatus.status !== 'none' && handoverStatus.status !== 'not_required' && (() => {
+                const daysUntil = differenceInCalendarDays(parseISO(request.start_date), new Date());
+                const isReady = handoverStatus.status === 'complete';
+                const urgent = !isReady && daysUntil <= 3;
+                const readyCount = handoverStatus.clients.filter(c => c.taskCount > 0 && c.avgProgress >= 100).length;
+                const multiClient = handoverStatus.clients.length > 1;
+                return (
+                  <>
+                    <div className={cn(
+                      "rounded-lg border p-4 space-y-3",
+                      !isReady && (urgent ? "border-destructive/50 bg-destructive/5" : "border-amber-400/50 bg-amber-500/5")
+                    )}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {isReady ? (
+                          <CheckCircle2 className="h-5 w-5 text-success" />
+                        ) : (
+                          <AlertCircle className={cn("h-5 w-5", urgent ? "text-destructive" : "text-amber-500")} />
+                        )}
+                        <span className="font-semibold">Handover Status</span>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            isReady
+                              ? "bg-success/20 text-success border-success"
+                              : urgent
+                                ? "bg-destructive/20 text-destructive border-destructive"
+                                : "bg-amber-500/20 text-amber-700 border-amber-500"
+                          )}
+                        >
+                          {HANDOVER_STATUS_LABEL[handoverStatus.status]}
+                        </Badge>
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {multiClient && (
+                          <span className="block font-medium text-foreground mb-0.5">
+                            This leave requires {handoverStatus.clients.length} separate handovers (one per client) — {readyCount} of {handoverStatus.clients.length} ready.
+                          </span>
+                        )}
+                        {isReady
+                          ? "All relevant clients' handovers are complete."
+                          : daysUntil >= 0
+                            ? `Every client's handover must be completed before leave starts${daysUntil <= 7 ? ` — ${daysUntil} day${daysUntil !== 1 ? 's' : ''} left` : ''}.`
+                            : "This leave has already started and handover is not yet complete."}
+                      </div>
+                      <div className="space-y-2">
+                        {handoverStatus.clients.map(c => (
+                          <div key={c.client} className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2.5">
+                            <span className="text-sm font-medium truncate">{c.client}</span>
+                            <div className="flex items-center gap-3 flex-shrink-0">
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  c.avgProgress >= 100 && c.taskCount > 0
+                                    ? "bg-success/20 text-success border-success"
+                                    : c.avgProgress > 0
+                                      ? "bg-amber-500/20 text-amber-700 border-amber-500"
+                                      : "bg-destructive/20 text-destructive border-destructive"
+                                )}
+                              >
+                                {c.taskCount > 0 ? `${c.avgProgress}% · ${c.taskCount} task${c.taskCount !== 1 ? 's' : ''}` : 'Not started'}
+                              </Badge>
+                              <a
+                                href={`/public/schedule/${encodeURIComponent(c.client)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm text-primary hover:underline"
+                              >
+                                Open tracker
+                              </a>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <Separator />
+                  </>
+                );
+              })()}
+
               {/* Cover Status Section */}
               {linkedHoliday?.no_cover_required ? (
                 <div className="flex items-center gap-3 p-4 bg-success/10 border border-success/20 rounded-lg">
