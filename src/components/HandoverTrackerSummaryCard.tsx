@@ -10,16 +10,60 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Trash2, ClipboardList, Plane } from "lucide-react";
+import { Trash2, ClipboardList, Plane, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { ClientHandoverTracker } from "./ClientHandoverTracker";
 import { getUpcomingLeaveByAllClients, type UpcomingClientLeave } from "@/lib/handoverStatus";
+
+const APP_URL = "https://www.care-cuddle-academy.co.uk";
 
 interface HandoverTaskRow {
   id: string;
   client_name: string;
   progress: number;
   target_date: string | null;
+}
+
+interface GroupItem {
+  client: string;
+  count: number;
+  overallProgress: number;
+  latestTargetDate: string | null;
+  leave: UpcomingClientLeave | null;
+  notStarted: boolean;
+}
+
+const fmtDate = (d: string) =>
+  new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+
+/**
+ * Ready-to-paste WhatsApp nudge for a staff member's outstanding handovers —
+ * "start" wording when nothing is underway, "finish" wording otherwise, with
+ * a tracker link per client.
+ */
+function buildWhatsAppMessage(staffName: string, leave: UpcomingClientLeave, items: GroupItem[]): string {
+  const firstName = staffName.trim().split(/\s+/)[0];
+  const dates = leave.startDate === leave.endDate
+    ? fmtDate(leave.startDate)
+    : `${fmtDate(leave.startDate)} – ${fmtDate(leave.endDate)}`;
+  const timing = leave.ongoing
+    ? "your leave has already started"
+    : leave.daysUntil === 0
+      ? "your leave starts today"
+      : `your leave starts in ${leave.daysUntil} day${leave.daysUntil === 1 ? "" : "s"}`;
+  const anyStarted = items.some(i => !i.notStarted && i.overallProgress > 0);
+  const clientLines = items.map(i => {
+    const status = i.notStarted || i.overallProgress === 0 ? "not started" : `${i.overallProgress}% complete`;
+    return `• ${i.client} — ${status}\n${APP_URL}/public/schedule/${encodeURIComponent(i.client.trim())}`;
+  });
+  const ask = anyStarted
+    ? `Please complete the outstanding handover tasks before your leave begins${items.length > 1 ? " — each client needs its own handover finished" : ""}.`
+    : `Please start your handover${items.length > 1 ? "s" : ""} as soon as you can so everything is covered before you go.`;
+  return [
+    `Hi ${firstName}, ${timing} (${dates}) and your client handover${items.length > 1 ? "s" : ""} ${items.length > 1 ? "aren't" : "isn't"} complete yet.`,
+    clientLines.join("\n\n"),
+    `${ask} Thank you! 🙏`,
+  ].join("\n\n");
 }
 
 export function HandoverTrackerSummaryCard() {
@@ -144,114 +188,177 @@ export function HandoverTrackerSummaryCard() {
           </Badge>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-5">
-        {staffGroups.map(({ staffName, leave, items }) => {
-          const fmt = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-          return (
-            <div key={staffName ?? "__no_leave__"}>
-              <div className="flex items-center gap-2 flex-wrap mb-1">
-                {leave ? (
-                  <>
-                    <Plane
-                      className={`h-4 w-4 ${
-                        leave.ongoing || leave.daysUntil <= 3
-                          ? "text-destructive"
-                          : leave.daysUntil <= 7
-                          ? "text-amber-600 dark:text-amber-400"
-                          : "text-primary"
-                      }`}
-                    />
-                    <span className="font-semibold text-foreground">{staffName}</span>
-                    <Badge
-                      variant="outline"
-                      className={`font-normal ${
-                        leave.ongoing || leave.daysUntil <= 3
-                          ? "bg-destructive/10 text-destructive border-destructive/30"
-                          : leave.daysUntil <= 7
-                          ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
-                          : "bg-primary/5 text-primary border-primary/20"
-                      }`}
-                    >
-                      {leave.ongoing ? "On leave now" : `Leave in ${leave.daysUntil}d`}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {fmt(leave.startDate)}{leave.startDate !== leave.endDate ? ` – ${fmt(leave.endDate)}` : ""}
-                      {items.length > 1 ? ` · ${items.length} client handovers` : ""}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <ClipboardList className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-semibold text-muted-foreground">No upcoming leave linked</span>
-                  </>
-                )}
-              </div>
-              <Accordion type="multiple" className="w-full pl-6">
-                {items.map(({ client, count, overallProgress, latestTargetDate, leave: itemLeave, notStarted }) => (
-                  <AccordionItem key={client} value={client} className={notStarted ? "border-dashed" : undefined}>
-                    <div className="flex items-center gap-2">
-                      <AccordionTrigger className="flex-1">
-                        <div className="flex items-center justify-between gap-2 w-full pr-2">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-foreground">{client}</span>
-                            {notStarted ? (
-                              <Badge variant="outline" className="font-normal bg-destructive/10 text-destructive border-destructive/30">
-                                Not started
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline">
-                                {count} active task{count === 1 ? "" : "s"}
-                              </Badge>
-                            )}
-                            {latestTargetDate && (
-                              <Badge variant="secondary" className="font-normal">
-                                Due {fmt(latestTargetDate)}
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 min-w-[160px]">
-                            <div className="h-2 flex-1 rounded-full bg-muted overflow-hidden">
-                              <div
-                                className="h-full bg-primary transition-all"
-                                style={{ width: `${overallProgress}%` }}
-                              />
-                            </div>
-                            <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
-                              {overallProgress}%
+      <CardContent>
+        <Accordion type="multiple" className="w-full space-y-3">
+          {staffGroups.map(({ staffName, leave, items }) => {
+            const groupKey = staffName ?? "__no_leave__";
+            const notStartedCount = items.filter((i) => i.notStarted || i.overallProgress === 0).length;
+            const avgProgress = items.length
+              ? Math.round(items.reduce((s, i) => s + i.overallProgress, 0) / items.length)
+              : 0;
+            const urgent = leave && (leave.ongoing || leave.daysUntil <= 3);
+            const soon = leave && !urgent && leave.daysUntil <= 7;
+            return (
+              <AccordionItem
+                key={groupKey}
+                value={groupKey}
+                className={`border rounded-lg px-3 ${
+                  urgent ? "border-destructive/40" : soon ? "border-amber-500/40" : ""
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <AccordionTrigger className="flex-1 hover:no-underline py-3">
+                    <div className="flex items-center justify-between gap-2 w-full pr-2">
+                      <div className="flex items-center gap-2 flex-wrap min-w-0">
+                        {leave ? (
+                          <>
+                            <Plane
+                              className={`h-4 w-4 flex-shrink-0 ${
+                                urgent
+                                  ? "text-destructive"
+                                  : soon
+                                  ? "text-amber-600 dark:text-amber-400"
+                                  : "text-primary"
+                              }`}
+                            />
+                            <span className="font-semibold text-foreground">{staffName}</span>
+                            <Badge
+                              variant="outline"
+                              className={`font-normal ${
+                                urgent
+                                  ? "bg-destructive/10 text-destructive border-destructive/30"
+                                  : soon
+                                  ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
+                                  : "bg-primary/5 text-primary border-primary/20"
+                              }`}
+                            >
+                              {leave.ongoing ? "On leave now" : `Leave in ${leave.daysUntil}d`}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground hidden sm:inline">
+                              {fmtDate(leave.startDate)}
+                              {leave.startDate !== leave.endDate ? ` – ${fmtDate(leave.endDate)}` : ""}
                             </span>
-                          </div>
+                            <Badge variant="secondary" className="font-normal">
+                              {items.length} client{items.length === 1 ? "" : "s"}
+                            </Badge>
+                            {notStartedCount > 0 && (
+                              <Badge variant="outline" className="font-normal bg-destructive/10 text-destructive border-destructive/30">
+                                {notStartedCount} not started
+                              </Badge>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <ClipboardList className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            <span className="font-semibold text-muted-foreground">No upcoming leave linked</span>
+                            <Badge variant="secondary" className="font-normal">
+                              {items.length} client{items.length === 1 ? "" : "s"}
+                            </Badge>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 min-w-[140px] flex-shrink-0">
+                        <div className="h-2 flex-1 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full bg-primary transition-all"
+                            style={{ width: `${avgProgress}%` }}
+                          />
                         </div>
-                      </AccordionTrigger>
-                      {!notStarted && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (
-                              confirm(
-                                `Clear all handover tasks for ${client}? This cannot be undone.`
-                              )
-                            ) {
-                              clearMutation.mutate(client);
-                            }
-                          }}
-                          disabled={clearMutation.isPending}
-                        >
-                          <Trash2 className="h-4 w-4 mr-1" />
-                          Clear
-                        </Button>
-                      )}
+                        <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
+                          {avgProgress}%
+                        </span>
+                      </div>
                     </div>
-                    <AccordionContent>
-                      <ClientHandoverTracker clientName={client} upcomingLeave={itemLeave} />
-                    </AccordionContent>
-                  </AccordionItem>
-                ))}
-              </Accordion>
-            </div>
-          );
-        })}
+                  </AccordionTrigger>
+                  {leave && staffName && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-shrink-0"
+                      title="Copy a WhatsApp message asking them to start or finish their handover"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const msg = buildWhatsAppMessage(staffName, leave, items);
+                        navigator.clipboard
+                          .writeText(msg)
+                          .then(() => toast.success(`WhatsApp message for ${staffName} copied — paste it into your chat`))
+                          .catch(() => toast.error("Couldn't copy to clipboard"));
+                      }}
+                    >
+                      <MessageCircle className="h-4 w-4 mr-1" />
+                      Copy message
+                    </Button>
+                  )}
+                </div>
+                <AccordionContent className="pb-2">
+                  <Accordion type="multiple" className="w-full pl-4 sm:pl-6">
+                    {items.map(({ client, count, overallProgress, latestTargetDate, leave: itemLeave, notStarted }) => (
+                      <AccordionItem key={client} value={`${groupKey}::${client}`} className={notStarted ? "border-dashed" : undefined}>
+                        <div className="flex items-center gap-2">
+                          <AccordionTrigger className="flex-1">
+                            <div className="flex items-center justify-between gap-2 w-full pr-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium text-foreground">{client}</span>
+                                {notStarted ? (
+                                  <Badge variant="outline" className="font-normal bg-destructive/10 text-destructive border-destructive/30">
+                                    Not started
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline">
+                                    {count} active task{count === 1 ? "" : "s"}
+                                  </Badge>
+                                )}
+                                {latestTargetDate && (
+                                  <Badge variant="secondary" className="font-normal">
+                                    Due {fmtDate(latestTargetDate)}
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 min-w-[140px]">
+                                <div className="h-2 flex-1 rounded-full bg-muted overflow-hidden">
+                                  <div
+                                    className="h-full bg-primary transition-all"
+                                    style={{ width: `${overallProgress}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
+                                  {overallProgress}%
+                                </span>
+                              </div>
+                            </div>
+                          </AccordionTrigger>
+                          {!notStarted && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (
+                                  confirm(
+                                    `Clear all handover tasks for ${client}? This cannot be undone.`
+                                  )
+                                ) {
+                                  clearMutation.mutate(client);
+                                }
+                              }}
+                              disabled={clearMutation.isPending}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Clear
+                            </Button>
+                          )}
+                        </div>
+                        <AccordionContent>
+                          <ClientHandoverTracker clientName={client} upcomingLeave={itemLeave} />
+                        </AccordionContent>
+                      </AccordionItem>
+                    ))}
+                  </Accordion>
+                </AccordionContent>
+              </AccordionItem>
+            );
+          })}
+        </Accordion>
       </CardContent>
     </Card>
   );
