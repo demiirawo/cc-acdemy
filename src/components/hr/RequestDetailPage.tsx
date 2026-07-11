@@ -673,6 +673,12 @@ export function RequestDetailPage({
       queryClient.invalidateQueries({ queryKey: ["linked-holidays-for-requests"] });
       queryClient.invalidateQueries({ queryKey: ["linked-holiday", request?.id] });
       queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
+      // Handover surfaces (dashboard trackers + banners) derive from cover
+      // requirements — refresh them so no-cover clients drop out immediately.
+      queryClient.invalidateQueries({ queryKey: ["handover-summary-upcoming-leave-all"] });
+      queryClient.invalidateQueries({ queryKey: ["client-upcoming-leave"] });
+      queryClient.invalidateQueries({ queryKey: ["holiday-handover-status"] });
+      queryClient.invalidateQueries({ queryKey: ["holiday-handover-status-batch"] });
       toast.success("Cover requirement updated");
     },
     onError: (error) => {
@@ -701,6 +707,12 @@ export function RequestDetailPage({
       queryClient.invalidateQueries({ queryKey: ["linked-holidays-for-requests"] });
       queryClient.invalidateQueries({ queryKey: ["linked-holiday", request?.id] });
       queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
+      // Handover surfaces (dashboard trackers + banners) derive from cover
+      // requirements — refresh them so no-cover clients drop out immediately.
+      queryClient.invalidateQueries({ queryKey: ["handover-summary-upcoming-leave-all"] });
+      queryClient.invalidateQueries({ queryKey: ["client-upcoming-leave"] });
+      queryClient.invalidateQueries({ queryKey: ["holiday-handover-status"] });
+      queryClient.invalidateQueries({ queryKey: ["holiday-handover-status-batch"] });
       invalidateAllCoverageQueries(queryClient);
       toast.success("Cover requirement updated");
     },
