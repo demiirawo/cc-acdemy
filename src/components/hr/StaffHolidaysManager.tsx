@@ -238,7 +238,7 @@ export function StaffHolidaysManager() {
       // Handover status per approved holiday — must be complete before the leave.
       const approvedHolidays = mergedHolidays.filter(h => h.status === 'approved');
       setHandoverStatusMap(await computeHolidayHandoverStatusBatch(
-        approvedHolidays.map(h => ({ id: h.id, userId: h.user_id, startDate: h.start_date, endDate: h.end_date, noCoverRequired: h.no_cover_required }))
+        approvedHolidays.map(h => ({ id: h.id, userId: h.user_id, startDate: h.start_date, endDate: h.end_date, noCoverRequired: h.no_cover_required, noCoverDates: h.no_cover_dates }))
       ));
     } catch (error) {
       console.error('Error fetching holidays:', error);

@@ -527,18 +527,39 @@ const handler = async (req: Request): Promise<Response> => {
           // leave" is measured against. One holiday can require SEVERAL handovers
           // (one per client), and every one must be done. A client with zero tasks
           // counts as not-started, matching the shared status definition used
-          // elsewhere. A no-cover-required holiday needs no handover at all.
+          // elsewhere. A no-cover-required holiday needs no handover at all, and
+          // neither does a client whose every in-window shift date is listed in
+          // no_cover_dates (matches src/lib/handoverStatus.ts).
+          type PatternRow = { client_name: string | null; days_of_week: number[] | null; start_date: string; end_date: string | null; recurrence_interval: string | null };
           const { data: takerPatterns } = coverNotNeeded
-            ? { data: [] as { client_name: string | null }[] }
+            ? { data: [] as PatternRow[] }
             : await supabaseClient
                 .from("recurring_shift_patterns")
-                .select("client_name")
+                .select("client_name, days_of_week, start_date, end_date, recurrence_interval")
                 .eq("user_id", h.user_id)
                 .lte("start_date", h.end_date)
                 .or(`end_date.is.null,end_date.gte.${h.start_date}`);
-          const handoverClients = [...new Set((takerPatterns || [])
-            .map(p => p.client_name)
-            .filter((c): c is string => !!c && c !== "Care Cuddle"))];
+          const patternRunsOnDate = (p: PatternRow, dateStr: string): boolean => {
+            if (dateStr < p.start_date || (p.end_date && dateStr > p.end_date)) return false;
+            const interval = p.recurrence_interval || "weekly";
+            if (interval === "one_off") return dateStr === p.start_date;
+            const d = new Date(dateStr);
+            if (interval === "monthly") return d.getUTCDate() === new Date(p.start_date).getUTCDate();
+            if (interval !== "daily" && !(p.days_of_week || []).includes(d.getUTCDay())) return false;
+            if (interval === "biweekly") {
+              const daysDiff = Math.floor((d.getTime() - new Date(p.start_date).getTime()) / (1000 * 60 * 60 * 24));
+              return Math.floor(daysDiff / 7) % 2 === 0;
+            }
+            return true;
+          };
+          const clientNeedsCover = new Map<string, boolean>();
+          for (const p of takerPatterns || []) {
+            const client = (p.client_name || "").trim();
+            if (!client || client === "Care Cuddle") continue;
+            const needs = holidayDates.some(d => !noCoverInfo.noCoverDates.has(d) && patternRunsOnDate(p, d));
+            clientNeedsCover.set(client, (clientNeedsCover.get(client) || false) || needs);
+          }
+          const handoverClients = [...clientNeedsCover.entries()].filter(([, needs]) => needs).map(([c]) => c);
 
           const { data: handoverTasksData } = handoverClients.length > 0
             ? await supabaseClient.from("client_handover_tasks").select("client_name, progress").in("client_name", handoverClients)

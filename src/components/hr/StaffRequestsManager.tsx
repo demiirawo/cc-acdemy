@@ -160,7 +160,7 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
   const { data: handoverStatusMap } = useQuery({
     queryKey: ["holiday-handover-status-batch", linkedHolidayIds],
     queryFn: () => computeHolidayHandoverStatusBatch(
-      linkedHolidays.map(h => ({ id: h.id, userId: h.user_id, startDate: h.start_date, endDate: h.end_date, noCoverRequired: h.no_cover_required }))
+      linkedHolidays.map(h => ({ id: h.id, userId: h.user_id, startDate: h.start_date, endDate: h.end_date, noCoverRequired: h.no_cover_required, noCoverDates: h.no_cover_dates }))
     ),
     enabled: linkedHolidays.length > 0,
   });

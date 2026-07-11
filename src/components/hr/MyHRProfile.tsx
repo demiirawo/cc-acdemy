@@ -600,24 +600,29 @@ export function MyHRProfile() {
       const upcomingOrCurrentHoliday = (holidayData || [])
         .filter(h => h.status === 'approved' && h.end_date >= todayISO)
         .sort((a, b) => a.start_date.localeCompare(b.start_date))[0] || null;
-      setNextHoliday(upcomingOrCurrentHoliday
-        ? {
-            start_date: upcomingOrCurrentHoliday.start_date,
-            end_date: upcomingOrCurrentHoliday.end_date,
-            noCoverRequired: !!upcomingOrCurrentHoliday.no_cover_required,
-          }
-        : null);
 
-      if (upcomingOrCurrentHoliday && !upcomingOrCurrentHoliday.no_cover_required) {
-        const { clients } = await computeHolidayHandoverStatus(
-          targetUserId, upcomingOrCurrentHoliday.start_date, upcomingOrCurrentHoliday.end_date
+      if (upcomingOrCurrentHoliday) {
+        const { status, clients } = await computeHolidayHandoverStatus(
+          targetUserId, upcomingOrCurrentHoliday.start_date, upcomingOrCurrentHoliday.end_date,
+          {
+            noCoverRequired: !!upcomingOrCurrentHoliday.no_cover_required,
+            noCoverDates: upcomingOrCurrentHoliday.no_cover_dates || [],
+          }
         );
+        // "not_required" covers both the holiday-level flag and every shift
+        // being individually marked no-cover — either way, no handover needed.
+        setNextHoliday({
+          start_date: upcomingOrCurrentHoliday.start_date,
+          end_date: upcomingOrCurrentHoliday.end_date,
+          noCoverRequired: status === 'not_required',
+        });
         setOwnHandovers(
           clients
             .map(c => ({ client: c.client, avgProgress: c.avgProgress, taskCount: c.taskCount, latestTarget: null }))
             .sort((a, b) => a.client.localeCompare(b.client))
         );
       } else {
+        setNextHoliday(null);
         setOwnHandovers([]);
       }
 
@@ -1771,8 +1776,8 @@ export function MyHRProfile() {
                   <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2.5 text-sm text-success">
                     <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
                     <span>
-                      Your leave starting {format(parseISO(nextHoliday.start_date), 'd MMM yyyy')} is marked as{' '}
-                      <strong>no cover required</strong> — no handover is needed for it.
+                      No cover is needed for your leave starting {format(parseISO(nextHoliday.start_date), 'd MMM yyyy')} —{' '}
+                      <strong>no handover is required</strong>.
                     </span>
                   </div>
                 )}

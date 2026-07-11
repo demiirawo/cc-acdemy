@@ -428,15 +428,17 @@ export function RequestDetailPage({
   });
   // Handover status for this leave — must be complete before the leave starts,
   // unless the holiday is marked no-cover-required (then none is needed).
+  // Per-date no-cover marks count too: a client whose every shift during the
+  // leave is marked no-cover needs no handover.
   const {
     data: handoverStatus,
     refetch: refetchHandoverStatus
   } = useQuery({
-    queryKey: ["holiday-handover-status", request?.user_id, request?.start_date, request?.end_date, linkedHoliday?.no_cover_required ?? false],
+    queryKey: ["holiday-handover-status", request?.user_id, request?.start_date, request?.end_date, linkedHoliday?.no_cover_required ?? false, (linkedHoliday?.no_cover_dates || []).join(",")],
     enabled: !!request && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type) && request.status === 'approved',
     queryFn: () => computeHolidayHandoverStatus(
       request!.user_id, request!.start_date, request!.end_date,
-      { noCoverRequired: !!linkedHoliday?.no_cover_required }
+      { noCoverRequired: !!linkedHoliday?.no_cover_required, noCoverDates: linkedHoliday?.no_cover_dates || [] }
     ),
   });
   useEffect(() => {
