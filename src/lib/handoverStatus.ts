@@ -277,6 +277,11 @@ export interface UpcomingClientLeave {
   /** 0 = starts today, negative = leave is already underway. */
   daysUntil: number;
   ongoing: boolean;
+  /** Names of staff assigned to cover THIS client's shifts during the leave
+   * (from approved cover requests whose covered dates touch this client's
+   * shift dates). Empty = no cover assigned yet. Populated by
+   * getUpcomingLeaveByAllClients. */
+  coverNames?: string[];
 }
 
 /**
@@ -389,7 +394,7 @@ export async function getUpcomingLeaveByAllClients(): Promise<Map<string, Upcomi
 
   const { data: rawHolidays } = await supabase
     .from("staff_holidays")
-    .select("user_id, start_date, end_date, no_cover_required, no_cover_dates")
+    .select("id, user_id, start_date, end_date, no_cover_required, no_cover_dates")
     .eq("status", "approved")
     .gte("end_date", todayISO)
     .order("start_date", { ascending: true });
@@ -409,10 +414,21 @@ export async function getUpcomingLeaveByAllClients(): Promise<Map<string, Upcomi
     patternsByUser.get(p.user_id)!.push(p);
   });
 
+  // Approved cover requests for these holidays: shift swaps covering the
+  // person, plus overtime linked to the holiday. Used to name who each
+  // client's tasks are being handed over TO.
+  const holidayIds = holidays.map(h => h.id);
+  const { data: coverRequests } = await supabase
+    .from("staff_requests")
+    .select("user_id, request_type, swap_with_user_id, linked_holiday_id, start_date, end_date, coverage_metadata")
+    .eq("status", "approved")
+    .or(`swap_with_user_id.in.(${userIds.join(",")}),linked_holiday_id.in.(${holidayIds.join(",")})`);
+
+  const coverUserIds = Array.from(new Set((coverRequests || []).map(r => r.user_id)));
   const { data: profiles } = await supabase
     .from("profiles")
     .select("user_id, display_name, email")
-    .in("user_id", userIds);
+    .in("user_id", Array.from(new Set([...userIds, ...coverUserIds])));
   const nameByUser = new Map((profiles || []).map(p => [p.user_id, (p.display_name || p.email || "Unknown").trim()]));
   const emailByUser = new Map((profiles || []).map(p => [p.user_id, p.email || null]));
 
@@ -425,9 +441,29 @@ export async function getUpcomingLeaveByAllClients(): Promise<Map<string, Upcomi
     const byClient = patternsByClient(patternsByUser.get(h.user_id) || []);
     const noCover = new Set((h.no_cover_dates as string[] | null) || []);
     const daysUntil = differenceInCalendarDays(new Date(h.start_date), today);
+    const holidayCovers = (coverRequests || []).filter(r =>
+      r.swap_with_user_id === h.user_id || r.linked_holiday_id === h.id
+    );
     for (const [client, ps] of byClient.entries()) {
       if (result.has(client)) continue;
       if (!needsCoverInWindow(ps, h.start_date, h.end_date, noCover)) continue;
+      // This client's shift dates during the leave that still need cover.
+      const clientDates = Array.from(new Set(
+        ps.flatMap(p => patternDatesInWindow(p, h.start_date, h.end_date)).filter(d => !noCover.has(d))
+      ));
+      const coverNames = Array.from(new Set(
+        holidayCovers
+          .filter(r => {
+            const meta = r.coverage_metadata as { covered_dates?: string[] } | null;
+            const coveredDates = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0
+              ? meta!.covered_dates!
+              : null;
+            return coveredDates
+              ? clientDates.some(d => coveredDates.includes(d))
+              : clientDates.some(d => d >= r.start_date && d <= r.end_date);
+          })
+          .map(r => nameByUser.get(r.user_id) || "Unknown")
+      ));
       result.set(client, {
         userId: h.user_id,
         staffName: nameByUser.get(h.user_id) || "Unknown",
@@ -436,6 +472,7 @@ export async function getUpcomingLeaveByAllClients(): Promise<Map<string, Upcomi
         endDate: h.end_date,
         daysUntil,
         ongoing: daysUntil < 0,
+        coverNames,
       });
     }
   }

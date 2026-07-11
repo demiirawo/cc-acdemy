@@ -22,6 +22,8 @@ interface NudgeClient {
   client: string;
   /** "not started" or e.g. "40% complete" */
   statusLabel: string;
+  /** Who is covering this client's shifts — the person to hand over to. */
+  coverNames?: string[];
 }
 
 interface NudgeRequest {
@@ -65,11 +67,17 @@ serve(async (req: Request): Promise<Response> => {
       ? `Please complete the outstanding handover tasks before your leave begins${plural ? " — each client needs its own handover finished" : ""}. Thank you! 🙏`
       : `Please start your handover${plural ? "s" : ""} as soon as you can so everything is covered before you go. Thank you! 🙏`;
 
-    const clientRows = clients.map(c => `
+    const clientRows = clients.map(c => {
+      const covers = c.coverNames || [];
+      const handingTo = covers.length > 0
+        ? ` — hand over to <strong>${covers.join(" & ")}</strong> (your cover)`
+        : ` — <span style="color:#b45309;">no cover assigned yet</span>`;
+      return `
       <li style="margin-bottom:10px; font-size:14px;">
-        <strong>${c.client}</strong> — ${c.statusLabel} ·
+        <strong>${c.client}</strong> — ${c.statusLabel}${handingTo} ·
         <a href="${APP_URL}/public/schedule/${encodeURIComponent(c.client.trim())}" style="color:${BRAND_COLOR}; font-weight:600; text-decoration:none;">Open handover tracker</a>
-      </li>`).join("");
+      </li>`;
+    }).join("");
 
     await resend.emails.send({
       from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",

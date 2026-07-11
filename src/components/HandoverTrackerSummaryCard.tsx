@@ -55,7 +55,11 @@ function buildWhatsAppMessage(staffName: string, leave: UpcomingClientLeave, ite
   const anyStarted = items.some(i => !i.notStarted && i.overallProgress > 0);
   const clientLines = items.map(i => {
     const status = i.notStarted || i.overallProgress === 0 ? "not started" : `${i.overallProgress}% complete`;
-    return `• ${i.client} — ${status}\n${APP_URL}/public/schedule/${encodeURIComponent(i.client.trim())}`;
+    const covers = i.leave?.coverNames || [];
+    const handingTo = covers.length > 0
+      ? ` — hand over to ${covers.join(" & ")} (your cover)`
+      : ` — no cover assigned yet`;
+    return `• ${i.client} — ${status}${handingTo}\n${APP_URL}/public/schedule/${encodeURIComponent(i.client.trim())}`;
   });
   const ask = anyStarted
     ? `Please complete the outstanding handover tasks before your leave begins${items.length > 1 ? " — each client needs its own handover finished" : ""}.`
@@ -114,6 +118,7 @@ export function HandoverTrackerSummaryCard() {
           clients: items.map(i => ({
             client: i.client,
             statusLabel: i.notStarted || i.overallProgress === 0 ? "not started" : `${i.overallProgress}% complete`,
+            coverNames: i.leave?.coverNames || [],
           })),
         },
       });
