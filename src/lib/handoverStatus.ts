@@ -4,10 +4,13 @@ import { differenceInCalendarDays } from "date-fns";
 // Handover status linked to a specific period of annual leave: "relevant"
 // clients are the ones this staff member is actually scheduled for during
 // the leave window (via recurring_shift_patterns), not every client they've
-// ever worked. A client with zero handover tasks recorded counts as
+// ever worked. One holiday can therefore require SEVERAL handovers — one per
+// client — and the overall status only reads "complete" when every one of
+// them is done. A client with zero handover tasks recorded counts as
 // "not started" — the goal is a confirmed, successful handover, not merely
-// the absence of tracked tasks.
-export type HandoverStatus = "none" | "not_started" | "in_progress" | "complete";
+// the absence of tracked tasks. A holiday marked no_cover_required needs no
+// handover at all ("not_required").
+export type HandoverStatus = "none" | "not_required" | "not_started" | "in_progress" | "complete";
 
 export interface ClientHandoverStatus {
   client: string;
@@ -69,8 +72,10 @@ export async function getRelevantClientsForLeave(
 export async function computeHolidayHandoverStatus(
   userId: string,
   startDate: string,
-  endDate: string
+  endDate: string,
+  opts?: { noCoverRequired?: boolean }
 ): Promise<HolidayHandoverStatus> {
+  if (opts?.noCoverRequired) return { status: "not_required", clients: [] };
   const clientNames = await getRelevantClientsForLeave(userId, startDate, endDate);
   if (clientNames.length === 0) return { status: "none", clients: [] };
 
@@ -88,6 +93,8 @@ export interface HolidayForHandoverBatch {
   userId: string;
   startDate: string;
   endDate: string;
+  /** staff_holidays.no_cover_required — no cover means no handover is needed. */
+  noCoverRequired?: boolean;
 }
 
 /**
@@ -115,6 +122,10 @@ export async function computeHolidayHandoverStatusBatch(
   const relevantClientsByHoliday = new Map<string, string[]>();
   const allClientNames = new Set<string>();
   for (const h of holidays) {
+    if (h.noCoverRequired) {
+      relevantClientsByHoliday.set(h.id, []);
+      continue;
+    }
     const patterns = patternsByUser.get(h.userId) || [];
     const clients = Array.from(new Set(
       patterns
@@ -140,6 +151,10 @@ export async function computeHolidayHandoverStatusBatch(
   });
 
   for (const h of holidays) {
+    if (h.noCoverRequired) {
+      result.set(h.id, { status: "not_required", clients: [] });
+      continue;
+    }
     const clientNames = relevantClientsByHoliday.get(h.id) || [];
     const clients: ClientHandoverStatus[] = clientNames.map(client => {
       const g = tasksByClient.get(client);
@@ -149,6 +164,17 @@ export async function computeHolidayHandoverStatusBatch(
   }
 
   return result;
+}
+
+/**
+ * "2 of 3 clients ready" — spelled-out multi-client progress. One holiday can
+ * need several handovers (one per client the staff member works for), so a
+ * bare status label undersells what's outstanding.
+ */
+export function handoverClientsSummary(s: HolidayHandoverStatus): string | null {
+  if (s.clients.length <= 1) return null;
+  const ready = s.clients.filter(c => c.taskCount > 0 && c.avgProgress >= 100).length;
+  return `${ready} of ${s.clients.length} clients ready`;
 }
 
 export interface UpcomingClientLeave {
@@ -194,14 +220,16 @@ export async function getUpcomingLeaveForClients(
   const allUserIds = Array.from(new Set(Array.from(userIdsByClient.values()).flatMap(s => Array.from(s))));
   if (allUserIds.length === 0) return result;
 
-  const { data: holidays } = await supabase
+  const { data: rawHolidays } = await supabase
     .from("staff_holidays")
-    .select("user_id, start_date, end_date")
+    .select("user_id, start_date, end_date, no_cover_required")
     .in("user_id", allUserIds)
     .eq("status", "approved")
     .gte("end_date", todayISO)
     .order("start_date", { ascending: true });
-  if (!holidays || holidays.length === 0) return result;
+  // No cover required → no handover needed → doesn't drive tracker banners.
+  const holidays = (rawHolidays || []).filter(h => !h.no_cover_required);
+  if (holidays.length === 0) return result;
 
   const { data: profiles } = await supabase
     .from("profiles")
@@ -255,13 +283,15 @@ export async function getUpcomingLeaveByAllClients(): Promise<Map<string, Upcomi
   const result = new Map<string, UpcomingClientLeave>();
   const todayISO = new Date().toISOString().slice(0, 10);
 
-  const { data: holidays } = await supabase
+  const { data: rawHolidays } = await supabase
     .from("staff_holidays")
-    .select("user_id, start_date, end_date")
+    .select("user_id, start_date, end_date, no_cover_required")
     .eq("status", "approved")
     .gte("end_date", todayISO)
     .order("start_date", { ascending: true });
-  if (!holidays || holidays.length === 0) return result;
+  // No cover required → no handover needed → doesn't create placeholder rows.
+  const holidays = (rawHolidays || []).filter(h => !h.no_cover_required);
+  if (holidays.length === 0) return result;
 
   const userIds = Array.from(new Set(holidays.map(h => h.user_id)));
   const { data: patterns } = await supabase
@@ -311,6 +341,7 @@ export async function getUpcomingLeaveByAllClients(): Promise<Map<string, Upcomi
 
 export const HANDOVER_STATUS_LABEL: Record<HandoverStatus, string> = {
   none: "No handover needed",
+  not_required: "Not required — no cover needed",
   not_started: "Not started",
   in_progress: "In progress",
   complete: "Complete",
@@ -318,6 +349,7 @@ export const HANDOVER_STATUS_LABEL: Record<HandoverStatus, string> = {
 
 export const HANDOVER_STATUS_TONE: Record<HandoverStatus, "success" | "warning" | "danger" | "neutral"> = {
   none: "neutral",
+  not_required: "neutral",
   not_started: "danger",
   in_progress: "warning",
   complete: "success",

@@ -524,12 +524,18 @@ const handler = async (req: Request): Promise<Response> => {
 
           // Clients impacted by this person's leave, with REAL handover completion
           // status (not just links) — this is what "must be complete before annual
-          // leave" is measured against. A client with zero tasks counts as
-          // not-started, matching the shared status definition used elsewhere.
-          const { data: takerPatterns } = await supabaseClient
-            .from("recurring_shift_patterns")
-            .select("client_name")
-            .eq("user_id", h.user_id);
+          // leave" is measured against. One holiday can require SEVERAL handovers
+          // (one per client), and every one must be done. A client with zero tasks
+          // counts as not-started, matching the shared status definition used
+          // elsewhere. A no-cover-required holiday needs no handover at all.
+          const { data: takerPatterns } = coverNotNeeded
+            ? { data: [] as { client_name: string | null }[] }
+            : await supabaseClient
+                .from("recurring_shift_patterns")
+                .select("client_name")
+                .eq("user_id", h.user_id)
+                .lte("start_date", h.end_date)
+                .or(`end_date.is.null,end_date.gte.${h.start_date}`);
           const handoverClients = [...new Set((takerPatterns || [])
             .map(p => p.client_name)
             .filter((c): c is string => !!c && c !== "Care Cuddle"))];
@@ -551,6 +557,10 @@ const handler = async (req: Request): Promise<Response> => {
           });
           const handoverComplete = handoverClientStatuses.length > 0
             && handoverClientStatuses.every(c => c.taskCount > 0 && c.avgProgress >= 100);
+          const handoverReadyCount = handoverClientStatuses.filter(c => c.taskCount > 0 && c.avgProgress >= 100).length;
+          const handoverCountLabel = handoverClientStatuses.length > 1
+            ? ` (${handoverReadyCount}/${handoverClientStatuses.length} clients ready)`
+            : "";
           const handoverLinkItems = handoverClientStatuses.map(c => {
             const label = c.taskCount > 0 ? `${c.avgProgress}% complete` : "not started";
             return `🔗 <a href="${APP_URL}/public/schedule/${encodeURIComponent(c.client)}" style="color:${BRAND_COLOR};font-weight:600;text-decoration:none;">Open ${c.client} handover tracker</a> <span style="color:#6b7280;">(${label})</span>`;
@@ -565,18 +575,25 @@ const handler = async (req: Request): Promise<Response> => {
                   ? `<span style="color:#10b981;font-weight:600;">no cover needed</span>`
                   : `<span style="color:#ef4444;font-weight:600;">no cover assigned</span>`
             }${
-              handoverClientStatuses.length > 0
-                ? ` — handover: ${handoverComplete ? `<span style="color:#10b981;font-weight:600;">complete</span>` : `<span style="color:#ef4444;font-weight:600;">not ready</span>`}`
-                : ""
+              coverNotNeeded
+                ? ` — handover: <span style="color:#6b7280;">not required (no cover)</span>`
+                : handoverClientStatuses.length > 0
+                  ? ` — handover: ${handoverComplete ? `<span style="color:#10b981;font-weight:600;">complete</span>` : `<span style="color:#ef4444;font-weight:600;">not ready${handoverCountLabel}</span>`}`
+                  : ""
             }`
           );
 
-          // Escalate to admins when leave is imminent (≤3 days) and handover isn't done.
+          // Escalate to admins when leave is imminent (≤3 days) and handover isn't
+          // done. Never fires for no-cover-required holidays (statuses are empty).
           if (handoverClientStatuses.length > 0 && !handoverComplete && daysUntil <= 3) {
             const notStarted = handoverClientStatuses.filter(c => c.taskCount === 0).map(c => c.client);
             const inProgress = handoverClientStatuses.filter(c => c.taskCount > 0 && c.avgProgress < 100).map(c => `${c.client} (${c.avgProgress}%)`);
             handoverEscalationItems.push(
-              `<strong>${takerName}</strong> — leave in <strong>${daysUntil} ${dayWord}</strong> (${dateRange}): ` +
+              `<strong>${takerName}</strong> — leave in <strong>${daysUntil} ${dayWord}</strong> (${dateRange})${
+                handoverClientStatuses.length > 1
+                  ? ` — needs <strong>${handoverClientStatuses.length} handovers</strong> (one per client), ${handoverReadyCount} ready`
+                  : ""
+              }: ` +
               [
                 notStarted.length > 0 ? `not started: ${notStarted.join(", ")}` : null,
                 inProgress.length > 0 ? `in progress: ${inProgress.join(", ")}` : null,
@@ -584,20 +601,27 @@ const handler = async (req: Request): Promise<Response> => {
             );
           }
 
-          // Personal email to the staff member on holiday — wording escalates with urgency.
+          // Personal email to the staff member on holiday — wording escalates with
+          // urgency. Multi-client staff are told explicitly that EACH client needs
+          // its own handover; no-cover-required holidays get a clear "none needed".
           if (takerInfo?.email) {
-            const handoverLines: string[] = handoverClientStatuses.length === 0
-              ? []
-              : handoverComplete
-                ? [`✅ <strong>Your handover is complete</strong> — thank you!`]
-                : [
-                    daysUntil <= 1
-                      ? `🚨 <strong>Your handover is NOT complete and your leave starts ${daysUntil <= 0 ? "today" : "tomorrow"}.</strong> Please finish it now:`
-                      : daysUntil <= 3
-                        ? `⚠️ <strong>Your handover is still incomplete — only ${daysUntil} days left.</strong> Please prioritise it:`
-                        : `📋 <strong>Please complete your handover before you leave</strong> so your cover is set up:`,
-                    ...handoverLinkItems,
-                  ];
+            const multiClientNote = handoverClientStatuses.length > 1
+              ? ` You work with ${handoverClientStatuses.length} clients — each one needs its own handover (${handoverReadyCount} of ${handoverClientStatuses.length} ready).`
+              : "";
+            const handoverLines: string[] = coverNotNeeded
+              ? [`✅ This holiday is marked as <strong>no cover required</strong> — no handover is needed.`]
+              : handoverClientStatuses.length === 0
+                ? []
+                : handoverComplete
+                  ? [`✅ <strong>Your handover${handoverClientStatuses.length > 1 ? "s are" : " is"} complete</strong> — thank you!`]
+                  : [
+                      daysUntil <= 1
+                        ? `🚨 <strong>Your handover is NOT complete and your leave starts ${daysUntil <= 0 ? "today" : "tomorrow"}.</strong>${multiClientNote} Please finish it now:`
+                        : daysUntil <= 3
+                          ? `⚠️ <strong>Your handover is still incomplete — only ${daysUntil} days left.</strong>${multiClientNote} Please prioritise it:`
+                          : `📋 <strong>Please complete your handover before you leave</strong> so your cover is set up.${multiClientNote}`,
+                      ...handoverLinkItems,
+                    ];
             await sendStandaloneAlert(
               [takerInfo.email as string],
               `📅 Your holiday starts in ${daysUntil} ${dayWord}${!handoverComplete && handoverClientStatuses.length > 0 && daysUntil <= 3 ? " — handover needed" : ""}`,
@@ -628,8 +652,8 @@ const handler = async (req: Request): Promise<Response> => {
                 `🗓️ Holiday dates: ${dateRange}`,
                 `Please review your schedule for the covered shifts.`,
                 handoverComplete
-                  ? `✅ ${takerName}'s handover is complete — you're good to go.`
-                  : `💬 <strong>Reach out to ${takerName}</strong> — their handover isn't finished yet.`,
+                  ? `✅ ${takerName}'s handover${handoverClientStatuses.length > 1 ? "s are" : " is"} complete — you're good to go.`
+                  : `💬 <strong>Reach out to ${takerName}</strong> — their handover isn't finished yet${handoverCountLabel}.`,
                 ...(handoverLinkItems.length > 0
                   ? [`📋 Open the handover tracker for each client:`, ...handoverLinkItems]
                   : []),

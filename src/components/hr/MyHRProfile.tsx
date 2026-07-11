@@ -342,7 +342,7 @@ export function MyHRProfile() {
   const [scheduleClients, setScheduleClients] = useState<string[]>([]);
   const [ownHandovers, setOwnHandovers] = useState<HandoverClientSummary[]>([]);
   const [coveringHandovers, setCoveringHandovers] = useState<(HandoverClientSummary & { coveredName: string })[]>([]);
-  const [nextHoliday, setNextHoliday] = useState<{ start_date: string; end_date: string } | null>(null);
+  const [nextHoliday, setNextHoliday] = useState<{ start_date: string; end_date: string; noCoverRequired: boolean } | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
   const [documentPreview, setDocumentPreview] = useState<{
     open: boolean;
@@ -599,10 +599,14 @@ export function MyHRProfile() {
         .filter(h => h.status === 'approved' && h.end_date >= todayISO)
         .sort((a, b) => a.start_date.localeCompare(b.start_date))[0] || null;
       setNextHoliday(upcomingOrCurrentHoliday
-        ? { start_date: upcomingOrCurrentHoliday.start_date, end_date: upcomingOrCurrentHoliday.end_date }
+        ? {
+            start_date: upcomingOrCurrentHoliday.start_date,
+            end_date: upcomingOrCurrentHoliday.end_date,
+            noCoverRequired: !!upcomingOrCurrentHoliday.no_cover_required,
+          }
         : null);
 
-      if (upcomingOrCurrentHoliday) {
+      if (upcomingOrCurrentHoliday && !upcomingOrCurrentHoliday.no_cover_required) {
         const { clients } = await computeHolidayHandoverStatus(
           targetUserId, upcomingOrCurrentHoliday.start_date, upcomingOrCurrentHoliday.end_date
         );
@@ -1679,8 +1683,10 @@ export function MyHRProfile() {
       </Accordion>
 
       {/* Handover — this person's own clients' in-progress handovers, plus any
-          clients they're currently covering for someone else's holiday */}
-      {(ownHandovers.length > 0 || coveringHandovers.length > 0) && (() => {
+          clients they're currently covering for someone else's holiday. Also
+          shown when the next leave is marked no-cover-required, to make it
+          explicit that no handover is needed. */}
+      {(ownHandovers.length > 0 || coveringHandovers.length > 0 || nextHoliday?.noCoverRequired) && (() => {
         const progressTone = (pct: number): StatusTone => pct >= 100 ? 'success' : pct > 0 ? 'warning' : 'neutral';
         const HandoverRow = ({ client, avgProgress, taskCount, latestTarget, subtitle }: HandoverClientSummary & { subtitle?: string }) => (
           <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
@@ -1731,6 +1737,15 @@ export function MyHRProfile() {
                 </div>
               </AccordionTrigger>
               <AccordionContent className="px-6 pb-6 space-y-4">
+                {nextHoliday?.noCoverRequired && (
+                  <div className="flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-3 py-2.5 text-sm text-success">
+                    <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                    <span>
+                      Your leave starting {format(parseISO(nextHoliday.start_date), 'd MMM yyyy')} is marked as{' '}
+                      <strong>no cover required</strong> — no handover is needed for it.
+                    </span>
+                  </div>
+                )}
                 {coveringHandovers.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-sm font-medium">Covering for someone else</p>
@@ -1751,11 +1766,16 @@ export function MyHRProfile() {
                       "text-xs mb-1",
                       leaveUrgent ? "text-destructive font-medium" : "text-muted-foreground"
                     )}>
+                      {ownHandovers.length > 1 && (
+                        <span className="block font-medium">
+                          You work with {ownHandovers.length} clients — each one needs its own handover.
+                        </span>
+                      )}
                       {nextHoliday && daysUntilLeave !== null
                         ? ownComplete
-                          ? `Your handover is complete for your leave starting ${format(parseISO(nextHoliday.start_date), 'd MMM yyyy')}.`
+                          ? `Your handover${ownHandovers.length > 1 ? 's are' : ' is'} complete for your leave starting ${format(parseISO(nextHoliday.start_date), 'd MMM yyyy')}.`
                           : daysUntilLeave >= 0
-                            ? `Handover must be completed before your leave starts on ${format(parseISO(nextHoliday.start_date), 'd MMM yyyy')} (${daysUntilLeave} day${daysUntilLeave !== 1 ? 's' : ''} left).`
+                            ? `${ownHandovers.length > 1 ? 'All handovers' : 'Handover'} must be completed before your leave starts on ${format(parseISO(nextHoliday.start_date), 'd MMM yyyy')} (${daysUntilLeave} day${daysUntilLeave !== 1 ? 's' : ''} left).`
                             : `Your leave has already started and handover is not yet complete.`
                         : "Handover status for the clients you're scheduled for."}
                     </p>

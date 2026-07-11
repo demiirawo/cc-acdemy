@@ -17,7 +17,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification";
 import { useBatchWorkingDays } from "@/hooks/useWorkingDays";
 import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
-import { computeHolidayHandoverStatusBatch, HANDOVER_STATUS_LABEL } from "@/lib/handoverStatus";
+import { computeHolidayHandoverStatusBatch, handoverClientsSummary, HANDOVER_STATUS_LABEL } from "@/lib/handoverStatus";
 import { RequestsTimeline } from "./RequestsTimeline";
 
 type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
@@ -160,7 +160,7 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
   const { data: handoverStatusMap } = useQuery({
     queryKey: ["holiday-handover-status-batch", linkedHolidayIds],
     queryFn: () => computeHolidayHandoverStatusBatch(
-      linkedHolidays.map(h => ({ id: h.id, userId: h.user_id, startDate: h.start_date, endDate: h.end_date }))
+      linkedHolidays.map(h => ({ id: h.id, userId: h.user_id, startDate: h.start_date, endDate: h.end_date, noCoverRequired: h.no_cover_required }))
     ),
     enabled: linkedHolidays.length > 0,
   });
@@ -724,9 +724,18 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                                       const linked = getLinkedHoliday(req);
                                       const hs = linked ? handoverStatusMap?.get(linked.id) : undefined;
                                       if (!hs || hs.status === 'none') return null;
+                                      if (hs.status === 'not_required') {
+                                        return (
+                                          <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                                            Handover: not needed (no cover)
+                                          </Badge>
+                                        );
+                                      }
+                                      const clientsSummary = handoverClientsSummary(hs);
                                       return (
                                         <Badge
                                           variant="outline"
+                                          title={clientsSummary ?? undefined}
                                           className={
                                             hs.status === 'complete'
                                               ? 'bg-success/20 text-success border-success text-[10px]'
@@ -736,6 +745,7 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                                           }
                                         >
                                           Handover: {HANDOVER_STATUS_LABEL[hs.status]}
+                                          {clientsSummary ? ` · ${clientsSummary}` : ''}
                                         </Badge>
                                       );
                                     })()}

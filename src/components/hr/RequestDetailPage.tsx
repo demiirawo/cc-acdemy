@@ -426,14 +426,18 @@ export function RequestDetailPage({
       return data;
     }
   });
-  // Handover status for this leave — must be complete before the leave starts.
+  // Handover status for this leave — must be complete before the leave starts,
+  // unless the holiday is marked no-cover-required (then none is needed).
   const {
     data: handoverStatus,
     refetch: refetchHandoverStatus
   } = useQuery({
-    queryKey: ["holiday-handover-status", request?.user_id, request?.start_date, request?.end_date],
+    queryKey: ["holiday-handover-status", request?.user_id, request?.start_date, request?.end_date, linkedHoliday?.no_cover_required ?? false],
     enabled: !!request && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type) && request.status === 'approved',
-    queryFn: () => computeHolidayHandoverStatus(request!.user_id, request!.start_date, request!.end_date),
+    queryFn: () => computeHolidayHandoverStatus(
+      request!.user_id, request!.start_date, request!.end_date,
+      { noCoverRequired: !!linkedHoliday?.no_cover_required }
+    ),
   });
   useEffect(() => {
     if (request) {
@@ -1075,10 +1079,28 @@ Care Cuddle Team`;
           </Card>
 
           {/* Handover Status — must be complete before this leave starts */}
-          {isHolidayRequest && request.status === 'approved' && handoverStatus && handoverStatus.status !== 'none' && (() => {
+          {isHolidayRequest && request.status === 'approved' && handoverStatus && handoverStatus.status === 'not_required' && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 flex-wrap">
+                  <CheckCircle2 className="h-5 w-5 text-success" />
+                  Handover Status
+                  <Badge variant="outline" className="bg-muted text-muted-foreground">
+                    Not required
+                  </Badge>
+                </CardTitle>
+                <CardDescription>
+                  This holiday is marked as <strong>no cover required</strong>, so no handover is needed.
+                </CardDescription>
+              </CardHeader>
+            </Card>
+          )}
+          {isHolidayRequest && request.status === 'approved' && handoverStatus && handoverStatus.status !== 'none' && handoverStatus.status !== 'not_required' && (() => {
             const daysUntil = differenceInCalendarDays(parseISO(request.start_date), new Date());
             const isReady = handoverStatus.status === 'complete';
             const urgent = !isReady && daysUntil <= 3;
+            const readyCount = handoverStatus.clients.filter(c => c.taskCount > 0 && c.avgProgress >= 100).length;
+            const multiClient = handoverStatus.clients.length > 1;
             return (
               <Card className={cn(!isReady && (urgent ? "border-destructive/50 border-2" : "border-amber-400/50 border-2"))}>
                 <CardHeader>
@@ -1103,10 +1125,15 @@ Care Cuddle Team`;
                     </Badge>
                   </CardTitle>
                   <CardDescription>
+                    {multiClient && (
+                      <span className="block font-medium text-foreground mb-0.5">
+                        This leave requires {handoverStatus.clients.length} separate handovers (one per client) — {readyCount} of {handoverStatus.clients.length} ready.
+                      </span>
+                    )}
                     {isReady
                       ? "All relevant clients' handovers are complete."
                       : daysUntil >= 0
-                        ? `Handover must be completed before leave starts${daysUntil <= 7 ? ` — ${daysUntil} day${daysUntil !== 1 ? 's' : ''} left` : ''}.`
+                        ? `Every client's handover must be completed before leave starts${daysUntil <= 7 ? ` — ${daysUntil} day${daysUntil !== 1 ? 's' : ''} left` : ''}.`
                         : "This leave has already started and handover is not yet complete."}
                   </CardDescription>
                 </CardHeader>

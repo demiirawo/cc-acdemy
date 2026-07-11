@@ -19,7 +19,7 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay, subDays } from "date-fns";
 import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, AlertCircle, Calendar, Link2, Check, X } from "lucide-react";
-import { computeHolidayHandoverStatusBatch, type HolidayHandoverStatus } from "@/lib/handoverStatus";
+import { computeHolidayHandoverStatusBatch, handoverClientsSummary, type HolidayHandoverStatus } from "@/lib/handoverStatus";
 import { UnifiedShiftEditor, ShiftToEdit } from "./UnifiedShiftEditor";
 import { invalidateAllCoverageQueries, filterSchedulesByCoverageMetadata, isShiftCoveredByRequest } from "@/lib/coverageUtils";
 import { LiveTimelineView } from "./LiveTimelineView";
@@ -446,7 +446,7 @@ export function StaffScheduleManager() {
   const { data: handoverStatusMap } = useQuery({
     queryKey: ["holiday-handover-status-batch", approvedHolidayIds],
     queryFn: () => computeHolidayHandoverStatusBatch(
-      holidays.filter(h => h.status === 'approved').map(h => ({ id: h.id, userId: h.user_id, startDate: h.start_date, endDate: h.end_date }))
+      holidays.filter(h => h.status === 'approved').map(h => ({ id: h.id, userId: h.user_id, startDate: h.start_date, endDate: h.end_date, noCoverRequired: h.no_cover_required }))
     ),
     enabled: approvedHolidayIds.length > 0,
   });
@@ -2525,11 +2525,14 @@ export function StaffScheduleManager() {
                               )}
                               {holidayInfo && (() => {
                                 const hs = handoverStatusMap?.get(holidayInfo.id);
-                                if (!hs || hs.status === 'complete' || hs.status === 'none') return null;
+                                // 'not_required' renders no handover badge — the "No cover
+                                // needed" badge above already explains why.
+                                if (!hs || hs.status === 'complete' || hs.status === 'none' || hs.status === 'not_required') return null;
+                                const clientsSummary = handoverClientsSummary(hs);
                                 return (
                                   <Badge
                                     variant="outline"
-                                    title="Handover must be completed before this leave"
+                                    title={`Handover must be completed before this leave${clientsSummary ? ` — ${clientsSummary}` : ''}`}
                                     className={`text-[10px] py-0 px-1 flex items-center gap-0.5 ${
                                       hs.status === 'not_started'
                                         ? 'bg-red-50 border-red-300 text-red-700'
@@ -2537,6 +2540,7 @@ export function StaffScheduleManager() {
                                     }`}
                                   >
                                     <AlertCircle className="h-2.5 w-2.5" /> Handover {hs.status === 'not_started' ? 'not started' : 'in progress'}
+                                    {clientsSummary ? ` (${clientsSummary.replace(' clients ready', '')})` : ''}
                                   </Badge>
                                 );
                               })()}

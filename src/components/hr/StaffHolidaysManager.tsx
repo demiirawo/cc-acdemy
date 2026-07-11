@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Plus, Check, X, Calendar } from "lucide-react";
 import { format } from "date-fns";
-import { computeHolidayHandoverStatusBatch, HANDOVER_STATUS_LABEL, type HolidayHandoverStatus } from "@/lib/handoverStatus";
+import { computeHolidayHandoverStatusBatch, handoverClientsSummary, HANDOVER_STATUS_LABEL, type HolidayHandoverStatus } from "@/lib/handoverStatus";
 
 interface Holiday {
   id: string;
@@ -238,7 +238,7 @@ export function StaffHolidaysManager() {
       // Handover status per approved holiday — must be complete before the leave.
       const approvedHolidays = mergedHolidays.filter(h => h.status === 'approved');
       setHandoverStatusMap(await computeHolidayHandoverStatusBatch(
-        approvedHolidays.map(h => ({ id: h.id, userId: h.user_id, startDate: h.start_date, endDate: h.end_date }))
+        approvedHolidays.map(h => ({ id: h.id, userId: h.user_id, startDate: h.start_date, endDate: h.end_date, noCoverRequired: h.no_cover_required }))
       ));
     } catch (error) {
       console.error('Error fetching holidays:', error);
@@ -468,9 +468,14 @@ export function StaffHolidaysManager() {
                         {(() => {
                           const hs = handoverStatusMap.get(holiday.id);
                           if (!hs || hs.status === 'none') return <span className="text-xs text-muted-foreground">-</span>;
+                          if (hs.status === 'not_required') {
+                            return <span className="text-xs text-muted-foreground">Not needed — no cover required</span>;
+                          }
+                          const clientsSummary = handoverClientsSummary(hs);
                           return (
                             <Badge
                               variant="outline"
+                              title={clientsSummary ?? undefined}
                               className={
                                 hs.status === 'complete'
                                   ? 'bg-success/20 text-success border-success'
@@ -480,6 +485,7 @@ export function StaffHolidaysManager() {
                               }
                             >
                               {HANDOVER_STATUS_LABEL[hs.status]}
+                              {clientsSummary ? ` · ${clientsSummary}` : ''}
                             </Badge>
                           );
                         })()}
