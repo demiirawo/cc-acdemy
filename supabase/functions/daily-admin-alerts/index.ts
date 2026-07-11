@@ -561,9 +561,11 @@ const handler = async (req: Request): Promise<Response> => {
           const handoverCountLabel = handoverClientStatuses.length > 1
             ? ` (${handoverReadyCount}/${handoverClientStatuses.length} clients ready)`
             : "";
+          // Per-client status bullets, matching the dashboard's WhatsApp-nudge
+          // format: "Client — not started · Open handover tracker".
           const handoverLinkItems = handoverClientStatuses.map(c => {
-            const label = c.taskCount > 0 ? `${c.avgProgress}% complete` : "not started";
-            return `🔗 <a href="${APP_URL}/public/schedule/${encodeURIComponent(c.client)}" style="color:${BRAND_COLOR};font-weight:600;text-decoration:none;">Open ${c.client} handover tracker</a> <span style="color:#6b7280;">(${label})</span>`;
+            const label = c.taskCount > 0 && c.avgProgress > 0 ? `${c.avgProgress}% complete` : "not started";
+            return `<strong>${c.client}</strong> — ${label} · <a href="${APP_URL}/public/schedule/${encodeURIComponent(c.client)}" style="color:${BRAND_COLOR};font-weight:600;text-decoration:none;">Open handover tracker</a>`;
           });
 
           // Admin digest line — now flags real handover status, not just a link.
@@ -601,26 +603,39 @@ const handler = async (req: Request): Promise<Response> => {
             );
           }
 
-          // Personal email to the staff member on holiday — wording escalates with
-          // urgency. Multi-client staff are told explicitly that EACH client needs
-          // its own handover; no-cover-required holidays get a clear "none needed".
+          // Personal email to the staff member on holiday — mirrors the
+          // dashboard's WhatsApp nudge: greeting by first name, leave timing,
+          // per-client status bullets with tracker links, and an ask that
+          // switches between "start" and "finish" based on progress. Urgency
+          // still escalates the intro line; no-cover-required holidays get a
+          // clear "none needed".
           if (takerInfo?.email) {
-            const multiClientNote = handoverClientStatuses.length > 1
-              ? ` You work with ${handoverClientStatuses.length} clients — each one needs its own handover (${handoverReadyCount} of ${handoverClientStatuses.length} ready).`
-              : "";
+            const firstName = takerName.trim().split(/\s+/)[0];
+            const plural = handoverClientStatuses.length > 1;
+            const anyStarted = handoverClientStatuses.some(c => c.taskCount > 0 && c.avgProgress > 0);
+            const timing = daysUntil <= 0
+              ? "your leave has already started"
+              : daysUntil === 1
+                ? "your leave starts tomorrow"
+                : `your leave starts in ${daysUntil} ${dayWord}`;
+            const intro = `Hi ${firstName}, ${timing} (${dateRange}) and your client handover${plural ? "s aren't" : " isn't"} complete yet.`;
+            const ask = anyStarted
+              ? `Please complete the outstanding handover tasks before your leave begins${plural ? " — each client needs its own handover finished" : ""}. Thank you! 🙏`
+              : `Please start your handover${plural ? "s" : ""} as soon as you can so everything is covered before you go. Thank you! 🙏`;
             const handoverLines: string[] = coverNotNeeded
               ? [`✅ This holiday is marked as <strong>no cover required</strong> — no handover is needed.`]
               : handoverClientStatuses.length === 0
                 ? []
                 : handoverComplete
-                  ? [`✅ <strong>Your handover${handoverClientStatuses.length > 1 ? "s are" : " is"} complete</strong> — thank you!`]
+                  ? [`✅ <strong>Your handover${plural ? "s are" : " is"} complete</strong> — thank you!`]
                   : [
                       daysUntil <= 1
-                        ? `🚨 <strong>Your handover is NOT complete and your leave starts ${daysUntil <= 0 ? "today" : "tomorrow"}.</strong>${multiClientNote} Please finish it now:`
+                        ? `🚨 <strong>${intro}</strong>`
                         : daysUntil <= 3
-                          ? `⚠️ <strong>Your handover is still incomplete — only ${daysUntil} days left.</strong>${multiClientNote} Please prioritise it:`
-                          : `📋 <strong>Please complete your handover before you leave</strong> so your cover is set up.${multiClientNote}`,
+                          ? `⚠️ <strong>${intro}</strong>`
+                          : `📋 ${intro}`,
                       ...handoverLinkItems,
+                      ask,
                     ];
             await sendStandaloneAlert(
               [takerInfo.email as string],
