@@ -1441,30 +1441,38 @@ const UpcomingHolidaysCard = ({
 }) => {
   const today = new Date();
   
-  // Fetch upcoming approved holidays for staff assigned to this client
+  // Fetch upcoming/ongoing approved holidays for staff working at this client.
+  // Staff are sourced from BOTH manual assignments and recurring shift
+  // patterns — the two can disagree (patterns drive the actual schedule and
+  // the handover logic), and using assignments alone hid holidays for staff
+  // who are scheduled here but were never manually assigned.
   const { data: upcomingHolidays = [], isLoading } = useQuery({
     queryKey: ["upcoming-holidays", clientName],
     queryFn: async () => {
-      // First get staff assigned to this client
-      const { data: assignments, error: assignError } = await supabase
-        .from('staff_client_assignments')
-        .select('staff_user_id')
-        .eq('client_name', clientName);
-      
+      const todayISO = format(today, "yyyy-MM-dd");
+      const [{ data: assignments, error: assignError }, { data: patternStaff, error: patternError }] = await Promise.all([
+        supabase.from('staff_client_assignments').select('staff_user_id').eq('client_name', clientName),
+        supabase.from('recurring_shift_patterns').select('user_id').eq('client_name', clientName)
+          .or(`end_date.is.null,end_date.gte.${todayISO}`),
+      ]);
       if (assignError) throw assignError;
-      if (!assignments || assignments.length === 0) return [];
-      
-      const staffUserIds = assignments.map(a => a.staff_user_id);
-      
+      if (patternError) throw patternError;
+
+      const staffUserIds = Array.from(new Set([
+        ...(assignments || []).map(a => a.staff_user_id),
+        ...(patternStaff || []).map(p => p.user_id),
+      ]));
+      if (staffUserIds.length === 0) return [];
+
       const { data, error } = await supabase
         .from("staff_holidays")
         .select("id, user_id, start_date, end_date, status, absence_type, days_taken, notes, no_cover_required, no_cover_dates")
         .eq("status", "approved")
         .in("user_id", staffUserIds)
-        .gte("end_date", format(today, "yyyy-MM-dd"))
+        .gte("end_date", todayISO)
         .order("start_date", { ascending: true })
         .limit(10);
-      
+
       if (error) throw error;
       return (data || []) as StaffHoliday[];
     },
