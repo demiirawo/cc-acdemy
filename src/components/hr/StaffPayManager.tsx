@@ -219,7 +219,7 @@ export function StaffPayManager() {
   const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; status: string; absence_type: string }[]>([]);
-  const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; employment_end_date: string | null; unlimited_holiday: boolean; public_holiday_pay_disabled?: boolean }[]>([]);
+  const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; employment_end_date: string | null; unlimited_holiday: boolean; public_holiday_pay_disabled?: boolean; created_at?: string }[]>([]);
   const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null; swap_with_user_id: string | null; coverage_metadata: Json | null }[]>([]);
   const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string }[]>([]);
   const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<{ user_id: string; start_date: string; end_date: string }[]>([]);
@@ -471,11 +471,11 @@ export function StaffPayManager() {
         setStaffHolidays(holidaysData || []);
       }
 
-      // Fetch full HR profiles for holiday allowance
+      // Fetch full HR profiles for holiday allowance and employment window
       const { data: hrFullData } = await supabase
         .from('hr_profiles')
-        .select('user_id, annual_holiday_allowance, start_date, employment_end_date, unlimited_holiday, public_holiday_pay_disabled');
-      
+        .select('user_id, annual_holiday_allowance, start_date, employment_end_date, unlimited_holiday, public_holiday_pay_disabled, created_at');
+
       setHRProfilesFull(hrFullData || []);
 
       // Fetch approved overtime and shift_swap requests for overtime pay calculation
@@ -544,7 +544,18 @@ export function StaffPayManager() {
     // Get staff with HR profiles (who have salary configured)
     // Exclude any whose user profile has been deleted (orphaned hr_profiles)
     const userProfileIds = new Set(userProfiles.map(u => u.user_id));
-    const staffWithHR = hrProfiles.filter(hr => hr.base_salary && hr.base_salary > 0 && userProfileIds.has(hr.user_id));
+    const staffWithHR = hrProfiles.filter(hr => {
+      if (!hr.base_salary || hr.base_salary <= 0 || !userProfileIds.has(hr.user_id)) return false;
+      // Only include staff actually employed at some point during this month:
+      // someone whose employment starts after the month ends (using their HR
+      // start date, or the HR profile's creation date when no start date is
+      // set) wasn't on this payroll, nor was someone who left before it began.
+      const full = hrProfilesFull.find(f => f.user_id === hr.user_id);
+      const employmentStartRaw = full?.start_date || full?.created_at || null;
+      if (employmentStartRaw && parseISO(employmentStartRaw) > monthEnd) return false;
+      if (full?.employment_end_date && parseISO(full.employment_end_date) < monthStart) return false;
+      return true;
+    });
     
     // Create a set of public holiday dates for quick lookup (format: YYYY-MM-DD)
     const holidayDatesSet = new Set(publicHolidays.map(h => h.date));
