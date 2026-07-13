@@ -103,7 +103,38 @@ const valuesEqual = (a: unknown, b: unknown): boolean => {
     const bs = Array.isArray(b) ? b.slice().sort() : b;
     return JSON.stringify(as) === JSON.stringify(bs);
   }
+  // Whitespace-only differences are cosmetic, not a change.
+  if (typeof a === "string" && typeof b === "string") return a.trim() === b.trim();
   return (a ?? null) === (b ?? null);
+};
+
+// One-line description of the shifts a pattern/schedule row represents, so
+// the email says WHICH shifts changed, not just that "a pattern" did.
+const describeShifts = (tableName: string, d: Record<string, unknown>): string => {
+  const client = d.client_name ? escapeHtml(d.client_name) : "an unassigned client";
+  if (tableName === "staff_schedules") {
+    const dt = d.start_datetime ? formatDate(String(d.start_datetime)) : null;
+    return `your shift at <strong>${client}</strong>${dt ? ` on ${dt}` : ""}`;
+  }
+  const days = Array.isArray(d.days_of_week) && d.days_of_week.length > 0 ? daysLabel(d.days_of_week) : null;
+  const times = d.start_time && d.end_time ? `${formatTime(String(d.start_time))} – ${formatTime(String(d.end_time))}` : null;
+  return `your recurring <strong>${client}</strong> shifts${days ? ` (${days}${times ? `, ${times}` : ""})` : times ? ` (${times})` : ""}`;
+};
+
+// Plain-English headline for what actually changed, e.g. "Client changed" /
+// "Shift times changed" — clearer than a generic "pattern updated".
+const CHANGE_HEADLINES: Record<string, string> = {
+  client_name: "Client changed",
+  days_of_week: "Working days changed",
+  start_time: "Shift times changed",
+  end_time: "Shift times changed",
+  start_date: "Shift dates changed",
+  end_date: "Shift dates changed",
+  shift_date: "Shift date changed",
+  shift_type: "Shift type changed",
+  is_overtime: "Overtime status changed",
+  overtime_subtype: "Overtime status changed",
+  notes: "Notes updated",
 };
 
 const line = (label: string, value: string): string =>
@@ -152,24 +183,38 @@ const buildChangeBlock = (log: ShiftAuditLog, changedByName: string): string => 
   let body = "";
 
   if (log.action === "UPDATE" && log.old_data && log.new_data) {
-    // Field-by-field diff so staff see exactly what moved/changed.
-    title = `${tableLabel} updated`;
+    // Field-by-field diff so staff see exactly what moved/changed, with a
+    // context line naming WHICH shifts this affects and explicit
+    // "changed from X to Y" wording per field.
+    const changedKeys: string[] = [];
     const diffs: string[] = [];
     for (const spec of FIELD_SPECS) {
       const before = (log.old_data as Record<string, unknown>)[spec.key];
       const after = (log.new_data as Record<string, unknown>)[spec.key];
       if (before === undefined && after === undefined) continue;
       if (!valuesEqual(before, after)) {
-        diffs.push(line(spec.label, `${spec.fmt(before)} <span style="color:#9ca3af;">→</span> <strong>${spec.fmt(after)}</strong>`));
+        changedKeys.push(spec.key);
+        diffs.push(line(spec.label, `changed from ${spec.fmt(before)} <span style="color:#9ca3af;">to</span> <strong>${spec.fmt(after)}</strong>`));
       }
     }
+    const headlines = Array.from(new Set(changedKeys.map(k => CHANGE_HEADLINES[k]).filter(Boolean)));
+    title = headlines.length === 1 ? headlines[0] : `${tableLabel} updated`;
+    // Describe the shifts as they were BEFORE the change, so "Client changed"
+    // reads as "your Carelink shifts moved to X", not the other way round.
+    const context = describeShifts(log.table_name, log.old_data as Record<string, unknown>);
     body = diffs.length > 0
-      ? `<div style="margin-left: 8px; margin-top: 6px;">${diffs.join("")}</div>`
-      : `<p style="margin: 6px 0 0 8px; color: #6b7280; font-size: 13px;">Minor update.</p>`;
+      ? `<p style="margin: 6px 0 0 8px; color: #4b5563; font-size: 13px;">This affects ${context}:</p>
+         <div style="margin-left: 8px; margin-top: 6px;">${diffs.join("")}</div>`
+      : `<p style="margin: 6px 0 0 8px; color: #6b7280; font-size: 13px;">Minor update to ${context} — your days, times and client are unchanged.</p>`;
   } else {
     // INSERT / DELETE: show the full picture of the added/removed shift.
-    title = log.action === "INSERT" ? `New ${tableLabel.toLowerCase()} added` : `${tableLabel} removed`;
     const data = (log.action === "DELETE" ? log.old_data : log.new_data) || {};
+    const clientSuffix = (data as Record<string, unknown>).client_name
+      ? ` — ${escapeHtml((data as Record<string, unknown>).client_name)}`
+      : "";
+    title = log.action === "INSERT"
+      ? `New ${tableLabel.toLowerCase()} added${clientSuffix}`
+      : `${tableLabel} removed${clientSuffix}`;
     const rows: string[] = [];
     for (const spec of FIELD_SPECS) {
       const v = (data as Record<string, unknown>)[spec.key];
