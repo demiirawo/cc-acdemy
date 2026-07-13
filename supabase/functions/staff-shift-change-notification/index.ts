@@ -59,6 +59,29 @@ const daysLabel = (arr: unknown): string =>
 const escapeHtml = (s: unknown): string =>
   String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+// Only these fields constitute a real schedule change per table. Updates
+// where every one of them is unchanged (string comparison is whitespace-
+// trimmed) are cosmetic — e.g. a data-hygiene trim of "Carelink Services "
+// to "Carelink Services" — and must not email staff.
+const SCHEDULE_FIELDS: Record<string, string[]> = {
+  recurring_shift_patterns: ["user_id", "client_name", "days_of_week", "start_time", "end_time", "start_date", "end_date", "recurrence_interval", "shift_type", "is_overtime", "overtime_subtype"],
+  staff_schedules: ["user_id", "client_name", "start_datetime", "end_datetime", "shift_type"],
+  shift_pattern_exceptions: ["pattern_id", "exception_date", "exception_type", "overtime_subtype"],
+};
+
+const normalizeFieldValue = (v: unknown): string => {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "string") return v.trim();
+  return JSON.stringify(v);
+};
+
+const isMeaningfulChange = (log: ShiftAuditLog): boolean => {
+  if (log.action !== "UPDATE" || !log.old_data || !log.new_data) return true;
+  const fields = SCHEDULE_FIELDS[log.table_name];
+  if (!fields) return true;
+  return fields.some((f) => normalizeFieldValue(log.old_data![f]) !== normalizeFieldValue(log.new_data![f]));
+};
+
 // Fields we render/diff for a shift or recurring pattern, in display order.
 const FIELD_SPECS: Array<{ key: string; label: string; fmt: (v: unknown) => string }> = [
   { key: "client_name", label: "Client", fmt: (v) => escapeHtml(v ?? "N/A") },
@@ -205,8 +228,16 @@ serve(async (req) => {
       });
     }
 
+    // Drop cosmetic updates (no schedule-relevant field actually changed).
+    const meaningfulLogs = (auditLogs as ShiftAuditLog[]).filter(isMeaningfulChange);
+    if (meaningfulLogs.length === 0) {
+      return new Response(JSON.stringify({ success: true, message: "Only cosmetic changes — no notifications sent" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const grouped = new Map<string, ShiftAuditLog[]>();
-    for (const log of auditLogs as ShiftAuditLog[]) {
+    for (const log of meaningfulLogs) {
       const data = log.new_data || log.old_data;
       const affectedUserId = data?.user_id as string | undefined;
       if (!affectedUserId) continue;
@@ -223,7 +254,7 @@ serve(async (req) => {
     }
 
     const affectedIds = Array.from(grouped.keys());
-    const changerIds = [...new Set(auditLogs.map((l: ShiftAuditLog) => l.changed_by).filter(Boolean) as string[])];
+    const changerIds = [...new Set(meaningfulLogs.map((l) => l.changed_by).filter(Boolean) as string[])];
     const allIds = [...new Set([...affectedIds, ...changerIds])];
 
     const { data: profiles } = await supabase
@@ -307,7 +338,7 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({
       success: true,
-      changeCount: auditLogs.length,
+      changeCount: meaningfulLogs.length,
       staffNotified: emailsSent,
       errors: errors.length ? errors : undefined,
     }), {
