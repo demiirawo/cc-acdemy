@@ -23,7 +23,7 @@ import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItemsManager";
 import { allTrainingUpToDate } from "@/lib/trainingStatus";
-import { computeHolidayHandoverStatus } from "@/lib/handoverStatus";
+import { computeHolidayHandoverStatus, patternDatesInWindow, PATTERN_WINDOW_COLS, type PatternWindow } from "@/lib/handoverStatus";
 interface UserProfile {
   user_id: string;
   display_name: string | null;
@@ -312,7 +312,7 @@ function StatusPill({ tone, children }: { tone: StatusTone; children: React.Reac
   );
 }
 
-export function MyHRProfile() {
+export function MyHRProfile({ initialUserId }: { initialUserId?: string | null } = {}) {
   const {
     user
   } = useAuth();
@@ -383,6 +383,13 @@ export function MyHRProfile() {
       setSelectedUserId(user.id);
     }
   }, [user, selectedUserId]);
+
+  // Deep link from elsewhere (e.g. schedule "View profile") preselects a user.
+  useEffect(() => {
+    if (initialUserId && isAdmin) {
+      setSelectedUserId(initialUserId);
+    }
+  }, [initialUserId, isAdmin]);
 
   // Fetch data when selected user changes
   useEffect(() => {
@@ -627,10 +634,15 @@ export function MyHRProfile() {
       }
 
       // Clients covered for someone else (active/upcoming approved shift_swap where
-      // this person is the covering party).
+      // this person is the covering party). Scoped to the clients whose
+      // shifts they ACTUALLY cover: each cover request carries the dates it
+      // covers, and only the covered person's clients with shifts on those
+      // dates are relevant — covering Andrew's Tuesday at client A must not
+      // demand a handover for Andrew's Thursday client B, which someone else
+      // (or no one) covers.
       const { data: coverRequests } = await supabase
         .from('staff_requests')
-        .select('swap_with_user_id, end_date')
+        .select('swap_with_user_id, start_date, end_date, coverage_metadata')
         .eq('request_type', 'shift_swap')
         .eq('status', 'approved')
         .eq('user_id', targetUserId)
@@ -647,14 +659,30 @@ export function MyHRProfile() {
 
         const { data: coveredPatterns } = await supabase
           .from('recurring_shift_patterns')
-          .select('user_id, client_name')
+          .select(PATTERN_WINDOW_COLS)
           .in('user_id', handoverCoveredUserIds);
 
-        const clientsByCoveredUser = new Map<string, Set<string>>();
-        (coveredPatterns || []).forEach(p => {
+        const patternsByCoveredUser = new Map<string, (PatternWindow & { user_id: string })[]>();
+        (((coveredPatterns || []) as unknown) as (PatternWindow & { user_id: string })[]).forEach(p => {
           if (!p.client_name || p.client_name === 'Care Cuddle') return;
-          if (!clientsByCoveredUser.has(p.user_id)) clientsByCoveredUser.set(p.user_id, new Set());
-          clientsByCoveredUser.get(p.user_id)!.add(p.client_name);
+          if (!patternsByCoveredUser.has(p.user_id)) patternsByCoveredUser.set(p.user_id, []);
+          patternsByCoveredUser.get(p.user_id)!.push(p);
+        });
+
+        const clientsByCoveredUser = new Map<string, Set<string>>();
+        (coverRequests || []).forEach(req => {
+          if (!req.swap_with_user_id) return;
+          const meta = req.coverage_metadata as { covered_dates?: string[] } | null;
+          const coveredDates = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0
+            ? new Set(meta!.covered_dates!)
+            : null;
+          for (const p of patternsByCoveredUser.get(req.swap_with_user_id) || []) {
+            const shiftDates = patternDatesInWindow(p, req.start_date, req.end_date);
+            const covers = coveredDates ? shiftDates.some(d => coveredDates.has(d)) : shiftDates.length > 0;
+            if (!covers) continue;
+            if (!clientsByCoveredUser.has(req.swap_with_user_id)) clientsByCoveredUser.set(req.swap_with_user_id, new Set());
+            clientsByCoveredUser.get(req.swap_with_user_id)!.add(p.client_name!.trim());
+          }
         });
 
         const allCoveringClients = Array.from(new Set(Array.from(clientsByCoveredUser.values()).flatMap(s => Array.from(s))));

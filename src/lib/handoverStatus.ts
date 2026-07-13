@@ -27,7 +27,7 @@ export interface HolidayHandoverStatus {
 
 const BENCH_SENTINEL = "Care Cuddle";
 
-interface PatternWindow {
+export interface PatternWindow {
   client_name: string | null;
   days_of_week: number[] | null;
   start_date: string;
@@ -35,10 +35,10 @@ interface PatternWindow {
   recurrence_interval?: string | null;
 }
 
-const PATTERN_WINDOW_COLS = "user_id, client_name, days_of_week, start_date, end_date, recurrence_interval";
+export const PATTERN_WINDOW_COLS = "user_id, client_name, days_of_week, start_date, end_date, recurrence_interval";
 
 /** ISO dates within [windowStart, windowEnd] on which this pattern has a shift. */
-function patternDatesInWindow(p: PatternWindow, windowStart: string, windowEnd: string): string[] {
+export function patternDatesInWindow(p: PatternWindow, windowStart: string, windowEnd: string): string[] {
   const start = p.start_date > windowStart ? p.start_date : windowStart;
   const end = p.end_date && p.end_date < windowEnd ? p.end_date : windowEnd;
   if (start > end) return [];

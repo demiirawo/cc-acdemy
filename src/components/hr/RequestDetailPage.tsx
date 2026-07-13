@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification";
 import { invalidateAllCoverageQueries } from "@/lib/coverageUtils";
-import { computeHolidayHandoverStatus, HANDOVER_STATUS_LABEL, HANDOVER_STATUS_TONE } from "@/lib/handoverStatus";
+import { computeHolidayHandoverStatus, patternDatesInWindow, PATTERN_WINDOW_COLS, type PatternWindow, HANDOVER_STATUS_LABEL, HANDOVER_STATUS_TONE } from "@/lib/handoverStatus";
 type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
 interface StaffRequest {
   id: string;
@@ -376,6 +376,37 @@ export function RequestDetailPage({
         isBench: (assignments || []).some(a => a.staff_user_id === profile.user_id && a.client_name === "Care Cuddle")
       }));
     }
+  });
+
+  // Everyone's shift patterns and approved leave overlapping this request's
+  // window — used to work out who is actually FREE on the days needing cover.
+  const isHolidayTypeRequest = !!request && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
+  const { data: availabilityPatterns = [] } = useQuery({
+    queryKey: ["availability-patterns", request?.id],
+    enabled: isHolidayTypeRequest,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("recurring_shift_patterns")
+        .select(PATTERN_WINDOW_COLS)
+        .lte("start_date", request!.end_date)
+        .or(`end_date.is.null,end_date.gte.${request!.start_date}`);
+      if (error) throw error;
+      return (data || []) as unknown as (PatternWindow & { user_id: string })[];
+    },
+  });
+  const { data: availabilityHolidays = [] } = useQuery({
+    queryKey: ["availability-holidays", request?.id],
+    enabled: isHolidayTypeRequest,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff_holidays")
+        .select("user_id, start_date, end_date")
+        .eq("status", "approved")
+        .lte("start_date", request!.end_date)
+        .gte("end_date", request!.start_date);
+      if (error) throw error;
+      return data || [];
+    },
   });
 
   // Fetch covering staff info (for shift swaps where someone is covering this person's holiday)
@@ -1334,23 +1365,54 @@ Care Cuddle Team`;
                     const coveredUserIds = (coveringStaff || []).map(c => c.user_id);
                     const isPending = assignCoverMutation.isPending || unassignCoverMutation.isPending;
 
-                    type Row = { user_id: string; display_name: string | null; email: string | null; isBench: boolean; clients: string[] };
-                    // "On the bench" = explicitly assigned to the Care Cuddle
-                    // placeholder OR no client allocation at all.
+                    // Availability is judged against the ACTUAL schedule on
+                    // the days needing cover: someone already working or on
+                    // their own approved leave on those days isn't available.
+                    const affectedDates = (isHolidayRequest && linkedHoliday ? getAffectedShiftsByDay() : [])
+                      .map(s => s.date.toISOString().split('T')[0]);
+                    const noCoverSet = new Set<string>(linkedHoliday?.no_cover_dates || []);
+                    const neededDates = Array.from(new Set(affectedDates)).filter(d => !noCoverSet.has(d)).sort();
+
+                    const shiftDatesByUser = new Map<string, Set<string>>();
+                    if (neededDates.length > 0) {
+                      const winStart = neededDates[0];
+                      const winEnd = neededDates[neededDates.length - 1];
+                      availabilityPatterns.forEach(p => {
+                        if (!shiftDatesByUser.has(p.user_id)) shiftDatesByUser.set(p.user_id, new Set());
+                        patternDatesInWindow(p, winStart, winEnd).forEach(d => shiftDatesByUser.get(p.user_id)!.add(d));
+                      });
+                    }
+                    const isOnLeave = (uid: string, d: string) =>
+                      availabilityHolidays.some(h => h.user_id === uid && h.start_date <= d && h.end_date >= d);
+
+                    type Row = {
+                      user_id: string; display_name: string | null; email: string | null;
+                      isBench: boolean; clients: string[];
+                      freeDates: string[]; leaveDates: string[]; workingDates: string[];
+                    };
                     const rows: Row[] = allStaffWithAssignments
                       .filter(s => s.user_id !== request.user_id)
                       .map(s => {
                         const clients = s.clientAssignments || [];
                         const realClients = clients.filter(c => c !== "Care Cuddle");
+                        const leaveDates = neededDates.filter(d => isOnLeave(s.user_id, d));
+                        const workingDates = neededDates.filter(d => !leaveDates.includes(d) && shiftDatesByUser.get(s.user_id)?.has(d));
+                        const freeDates = neededDates.filter(d => !leaveDates.includes(d) && !workingDates.includes(d));
                         return {
                           user_id: s.user_id,
                           display_name: s.display_name,
                           email: s.email,
                           isBench: s.isBench || realClients.length === 0,
                           clients,
+                          freeDates, leaveDates, workingDates,
                         };
                       })
-                      .sort((a, b) => (a.display_name || a.email || '').localeCompare(b.display_name || b.email || ''));
+                      .sort((a, b) => {
+                        // Most availability first, bench before allocated, then name.
+                        if (a.freeDates.length !== b.freeDates.length) return b.freeDates.length - a.freeDates.length;
+                        if (a.isBench !== b.isBench) return a.isBench ? -1 : 1;
+                        return (a.display_name || a.email || '').localeCompare(b.display_name || b.email || '');
+                      });
 
                     if (rows.length === 0) return null;
 
@@ -1362,10 +1424,41 @@ Care Cuddle Team`;
                           r.clients.some(c => c.toLowerCase().includes(search))
                         )
                       : rows;
-                    const staffGroups = [
-                      { key: 'bench', title: 'On the bench — no client allocation', rows: filteredRows.filter(r => r.isBench) },
-                      { key: 'allocated', title: 'Allocated to clients', rows: filteredRows.filter(r => !r.isBench) },
-                    ].filter(g => g.rows.length > 0);
+                    const hasNeededDates = neededDates.length > 0;
+                    const staffGroups = hasNeededDates
+                      ? [
+                          { key: 'free', title: `Free on all ${neededDates.length} day${neededDates.length !== 1 ? 's' : ''} needing cover`, rows: filteredRows.filter(r => r.freeDates.length === neededDates.length) },
+                          { key: 'partial', title: 'Free on some days', rows: filteredRows.filter(r => r.freeDates.length > 0 && r.freeDates.length < neededDates.length) },
+                          { key: 'busy', title: 'Not available — working or on leave', rows: filteredRows.filter(r => r.freeDates.length === 0) },
+                        ].filter(g => g.rows.length > 0)
+                      : [{ key: 'all', title: 'All staff', rows: filteredRows }];
+                    const fmtShort = (d: string) => format(new Date(d), 'EEE d MMM');
+                    const availabilityBadge = (r: Row) => {
+                      if (!hasNeededDates) return <span className="text-xs text-muted-foreground">—</span>;
+                      if (r.freeDates.length === neededDates.length) {
+                        return <Badge variant="outline" className="bg-success/10 text-success border-success/30 font-normal">Free all {neededDates.length} day{neededDates.length !== 1 ? 's' : ''}</Badge>;
+                      }
+                      if (r.freeDates.length > 0) {
+                        return (
+                          <Badge
+                            variant="outline"
+                            className="bg-amber-500/10 text-amber-600 border-amber-500/30 font-normal"
+                            title={`Free: ${r.freeDates.map(fmtShort).join(', ')}${r.workingDates.length ? ` · Working: ${r.workingDates.map(fmtShort).join(', ')}` : ''}${r.leaveDates.length ? ` · On leave: ${r.leaveDates.map(fmtShort).join(', ')}` : ''}`}
+                          >
+                            Free {r.freeDates.length} of {neededDates.length} days
+                          </Badge>
+                        );
+                      }
+                      return (
+                        <Badge
+                          variant="outline"
+                          className="bg-destructive/10 text-destructive border-destructive/30 font-normal"
+                          title={`${r.workingDates.length ? `Working: ${r.workingDates.map(fmtShort).join(', ')}` : ''}${r.leaveDates.length ? `${r.workingDates.length ? ' · ' : ''}On leave: ${r.leaveDates.map(fmtShort).join(', ')}` : ''}`}
+                        >
+                          {r.leaveDates.length === neededDates.length ? 'On leave' : 'Working'}
+                        </Badge>
+                      );
+                    };
 
                     return (
                       <div className="space-y-2">
@@ -1390,6 +1483,7 @@ Care Cuddle Team`;
                               <tr>
                                 <th className="text-left font-medium px-3 py-2 w-10">#</th>
                                 <th className="text-left font-medium px-3 py-2">Name</th>
+                                <th className="text-left font-medium px-3 py-2">Availability</th>
                                 <th className="text-left font-medium px-3 py-2">Clients</th>
                                 <th className="text-right font-medium px-3 py-2 w-32">Action</th>
                               </tr>
@@ -1397,14 +1491,14 @@ Care Cuddle Team`;
                             <tbody>
                               {filteredRows.length === 0 && (
                                 <tr>
-                                  <td colSpan={4} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                                  <td colSpan={5} className="px-3 py-6 text-center text-sm text-muted-foreground">
                                     No staff match "{staffSearch}"
                                   </td>
                                 </tr>
                               )}
                               {staffGroups.map(group => [
                                 <tr key={`header-${group.key}`} className="border-t bg-muted/60">
-                                  <td colSpan={4} className="px-3 py-1.5">
+                                  <td colSpan={5} className="px-3 py-1.5">
                                     <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                                       {group.title} ({group.rows.length})
                                     </span>
@@ -1422,8 +1516,12 @@ Care Cuddle Team`;
                                       <div className="flex items-center gap-2">
                                         {isAssigned && <CheckCircle2 className="h-3.5 w-3.5 text-success" />}
                                         <span>{staff.display_name || staff.email}</span>
+                                        {staff.isBench && (
+                                          <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground">Bench</Badge>
+                                        )}
                                       </div>
                                     </td>
+                                    <td className="px-3 py-2">{availabilityBadge(staff)}</td>
                                     <td className="px-3 py-2">
                                       {staff.clients.length > 0 ? (
                                         <div className="flex flex-wrap gap-1">

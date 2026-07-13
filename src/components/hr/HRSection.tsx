@@ -4,12 +4,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useUserRole } from "@/hooks/useUserRole";
 import { StaffPayManager } from "./StaffPayManager";
-import { HRProfileManager } from "./HRProfileManager";
 import { MyHRProfile } from "./MyHRProfile";
 import { OnboardingManager } from "./OnboardingManager";
 import { StaffOnboardingForm } from "./StaffOnboardingForm";
 import { MyContracts } from "./contracts/MyContracts";
-import { DollarSign, Users, User, GraduationCap, FileText, FileSignature } from "lucide-react";
+import { DollarSign, User, GraduationCap, FileText, FileSignature } from "lucide-react";
 
 interface HRSectionProps {
   initialUserId?: string | null;
@@ -19,8 +18,9 @@ interface HRSectionProps {
 const TAB_ALIASES: Record<string, string> = {
   payroll: "pay",
   pay: "pay",
-  profiles: "profiles",
-  staff: "profiles",
+  // Staffing Settings was merged into Staff Profile — old links land there.
+  profiles: "my-profile",
+  staff: "my-profile",
   onboarding: "onboarding",
   "onboarding-form": "onboarding-form",
   "my-profile": "my-profile",
@@ -29,20 +29,20 @@ const TAB_ALIASES: Record<string, string> = {
   "my-contracts": "my-contracts",
 };
 
-export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {}) {
+export function HRSection({ initialUserId }: HRSectionProps = {}) {
   const { isAdmin } = useUserRole();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
   const initialTab =
-    (tabParam && TAB_ALIASES[tabParam.toLowerCase()]) ||
-    (initialUserId && isAdmin ? "profiles" : isAdmin ? "profiles" : "my-profile");
+    (tabParam && TAB_ALIASES[tabParam.toLowerCase()]) || "my-profile";
 
   const [activeTab, setActiveTab] = useState<string>(initialTab);
 
-  // Switch to profiles tab when initialUserId changes
+  // Deep links with a target user (e.g. schedule "View profile") land on the
+  // Staff Profile tab, which preselects that user.
   useEffect(() => {
     if (initialUserId && isAdmin) {
-      setActiveTab("profiles");
+      setActiveTab("my-profile");
     }
   }, [initialUserId, isAdmin]);
 
@@ -62,7 +62,6 @@ export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {
   };
 
   const adminTabs = [
-    { value: "profiles", label: "Staffing Settings", icon: Users },
     { value: "pay", label: "Payroll", icon: DollarSign },
     { value: "my-profile", label: "Staff Profile", icon: User },
   ];
@@ -138,14 +137,9 @@ export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {
           </TabsList>
 
           {isAdmin && (
-            <>
-              <TabsContent value="profiles" className="mt-0">
-                <HRProfileManager initialUserId={initialUserId} onProfileClosed={onProfileClosed} />
-              </TabsContent>
-              <TabsContent value="pay" className="mt-0">
-                <StaffPayManager />
-              </TabsContent>
-            </>
+            <TabsContent value="pay" className="mt-0">
+              <StaffPayManager />
+            </TabsContent>
           )}
 
           {!isAdmin && (
@@ -163,7 +157,7 @@ export function HRSection({ initialUserId, onProfileClosed }: HRSectionProps = {
           </TabsContent>
 
           <TabsContent value="my-profile" className="mt-0">
-            <MyHRProfile />
+            <MyHRProfile initialUserId={initialUserId} />
           </TabsContent>
         </Tabs>
       </div>
