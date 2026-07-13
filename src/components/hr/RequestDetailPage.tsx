@@ -1099,105 +1099,16 @@ Care Cuddle Team`;
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Handover status — must be complete before this leave starts */}
-              {isHolidayRequest && request.status === 'approved' && handoverStatus && handoverStatus.status === 'not_required' && (
-                <>
-                  <div className="flex items-center gap-3 p-4 bg-muted/40 border rounded-lg">
-                    <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0" />
-                    <div>
-                      <p className="font-medium">Handover not required</p>
-                      <p className="text-sm text-muted-foreground">No cover is needed for this leave, so no handover is needed.</p>
-                    </div>
-                  </div>
-                  <Separator />
-                </>
-              )}
-              {isHolidayRequest && request.status === 'approved' && handoverStatus && handoverStatus.status !== 'none' && handoverStatus.status !== 'not_required' && (() => {
-                const daysUntil = differenceInCalendarDays(parseISO(request.start_date), new Date());
-                const isReady = handoverStatus.status === 'complete';
-                const urgent = !isReady && daysUntil <= 3;
-                const readyCount = handoverStatus.clients.filter(c => c.taskCount > 0 && c.avgProgress >= 100).length;
-                const multiClient = handoverStatus.clients.length > 1;
-                return (
-                  <>
-                    <div className={cn(
-                      "rounded-lg border p-4 space-y-3",
-                      !isReady && (urgent ? "border-destructive/50 bg-destructive/5" : "border-amber-400/50 bg-amber-500/5")
-                    )}>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {isReady ? (
-                          <CheckCircle2 className="h-5 w-5 text-success" />
-                        ) : (
-                          <AlertCircle className={cn("h-5 w-5", urgent ? "text-destructive" : "text-amber-500")} />
-                        )}
-                        <span className="font-semibold">Handover Status</span>
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            isReady
-                              ? "bg-success/20 text-success border-success"
-                              : urgent
-                                ? "bg-destructive/20 text-destructive border-destructive"
-                                : "bg-amber-500/20 text-amber-700 border-amber-500"
-                          )}
-                        >
-                          {HANDOVER_STATUS_LABEL[handoverStatus.status]}
-                        </Badge>
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {multiClient && (
-                          <span className="block font-medium text-foreground mb-0.5">
-                            This leave requires {handoverStatus.clients.length} separate handovers (one per client) — {readyCount} of {handoverStatus.clients.length} ready.
-                          </span>
-                        )}
-                        {isReady
-                          ? "All relevant clients' handovers are complete."
-                          : daysUntil >= 0
-                            ? `Every client's handover must be completed before leave starts${daysUntil <= 7 ? ` — ${daysUntil} day${daysUntil !== 1 ? 's' : ''} left` : ''}.`
-                            : "This leave has already started and handover is not yet complete."}
-                      </div>
-                      <div className="space-y-2">
-                        {handoverStatus.clients.map(c => (
-                          <div key={c.client} className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2.5">
-                            <span className="text-sm font-medium truncate">{c.client}</span>
-                            <div className="flex items-center gap-3 flex-shrink-0">
-                              <Badge
-                                variant="outline"
-                                className={cn(
-                                  c.avgProgress >= 100 && c.taskCount > 0
-                                    ? "bg-success/20 text-success border-success"
-                                    : c.avgProgress > 0
-                                      ? "bg-amber-500/20 text-amber-700 border-amber-500"
-                                      : "bg-destructive/20 text-destructive border-destructive"
-                                )}
-                              >
-                                {c.taskCount > 0 ? `${c.avgProgress}% · ${c.taskCount} task${c.taskCount !== 1 ? 's' : ''}` : 'Not started'}
-                              </Badge>
-                              <a
-                                href={`/public/schedule/${encodeURIComponent(c.client)}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-sm text-primary hover:underline"
-                              >
-                                Open tracker
-                              </a>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <Separator />
-                  </>
-                );
-              })()}
-
-              {/* Cover Status Section */}
+              {/* Cover & handover, consolidated per client: each client shows
+                  its handover status, tracker link, and its shift dates with
+                  who covers each — one list instead of three overlapping
+                  sections (handover status / assigned cover / day-by-day). */}
               {linkedHoliday?.no_cover_required ? (
                 <div className="flex items-center gap-3 p-4 bg-success/10 border border-success/20 rounded-lg">
                   <CheckCircle2 className="h-5 w-5 text-success" />
                   <div className="flex-1">
                     <p className="font-medium text-success">No cover required</p>
-                    <p className="text-sm text-muted-foreground">This absence has been marked as not requiring cover</p>
+                    <p className="text-sm text-muted-foreground">This absence has been marked as not requiring cover — no handover is needed</p>
                   </div>
                   <Button
                     variant="outline"
@@ -1208,144 +1119,209 @@ Care Cuddle Team`;
                     Require Cover
                   </Button>
                 </div>
-              ) : (
-                <>
-                  {/* Current Cover */}
-                  {coveringStaff && coveringStaff.length > 0 ? <div className="space-y-3">
-                      <Label className="text-muted-foreground text-sm">Assigned Cover</Label>
-                      {coveringStaff.map((cover, idx) => {
-                        // Prefer explicit covered_dates from coverage_metadata; fall back to date range.
-                        const meta = cover.coverage_metadata as { covered_dates?: string[] } | null | undefined;
-                        const coveredDates = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0
-                          ? [...meta!.covered_dates!].sort()
-                          : null;
-                        const formatDay = (d: string) => format(new Date(d), 'do MMM');
-                        let coverageLabel: string;
-                        if (coveredDates && coveredDates.length > 0) {
-                          if (coveredDates.length === 1) {
-                            coverageLabel = `Covering ${formatDay(coveredDates[0])}`;
-                          } else if (coveredDates.length === 2) {
-                            coverageLabel = `Covering ${formatDay(coveredDates[0])} and ${formatDay(coveredDates[1])}`;
-                          } else {
-                            const head = coveredDates.slice(0, -1).map(formatDay).join(', ');
-                            const tail = formatDay(coveredDates[coveredDates.length - 1]);
-                            coverageLabel = `Covering ${head} and ${tail}`;
-                          }
-                        } else if (cover.start_date === cover.end_date) {
-                          coverageLabel = `Covering ${formatDay(cover.start_date)}`;
-                        } else {
-                          coverageLabel = `Covering ${formatDay(cover.start_date)} to ${formatDay(cover.end_date)}`;
-                        }
-                        const otType = (cover as { overtime_type?: 'standard_hours' | 'outside_hours' | null }).overtime_type;
-                        const otLabel = otType === 'outside_hours'
-                          ? 'OT (Outside Hours · 1.5x)'
-                          : otType === 'standard_hours'
-                            ? 'OT (Inside Hours · +0.5x)'
-                            : null;
-                        const otBadgeClass = otType === 'outside_hours'
-                          ? 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950/40 dark:text-orange-200 dark:border-orange-800'
-                          : 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800';
-                        return (
-                          <div key={idx} className="flex items-center gap-3 p-3 bg-success/10 border border-success/20 rounded-lg">
-                            <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-medium">{getStaffName(cover.user_id)}</p>
-                                {otLabel && (
-                                  <Badge variant="outline" className={otBadgeClass}>
-                                    {otLabel}
-                                  </Badge>
-                                )}
-                              </div>
-                              <p className="text-sm text-muted-foreground">{coverageLabel}</p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div> : <div className="flex items-center gap-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
-                      <AlertCircle className="h-5 w-5 text-amber-600" />
-                      <div className="flex-1">
-                        <p className="font-medium">No cover arranged yet</p>
-                        <p className="text-sm text-muted-foreground">Click a staff member below to assign them as cover, or mark as not required</p>
-                      </div>
-                      {linkedHoliday && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => toggleNoCoverMutation.mutate(true)}
-                          disabled={toggleNoCoverMutation.isPending}
-                          className="whitespace-nowrap"
-                        >
-                          <UserX className="h-4 w-4 mr-1" />
-                          Cover Not Required
-                        </Button>
-                      )}
-                    </div>}
-                </>
-              )}
+              ) : (() => {
+                const showHandover = isHolidayRequest && request.status === 'approved' && handoverStatus
+                  && handoverStatus.status !== 'none' && handoverStatus.status !== 'not_required';
+                const daysUntil = differenceInCalendarDays(parseISO(request.start_date), new Date());
+                const isReady = handoverStatus?.status === 'complete';
+                const urgent = showHandover && !isReady && daysUntil <= 3;
+                const readyCount = (handoverStatus?.clients || []).filter(c => c.taskCount > 0 && c.avgProgress >= 100).length;
+                const handoverByClient = new Map((handoverStatus?.clients || []).map(c => [c.client, c]));
 
-              {/* Day-by-day cover status with per-day "no cover needed" toggle */}
-              {isHolidayRequest && linkedHoliday && !linkedHoliday.no_cover_required && (() => {
-                const affected = getAffectedShiftsByDay();
-                if (affected.length === 0) return null;
-                const dateClients = new Map<string, string[]>();
-                affected.forEach(s => {
-                  const d = s.date.toISOString().split('T')[0];
-                  const arr = dateClients.get(d) || [];
-                  if (s.clientName && !arr.includes(s.clientName)) arr.push(s.clientName);
-                  dateClients.set(d, arr);
-                });
-                const dates = Array.from(dateClients.keys()).sort();
-                const noCoverDates: string[] = linkedHoliday.no_cover_dates || [];
-                const coverByDate = new Map<string, string>();
+                // Per-date cover assignment (who + overtime type).
+                const affected = isHolidayRequest && linkedHoliday ? getAffectedShiftsByDay() : [];
+                const allDates = Array.from(new Set(affected.map(s => s.date.toISOString().split('T')[0])));
+                const coverInfoByDate = new Map<string, { name: string; otType: 'standard_hours' | 'outside_hours' | null }>();
                 (coveringStaff || []).forEach(cover => {
                   const meta = cover.coverage_metadata as { covered_dates?: string[] } | null | undefined;
                   const cds = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0 ? meta!.covered_dates! : null;
-                  dates.forEach(d => {
+                  const otType = (cover as { overtime_type?: 'standard_hours' | 'outside_hours' | null }).overtime_type ?? null;
+                  allDates.forEach(d => {
                     const covers = cds ? cds.includes(d) : (d >= cover.start_date && d <= cover.end_date);
-                    if (covers && !coverByDate.has(d)) coverByDate.set(d, getStaffName(cover.user_id));
+                    if (covers && !coverInfoByDate.has(d)) coverInfoByDate.set(d, { name: getStaffName(cover.user_id), otType });
                   });
                 });
+
+                // Shift dates grouped by client, merged with handover clients.
+                const clientDates = new Map<string, string[]>();
+                affected.forEach(s => {
+                  const d = s.date.toISOString().split('T')[0];
+                  const client = s.clientName || 'Unassigned';
+                  const arr = clientDates.get(client) || [];
+                  if (!arr.includes(d)) arr.push(d);
+                  clientDates.set(client, arr);
+                });
+                const clients = Array.from(new Set([...clientDates.keys(), ...handoverByClient.keys()]))
+                  .sort((a, b) => a.localeCompare(b));
+                const noCoverDates: string[] = linkedHoliday?.no_cover_dates || [];
                 const busy = setDayNoCoverMutation.isPending;
+
                 return (
-                  <div className="space-y-3">
-                    <Separator />
-                    <div className="flex items-center justify-between">
-                      <Label className="text-muted-foreground text-sm">Day-by-day cover</Label>
-                      <span className="text-xs text-muted-foreground">{dates.length} day{dates.length !== 1 ? 's' : ''}</span>
-                    </div>
-                    <div className="space-y-1.5">
-                      {dates.map(d => {
-                        const coveredName = coverByDate.get(d);
-                        const isNoCover = noCoverDates.includes(d);
-                        const clients = dateClients.get(d) || [];
-                        return (
-                          <div key={d} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium">{format(new Date(d), 'EEE d MMM')}</p>
-                              {clients.length > 0 && <p className="text-xs text-muted-foreground truncate">{clients.join(', ')}</p>}
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              {coveredName ? (
-                                <Badge variant="outline" className="bg-success/10 text-success border-success/30">Covered · {coveredName}</Badge>
-                              ) : isNoCover ? (
-                                <>
-                                  <Badge variant="outline" className="bg-muted text-muted-foreground border-muted-foreground/30">No cover needed</Badge>
-                                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setDayNoCoverMutation.mutate({ date: d, noCover: false })} disabled={busy}>Require cover</Button>
-                                </>
-                              ) : (
-                                <>
-                                  <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">Needs cover</Badge>
-                                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setDayNoCoverMutation.mutate({ date: d, noCover: true })} disabled={busy}>
-                                    <UserX className="h-3.5 w-3.5 mr-1" /> No cover needed
-                                  </Button>
-                                </>
+                  <div className="space-y-4">
+                    {/* Overall handover readiness for the leave */}
+                    {showHandover && handoverStatus && (
+                      <div className={cn(
+                        "flex items-start gap-2.5 rounded-lg border p-3",
+                        isReady ? "border-success/40 bg-success/5" : urgent ? "border-destructive/50 bg-destructive/5" : "border-amber-400/50 bg-amber-500/5"
+                      )}>
+                        {isReady ? (
+                          <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0" />
+                        ) : (
+                          <AlertCircle className={cn("h-5 w-5 flex-shrink-0", urgent ? "text-destructive" : "text-amber-500")} />
+                        )}
+                        <div className="text-sm">
+                          <span className="font-semibold">
+                            Handover: {HANDOVER_STATUS_LABEL[handoverStatus.status]}
+                            {handoverStatus.clients.length > 1 && ` — ${readyCount} of ${handoverStatus.clients.length} clients ready`}
+                          </span>
+                          <span className="block text-muted-foreground">
+                            {isReady
+                              ? "All relevant clients' handovers are complete."
+                              : daysUntil >= 0
+                                ? `Every client's handover must be completed before leave starts${daysUntil <= 7 ? ` — ${daysUntil} day${daysUntil !== 1 ? 's' : ''} left` : ''}.`
+                                : "This leave has already started and handover is not yet complete."}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {isHolidayRequest && request.status === 'approved' && handoverStatus?.status === 'not_required' && (
+                      <div className="flex items-center gap-3 p-3 bg-muted/40 border rounded-lg">
+                        <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0" />
+                        <p className="text-sm"><span className="font-medium">Handover not required</span> — every shift during this leave is marked as not needing cover.</p>
+                      </div>
+                    )}
+
+                    {(!coveringStaff || coveringStaff.length === 0) && (
+                      <div className="flex items-center gap-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                        <AlertCircle className="h-5 w-5 text-amber-600" />
+                        <div className="flex-1">
+                          <p className="font-medium">No cover arranged yet</p>
+                          <p className="text-sm text-muted-foreground">Click a staff member below to assign them as cover, or mark as not required</p>
+                        </div>
+                        {linkedHoliday && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => toggleNoCoverMutation.mutate(true)}
+                            disabled={toggleNoCoverMutation.isPending}
+                            className="whitespace-nowrap"
+                          >
+                            <UserX className="h-4 w-4 mr-1" />
+                            Cover Not Required
+                          </Button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* One block per client: handover state + that client's dates and cover */}
+                    {clients.map(client => {
+                      const hs = handoverByClient.get(client);
+                      const dates = (clientDates.get(client) || []).sort();
+                      const clientCoverNames = Array.from(new Set(
+                        dates.map(d => coverInfoByDate.get(d)?.name).filter((n): n is string => !!n)
+                      ));
+                      return (
+                        <div key={client} className="rounded-lg border overflow-hidden">
+                          <div className="flex items-center justify-between gap-2 flex-wrap px-3 py-2 bg-muted/40 border-b">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-sm font-semibold truncate">{client}</span>
+                              {clientCoverNames.length > 0 && (
+                                <span className="text-xs text-muted-foreground truncate">
+                                  hand over to {clientCoverNames.join(" & ")}
+                                </span>
                               )}
                             </div>
+                            {showHandover && hs && (
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <Badge
+                                  variant="outline"
+                                  className={cn(
+                                    hs.avgProgress >= 100 && hs.taskCount > 0
+                                      ? "bg-success/20 text-success border-success"
+                                      : hs.avgProgress > 0
+                                        ? "bg-amber-500/20 text-amber-700 border-amber-500"
+                                        : "bg-destructive/20 text-destructive border-destructive"
+                                  )}
+                                >
+                                  {hs.taskCount > 0 ? `Handover ${hs.avgProgress}% · ${hs.taskCount} task${hs.taskCount !== 1 ? 's' : ''}` : 'Handover not started'}
+                                </Badge>
+                                <a
+                                  href={`/public/schedule/${encodeURIComponent(client)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-sm text-primary hover:underline"
+                                >
+                                  Open tracker
+                                </a>
+                              </div>
+                            )}
                           </div>
-                        );
-                      })}
-                    </div>
+                          <div className="divide-y">
+                            {dates.map(d => {
+                              const cov = coverInfoByDate.get(d);
+                              const isNoCover = noCoverDates.includes(d);
+                              return (
+                                <div key={d} className="flex items-center justify-between gap-2 px-3 py-2">
+                                  <p className="text-sm">{format(new Date(d), 'EEE d MMM')}</p>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    {cov ? (
+                                      <>
+                                        <Badge variant="outline" className="bg-success/10 text-success border-success/30">Covered · {cov.name}</Badge>
+                                        {cov.otType && (
+                                          <Badge
+                                            variant="outline"
+                                            className={cov.otType === 'outside_hours'
+                                              ? 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950/40 dark:text-orange-200 dark:border-orange-800'
+                                              : 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-800'}
+                                          >
+                                            {cov.otType === 'outside_hours' ? 'OT 1.5x' : 'OT +0.5x'}
+                                          </Badge>
+                                        )}
+                                      </>
+                                    ) : isNoCover ? (
+                                      <>
+                                        <Badge variant="outline" className="bg-muted text-muted-foreground border-muted-foreground/30">No cover needed</Badge>
+                                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setDayNoCoverMutation.mutate({ date: d, noCover: false })} disabled={busy}>Require cover</Button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">Needs cover</Badge>
+                                        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setDayNoCoverMutation.mutate({ date: d, noCover: true })} disabled={busy}>
+                                          <UserX className="h-3.5 w-3.5 mr-1" /> No cover needed
+                                        </Button>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {dates.length === 0 && (
+                              <div className="px-3 py-2 text-xs text-muted-foreground">No shift dates during this leave.</div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Covers that exist but have no client rows to attach to
+                        (e.g. request not yet approved, so no linked holiday) */}
+                    {clients.length === 0 && coveringStaff && coveringStaff.length > 0 && (
+                      <div className="space-y-2">
+                        {coveringStaff.map((cover, idx) => (
+                          <div key={idx} className="flex items-center gap-3 p-3 bg-success/10 border border-success/20 rounded-lg">
+                            <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="font-medium">{getStaffName(cover.user_id)}</p>
+                              <p className="text-sm text-muted-foreground">
+                                Covering {cover.start_date === cover.end_date
+                                  ? format(new Date(cover.start_date), 'do MMM')
+                                  : `${format(new Date(cover.start_date), 'do MMM')} to ${format(new Date(cover.end_date), 'do MMM')}`}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })()}
