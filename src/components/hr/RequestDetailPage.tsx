@@ -392,13 +392,10 @@ export function RequestDetailPage({
         error
       } = await supabase.from("staff_requests").select("*").eq("request_type", "shift_swap").eq("swap_with_user_id", request!.user_id).gte("start_date", request!.start_date).lte("end_date", request!.end_date);
       if (error) throw error;
-      if (data && data.length > 0) {
-        return data.map(cover => ({
-          ...cover,
-          staffName: getStaffName(cover.user_id)
-        }));
-      }
-      return null;
+      // Names are resolved at render time via getStaffName — baking them in
+      // here raced the profiles query and cached "Unknown" forever when this
+      // query resolved first.
+      return data && data.length > 0 ? data : null;
     }
   });
 
@@ -855,7 +852,7 @@ export function RequestDetailPage({
     const isSingleDay = request.start_date === request.end_date;
     let coverInfo = "";
     if (coveringStaff && coveringStaff.length > 0) {
-      const coverNames = coveringStaff.map(c => c.staffName).join(", ");
+      const coverNames = coveringStaff.map(c => getStaffName(c.user_id)).join(", ");
       coverInfo = `\n\nCover arrangements have been made. ${coverNames} will be covering during this period.`;
     } else {
       coverInfo = "\n\nPlease note that cover arrangements are still being finalised, and we will update you once confirmed.";
@@ -1253,7 +1250,7 @@ Care Cuddle Team`;
                             <CheckCircle2 className="h-5 w-5 text-success shrink-0" />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-medium">{cover.staffName}</p>
+                                <p className="font-medium">{getStaffName(cover.user_id)}</p>
                                 {otLabel && (
                                   <Badge variant="outline" className={otBadgeClass}>
                                     {otLabel}
@@ -1306,7 +1303,7 @@ Care Cuddle Team`;
                   const cds = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0 ? meta!.covered_dates! : null;
                   dates.forEach(d => {
                     const covers = cds ? cds.includes(d) : (d >= cover.start_date && d <= cover.end_date);
-                    if (covers && !coverByDate.has(d)) coverByDate.set(d, cover.staffName);
+                    if (covers && !coverByDate.has(d)) coverByDate.set(d, getStaffName(cover.user_id));
                   });
                 });
                 const busy = setDayNoCoverMutation.isPending;
