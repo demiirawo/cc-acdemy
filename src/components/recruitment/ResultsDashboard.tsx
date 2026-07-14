@@ -13,8 +13,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, RefreshCw, Search, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import type { RecruitmentAttempt, RecruitmentTest } from "./types";
 
@@ -67,13 +68,34 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
     setTest((t as RecruitmentTest) || null);
     let attemptsArr = (a as RecruitmentAttempt[]) || [];
 
+    const qMax = (qs ?? []).reduce((s: number, q: any) => s + Number(q.weight ?? 0), 0);
+    const pctOf = (attempt: RecruitmentAttempt) => {
+      const max = Number(attempt.max_score) > 0 ? Number(attempt.max_score) : qMax;
+      if (max <= 0) return 0;
+      return Math.min(100, Math.round((Math.min(Number(attempt.total_score), max) / max) * 100));
+    };
+
     const lowIntegritySubmitted = attemptsArr.filter(
       (attempt) => attempt.status === "submitted" && Number(attempt.integrity_score) < 70,
     );
 
-    if (lowIntegritySubmitted.length > 0) {
+    // Auto-reject candidates scoring under 60% who have sat in pending review
+    // for over a month without being invited to interview.
+    const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+    const staleLowScore = attemptsArr.filter(
+      (attempt) =>
+        attempt.status === "submitted" &&
+        Number(attempt.integrity_score) >= 70 &&
+        attempt.submitted_at &&
+        Date.now() - new Date(attempt.submitted_at).getTime() > MONTH_MS &&
+        pctOf(attempt) < 60,
+    );
+
+    const autoRejectTargets = [...lowIntegritySubmitted, ...staleLowScore];
+
+    if (autoRejectTargets.length > 0) {
       const autoRejectResults = await Promise.allSettled(
-        lowIntegritySubmitted.map((attempt) =>
+        autoRejectTargets.map((attempt) =>
           supabase.functions.invoke("recruitment-set-stage", {
             body: { attempt_id: attempt.id, stage: "rejected" },
           }),
@@ -89,7 +111,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
           !result.value.error &&
           !(result.value.data as any)?.error
         ) {
-          rejectedIds.add(lowIntegritySubmitted[index].id);
+          rejectedIds.add(autoRejectTargets[index].id);
         } else {
           autoRejectFailed = true;
         }
@@ -99,11 +121,18 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
         attemptsArr = attemptsArr.map((attempt) =>
           rejectedIds.has(attempt.id) ? { ...attempt, status: "rejected" } : attempt,
         );
+        const staleRejected = staleLowScore.filter((s) => rejectedIds.has(s.id)).length;
+        if (staleRejected > 0) {
+          toast({
+            title: `${staleRejected} candidate${staleRejected !== 1 ? "s" : ""} auto-rejected`,
+            description: "Scored under 60% and sat in pending review for over a month.",
+          });
+        }
       }
 
       if (autoRejectFailed) {
         toast({
-          title: "Some low-integrity candidates were not auto-rejected",
+          title: "Some candidates were not auto-rejected",
           description: "Please refresh and try again.",
           variant: "destructive",
         });
@@ -111,9 +140,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
     }
 
     setAttempts(attemptsArr);
-    setQuestionMaxScore(
-      (qs ?? []).reduce((s: number, q: any) => s + Number(q.weight ?? 0), 0),
-    );
+    setQuestionMaxScore(qMax);
     setQuestionCount((qs ?? []).length);
 
     // Fetch answer counts per attempt to detect fully completed submissions.
@@ -221,6 +248,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
   };
 
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
 
   const rowsWithStatus = useMemo(
     () => attempts.map((a) => ({ a, label: statusOf(a).label })),
@@ -235,13 +263,19 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
     return counts;
   }, [rowsWithStatus]);
 
-  const sortedRows = useMemo(
-    () =>
+  const sortedRows = useMemo(() => {
+    const byStatus =
       statusFilter === "all"
         ? rowsWithStatus.filter((r) => r.a.status === "submitted").map((r) => r.a)
-        : rowsWithStatus.filter((r) => r.label === statusFilter).map((r) => r.a),
-    [rowsWithStatus, statusFilter],
-  );
+        : rowsWithStatus.filter((r) => r.label === statusFilter).map((r) => r.a);
+    const q = search.trim().toLowerCase();
+    if (!q) return byStatus;
+    return byStatus.filter(
+      (a) =>
+        (a.candidate_name || "").toLowerCase().includes(q) ||
+        (a.email || "").toLowerCase().includes(q),
+    );
+  }, [rowsWithStatus, statusFilter, search]);
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
@@ -294,10 +328,24 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
         </div>
       )}
 
+      {!loading && attempts.length > 0 && (
+        <div className="relative max-w-md">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search candidates by name or email..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8 h-9"
+          />
+        </div>
+      )}
+
       {loading ? (
         <p className="text-muted-foreground">Loading...</p>
       ) : sortedRows.length === 0 ? (
-        <Card className="p-12 text-center text-muted-foreground">No candidate submissions yet.</Card>
+        <Card className="p-12 text-center text-muted-foreground">
+          {search.trim() ? `No candidates match "${search.trim()}"` : "No candidate submissions yet."}
+        </Card>
       ) : (
         <Card className="overflow-hidden">
           <table className="w-full text-sm">
