@@ -29,6 +29,7 @@ interface TimelineRequest {
   linked_holiday_id: string | null;
   details: string | null;
   client_informed?: boolean | null;
+  coverage_metadata?: { covered_dates?: string[] } | null;
 }
 
 interface UserProfile {
@@ -361,9 +362,21 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                     }
                     const totalWorkingDays = allWorkingDays.length || 1;
 
-                    // Coverage by working days only
+                    // Coverage by working days only. Prefer the cover's explicit
+                    // covered_dates: a non-contiguous selection like {17th, 19th,
+                    // 21st} is stored as a 17->21 range, and walking the span
+                    // would wrongly count the uncovered days in between as covered.
                     const coveredDays = new Set<string>();
                     covers.forEach((c) => {
+                      const explicitDates = Array.isArray(c.coverage_metadata?.covered_dates) && c.coverage_metadata!.covered_dates!.length > 0
+                        ? c.coverage_metadata!.covered_dates!
+                        : null;
+                      if (explicitDates) {
+                        explicitDates.forEach((iso) => {
+                          if (allWorkingDays.includes(iso)) coveredDays.add(iso);
+                        });
+                        return;
+                      }
                       const cStart = c.start_date > req.start_date ? c.start_date : req.start_date;
                       const cEnd = c.end_date < req.end_date ? c.end_date : req.end_date;
                       if (cStart > cEnd) return;
