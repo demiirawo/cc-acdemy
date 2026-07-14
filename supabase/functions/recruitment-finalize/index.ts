@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
     };
     if (!partial) {
       updatePayload.submitted_at = new Date().toISOString();
-      updatePayload.status = integrity < 70 ? "rejected" : "submitted";
+      updatePayload.status = integrity < 85 ? "rejected" : "submitted";
     }
 
     const { error: updErr } = await supabase
@@ -131,8 +131,8 @@ Deno.serve(async (req) => {
         total,
         max,
         integrity,
-        auto_rejected: !partial && integrity < 70,
-        final_status: !partial ? (integrity < 70 ? "rejected" : "submitted") : attempt.status,
+        auto_rejected: !partial && integrity < 85,
+        final_status: !partial ? (integrity < 85 ? "rejected" : "submitted") : attempt.status,
       },
     });
 

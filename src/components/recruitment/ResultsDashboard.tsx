@@ -76,7 +76,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
     };
 
     const lowIntegritySubmitted = attemptsArr.filter(
-      (attempt) => attempt.status === "submitted" && Number(attempt.integrity_score) < 70,
+      (attempt) => attempt.status === "submitted" && Number(attempt.integrity_score) < 85,
     );
 
     // Auto-reject candidates scoring under 60% who have sat in pending review
@@ -85,7 +85,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
     const staleLowScore = attemptsArr.filter(
       (attempt) =>
         attempt.status === "submitted" &&
-        Number(attempt.integrity_score) >= 70 &&
+        Number(attempt.integrity_score) >= 85 &&
         attempt.submitted_at &&
         Date.now() - new Date(attempt.submitted_at).getTime() > MONTH_MS &&
         pctOf(attempt) < 60,
@@ -400,7 +400,7 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <Badge variant={a.integrity_score >= 80 ? "outline" : "destructive"}>
+                      <Badge variant={a.integrity_score >= 85 ? "outline" : "destructive"}>
                         {a.integrity_score}
                       </Badge>
                     </td>
