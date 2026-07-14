@@ -109,6 +109,32 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
     },
   });
 
+  // Linked holiday records carry per-date "no cover needed" marks — those
+  // days must not count against coverage.
+  const { data: holidayRecords = [] } = useQuery({
+    queryKey: ["timeline-holiday-records", userIdsForMonth],
+    enabled: userIdsForMonth.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff_holidays")
+        .select("user_id, start_date, end_date, no_cover_required, no_cover_dates")
+        .in("user_id", userIdsForMonth)
+        .eq("status", "approved");
+      if (error) throw error;
+      return (data || []) as Array<{
+        user_id: string;
+        start_date: string;
+        end_date: string;
+        no_cover_required: boolean;
+        no_cover_dates: string[] | null;
+      }>;
+    },
+  });
+  const holidayRecordByKey = useMemo(
+    () => new Map(holidayRecords.map((h) => [`${h.user_id}|${h.start_date}|${h.end_date}`, h])),
+    [holidayRecords]
+  );
+
   const patternIds = useMemo(() => shiftPatterns.map((p) => p.id), [shiftPatterns]);
   const { data: shiftExceptions = [] } = useQuery({
     queryKey: ["timeline-shift-exceptions", patternIds],
@@ -352,15 +378,24 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                     const segments = segmentsFor(req);
                     if (segments.length === 0) return null;
 
-                    // Working days in this holiday (across full range, not just month)
+                    // Working days in this holiday that actually need cover:
+                    // days marked "no cover needed" (per-date or whole-holiday
+                    // on the linked staff_holidays record) don't count against
+                    // coverage.
+                    const holRecord = holidayRecordByKey.get(`${req.user_id}|${req.start_date}|${req.end_date}`);
+                    const noCoverSet = new Set(holRecord?.no_cover_dates || []);
+                    const noCoverRequired = !!holRecord?.no_cover_required;
                     const allWorkingDays: string[] = [];
                     let dd = parseISO(req.start_date);
                     const endD = parseISO(req.end_date);
                     while (dd <= endD) {
-                      if (isWorkingDay(req.user_id, dd)) allWorkingDays.push(format(dd, "yyyy-MM-dd"));
+                      const iso = format(dd, "yyyy-MM-dd");
+                      if (!noCoverRequired && !noCoverSet.has(iso) && isWorkingDay(req.user_id, dd)) {
+                        allWorkingDays.push(iso);
+                      }
                       dd = addDays(dd, 1);
                     }
-                    const totalWorkingDays = allWorkingDays.length || 1;
+                    const totalWorkingDays = allWorkingDays.length;
 
                     // Coverage by working days only. Prefer the cover's explicit
                     // covered_dates: a non-contiguous selection like {17th, 19th,
@@ -386,7 +421,8 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                       });
                     });
                     let coverage: "covered" | "partial" | "open";
-                    if (coveredDays.size === 0) coverage = "open";
+                    if (totalWorkingDays === 0) coverage = "covered"; // nothing needs cover
+                    else if (coveredDays.size === 0) coverage = "open";
                     else if (coveredDays.size >= totalWorkingDays) coverage = "covered";
                     else coverage = "partial";
 
@@ -453,7 +489,11 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                             </div>
                             <div className="mt-1 pt-1 border-t">
                               {coverage === "covered" && (
-                                <span className="text-cyan-700 dark:text-cyan-300">Fully covered by: {covers.map((c) => getName(c.user_id)).join(", ")}</span>
+                                <span className="text-cyan-700 dark:text-cyan-300">
+                                  {covers.length > 0
+                                    ? `Fully covered by: ${covers.map((c) => getName(c.user_id)).join(", ")}${noCoverSet.size > 0 ? " (remaining days marked no cover needed)" : ""}`
+                                    : "No cover needed"}
+                                </span>
                               )}
                               {coverage === "partial" && (
                                 <span className="text-amber-700 dark:text-amber-300">
