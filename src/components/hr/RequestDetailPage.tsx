@@ -1433,30 +1433,46 @@ Care Cuddle Team`;
                         ].filter(g => g.rows.length > 0)
                       : [{ key: 'all', title: 'All staff', rows: filteredRows }];
                     const fmtShort = (d: string) => format(new Date(d), 'EEE d MMM');
+                    // Weekday strip (Mon-first): each letter is coloured by the
+                    // staff member's availability across the needed dates that
+                    // fall on that weekday (a long leave can hit the same
+                    // weekday more than once).
+                    const WEEKDAYS = [
+                      { letter: 'M', dow: 1 }, { letter: 'T', dow: 2 }, { letter: 'W', dow: 3 },
+                      { letter: 'T', dow: 4 }, { letter: 'F', dow: 5 }, { letter: 'S', dow: 6 }, { letter: 'S', dow: 0 },
+                    ];
                     const availabilityBadge = (r: Row) => {
                       if (!hasNeededDates) return <span className="text-xs text-muted-foreground">—</span>;
-                      if (r.freeDates.length === neededDates.length) {
-                        return <Badge variant="outline" className="bg-success/10 text-success border-success/30 font-normal">Free all {neededDates.length} day{neededDates.length !== 1 ? 's' : ''}</Badge>;
-                      }
-                      if (r.freeDates.length > 0) {
-                        return (
-                          <Badge
-                            variant="outline"
-                            className="bg-amber-500/10 text-amber-600 border-amber-500/30 font-normal"
-                            title={`Free: ${r.freeDates.map(fmtShort).join(', ')}${r.workingDates.length ? ` · Working: ${r.workingDates.map(fmtShort).join(', ')}` : ''}${r.leaveDates.length ? ` · On leave: ${r.leaveDates.map(fmtShort).join(', ')}` : ''}`}
-                          >
-                            Free {r.freeDates.length} of {neededDates.length} days
-                          </Badge>
-                        );
-                      }
+                      const statusOfDate = (d: string) =>
+                        r.leaveDates.includes(d) ? 'on leave' : r.workingDates.includes(d) ? 'working' : 'free';
                       return (
-                        <Badge
-                          variant="outline"
-                          className="bg-destructive/10 text-destructive border-destructive/30 font-normal"
-                          title={`${r.workingDates.length ? `Working: ${r.workingDates.map(fmtShort).join(', ')}` : ''}${r.leaveDates.length ? `${r.workingDates.length ? ' · ' : ''}On leave: ${r.leaveDates.map(fmtShort).join(', ')}` : ''}`}
-                        >
-                          {r.leaveDates.length === neededDates.length ? 'On leave' : 'Working'}
-                        </Badge>
+                        <div className="flex items-center gap-0.5">
+                          {WEEKDAYS.map(({ letter, dow }, i) => {
+                            const datesOnDay = neededDates.filter(d => new Date(d).getDay() === dow);
+                            if (datesOnDay.length === 0) {
+                              return (
+                                <span key={i} className="w-5 h-5 rounded flex items-center justify-center text-[10px] font-medium bg-muted/40 text-muted-foreground/40" title="No cover needed this day">
+                                  {letter}
+                                </span>
+                              );
+                            }
+                            const freeCount = datesOnDay.filter(d => r.freeDates.includes(d)).length;
+                            const cls = freeCount === datesOnDay.length
+                              ? 'bg-success/15 text-success border border-success/40'
+                              : freeCount > 0
+                                ? 'bg-amber-500/15 text-amber-600 border border-amber-500/40'
+                                : 'bg-destructive/15 text-destructive border border-destructive/40';
+                            return (
+                              <span
+                                key={i}
+                                className={`w-5 h-5 rounded flex items-center justify-center text-[10px] font-semibold ${cls}`}
+                                title={datesOnDay.map(d => `${fmtShort(d)} — ${statusOfDate(d)}`).join('\n')}
+                              >
+                                {letter}
+                              </span>
+                            );
+                          })}
+                        </div>
                       );
                     };
 
