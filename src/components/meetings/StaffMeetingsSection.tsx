@@ -196,10 +196,12 @@ export function StaffMeetingsSection() {
   const addItemInline = async () => {
     if (!itemForm.title.trim()) return;
     setSavingItem(true);
+    const isAll = itemForm.owner === "all";
     const owner = staff.find(s => s.user_id === itemForm.owner);
     const { data, error } = await (supabase as any).from("meeting_actions").insert({
       title: itemForm.title.trim(), detail: itemForm.detail.trim() || null,
-      owner_user_id: owner?.user_id ?? null, owner_name: owner?.display_name ?? owner?.email ?? null,
+      owner_user_id: isAll ? null : (owner?.user_id ?? null),
+      owner_name: isAll ? "All Staff" : (owner?.display_name ?? owner?.email ?? null),
       due_date: itemForm.due_date || null, priority: itemForm.priority, status: itemForm.status,
       on_agenda: itemForm.on_agenda, sort_order: items.length,
     }).select("*").single();
@@ -328,9 +330,11 @@ export function StaffMeetingsSection() {
   const cellCls = "border-b border-r last:border-r-0 border-border/60 px-3 py-2 align-top";
   const isEditing = (id: string, f: string) => editCell?.id === id && editCell.field === f;
   const setOwner = (a: MeetingItem, v: string) => {
+    if (v === "all") { updateItem(a.id, { owner_user_id: null, owner_name: "All Staff" }); return; }
     const o = staff.find(s => s.user_id === v);
     updateItem(a.id, { owner_user_id: v === "none" ? null : v, owner_name: v === "none" ? null : (o?.display_name || o?.email || null) });
   };
+  const ownerValue = (a: MeetingItem) => a.owner_user_id ?? (a.owner_name === "All Staff" ? "all" : "none");
 
   const EditRow = (a: MeetingItem) => {
     const overdue = a.status !== "done" && a.due_date && differenceInCalendarDays(parseISO(a.due_date), new Date()) < 0;
@@ -367,10 +371,11 @@ export function StaffMeetingsSection() {
         {/* owner */}
         <td className={cn(cellCls, "cursor-pointer")} onDoubleClick={() => setEditCell({ id: a.id, field: "owner" })}>
           {isEditing(a.id, "owner") ? (
-            <Select defaultOpen defaultValue={a.owner_user_id ?? "none"} onValueChange={v => setOwner(a, v)} onOpenChange={o => { if (!o) setEditCell(null); }}>
+            <Select defaultOpen defaultValue={ownerValue(a)} onValueChange={v => setOwner(a, v)} onOpenChange={o => { if (!o) setEditCell(null); }}>
               <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Unassigned</SelectItem>
+                <SelectItem value="all">All Staff</SelectItem>
                 {staff.map(s => <SelectItem key={s.user_id} value={s.user_id}>{s.display_name || s.email}</SelectItem>)}
               </SelectContent>
             </Select>
@@ -515,6 +520,7 @@ export function StaffMeetingsSection() {
               <SelectTrigger className="h-9"><SelectValue placeholder="Owner" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Unassigned</SelectItem>
+                <SelectItem value="all">All Staff</SelectItem>
                 {staff.map(s => <SelectItem key={s.user_id} value={s.user_id}>{s.display_name || s.email}</SelectItem>)}
               </SelectContent>
             </Select>
