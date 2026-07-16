@@ -37,10 +37,11 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const [{ data: objectives }, { data: actions }, { data: spots }] = await Promise.all([
+    const [{ data: objectives }, { data: actions }, { data: spots }, { data: updates }] = await Promise.all([
       supabase.from("meeting_objectives").select("title, target_date, is_done, sort_order").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       supabase.from("meeting_actions").select("title, detail, owner_name, due_date, status, priority, on_agenda, sort_order").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       supabase.from("meeting_spotlights").select("user_id, note").order("created_at", { ascending: false }),
+      supabase.from("meeting_updates").select("title, body, category, created_at").order("created_at", { ascending: false }),
     ]);
 
     // Enrich spotlights with name, rank, tenure and a signed photo URL.
@@ -77,6 +78,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       vision: settings.vision || "",
       objectives: objectives ?? [],
+      updates: updates ?? [],
       actions: actions ?? [],
       spotlights,
     }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });

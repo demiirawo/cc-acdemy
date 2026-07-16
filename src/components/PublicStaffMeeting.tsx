@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { format, parseISO, differenceInCalendarDays } from "date-fns";
-import { Rocket, Target, Sparkles, Flag, CalendarDays, AlertCircle, Loader2, CheckCircle2, Presentation } from "lucide-react";
+import { Rocket, Target, Sparkles, Flag, CalendarDays, AlertCircle, Loader2, CheckCircle2, Presentation, Megaphone } from "lucide-react";
 
 const STATUS = {
   not_started: { label: "Not started", cls: "bg-muted text-muted-foreground border-border" },
@@ -27,9 +27,18 @@ const RANK_TILE: Record<string, string> = {
 interface MeetingData {
   vision: string;
   objectives: { title: string; target_date: string | null; is_done: boolean }[];
+  updates: { title: string; body: string | null; category: string | null }[];
   actions: { title: string; detail: string | null; owner_name: string | null; due_date: string | null; status: string; priority: string; on_agenda: boolean }[];
   spotlights: { name: string; note: string | null; rank: string | null; years: number | null; photo: string | null }[];
 }
+
+const UPDATE_CAT: Record<string, { label: string; cls: string }> = {
+  policy: { label: "Policy", cls: "bg-blue-100 text-blue-700 border-blue-200" },
+  cqc: { label: "CQC", cls: "bg-purple-100 text-purple-700 border-purple-200" },
+  training: { label: "Training", cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  compliance: { label: "Compliance", cls: "bg-amber-100 text-amber-700 border-amber-200" },
+  general: { label: "General", cls: "bg-slate-100 text-slate-600 border-slate-200" },
+};
 
 const Label = ({ children }: { children: React.ReactNode }) => (
   <p className="text-xs uppercase tracking-widest text-primary/70 font-semibold">{children}</p>
@@ -150,6 +159,26 @@ export function PublicStaffMeeting() {
             </div>
           )}
         </Section>
+
+        {/* Updates */}
+        {data.updates.length > 0 && (
+          <Section icon={Megaphone} title="Updates">
+            <div className="space-y-3">
+              {data.updates.map((u, i) => {
+                const c = u.category ? UPDATE_CAT[u.category] : null;
+                return (
+                  <div key={i} className="rounded-xl border bg-card p-4">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {c && <span className={cn("rounded-full border px-2 py-0.5 text-[10px]", c.cls)}>{c.label}</span>}
+                      <p className="font-semibold text-base">{u.title}</p>
+                    </div>
+                    {u.body && <p className="text-muted-foreground mt-1.5 whitespace-pre-wrap text-sm">{u.body}</p>}
+                  </div>
+                );
+              })}
+            </div>
+          </Section>
+        )}
 
         {/* Agenda & tracked items */}
         <Section icon={Target} title="Agenda & Tracked Items">

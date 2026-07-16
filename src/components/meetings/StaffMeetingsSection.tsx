@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { format, parseISO, differenceInCalendarDays } from "date-fns";
 import {
   Presentation, Target, Sparkles, Rocket, Plus, Trash2, Pencil,
-  ChevronLeft, ChevronRight, X, CalendarDays, AlertCircle, Loader2, Check, Flag, Share2, Copy,
+  ChevronLeft, ChevronRight, X, CalendarDays, AlertCircle, Loader2, Check, Flag, Share2, Copy, Megaphone,
 } from "lucide-react";
 import { RANK_ORDER, RANK_STYLES, tenureYears, type Rank } from "../hr/PerformanceRankBadge";
 
@@ -34,6 +34,14 @@ const PRIORITIES = [
 const statusMeta = (v: string) => ACTION_STATUS.find(s => s.value === v) ?? ACTION_STATUS[0];
 const prioMeta = (v: string) => PRIORITIES.find(p => p.value === v) ?? PRIORITIES[1];
 const EMPTY_ITEM = { title: "", detail: "", owner: "none", due_date: "", priority: "medium", status: "not_started", on_agenda: true };
+const UPDATE_CATEGORIES = [
+  { value: "policy", label: "Policy", cls: "bg-blue-100 text-blue-700 border-blue-200" },
+  { value: "cqc", label: "CQC", cls: "bg-purple-100 text-purple-700 border-purple-200" },
+  { value: "training", label: "Training", cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  { value: "compliance", label: "Compliance", cls: "bg-amber-100 text-amber-700 border-amber-200" },
+  { value: "general", label: "General", cls: "bg-slate-100 text-slate-600 border-slate-200" },
+];
+const updCat = (v: string | null) => UPDATE_CATEGORIES.find(c => c.value === v);
 
 interface MeetingItem {
   id: string; title: string; detail: string | null; owner_user_id: string | null;
@@ -41,15 +49,19 @@ interface MeetingItem {
   on_agenda: boolean; sort_order: number;
 }
 interface Objective { id: string; title: string; target_date: string | null; is_done: boolean; sort_order: number; }
+interface Update { id: string; title: string; body: string | null; category: string | null; created_at: string; }
 interface Spotlight { id: string; user_id: string; note: string | null; }
 interface StaffProfile { user_id: string; display_name: string | null; email: string | null; }
 type PerfInfo = { rank: Rank | null; years: number | null };
 
 const SECTIONS = [
   { key: "vision", title: "Our Vision", icon: Rocket },
+  { key: "updates", title: "Updates", icon: Megaphone },
   { key: "items", title: "Agenda & Tracked Items", icon: Target },
   { key: "spotlight", title: "Staff Spotlight", icon: Sparkles },
 ] as const;
+// The presentation walks the sections in reverse (spotlight → … → vision).
+const PRESENT_ORDER = [...SECTIONS].reverse();
 
 export function StaffMeetingsSection() {
   const { user } = useAuth();
@@ -62,6 +74,10 @@ export function StaffMeetingsSection() {
 
   const [objectives, setObjectives] = useState<Objective[]>([]);
   const [newObj, setNewObj] = useState({ title: "", target_date: "" });
+
+  const [updates, setUpdates] = useState<Update[]>([]);
+  const [updAdding, setUpdAdding] = useState(false);
+  const [updForm, setUpdForm] = useState({ title: "", body: "", category: "general" });
 
   const [items, setItems] = useState<MeetingItem[]>([]);
   const [itemAdding, setItemAdding] = useState(false);
@@ -92,11 +108,12 @@ export function StaffMeetingsSection() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [settingsRes, objRes, itemRes, spotRes, staffRes, hrRes, docRes] = await Promise.all([
+    const [settingsRes, objRes, itemRes, spotRes, updRes, staffRes, hrRes, docRes] = await Promise.all([
       (supabase as any).from("meeting_settings").select("vision, public_token").eq("id", true).maybeSingle(),
       (supabase as any).from("meeting_objectives").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       (supabase as any).from("meeting_actions").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       (supabase as any).from("meeting_spotlights").select("*").order("created_at", { ascending: false }),
+      (supabase as any).from("meeting_updates").select("*").order("created_at", { ascending: false }),
       supabase.from("profiles").select("user_id, display_name, email").order("display_name"),
       supabase.from("hr_profiles").select("user_id, performance_rating, start_date, created_at"),
       supabase.from("staff_onboarding_documents").select("user_id, photograph_path"),
@@ -106,6 +123,7 @@ export function StaffMeetingsSection() {
     setObjectives((objRes.data as Objective[]) || []);
     setItems((itemRes.data as MeetingItem[]) || []);
     setSpotlights((spotRes.data as Spotlight[]) || []);
+    setUpdates((updRes.data as Update[]) || []);
     setStaff((staffRes.data as StaffProfile[]) || []);
     const pmap: Record<string, PerfInfo> = {};
     (hrRes.data || []).forEach((h: any) => {
@@ -139,7 +157,7 @@ export function StaffMeetingsSection() {
   useEffect(() => {
     if (!present) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") setSectionIdx(i => Math.min(SECTIONS.length - 1, i + 1));
+      if (e.key === "ArrowRight") setSectionIdx(i => Math.min(PRESENT_ORDER.length - 1, i + 1));
       else if (e.key === "ArrowLeft") setSectionIdx(i => Math.max(0, i - 1));
       else if (e.key === "Escape") setPresent(false);
     };
@@ -202,6 +220,19 @@ export function StaffMeetingsSection() {
   const deleteItem = async (id: string) => {
     setItems(prev => prev.filter(a => a.id !== id));
     await (supabase as any).from("meeting_actions").delete().eq("id", id);
+  };
+
+  const addUpdate = async () => {
+    if (!updForm.title.trim()) return;
+    const { data } = await (supabase as any).from("meeting_updates")
+      .insert({ title: updForm.title.trim(), body: updForm.body.trim() || null, category: updForm.category })
+      .select("*").single();
+    if (data) setUpdates(prev => [data as Update, ...prev]);
+    setUpdForm({ title: "", body: "", category: updForm.category });
+  };
+  const deleteUpdate = async (id: string) => {
+    setUpdates(prev => prev.filter(u => u.id !== id));
+    await (supabase as any).from("meeting_updates").delete().eq("id", id);
   };
 
   const addSpotlight = async () => {
@@ -489,8 +520,60 @@ export function StaffMeetingsSection() {
     </div>
   );
 
+  const renderUpdates = (big: boolean) => (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <p className="text-xs uppercase tracking-widest text-primary/70 font-semibold">Team updates</p>
+        {!present && !updAdding && <Button size="sm" variant="outline" className="ml-auto" onClick={() => setUpdAdding(true)}><Plus className="h-4 w-4 mr-1" /> Add update</Button>}
+      </div>
+
+      {!present && updAdding && (
+        <div className="rounded-xl border bg-muted/20 p-3 space-y-2.5">
+          <Input autoFocus value={updForm.title} onChange={e => setUpdForm(f => ({ ...f, title: e.target.value }))} placeholder="Update headline (e.g. New medication policy)" />
+          <Textarea value={updForm.body} onChange={e => setUpdForm(f => ({ ...f, body: e.target.value }))} rows={3} placeholder="Details for the team…" />
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <Select value={updForm.category} onValueChange={v => setUpdForm(f => ({ ...f, category: v }))}>
+              <SelectTrigger className="h-9 w-[160px]"><SelectValue /></SelectTrigger>
+              <SelectContent>{UPDATE_CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
+            </Select>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => { setUpdAdding(false); setUpdForm({ title: "", body: "", category: "general" }); }}>Done</Button>
+              <Button size="sm" onClick={addUpdate} disabled={!updForm.title.trim()}><Plus className="h-4 w-4 mr-1" /> Post update</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {updates.length === 0 ? (
+        <p className="text-muted-foreground italic">No updates yet{!present && " — post one to share with the team"}.</p>
+      ) : (
+        <div className="space-y-3">
+          {updates.map(u => {
+            const c = updCat(u.category);
+            return (
+              <div key={u.id} className="rounded-xl border bg-card p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    {c && <Badge variant="outline" className={cn("text-[10px]", c.cls)}>{c.label}</Badge>}
+                    <p className={cn("font-semibold", big ? "text-xl" : "text-base")}>{u.title}</p>
+                  </div>
+                  {!present && (
+                    <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-destructive" onClick={() => deleteUpdate(u.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+                {u.body && <p className={cn("text-muted-foreground mt-1.5 whitespace-pre-wrap", big ? "text-lg" : "text-sm")}>{u.body}</p>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
   const renderBody = (key: string, big: boolean) =>
-    key === "vision" ? renderVision(big) : key === "items" ? renderItems(big) : renderSpotlight(big);
+    key === "vision" ? renderVision(big) : key === "updates" ? renderUpdates(big) : key === "items" ? renderItems(big) : renderSpotlight(big);
 
   if (loading) {
     return <div className="flex-1 flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading meeting…</div>;
@@ -498,17 +581,17 @@ export function StaffMeetingsSection() {
 
   // ---- Present mode ----
   if (present) {
-    const sec = SECTIONS[sectionIdx];
+    const sec = PRESENT_ORDER[sectionIdx];
     const Icon = sec.icon;
     return (
       <div className="flex-1 flex flex-col bg-background">
         <div className="flex items-center justify-between px-6 py-3 border-b">
           <div className="flex items-center gap-2 text-muted-foreground">
             <Presentation className="h-4 w-4" />
-            <span className="text-sm font-medium">Presenting · {sectionIdx + 1} / {SECTIONS.length}</span>
+            <span className="text-sm font-medium">Presenting · {sectionIdx + 1} / {PRESENT_ORDER.length}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            {SECTIONS.map((s, i) => (
+            {PRESENT_ORDER.map((s, i) => (
               <button key={s.key} onClick={() => setSectionIdx(i)} className={cn("h-2 rounded-full transition-all", i === sectionIdx ? "w-6 bg-primary" : "w-2 bg-muted-foreground/30")} />
             ))}
           </div>
@@ -526,7 +609,7 @@ export function StaffMeetingsSection() {
         <div className="flex items-center justify-between px-6 py-3 border-t">
           <Button variant="outline" onClick={() => setSectionIdx(i => Math.max(0, i - 1))} disabled={sectionIdx === 0}><ChevronLeft className="h-4 w-4 mr-1" /> Previous</Button>
           <span className="text-xs text-muted-foreground">Use ← → arrow keys</span>
-          <Button onClick={() => setSectionIdx(i => Math.min(SECTIONS.length - 1, i + 1))} disabled={sectionIdx === SECTIONS.length - 1}>Next <ChevronRight className="h-4 w-4 ml-1" /></Button>
+          <Button onClick={() => setSectionIdx(i => Math.min(PRESENT_ORDER.length - 1, i + 1))} disabled={sectionIdx === PRESENT_ORDER.length - 1}>Next <ChevronRight className="h-4 w-4 ml-1" /></Button>
         </div>
       </div>
     );
