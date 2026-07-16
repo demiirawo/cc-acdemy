@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink, Handshake, Settings } from "lucide-react";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, AlertTriangle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink, Handshake, Settings, Plus, Trash2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -298,6 +298,32 @@ const STATUS_DOT_CLASS: Record<StatusTone, string> = {
 };
 // Performance rating tiers live in PerformanceRankBadge (shared with payroll).
 
+// Performance categories staff are rated against — also the areas a warning can
+// be logged against, linking warnings to the success criteria.
+const PERFORMANCE_CATEGORIES = ['Communication', 'Attention to Detail', 'Professionalism', 'Learning'] as const;
+
+// Warning severities (matches the send-warning-email edge function).
+const WARNING_SEVERITIES: Record<string, { label: string; tone: StatusTone }> = {
+  minor: { label: 'Minor', tone: 'warning' },
+  major: { label: 'Major', tone: 'danger' },
+  final: { label: 'Final', tone: 'danger' },
+};
+
+interface PerformanceCriterion {
+  id: string;
+  category: string;
+  description: string;
+  sort_order: number;
+}
+interface StaffWarning {
+  id: string;
+  user_id: string;
+  category: string | null;
+  reason: string;
+  severity: string;
+  issued_at: string;
+}
+
 function StatusPill({ tone, children }: { tone: StatusTone; children: React.ReactNode }) {
   return (
     <span className={cn("ml-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium", STATUS_TONE_CLASS[tone])}>
@@ -362,6 +388,13 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   // Admin-authored "how to improve your rating" note for the selected staff.
   const [guidanceDraft, setGuidanceDraft] = useState("");
   const [savingGuidance, setSavingGuidance] = useState(false);
+  // Success criteria (team-wide) + warnings (per selected staff).
+  const [criteria, setCriteria] = useState<PerformanceCriterion[]>([]);
+  const [warnings, setWarnings] = useState<StaffWarning[]>([]);
+  const [warnCategory, setWarnCategory] = useState<string>('none');
+  const [warnSeverity, setWarnSeverity] = useState<string>('minor');
+  const [warnReason, setWarnReason] = useState("");
+  const [savingWarning, setSavingWarning] = useState(false);
 
   // Fetch all staff for admin dropdown
   useEffect(() => {
@@ -415,6 +448,18 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     })();
   }, []);
 
+  // Success criteria staff are rated against (shown in the rating section).
+  useEffect(() => {
+    (async () => {
+      const { data } = await (supabase as any)
+        .from('performance_criteria')
+        .select('id, category, description, sort_order')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+      setCriteria((data as PerformanceCriterion[]) || []);
+    })();
+  }, []);
+
   const fetchData = async (targetUserId: string) => {
     setLoading(true);
     try {
@@ -424,6 +469,14 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       } = await supabase.from('hr_profiles').select('*').eq('user_id', targetUserId).maybeSingle();
       setHRProfile(profile);
       setGuidanceDraft((profile as any)?.performance_guidance || "");
+
+      // Warnings on this staff member's record.
+      const { data: warnData } = await (supabase as any)
+        .from('staff_warnings')
+        .select('id, user_id, category, reason, severity, issued_at')
+        .eq('user_id', targetUserId)
+        .order('issued_at', { ascending: false });
+      setWarnings((warnData as StaffWarning[]) || []);
 
       // Fetch holidays
       const {
@@ -1342,6 +1395,58 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     }
   };
 
+  // Add a warning to the selected staff member's record + email them.
+  const addWarning = async () => {
+    if (!isAdmin || !selectedUserId || !warnReason.trim()) return;
+    setSavingWarning(true);
+    const category = warnCategory === 'none' ? null : warnCategory;
+    const { data, error } = await (supabase as any)
+      .from('staff_warnings')
+      .insert({
+        user_id: selectedUserId,
+        category,
+        reason: warnReason.trim(),
+        severity: warnSeverity,
+        issued_by: user?.id ?? null,
+      })
+      .select('id, user_id, category, reason, severity, issued_at')
+      .single();
+    setSavingWarning(false);
+    if (error) {
+      toast({ title: "Couldn't add warning", description: error.message, variant: "destructive" });
+      return;
+    }
+    setWarnings(prev => [data as StaffWarning, ...prev]);
+    setWarnReason("");
+    setWarnCategory('none');
+    setWarnSeverity('minor');
+    const recipient = allStaff.find(s => s.user_id === selectedUserId);
+    if (recipient?.email) {
+      supabase.functions.invoke("send-warning-email", {
+        body: {
+          recipientEmail: recipient.email,
+          recipientName: recipient.display_name,
+          category,
+          reason: (data as StaffWarning).reason,
+          severity: warnSeverity,
+        },
+      }).catch(() => {});
+    }
+    toast({ title: "Warning added", description: recipient?.email ? "The staff member has been emailed." : "No email on file — not sent." });
+  };
+
+  // Remove a warning (admin only).
+  const deleteWarning = async (id: string) => {
+    if (!isAdmin) return;
+    const prev = warnings;
+    setWarnings(prev.filter(w => w.id !== id)); // optimistic
+    const { error } = await (supabase as any).from('staff_warnings').delete().eq('id', id);
+    if (error) {
+      setWarnings(prev);
+      toast({ title: "Couldn't remove warning", description: error.message, variant: "destructive" });
+    }
+  };
+
   const formatCurrency = (amount: number, currency: string) => {
     const symbol = CURRENCIES[currency] || '';
     return `${symbol}${amount.toLocaleString(undefined, {
@@ -1628,6 +1733,43 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   </div>
                 </div>
 
+                {/* 1b — Success criteria staff are rated against */}
+                {criteria.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">What you're rated on</p>
+                  <p className="text-xs text-muted-foreground">
+                    Your rating reflects how consistently you meet these expectations. Falling short in an area can lead to a warning (below) and, if sustained, a lower rating.
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {PERFORMANCE_CATEGORIES.map(cat => {
+                      const items = criteria.filter(c => c.category === cat);
+                      if (items.length === 0) return null;
+                      const catWarnings = warnings.filter(w => w.category === cat).length;
+                      return (
+                        <div key={cat} className="rounded-lg border bg-muted/20 p-3">
+                          <p className="text-sm font-medium mb-1.5 flex items-center gap-1.5 flex-wrap">
+                            {cat}
+                            {catWarnings > 0 && (
+                              <Badge variant="outline" className="text-[10px] border-amber-400/50 text-amber-600">
+                                {catWarnings} warning{catWarnings === 1 ? "" : "s"}
+                              </Badge>
+                            )}
+                          </p>
+                          <ul className="space-y-1">
+                            {items.map(c => (
+                              <li key={c.id} className="text-xs text-muted-foreground flex gap-1.5">
+                                <span className="text-primary/60 mt-0.5">•</span>
+                                <span>{c.description}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                )}
+
                 {/* 2 — How you compare to the team */}
                 <div className="space-y-2">
                   <p className="text-sm font-medium">How you compare</p>
@@ -1704,6 +1846,82 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                       </p>
                     )}
                   </div>
+                  )}
+                </div>
+
+                {/* 3b — Warnings on record */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium">Warnings</p>
+                    {warnings.length > 0 && <StatusPill tone="warning">{warnings.length}</StatusPill>}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Warnings flag where expectations weren't met. They don't automatically change your rating, but repeated or unaddressed warnings in an area signal underperformance and can lead to a lower rating — which reduces your bonus-pot share. Consistent improvement clears the path back up.
+                  </p>
+
+                  {isAdmin && (
+                    <div className="rounded-lg border bg-muted/10 p-3 space-y-2">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <Select value={warnCategory} onValueChange={setWarnCategory}>
+                          <SelectTrigger className="h-9"><SelectValue placeholder="Area (optional)" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">No specific area</SelectItem>
+                            {PERFORMANCE_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <Select value={warnSeverity} onValueChange={setWarnSeverity}>
+                          <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(WARNING_SEVERITIES).map(([k, v]) => (
+                              <SelectItem key={k} value={k}>{v.label} warning</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Textarea
+                        value={warnReason}
+                        onChange={(e) => setWarnReason(e.target.value)}
+                        placeholder={`What did ${selectedUserName} fall short on?`}
+                        rows={2}
+                      />
+                      <div className="flex justify-end">
+                        <Button size="sm" onClick={addWarning} disabled={savingWarning || !warnReason.trim()}>
+                          <Plus className="h-4 w-4 mr-1" /> {savingWarning ? "Adding…" : "Add warning & email"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {warnings.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">
+                      {isAdmin ? "No warnings on record." : "No warnings on your record — keep it up!"}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {warnings.map(w => {
+                        const sev = WARNING_SEVERITIES[w.severity] || WARNING_SEVERITIES.minor;
+                        return (
+                          <div key={w.id} className="rounded-lg border p-3 flex items-start gap-3">
+                            <AlertTriangle className={cn("h-4 w-4 mt-0.5 flex-shrink-0", sev.tone === "danger" ? "text-red-500" : "text-amber-500")} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge variant="outline" className={cn("text-[10px]", sev.tone === "danger" ? "border-red-300 text-red-600" : "border-amber-300 text-amber-600")}>
+                                  {sev.label} warning
+                                </Badge>
+                                {w.category && <Badge variant="outline" className="text-[10px]">{w.category}</Badge>}
+                                <span className="text-xs text-muted-foreground">{format(parseISO(w.issued_at), "d MMM yyyy")}</span>
+                              </div>
+                              <p className="text-sm mt-1 whitespace-pre-wrap break-words">{w.reason}</p>
+                            </div>
+                            {isAdmin && (
+                              <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-destructive" onClick={() => deleteWarning(w.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
 
