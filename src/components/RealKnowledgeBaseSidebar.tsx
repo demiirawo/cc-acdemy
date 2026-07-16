@@ -100,6 +100,16 @@ const navigationItems = [{
       </svg>,
   href: '/clients'
 }, {
+  id: 'staff-meetings',
+  title: 'Staff Meetings',
+  adminOnly: true,
+  icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="2" y="3" width="20" height="14" rx="2"/>
+        <line x1="8" y1="21" x2="16" y2="21"/>
+        <line x1="12" y1="17" x2="12" y2="21"/>
+      </svg>,
+  href: '/staff-meetings'
+}, {
   id: 'incidents',
   title: 'Incidents',
   icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -742,7 +752,8 @@ export function RealKnowledgeBaseSidebar({
       item.id === 'schedule' ||
       item.id === 'recruitment' ||
       item.id === 'training' ||
-      item.id === 'incidents'
+      item.id === 'incidents' ||
+      item.id === 'staff-meetings'
     ) {
       onItemSelect(item);
     } else if (item.id.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
@@ -938,7 +949,7 @@ export function RealKnowledgeBaseSidebar({
                 )}
                 onClick={() => handleItemSelect({
                   ...item,
-                  type: ['chat', 'hr', 'home', 'whiteboard', 'settings', 'clients', 'schedule', 'incidents'].includes(item.id) ? 'space' : 'page'
+                  type: ['chat', 'hr', 'home', 'whiteboard', 'settings', 'clients', 'schedule', 'incidents', 'staff-meetings'].includes(item.id) ? 'space' : 'page'
                 })}
               >
                 <Icon className="h-4 w-4 text-sidebar-foreground/70" />

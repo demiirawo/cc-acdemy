@@ -27,6 +27,7 @@ import { RecruitmentSection } from "./recruitment/RecruitmentSection";
 import { TrainingMatrix } from "./hr/training/TrainingMatrix";
 import { ClientsSection } from "./clients/ClientsSection";
 import { IncidentsSection } from "./incidents/IncidentsSection";
+import { StaffMeetingsSection } from "./meetings/StaffMeetingsSection";
 import { SchedulePage } from "./SchedulePage";
 import { useGlossary } from "@/hooks/useGlossary";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -432,7 +433,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'clients' | 'schedule' | 'recruitment' | 'training' | 'incidents';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'clients' | 'schedule' | 'recruitment' | 'training' | 'incidents' | 'staff-meetings';
 interface SidebarItem {
   id: string;
   title: string;
@@ -555,7 +556,8 @@ export function KnowledgeBaseApp() {
         'schedule': 'schedule',
         'recruitment': 'recruitment',
         'training': 'training',
-        'incidents': 'incidents'
+        'incidents': 'incidents',
+        'staff-meetings': 'staff-meetings'
       };
         
         if (viewMap[viewName]) {
@@ -707,6 +709,11 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
       setBreadcrumbs([]);
       navigate('/view/incidents');
+    } else if (item.id === 'staff-meetings') {
+      setCurrentView('staff-meetings');
+      setCurrentPage(null);
+      setBreadcrumbs([]);
+      navigate('/view/staff-meetings');
     } else if (item.type === 'page') {
       try {
         // Fetch real page data from Supabase
@@ -1177,6 +1184,10 @@ export function KnowledgeBaseApp() {
         {currentView === 'hr' && <HRSection initialUserId={selectedHRUserId} onProfileClosed={() => setSelectedHRUserId(null)} />}
         {currentView === 'clients' && <ClientsSection />}
         {currentView === 'incidents' && <IncidentsSection />}
+        {currentView === 'staff-meetings' && isAdmin && <StaffMeetingsSection />}
+        {currentView === 'staff-meetings' && !isAdmin && (
+          <div className="p-8 text-center text-muted-foreground">You do not have permission to view this page.</div>
+        )}
         {currentView === 'schedule' && <SchedulePage 
           initialRequestId={selectedRequestId} 
           onRequestClosed={() => setSelectedRequestId(null)}
