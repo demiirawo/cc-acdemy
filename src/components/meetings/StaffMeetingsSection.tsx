@@ -57,7 +57,7 @@ type PerfInfo = { rank: Rank | null; years: number | null };
 const SECTIONS = [
   { key: "vision", title: "Our Vision", icon: Rocket },
   { key: "updates", title: "Updates", icon: Megaphone },
-  { key: "items", title: "Agenda & Tracked Items", icon: Target },
+  { key: "items", title: "Agenda", icon: Target },
   { key: "spotlight", title: "Staff Spotlight", icon: Sparkles },
 ] as const;
 // The presentation walks the sections in reverse (spotlight → … → vision).

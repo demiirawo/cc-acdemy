@@ -181,7 +181,7 @@ export function PublicStaffMeeting() {
         )}
 
         {/* Agenda & tracked items */}
-        <Section icon={Target} title="Agenda & Tracked Items">
+        <Section icon={Target} title="Agenda">
           <div className="space-y-2">
             <div className="flex items-center gap-2"><Flag className="h-4 w-4 text-amber-500 fill-amber-500" /><Label>On the agenda</Label></div>
             {agenda.length === 0 ? <p className="text-sm text-muted-foreground italic">Nothing flagged for the agenda.</p> : (
