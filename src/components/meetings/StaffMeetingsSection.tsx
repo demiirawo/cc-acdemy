@@ -17,7 +17,7 @@ import {
   Presentation, Target, Sparkles, Rocket, Plus, Trash2, Pencil,
   ChevronLeft, ChevronRight, X, CalendarDays, AlertCircle, Loader2, Check, Flag,
 } from "lucide-react";
-import { PerformanceRankBadge, RANK_ORDER, tenureYears, type Rank } from "../hr/PerformanceRankBadge";
+import { RANK_ORDER, RANK_STYLES, tenureYears, type Rank } from "../hr/PerformanceRankBadge";
 
 const ACTION_STATUS = [
   { value: "not_started", label: "Not started", cls: "bg-muted text-muted-foreground border-border" },
@@ -71,6 +71,7 @@ export function StaffMeetingsSection() {
   const [spotlights, setSpotlights] = useState<Spotlight[]>([]);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [perf, setPerf] = useState<Record<string, PerfInfo>>({});
+  const [photos, setPhotos] = useState<Record<string, string>>({});
 
   const [present, setPresent] = useState(false);
   const [sectionIdx, setSectionIdx] = useState(0);
@@ -82,13 +83,14 @@ export function StaffMeetingsSection() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [settingsRes, objRes, itemRes, spotRes, staffRes, hrRes] = await Promise.all([
+    const [settingsRes, objRes, itemRes, spotRes, staffRes, hrRes, docRes] = await Promise.all([
       (supabase as any).from("meeting_settings").select("vision").eq("id", true).maybeSingle(),
       (supabase as any).from("meeting_objectives").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       (supabase as any).from("meeting_actions").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       (supabase as any).from("meeting_spotlights").select("*").order("created_at", { ascending: false }),
       supabase.from("profiles").select("user_id, display_name, email").order("display_name"),
       supabase.from("hr_profiles").select("user_id, performance_rating, start_date, created_at"),
+      supabase.from("staff_onboarding_documents").select("user_id, photograph_path"),
     ]);
     setVision(settingsRes.data?.vision || "");
     setObjectives((objRes.data as Objective[]) || []);
@@ -103,6 +105,15 @@ export function StaffMeetingsSection() {
       };
     });
     setPerf(pmap);
+
+    const photoMap: Record<string, string> = {};
+    (docRes.data || []).forEach((d: any) => {
+      if (d.photograph_path) {
+        const { data } = supabase.storage.from("onboarding-documents").getPublicUrl(d.photograph_path);
+        if (data?.publicUrl) photoMap[d.user_id] = data.publicUrl;
+      }
+    });
+    setPhotos(photoMap);
     setLoading(false);
   }, []);
 
@@ -389,26 +400,31 @@ export function StaffMeetingsSection() {
   );
 
   const renderSpotlight = (big: boolean) => (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {!present && (
         <div className="flex"><Button size="sm" variant="outline" className="ml-auto" onClick={() => setSpotlightDialog(true)}><Plus className="h-4 w-4 mr-1" /> Add shout-out</Button></div>
       )}
       {spotlights.length === 0 ? (
         <p className="text-muted-foreground italic">No shout-outs yet — recognise someone great.</p>
       ) : (
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2">
           {spotlights.map(s => {
             const p = perf[s.user_id];
             return (
-              <div key={s.id} className="rounded-xl border bg-gradient-to-br from-amber-50 to-transparent dark:from-amber-500/10 p-3 flex items-start gap-3">
-                {p ? <PerformanceRankBadge rank={p.rank} years={p.years} size={big ? "md" : "sm"} /> : <Sparkles className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />}
+              <div key={s.id} className="relative rounded-2xl border bg-gradient-to-br from-amber-50 via-background to-transparent dark:from-amber-500/10 shadow-sm p-5 flex items-center gap-5">
+                <SpotlightAvatar photo={photos[s.user_id]} name={nameOf(s.user_id)} rank={p?.rank ?? null} big={big} />
                 <div className="min-w-0 flex-1">
-                  <p className={cn("font-semibold", big ? "text-lg" : "text-sm")}>{nameOf(s.user_id)}</p>
-                  {s.note && <p className={cn("text-muted-foreground", big ? "text-base" : "text-sm")}>{s.note}</p>}
+                  <p className={cn("font-bold leading-tight", big ? "text-2xl md:text-3xl" : "text-lg")}>{nameOf(s.user_id)}</p>
+                  {p?.rank && (
+                    <p className={cn("text-muted-foreground mt-0.5", big ? "text-base" : "text-xs")}>
+                      {RANK_STYLES[p.rank].label}{p.years != null ? ` · ${p.years} yr${p.years === 1 ? "" : "s"}` : ""}
+                    </p>
+                  )}
+                  {s.note && <p className={cn("text-muted-foreground mt-2", big ? "text-xl" : "text-sm")}>{s.note}</p>}
                 </div>
                 {!present && (
-                  <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive flex-shrink-0" onClick={() => deleteSpotlight(s.id)}>
-                    <Trash2 className="h-3.5 w-3.5" />
+                  <Button variant="ghost" size="icon" className="absolute top-2 right-2 h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => deleteSpotlight(s.id)}>
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 )}
               </div>
@@ -494,6 +510,31 @@ export function StaffMeetingsSection() {
       </div>
 
       {spotlightDialog && <SpotlightDialog staff={staff} existing={new Set(spotlights.map(s => s.user_id))} onClose={() => setSpotlightDialog(false)} onAdd={addSpotlight} />}
+    </div>
+  );
+}
+
+// ---- Framed staff photo for the spotlight ----
+function SpotlightAvatar({ photo, name, rank, big }: { photo?: string; name: string; rank: Rank | null; big: boolean }) {
+  const [err, setErr] = useState(false);
+  const initials = name.split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
+  const size = big ? "h-28 w-28 md:h-32 md:w-32" : "h-16 w-16";
+  return (
+    <div className="relative flex-shrink-0">
+      <div className={cn("rounded-full bg-gradient-to-tr from-amber-400 via-pink-500 to-purple-600 p-[3px]", big ? "shadow-xl shadow-amber-500/25" : "shadow-md")}>
+        <div className="rounded-full bg-background p-[3px]">
+          {photo && !err ? (
+            <img src={photo} alt={name} onError={() => setErr(true)} className={cn("rounded-full object-cover", size)} />
+          ) : (
+            <div className={cn("rounded-full bg-muted flex items-center justify-center font-bold text-muted-foreground", size, big ? "text-4xl" : "text-lg")}>{initials}</div>
+          )}
+        </div>
+      </div>
+      {rank && (
+        <span className={cn("absolute -bottom-1 -right-1 flex items-center justify-center rounded-full border-2 border-background font-extrabold shadow", RANK_STYLES[rank].tile, big ? "h-10 w-10 text-lg" : "h-6 w-6 text-xs")}>
+          {rank}
+        </span>
+      )}
     </div>
   );
 }
