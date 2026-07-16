@@ -8,17 +8,38 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
+// Supabase serialises auth/token-refresh across tabs with the Web Locks API.
+// Its default waits for the lock forever, so a crashed, duplicated or
+// backgrounded tab that holds the auth lock and never releases it makes
+// getSession()/refresh block indefinitely — the app then hangs on the loading
+// splash. This lock keeps the normal cross-tab coordination but never blocks
+// forever: if it can't acquire the lock within a few seconds it runs the auth
+// operation anyway (accepting a rare, harmless cross-tab refresh race instead
+// of an indefinite hang).
+const resilientAuthLock = <R>(name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> => {
+  const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
+  if (!locks) return fn();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  return locks
+    .request(name, { signal: controller.signal }, async () => {
+      clearTimeout(timer);
+      return fn();
+    })
+    .catch((err: unknown) => {
+      clearTimeout(timer);
+      // Couldn't get the lock in time (a stuck tab is holding it) — proceed
+      // without cross-tab coordination rather than hang.
+      if (err instanceof DOMException && err.name === "AbortError") return fn();
+      throw err;
+    }) as Promise<R>;
+};
+
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
-    // Bypass the Web Locks API. Supabase's default cross-tab lock can deadlock:
-    // a crashed, duplicated or backgrounded tab may hold the auth lock and never
-    // release it, so getSession()/token-refresh block forever and the app hangs
-    // on the loading splash. A pass-through lock runs auth operations without
-    // cross-tab coordination — safe here (concurrent refreshes are handled) and
-    // far better than an indefinite hang.
-    lock: <R>(_name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> => fn(),
+    lock: resilientAuthLock,
   }
 });
