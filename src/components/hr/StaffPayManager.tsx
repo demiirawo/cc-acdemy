@@ -14,7 +14,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PerformanceRankBadge, RANK_ORDER, tenureYears, bonusPoints, type Rank } from "./PerformanceRankBadge";
+import { PerformanceRankBadge, RANK_ORDER, tenureYears, bonusPoints, bonusEligible, type Rank } from "./PerformanceRankBadge";
+import { cn } from "@/lib/utils";
 
 // Monthly bonus pot: each staff member's slice is proportional to
 // (1 + tenure years) × rank multiplier — see bonusPoints in PerformanceRankBadge.
@@ -2110,7 +2111,7 @@ export function StaffPayManager() {
               <Coins className="h-4 w-4 text-amber-500 flex-shrink-0" />
               <span className="text-sm font-medium">Bonus pot allocation</span>
               <span className="text-xs text-muted-foreground truncate">
-                £{potAllocation.potGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {potAllocation.items.length} staff · £{(potAllocation.potGbp / potAllocation.totalPoints).toFixed(2)}/point
+                £{potAllocation.potGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {potAllocation.items.filter(i => bonusEligible(i.rank)).length} eligible staff · £{(potAllocation.potGbp / potAllocation.totalPoints).toFixed(2)}/point · C/D excluded
               </span>
               {potBusy && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground flex-shrink-0" />}
             </div>
@@ -2129,8 +2130,10 @@ export function StaffPayManager() {
                   </tr>
                 </thead>
                 <tbody>
-                  {potAllocation.items.map(s => (
-                    <tr key={s.userId} className="border-t">
+                  {potAllocation.items.map(s => {
+                    const eligible = bonusEligible(s.rank);
+                    return (
+                    <tr key={s.userId} className={cn("border-t", !eligible && "opacity-60")}>
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-2">
                           <PerformanceRankBadge rank={s.rank} years={s.years} size="sm" />
@@ -2141,12 +2144,15 @@ export function StaffPayManager() {
                         {s.years} yr{s.years === 1 ? "" : "s"} · {s.rank ?? "unrated"}
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{s.points.toFixed(2)}</td>
-                      <td className="px-4 py-2 text-right tabular-nums font-semibold">£{s.shareGbp.toFixed(2)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums font-semibold">
+                        {eligible ? `£${s.shareGbp.toFixed(2)}` : <span className="text-muted-foreground font-normal">Ineligible ({s.rank})</span>}
+                      </td>
                       <td className="px-4 py-2 text-right tabular-nums text-muted-foreground whitespace-nowrap">
-                        {s.currency === "GBP" ? "—" : formatCurrency(s.shareLocal, s.currency)}
+                        {!eligible || s.currency === "GBP" ? "—" : formatCurrency(s.shareLocal, s.currency)}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

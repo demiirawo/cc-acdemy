@@ -20,7 +20,7 @@ import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { StaffSettingsDialog } from "./StaffSettingsDialog";
-import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusPoints, rankBonusMult, type Rank } from "./PerformanceRankBadge";
+import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusPoints, rankBonusMult, bonusEligible, LOWEST_ELIGIBLE_RANK, type Rank } from "./PerformanceRankBadge";
 import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItemsManager";
@@ -1564,8 +1564,11 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
 
         const examplePot = 1000;
         const myShare = (examplePot * myPoints) / teamTotalPoints;
+        const eligible = bonusEligible(myRank);
         const idx = myRank ? RANK_ORDER.indexOf(myRank) : -1;
-        const nextUp: Rank | null = !myRank ? 'A' : idx > 0 ? RANK_ORDER[idx - 1] : null;
+        // For eligible staff show the next rank up; for ineligible (C/D) show the
+        // threshold they must reach to earn any pot share at all.
+        const nextUp: Rank | null = !eligible ? LOWEST_ELIGIBLE_RANK : !myRank ? 'A' : idx > 0 ? RANK_ORDER[idx - 1] : null;
         const nextShare = nextUp ? (examplePot * bonusPoints(nextUp, myYears)) / teamTotalPoints : null;
 
         const overallTone: StatusTone = myRank ? 'success' : 'neutral';
@@ -1651,8 +1654,9 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                 <div className="space-y-2">
                   <p className="text-sm font-medium">How this affects your bonus</p>
                   <p className="text-xs text-muted-foreground">
-                    Each month's bonus pot is split by <strong className="text-foreground">points = (1 + years of service) × rank multiplier</strong> (S ×2.0, A ×1.75, B ×1.5, C ×1.25, D ×1.0). Higher rank and longer tenure both increase your share.
+                    Each month's bonus pot is split by <strong className="text-foreground">points = (1 + years of service) × rank multiplier</strong> (S ×2.0, A ×1.75, B ×1.5). Higher rank and longer tenure both increase your share. <strong className="text-foreground">C and D ratings receive no share, regardless of tenure.</strong>
                   </p>
+                  {eligible ? (
                   <div className="rounded-lg border bg-muted/20 p-3 space-y-1.5 text-sm">
                     <div className="flex justify-between gap-2">
                       <span className="text-muted-foreground">Your points</span>
@@ -1671,6 +1675,18 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                       </div>
                     )}
                   </div>
+                  ) : (
+                  <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 space-y-1.5 text-sm">
+                    <p className="font-medium text-amber-700 dark:text-amber-300">
+                      Your {myRank} rating isn't eligible for the monthly bonus pot — this applies regardless of how long you've been here.
+                    </p>
+                    {nextUp && nextShare !== null && (
+                      <p className="text-muted-foreground">
+                        Reaching <strong className="text-foreground">{RANK_STYLES[nextUp].label}</strong> would make you eligible — worth ≈ <strong className="text-foreground">£{nextShare.toFixed(2)}</strong> of a £1,000 pot at your current tenure.
+                      </p>
+                    )}
+                  </div>
+                  )}
                 </div>
 
                 {/* 4 — Guidance on how to improve */}
