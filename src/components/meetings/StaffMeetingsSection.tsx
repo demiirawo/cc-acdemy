@@ -106,14 +106,21 @@ export function StaffMeetingsSection() {
     });
     setPerf(pmap);
 
-    const photoMap: Record<string, string> = {};
-    (docRes.data || []).forEach((d: any) => {
-      if (d.photograph_path) {
-        const { data } = supabase.storage.from("onboarding-documents").getPublicUrl(d.photograph_path);
-        if (data?.publicUrl) photoMap[d.user_id] = data.publicUrl;
-      }
-    });
-    setPhotos(photoMap);
+    // The onboarding-documents bucket is private, so use signed URLs. Only sign
+    // browser-renderable images (skip HEIC/PDF, which fall back to initials).
+    const photoDocs = (docRes.data || []).filter(
+      (d: any) => d.photograph_path && /\.(jpe?g|png|webp|gif)$/i.test(d.photograph_path)
+    );
+    if (photoDocs.length) {
+      const { data: signed } = await supabase.storage
+        .from("onboarding-documents")
+        .createSignedUrls(photoDocs.map((d: any) => d.photograph_path), 3600);
+      const byPath: Record<string, string> = {};
+      (signed || []).forEach((r: any) => { if (r?.signedUrl && !r.error) byPath[r.path] = r.signedUrl; });
+      const photoMap: Record<string, string> = {};
+      photoDocs.forEach((d: any) => { const url = byPath[d.photograph_path]; if (url) photoMap[d.user_id] = url; });
+      setPhotos(photoMap);
+    }
     setLoading(false);
   }, []);
 
