@@ -19,6 +19,7 @@ import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { StaffSettingsDialog } from "./StaffSettingsDialog";
+import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, type Rank } from "./PerformanceRankBadge";
 import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItemsManager";
@@ -292,16 +293,7 @@ const STATUS_DOT_CLASS: Record<StatusTone, string> = {
   danger: 'bg-red-500',
   neutral: 'bg-muted-foreground/60',
 };
-// Performance rating tiers (tier-list style). Order defines the click cycle.
-const RANK_ORDER = ['S', 'A', 'B', 'C', 'D'] as const;
-type Rank = typeof RANK_ORDER[number];
-const RANK_STYLES: Record<Rank, { label: string; tile: string; glow: string; emoji: string }> = {
-  S: { label: 'S Rank', tile: 'bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-500 text-amber-950', glow: 'shadow-[0_0_18px_rgba(251,191,36,0.7)]', emoji: '👑' },
-  A: { label: 'A Rank', tile: 'bg-gradient-to-br from-emerald-300 to-green-500 text-emerald-950', glow: 'shadow-[0_0_16px_rgba(16,185,129,0.55)]', emoji: '⭐' },
-  B: { label: 'B Rank', tile: 'bg-gradient-to-br from-sky-300 to-blue-500 text-sky-950', glow: 'shadow-[0_0_16px_rgba(59,130,246,0.5)]', emoji: '✨' },
-  C: { label: 'C Rank', tile: 'bg-gradient-to-br from-violet-300 to-purple-500 text-violet-950', glow: 'shadow-[0_0_14px_rgba(168,85,247,0.45)]', emoji: '🔧' },
-  D: { label: 'D Rank', tile: 'bg-gradient-to-br from-slate-300 to-slate-500 text-slate-900', glow: '', emoji: '🌱' },
-};
+// Performance rating tiers live in PerformanceRankBadge (shared with payroll).
 
 function StatusPill({ tone, children }: { tone: StatusTone; children: React.ReactNode }) {
   return (
@@ -1479,6 +1471,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         {(() => {
           const rank = (hrProfile.performance_rating as Rank | null);
           const style = rank ? RANK_STYLES[rank] : null;
+          const years = tenureYears(hrProfile.start_date);
           return (
             <Card
               onClick={cyclePerformanceRating}
@@ -1490,15 +1483,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
             >
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <div
-                    key={rank || 'none'}
-                    className={cn(
-                      "flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg text-xl font-extrabold animate-in zoom-in-50 duration-300",
-                      style ? cn(style.tile, style.glow) : "bg-primary/10 text-primary"
-                    )}
-                  >
-                    {rank ?? "?"}
-                  </div>
+                  <PerformanceRankBadge key={rank || 'none'} rank={rank} years={years} className="animate-in zoom-in-50 duration-300" />
                   <div className="min-w-0">
                     <p className="text-sm text-muted-foreground">Performance Rating</p>
                     <p className="font-medium flex items-center gap-1.5">
@@ -1506,6 +1491,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                         <>
                           <span>{style.emoji}</span>
                           {style.label}
+                          {years != null && <span className="text-muted-foreground font-normal">· {years} yr{years === 1 ? "" : "s"}</span>}
                         </>
                       ) : (
                         <span className="text-muted-foreground">{isAdmin ? "Tap to rate" : "Not rated"}</span>

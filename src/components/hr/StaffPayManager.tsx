@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { PerformanceRankBadge, RANK_ORDER, tenureYears, type Rank } from "./PerformanceRankBadge";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -219,7 +220,7 @@ export function StaffPayManager() {
   const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; status: string; absence_type: string }[]>([]);
-  const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; employment_end_date: string | null; unlimited_holiday: boolean; public_holiday_pay_disabled?: boolean; created_at?: string }[]>([]);
+  const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; employment_end_date: string | null; unlimited_holiday: boolean; public_holiday_pay_disabled?: boolean; created_at?: string; performance_rating?: string | null }[]>([]);
   const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null; swap_with_user_id: string | null; coverage_metadata: Json | null }[]>([]);
   const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string }[]>([]);
   const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<{ user_id: string; start_date: string; end_date: string }[]>([]);
@@ -474,7 +475,7 @@ export function StaffPayManager() {
       // Fetch full HR profiles for holiday allowance and employment window
       const { data: hrFullData } = await supabase
         .from('hr_profiles')
-        .select('user_id, annual_holiday_allowance, start_date, employment_end_date, unlimited_holiday, public_holiday_pay_disabled, created_at');
+        .select('user_id, annual_holiday_allowance, start_date, employment_end_date, unlimited_holiday, public_holiday_pay_disabled, created_at, performance_rating');
 
       setHRProfilesFull(hrFullData || []);
 
@@ -2133,18 +2134,12 @@ export function StaffPayManager() {
                 </TableRow>
               ) : (
                 (() => {
-                  // Tenure rank tile — styled like the Performance Rating badge
-                  // (a gradient square with the tenure inside). Matches the
-                  // loyalty-bonus tiers; gold = longest-serving, like S rank.
-                  const tenureRank = (userId: string): { value: string; title: string; tile: string; glow: string } | null => {
+                  // Rank badge: performance-rating letter + years of tenure,
+                  // the same badge shown on the staff profile.
+                  const rankBadgeFor = (userId: string): { rank: Rank | null; years: number | null } => {
                     const hrFull = hrProfilesFull.find(h => h.user_id === userId);
-                    const startRaw = hrFull?.start_date || hrFull?.created_at || null;
-                    if (!startRaw) return null;
-                    const years = Math.floor((Date.now() - new Date(startRaw).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-                    if (years >= 3) return { value: '3+', title: '3+ years — Year 3+ loyalty tier', tile: 'bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-500 text-amber-950', glow: 'shadow-[0_0_12px_rgba(251,191,36,0.6)]' };
-                    if (years === 2) return { value: '2', title: '2 years — Year 2 loyalty tier', tile: 'bg-gradient-to-br from-violet-300 to-purple-500 text-violet-950', glow: 'shadow-[0_0_10px_rgba(168,85,247,0.45)]' };
-                    if (years === 1) return { value: '1', title: '1 year — Year 1 loyalty tier', tile: 'bg-gradient-to-br from-sky-300 to-blue-500 text-sky-950', glow: 'shadow-[0_0_10px_rgba(59,130,246,0.45)]' };
-                    return { value: '<1', title: 'Under 1 year — not yet in a loyalty tier', tile: 'bg-gradient-to-br from-slate-200 to-slate-400 text-slate-700', glow: '' };
+                    const rating = (hrFull?.performance_rating ?? null) as Rank | null;
+                    return { rank: rating && RANK_ORDER.includes(rating) ? rating : null, years: tenureYears(hrFull?.start_date || hrFull?.created_at) };
                   };
                   // Group staff by status: Pending -> Ready -> Paid
                   const pendingGroup = payrollSummary.filter(s => !s.hasSalaryRecord && !readyStaff.has(s.userId));
@@ -2187,17 +2182,10 @@ export function StaffPayManager() {
                           <React.Fragment key={staff.userId}>
                     <TableRow className={`transition-colors border-b ${rowBgClass}`}>
                       <TableCell className="font-medium py-3">
-                        <div className="flex items-center gap-2.5">
+                        <div className="flex items-center gap-3">
                           {(() => {
-                            const rank = tenureRank(staff.userId);
-                            return rank ? (
-                              <div
-                                title={rank.title}
-                                className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-sm font-extrabold ${rank.tile} ${rank.glow}`}
-                              >
-                                {rank.value}
-                              </div>
-                            ) : null;
+                            const b = rankBadgeFor(staff.userId);
+                            return <PerformanceRankBadge rank={b.rank} years={b.years} size="sm" />;
                           })()}
                           <div className="min-w-0">
                             <div className="font-semibold">{staff.displayName}</div>
