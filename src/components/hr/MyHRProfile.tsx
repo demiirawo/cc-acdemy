@@ -12,6 +12,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink, Handshake, Settings } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay, differenceInCalendarDays } from "date-fns";
@@ -19,7 +20,7 @@ import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { StaffSettingsDialog } from "./StaffSettingsDialog";
-import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, type Rank } from "./PerformanceRankBadge";
+import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusPoints, rankBonusMult, type Rank } from "./PerformanceRankBadge";
 import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItemsManager";
@@ -90,6 +91,7 @@ interface HRProfile {
   unlimited_holiday: boolean;
   notes: string | null;
   performance_rating: string | null;
+  performance_guidance?: string | null;
   employment_status: string | null;
 }
 interface Holiday {
@@ -354,6 +356,11 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   const [allStaff, setAllStaff] = useState<UserProfile[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  // Team-wide performance data (for the "how you compare" + bonus-points views).
+  const [teamPerf, setTeamPerf] = useState<{ rank: Rank | null; years: number }[]>([]);
+  // Admin-authored "how to improve your rating" note for the selected staff.
+  const [guidanceDraft, setGuidanceDraft] = useState("");
+  const [savingGuidance, setSavingGuidance] = useState(false);
 
   // Fetch all staff for admin dropdown
   useEffect(() => {
@@ -389,6 +396,24 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       fetchData(selectedUserId);
     }
   }, [selectedUserId]);
+
+  // Team-wide rating + tenure spread (for the performance comparison and to
+  // show how each rating/tenure combination shares a bonus pot).
+  useEffect(() => {
+    (async () => {
+      const todayISO = new Date().toISOString().slice(0, 10);
+      const { data } = await supabase
+        .from('hr_profiles')
+        .select('performance_rating, start_date, created_at, employment_end_date, base_salary')
+        .gt('base_salary', 0);
+      const active = (data || []).filter(h => !h.employment_end_date || h.employment_end_date >= todayISO);
+      setTeamPerf(active.map(h => ({
+        rank: (h.performance_rating && RANK_ORDER.includes(h.performance_rating as Rank) ? h.performance_rating : null) as Rank | null,
+        years: tenureYears(h.start_date || h.created_at) ?? 0,
+      })));
+    })();
+  }, []);
+
   const fetchData = async (targetUserId: string) => {
     setLoading(true);
     try {
@@ -397,6 +422,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         data: profile
       } = await supabase.from('hr_profiles').select('*').eq('user_id', targetUserId).maybeSingle();
       setHRProfile(profile);
+      setGuidanceDraft((profile as any)?.performance_guidance || "");
 
       // Fetch holidays
       const {
@@ -1286,6 +1312,23 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     }
   };
 
+  // Save the admin's "how to improve your rating" note for this staff member.
+  const saveGuidance = async () => {
+    if (!hrProfile || !isAdmin) return;
+    setSavingGuidance(true);
+    const { error } = await supabase
+      .from('hr_profiles')
+      .update({ performance_guidance: guidanceDraft.trim() || null } as any)
+      .eq('id', hrProfile.id);
+    setSavingGuidance(false);
+    if (error) {
+      toast({ title: "Couldn't save guidance", description: error.message, variant: "destructive" });
+    } else {
+      setHRProfile({ ...hrProfile, performance_guidance: guidanceDraft.trim() || null });
+      toast({ title: "Guidance saved" });
+    }
+  };
+
   const formatCurrency = (amount: number, currency: string) => {
     const symbol = CURRENCIES[currency] || '';
     return `${symbol}${amount.toLocaleString(undefined, {
@@ -1504,6 +1547,161 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
           );
         })()}
       </div>
+
+      {/* Performance Rating — explainer, team comparison, bonus effect, guidance */}
+      {(() => {
+        const myRank = (hrProfile.performance_rating && RANK_ORDER.includes(hrProfile.performance_rating as Rank) ? hrProfile.performance_rating : null) as Rank | null;
+        const myYears = tenureYears(hrProfile.start_date) ?? 0;
+        const myPoints = bonusPoints(myRank, myYears);
+        const myMult = rankBonusMult(myRank);
+
+        const dist: Record<string, number> = { S: 0, A: 0, B: 0, C: 0, D: 0, unrated: 0 };
+        teamPerf.forEach(t => { dist[t.rank ?? 'unrated']++; });
+        const teamSize = teamPerf.length || 1;
+        const teamTotalPoints = teamPerf.reduce((a, t) => a + bonusPoints(t.rank, t.years), 0) || myPoints || 1;
+        const higher = teamPerf.filter(t => rankBonusMult(t.rank) > myMult).length;
+        const sameLevel = Math.max(0, teamPerf.filter(t => rankBonusMult(t.rank) === myMult).length - 1);
+
+        const examplePot = 1000;
+        const myShare = (examplePot * myPoints) / teamTotalPoints;
+        const idx = myRank ? RANK_ORDER.indexOf(myRank) : -1;
+        const nextUp: Rank | null = !myRank ? 'A' : idx > 0 ? RANK_ORDER[idx - 1] : null;
+        const nextShare = nextUp ? (examplePot * bonusPoints(nextUp, myYears)) / teamTotalPoints : null;
+
+        const overallTone: StatusTone = myRank ? 'success' : 'neutral';
+
+        return (
+          <Accordion type="single" collapsible className="w-full">
+            <AccordionItem value="performance" className="border-2 border-primary/20 rounded-lg bg-card">
+              <AccordionTrigger className="px-6 py-4 hover:no-underline">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <Award className="h-5 w-5 text-primary flex-shrink-0" />
+                  <span className="text-lg font-semibold">Performance Rating</span>
+                  <StatusPill tone={overallTone}>
+                    {myRank ? RANK_STYLES[myRank].label : 'Not yet rated'}
+                  </StatusPill>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent className="px-6 pb-6 space-y-6">
+
+                {/* 1 — All ratings explained */}
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">The rating scale</p>
+                  <div className="grid gap-2">
+                    {RANK_ORDER.map(r => {
+                      const isMine = r === myRank;
+                      return (
+                        <div key={r} className={cn(
+                          "flex items-center gap-3 rounded-lg border px-3 py-2",
+                          isMine ? "border-primary/50 bg-primary/5" : "bg-muted/20"
+                        )}>
+                          <PerformanceRankBadge rank={r} years={null} size="sm" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium flex items-center gap-1.5">
+                              {RANK_STYLES[r].emoji} {RANK_STYLES[r].label}
+                              {isMine && <Badge variant="outline" className="text-[10px] border-primary/40 text-primary">You</Badge>}
+                            </p>
+                            <p className="text-xs text-muted-foreground">{RANK_STYLES[r].description}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 2 — How you compare to the team */}
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">How you compare</p>
+                  <p className="text-xs text-muted-foreground">
+                    {myRank
+                      ? <>You're rated <strong className="text-foreground">{RANK_STYLES[myRank].label}</strong>. {higher === 0 ? "No one is rated higher — you're at the top of the team." : `${higher} teammate${higher === 1 ? " is" : "s are"} rated higher`}{higher > 0 && sameLevel > 0 ? `, and ${sameLevel} ${sameLevel === 1 ? "is" : "are"} at your level.` : sameLevel > 0 ? `; ${sameLevel} ${sameLevel === 1 ? "is" : "are"} at your level.` : "."}</>
+                      : <>You haven't been rated yet. Once rated, you'll see where you stand across the {teamSize}-person team.</>}
+                  </p>
+                  <div className="flex items-end gap-1.5 pt-1">
+                    {RANK_ORDER.map(r => {
+                      const count = dist[r];
+                      const pct = Math.round((count / teamSize) * 100);
+                      const isMine = r === myRank;
+                      return (
+                        <div key={r} className="flex-1 flex flex-col items-center gap-1" title={`${count} staff rated ${r} (${pct}%)`}>
+                          <span className="text-[10px] text-muted-foreground tabular-nums">{count}</span>
+                          <div className="w-full rounded-t bg-muted/50 relative" style={{ height: 60 }}>
+                            <div
+                              className={cn("absolute bottom-0 left-0 right-0 rounded-t", isMine ? "bg-primary" : "bg-muted-foreground/40")}
+                              style={{ height: `${Math.max(count > 0 ? 8 : 0, pct)}%` }}
+                            />
+                          </div>
+                          <span className={cn("text-[11px] font-semibold", isMine && "text-primary")}>{r}</span>
+                        </div>
+                      );
+                    })}
+                    {dist.unrated > 0 && (
+                      <div className="flex-1 flex flex-col items-center gap-1" title={`${dist.unrated} not yet rated`}>
+                        <span className="text-[10px] text-muted-foreground tabular-nums">{dist.unrated}</span>
+                        <div className="w-full rounded-t bg-muted/50 relative" style={{ height: 60 }}>
+                          <div className="absolute bottom-0 left-0 right-0 rounded-t bg-muted-foreground/25" style={{ height: `${Math.max(dist.unrated > 0 ? 8 : 0, Math.round((dist.unrated / teamSize) * 100))}%` }} />
+                        </div>
+                        <span className="text-[11px] text-muted-foreground">—</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3 — How rating + tenure drive the bonus */}
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">How this affects your bonus</p>
+                  <p className="text-xs text-muted-foreground">
+                    Each month's bonus pot is split by <strong className="text-foreground">points = (1 + years of service) × rank multiplier</strong> (S ×2.0, A ×1.75, B ×1.5, C ×1.25, D ×1.0). Higher rank and longer tenure both increase your share.
+                  </p>
+                  <div className="rounded-lg border bg-muted/20 p-3 space-y-1.5 text-sm">
+                    <div className="flex justify-between gap-2">
+                      <span className="text-muted-foreground">Your points</span>
+                      <span className="font-medium tabular-nums">
+                        (1 + {myYears}) × {myMult.toFixed(2)} {myRank ? `(${myRank})` : "(unrated)"} = <strong>{myPoints.toFixed(2)}</strong>
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-2">
+                      <span className="text-muted-foreground">Your share of the pot</span>
+                      <span className="font-medium tabular-nums">{((myPoints / teamTotalPoints) * 100).toFixed(1)}% · ≈ £{myShare.toFixed(2)} of a £1,000 pot</span>
+                    </div>
+                    {nextUp && nextShare !== null && (
+                      <div className="flex justify-between gap-2 pt-1.5 border-t text-primary">
+                        <span>Reaching {RANK_STYLES[nextUp].label}</span>
+                        <span className="font-medium tabular-nums">≈ £{nextShare.toFixed(2)} (+£{(nextShare - myShare).toFixed(2)} / £1,000)</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 4 — Guidance on how to improve */}
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">How to improve your rating</p>
+                  {isAdmin ? (
+                    <>
+                      <Textarea
+                        value={guidanceDraft}
+                        onChange={(e) => setGuidanceDraft(e.target.value)}
+                        placeholder={`Explain what ${selectedUserName} can do to reach the next rating…`}
+                        rows={4}
+                      />
+                      <div className="flex justify-end">
+                        <Button size="sm" onClick={saveGuidance} disabled={savingGuidance || guidanceDraft === (hrProfile.performance_guidance || "")}>
+                          {savingGuidance ? "Saving…" : "Save guidance"}
+                        </Button>
+                      </div>
+                    </>
+                  ) : hrProfile.performance_guidance ? (
+                    <div className="rounded-lg border bg-muted/20 p-3 text-sm whitespace-pre-wrap">{hrProfile.performance_guidance}</div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">Your manager hasn't added guidance yet. Reach out if you'd like feedback on progressing your rating.</p>
+                  )}
+                </div>
+
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        );
+      })()}
 
       {/* Onboarding Steps Progress — only for staff currently in onboarding */}
       {onboardingSteps.length > 0

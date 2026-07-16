@@ -14,13 +14,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PerformanceRankBadge, RANK_ORDER, tenureYears, type Rank } from "./PerformanceRankBadge";
+import { PerformanceRankBadge, RANK_ORDER, tenureYears, bonusPoints, type Rank } from "./PerformanceRankBadge";
 
 // Monthly bonus pot: each staff member's slice is proportional to
-// (1 + tenure years) × rank multiplier. Longer tenure + higher rank compound.
-const POT_RANK_MULT: Record<Rank, number> = { S: 2.0, A: 1.75, B: 1.5, C: 1.25, D: 1.0 };
-const potPointsFor = (rank: Rank | null, years: number) =>
-  (1 + Math.max(0, years)) * (rank && POT_RANK_MULT[rank] ? POT_RANK_MULT[rank] : 1.5);
+// (1 + tenure years) × rank multiplier — see bonusPoints in PerformanceRankBadge.
 const POT_DESC_TAG = "Bonus pot";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
@@ -1344,7 +1341,7 @@ export function StaffPayManager() {
         .ilike("description", `${POT_DESC_TAG} · ${monthLabel}%`);
 
       if (amountGbp > 0 && potStaff.length > 0) {
-        const withPoints = potStaff.map(s => ({ ...s, points: potPointsFor(s.rank, s.years) }));
+        const withPoints = potStaff.map(s => ({ ...s, points: bonusPoints(s.rank, s.years) }));
         const totalPoints = withPoints.reduce((a, s) => a + s.points, 0);
         if (totalPoints > 0) {
           const raw = withPoints.map(s => (amountGbp * s.points) / totalPoints);
