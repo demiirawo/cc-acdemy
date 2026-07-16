@@ -85,3 +85,6 @@ verify_jwt = true
 [functions.send-warning-email]
 verify_jwt = true
 
+[functions.send-feedback-email]
+verify_jwt = true
+

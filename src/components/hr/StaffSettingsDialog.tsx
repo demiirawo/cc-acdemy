@@ -375,7 +375,7 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
                   <div>
                     <Label className="text-base font-medium">Eligible for bonus pot</Label>
                     <p className="text-sm text-muted-foreground">
-                      When off, this staff member never receives a share of the monthly bonus pot. (C and D ratings are excluded automatically regardless.)
+                      When off, this staff member never receives a share of the monthly bonus pot. (A D rating is excluded automatically regardless.)
                     </p>
                   </div>
                 </div>

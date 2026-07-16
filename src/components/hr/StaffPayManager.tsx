@@ -2125,7 +2125,7 @@ export function StaffPayManager() {
               <Coins className="h-4 w-4 text-amber-500 flex-shrink-0" />
               <span className="text-sm font-medium">Bonus pot allocation</span>
               <span className="text-xs text-muted-foreground truncate">
-                £{potAllocation.potGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {potAllocation.items.filter(i => i.points > 0).length} eligible staff · £{(potAllocation.potGbp / potAllocation.totalPoints).toFixed(2)}/point · C/D & opted-out excluded
+                £{potAllocation.potGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {potAllocation.items.filter(i => i.points > 0).length} eligible staff · £{(potAllocation.potGbp / potAllocation.totalPoints).toFixed(2)}/point · D & opted-out excluded
               </span>
               {potBusy && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground flex-shrink-0" />}
             </div>

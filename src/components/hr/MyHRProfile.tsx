@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, AlertTriangle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink, Handshake, Settings, Plus, Trash2 } from "lucide-react";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, AlertTriangle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink, Handshake, Settings, Plus, Trash2, ThumbsUp } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -318,6 +318,7 @@ interface PerformanceCriterion {
 interface StaffWarning {
   id: string;
   user_id: string;
+  kind: string; // 'warning' (negative) | 'praise' (positive)
   category: string | null;
   reason: string;
   severity: string;
@@ -388,9 +389,10 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   // Admin-authored "how to improve your rating" note for the selected staff.
   const [guidanceDraft, setGuidanceDraft] = useState("");
   const [savingGuidance, setSavingGuidance] = useState(false);
-  // Success criteria (team-wide) + warnings (per selected staff).
+  // Success criteria (team-wide) + feedback entries (per selected staff).
   const [criteria, setCriteria] = useState<PerformanceCriterion[]>([]);
   const [warnings, setWarnings] = useState<StaffWarning[]>([]);
+  const [fbKind, setFbKind] = useState<'praise' | 'warning'>('warning');
   const [warnCategory, setWarnCategory] = useState<string>('none');
   const [warnSeverity, setWarnSeverity] = useState<string>('minor');
   const [warnReason, setWarnReason] = useState("");
@@ -470,10 +472,10 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       setHRProfile(profile);
       setGuidanceDraft((profile as any)?.performance_guidance || "");
 
-      // Warnings on this staff member's record.
+      // Feedback (praise + warnings) on this staff member's record.
       const { data: warnData } = await (supabase as any)
         .from('staff_warnings')
-        .select('id, user_id, category, reason, severity, issued_at')
+        .select('id, user_id, kind, category, reason, severity, issued_at')
         .eq('user_id', targetUserId)
         .order('issued_at', { ascending: false });
       setWarnings((warnData as StaffWarning[]) || []);
@@ -1395,25 +1397,29 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     }
   };
 
-  // Add a warning to the selected staff member's record + email them.
-  const addWarning = async () => {
+  // Add a feedback entry (praise or warning) to the record + email the staff member.
+  const addFeedback = async () => {
     if (!isAdmin || !selectedUserId || !warnReason.trim()) return;
     setSavingWarning(true);
+    const isPraise = fbKind === 'praise';
     const category = warnCategory === 'none' ? null : warnCategory;
+    // Severity is only meaningful for warnings; store a neutral value for praise.
+    const severity = isPraise ? 'minor' : warnSeverity;
     const { data, error } = await (supabase as any)
       .from('staff_warnings')
       .insert({
         user_id: selectedUserId,
+        kind: fbKind,
         category,
         reason: warnReason.trim(),
-        severity: warnSeverity,
+        severity,
         issued_by: user?.id ?? null,
       })
-      .select('id, user_id, category, reason, severity, issued_at')
+      .select('id, user_id, kind, category, reason, severity, issued_at')
       .single();
     setSavingWarning(false);
     if (error) {
-      toast({ title: "Couldn't add warning", description: error.message, variant: "destructive" });
+      toast({ title: `Couldn't add ${isPraise ? 'feedback' : 'warning'}`, description: error.message, variant: "destructive" });
       return;
     }
     setWarnings(prev => [data as StaffWarning, ...prev]);
@@ -1422,20 +1428,24 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     setWarnSeverity('minor');
     const recipient = allStaff.find(s => s.user_id === selectedUserId);
     if (recipient?.email) {
-      supabase.functions.invoke("send-warning-email", {
+      supabase.functions.invoke("send-feedback-email", {
         body: {
           recipientEmail: recipient.email,
           recipientName: recipient.display_name,
+          kind: fbKind,
           category,
           reason: (data as StaffWarning).reason,
-          severity: warnSeverity,
+          severity,
         },
       }).catch(() => {});
     }
-    toast({ title: "Warning added", description: recipient?.email ? "The staff member has been emailed." : "No email on file — not sent." });
+    toast({
+      title: isPraise ? "Positive feedback added" : "Warning added",
+      description: recipient?.email ? "The staff member has been emailed." : "No email on file — not sent.",
+    });
   };
 
-  // Remove a warning (admin only).
+  // Remove a feedback entry (admin only).
   const deleteWarning = async (id: string) => {
     if (!isAdmin) return;
     const prev = warnings;
@@ -1443,7 +1453,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     const { error } = await (supabase as any).from('staff_warnings').delete().eq('id', id);
     if (error) {
       setWarnings(prev);
-      toast({ title: "Couldn't remove warning", description: error.message, variant: "destructive" });
+      toast({ title: "Couldn't remove entry", description: error.message, variant: "destructive" });
     }
   };
 
@@ -1687,7 +1697,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         const effPoints = flagEligible ? myPoints : 0;
         const myShare = (examplePot * effPoints) / teamTotalPoints;
         const idx = myRank ? RANK_ORDER.indexOf(myRank) : -1;
-        // For eligible staff show the next rank up; for ineligible (C/D) show the
+        // For eligible staff show the next rank up; for ineligible (D) show the
         // threshold they must reach to earn any pot share at all.
         const nextUp: Rank | null = !eligible ? LOWEST_ELIGIBLE_RANK : !myRank ? 'A' : idx > 0 ? RANK_ORDER[idx - 1] : null;
         const nextShare = nextUp ? (examplePot * bonusPoints(nextUp, myYears)) / teamTotalPoints : null;
@@ -1744,11 +1754,17 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                     {PERFORMANCE_CATEGORIES.map(cat => {
                       const items = criteria.filter(c => c.category === cat);
                       if (items.length === 0) return null;
-                      const catWarnings = warnings.filter(w => w.category === cat).length;
+                      const catWarnings = warnings.filter(w => w.category === cat && w.kind !== 'praise').length;
+                      const catPraise = warnings.filter(w => w.category === cat && w.kind === 'praise').length;
                       return (
                         <div key={cat} className="rounded-lg border bg-muted/20 p-3">
                           <p className="text-sm font-medium mb-1.5 flex items-center gap-1.5 flex-wrap">
                             {cat}
+                            {catPraise > 0 && (
+                              <Badge variant="outline" className="text-[10px] border-green-400/50 text-green-600">
+                                {catPraise} praise
+                              </Badge>
+                            )}
                             {catWarnings > 0 && (
                               <Badge variant="outline" className="text-[10px] border-amber-400/50 text-amber-600">
                                 {catWarnings} warning{catWarnings === 1 ? "" : "s"}
@@ -1825,9 +1841,8 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                             <div className="flex flex-col items-center gap-0.5">
                               <span className="text-sm leading-none">{b.emoji || <span className="text-muted-foreground">·</span>}</span>
                               <span className={cn("text-[11px] font-semibold", b.isMine ? "text-primary" : "text-muted-foreground")}>{b.label}</span>
-                              {b.isMine && (
-                                <span className="rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-bold text-primary-foreground leading-none">YOU</span>
-                              )}
+                              {/* Always rendered so every column reserves the same height — keeps bar baselines aligned. */}
+                              <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-bold leading-none", b.isMine ? "bg-primary text-primary-foreground" : "invisible")} aria-hidden={!b.isMine}>YOU</span>
                             </div>
                           </div>
                         );
@@ -1848,7 +1863,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                 <div className="space-y-2">
                   <p className="text-sm font-medium">How this affects your bonus</p>
                   <p className="text-xs text-muted-foreground">
-                    Each month's bonus pot is split by <strong className="text-foreground">points = (1 + years of service) × rank multiplier</strong> (S ×{RANK_BONUS_MULT.S}, A ×{RANK_BONUS_MULT.A}, B ×{RANK_BONUS_MULT.B}). Higher rank and longer tenure both increase your share. <strong className="text-foreground">C and D ratings receive no share, regardless of tenure.</strong>
+                    Each month's bonus pot is split by <strong className="text-foreground">points = (1 + years of service) × rank multiplier</strong> (S ×{RANK_BONUS_MULT.S}, A ×{RANK_BONUS_MULT.A}, B ×{RANK_BONUS_MULT.B}). Higher rank and longer tenure both increase your share. <strong className="text-foreground">A D rating receives no share, regardless of tenure.</strong>
                   </p>
                   {eligible ? (
                   <div className="rounded-lg border bg-muted/20 p-3 space-y-1.5 text-sm">
@@ -1885,19 +1900,42 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   )}
                 </div>
 
-                {/* 3b — Warnings on record */}
+                {/* 3b — Feedback on record (positive + warnings) */}
+                {(() => {
+                  const praiseCount = warnings.filter(w => w.kind === 'praise').length;
+                  const warnCount = warnings.filter(w => w.kind !== 'praise').length;
+                  const isPraise = fbKind === 'praise';
+                  return (
                 <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium">Warnings</p>
-                    {warnings.length > 0 && <StatusPill tone="warning">{warnings.length}</StatusPill>}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-medium">Feedback</p>
+                    {praiseCount > 0 && <StatusPill tone="success">{praiseCount} positive</StatusPill>}
+                    {warnCount > 0 && <StatusPill tone="warning">{warnCount} warning{warnCount === 1 ? "" : "s"}</StatusPill>}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Warnings flag where expectations weren't met. They don't automatically change your rating, but repeated or unaddressed warnings in an area signal underperformance and can lead to a lower rating — which reduces your bonus-pot share. Consistent improvement clears the path back up.
+                    Feedback captures both what's going well and where expectations weren't met. It doesn't automatically change your rating, but a pattern of positive feedback supports a higher rating, while repeated or unaddressed warnings can pull it down — and your rating drives your bonus-pot share.
                   </p>
 
                   {isAdmin && (
                     <div className="rounded-lg border bg-muted/10 p-3 space-y-2">
-                      <div className="grid gap-2 sm:grid-cols-2">
+                      {/* Positive vs warning toggle */}
+                      <div className="inline-flex rounded-lg border bg-background p-0.5">
+                        <button
+                          type="button"
+                          onClick={() => setFbKind('praise')}
+                          className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition", isPraise ? "bg-green-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                        >
+                          <ThumbsUp className="h-3.5 w-3.5" /> Positive
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFbKind('warning')}
+                          className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition", !isPraise ? "bg-amber-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                        >
+                          <AlertTriangle className="h-3.5 w-3.5" /> Warning
+                        </button>
+                      </div>
+                      <div className={cn("grid gap-2", isPraise ? "sm:grid-cols-1" : "sm:grid-cols-2")}>
                         <Select value={warnCategory} onValueChange={setWarnCategory}>
                           <SelectTrigger className="h-9"><SelectValue placeholder="Area (optional)" /></SelectTrigger>
                           <SelectContent>
@@ -1905,24 +1943,31 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                             {PERFORMANCE_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                           </SelectContent>
                         </Select>
-                        <Select value={warnSeverity} onValueChange={setWarnSeverity}>
-                          <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(WARNING_SEVERITIES).map(([k, v]) => (
-                              <SelectItem key={k} value={k}>{v.label} warning</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        {!isPraise && (
+                          <Select value={warnSeverity} onValueChange={setWarnSeverity}>
+                            <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(WARNING_SEVERITIES).map(([k, v]) => (
+                                <SelectItem key={k} value={k}>{v.label} warning</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
                       </div>
                       <Textarea
                         value={warnReason}
                         onChange={(e) => setWarnReason(e.target.value)}
-                        placeholder={`What did ${selectedUserName} fall short on?`}
+                        placeholder={isPraise ? `What did ${selectedUserName} do well?` : `What did ${selectedUserName} fall short on?`}
                         rows={2}
                       />
                       <div className="flex justify-end">
-                        <Button size="sm" onClick={addWarning} disabled={savingWarning || !warnReason.trim()}>
-                          <Plus className="h-4 w-4 mr-1" /> {savingWarning ? "Adding…" : "Add warning & email"}
+                        <Button
+                          size="sm"
+                          onClick={addFeedback}
+                          disabled={savingWarning || !warnReason.trim()}
+                          className={cn(isPraise && "bg-green-600 hover:bg-green-700")}
+                        >
+                          <Plus className="h-4 w-4 mr-1" /> {savingWarning ? "Adding…" : isPraise ? "Add positive feedback & email" : "Add warning & email"}
                         </Button>
                       </div>
                     </div>
@@ -1930,20 +1975,27 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
 
                   {warnings.length === 0 ? (
                     <p className="text-xs text-muted-foreground italic">
-                      {isAdmin ? "No warnings on record." : "No warnings on your record — keep it up!"}
+                      {isAdmin ? "No feedback on record yet." : "No feedback on your record yet."}
                     </p>
                   ) : (
                     <div className="space-y-2">
                       {warnings.map(w => {
+                        const praise = w.kind === 'praise';
                         const sev = WARNING_SEVERITIES[w.severity] || WARNING_SEVERITIES.minor;
                         return (
-                          <div key={w.id} className="rounded-lg border p-3 flex items-start gap-3">
-                            <AlertTriangle className={cn("h-4 w-4 mt-0.5 flex-shrink-0", sev.tone === "danger" ? "text-red-500" : "text-amber-500")} />
+                          <div key={w.id} className={cn("rounded-lg border p-3 flex items-start gap-3", praise ? "border-green-400/40 bg-green-500/5" : "")}>
+                            {praise
+                              ? <ThumbsUp className="h-4 w-4 mt-0.5 flex-shrink-0 text-green-600" />
+                              : <AlertTriangle className={cn("h-4 w-4 mt-0.5 flex-shrink-0", sev.tone === "danger" ? "text-red-500" : "text-amber-500")} />}
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <Badge variant="outline" className={cn("text-[10px]", sev.tone === "danger" ? "border-red-300 text-red-600" : "border-amber-300 text-amber-600")}>
-                                  {sev.label} warning
-                                </Badge>
+                                {praise ? (
+                                  <Badge variant="outline" className="text-[10px] border-green-300 text-green-600">Positive feedback</Badge>
+                                ) : (
+                                  <Badge variant="outline" className={cn("text-[10px]", sev.tone === "danger" ? "border-red-300 text-red-600" : "border-amber-300 text-amber-600")}>
+                                    {sev.label} warning
+                                  </Badge>
+                                )}
                                 {w.category && <Badge variant="outline" className="text-[10px]">{w.category}</Badge>}
                                 <span className="text-xs text-muted-foreground">{format(parseISO(w.issued_at), "d MMM yyyy")}</span>
                               </div>
@@ -1960,6 +2012,8 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                     </div>
                   )}
                 </div>
+                  );
+                })()}
 
                 {/* 4 — Guidance on how to improve */}
                 <div className="space-y-2">

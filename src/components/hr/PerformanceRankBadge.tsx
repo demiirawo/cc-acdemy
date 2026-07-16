@@ -23,11 +23,11 @@ export const rankBonusMult = (rank: Rank | null): number =>
   rank && RANK_BONUS_MULT[rank] ? RANK_BONUS_MULT[rank] : UNRATED_BONUS_MULT;
 
 // Ranks that receive NO share of the monthly bonus pot, regardless of tenure.
-export const BONUS_INELIGIBLE_RANKS: Rank[] = ['C', 'D'];
+export const BONUS_INELIGIBLE_RANKS: Rank[] = ['D'];
 export const bonusEligible = (rank: Rank | null): boolean =>
   !(rank && BONUS_INELIGIBLE_RANKS.includes(rank));
 /** Lowest rank that still earns a pot share — the threshold to become eligible. */
-export const LOWEST_ELIGIBLE_RANK: Rank = 'B';
+export const LOWEST_ELIGIBLE_RANK: Rank = 'C';
 
 export const bonusPoints = (rank: Rank | null, years: number): number =>
   bonusEligible(rank) ? (1 + Math.max(0, years)) * rankBonusMult(rank) : 0;
