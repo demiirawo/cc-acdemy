@@ -83,6 +83,7 @@ export function StaffMeetingsSection() {
   const [itemAdding, setItemAdding] = useState(false);
   const [itemForm, setItemForm] = useState({ ...EMPTY_ITEM });
   const [savingItem, setSavingItem] = useState(false);
+  const [editCell, setEditCell] = useState<{ id: string; field: string } | null>(null);
 
   const [spotlights, setSpotlights] = useState<Spotlight[]>([]);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
@@ -221,6 +222,11 @@ export function StaffMeetingsSection() {
     setItems(prev => prev.filter(a => a.id !== id));
     await (supabase as any).from("meeting_actions").delete().eq("id", id);
   };
+  const updateItem = async (id: string, patch: Partial<MeetingItem>) => {
+    setItems(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x));
+    setEditCell(null);
+    await (supabase as any).from("meeting_actions").update(patch).eq("id", id);
+  };
 
   const addUpdate = async () => {
     if (!updForm.title.trim()) return;
@@ -317,6 +323,115 @@ export function StaffMeetingsSection() {
       </div>
     );
   };
+
+  // ---- Airtable-style editable table (double-click a cell to edit) ----
+  const cellCls = "border-b border-r last:border-r-0 border-border/60 px-3 py-2 align-top";
+  const isEditing = (id: string, f: string) => editCell?.id === id && editCell.field === f;
+  const setOwner = (a: MeetingItem, v: string) => {
+    const o = staff.find(s => s.user_id === v);
+    updateItem(a.id, { owner_user_id: v === "none" ? null : v, owner_name: v === "none" ? null : (o?.display_name || o?.email || null) });
+  };
+
+  const EditRow = (a: MeetingItem) => {
+    const overdue = a.status !== "done" && a.due_date && differenceInCalendarDays(parseISO(a.due_date), new Date()) < 0;
+    const st = statusMeta(a.status); const pr = prioMeta(a.priority);
+    return (
+      <tr key={a.id} className={cn("hover:bg-muted/30 transition-colors", a.status === "done" && "opacity-70")}>
+        {/* agenda flag */}
+        <td className="border-b border-border/60 px-2 py-2 text-center align-top">
+          <button type="button" onClick={() => toggleAgenda(a)}
+            title={a.on_agenda ? "On the next agenda — click to remove" : "Flag for the next agenda"}
+            className={cn("rounded p-1 transition", a.on_agenda ? "text-amber-500" : "text-muted-foreground/40 hover:text-muted-foreground")}>
+            <Flag className={cn("h-4 w-4 mx-auto", a.on_agenda && "fill-amber-500")} />
+          </button>
+        </td>
+        {/* item title + detail */}
+        <td className={cellCls}>
+          {isEditing(a.id, "title") ? (
+            <Input autoFocus defaultValue={a.title} className="h-8"
+              onBlur={e => updateItem(a.id, { title: e.target.value.trim() || a.title })}
+              onKeyDown={e => { if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur(); if (e.key === "Escape") setEditCell(null); }} />
+          ) : (
+            <p className={cn("font-medium cursor-text", a.status === "done" && "line-through")} onDoubleClick={() => setEditCell({ id: a.id, field: "title" })}>{a.title}</p>
+          )}
+          {isEditing(a.id, "detail") ? (
+            <Textarea autoFocus defaultValue={a.detail || ""} rows={2} className="mt-1"
+              onBlur={e => updateItem(a.id, { detail: e.target.value.trim() || null })}
+              onKeyDown={e => { if (e.key === "Escape") setEditCell(null); }} />
+          ) : (
+            <p className="text-xs text-muted-foreground cursor-text mt-0.5" onDoubleClick={() => setEditCell({ id: a.id, field: "detail" })}>
+              {a.detail || <span className="italic opacity-50">add detail…</span>}
+            </p>
+          )}
+        </td>
+        {/* owner */}
+        <td className={cn(cellCls, "cursor-pointer")} onDoubleClick={() => setEditCell({ id: a.id, field: "owner" })}>
+          {isEditing(a.id, "owner") ? (
+            <Select defaultOpen defaultValue={a.owner_user_id ?? "none"} onValueChange={v => setOwner(a, v)} onOpenChange={o => { if (!o) setEditCell(null); }}>
+              <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Unassigned</SelectItem>
+                {staff.map(s => <SelectItem key={s.user_id} value={s.user_id}>{s.display_name || s.email}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          ) : <span className="text-sm">{a.owner_name || (a.owner_user_id ? nameOf(a.owner_user_id) : <span className="text-muted-foreground">—</span>)}</span>}
+        </td>
+        {/* due */}
+        <td className={cn(cellCls, "cursor-pointer whitespace-nowrap")} onDoubleClick={() => setEditCell({ id: a.id, field: "due_date" })}>
+          {isEditing(a.id, "due_date") ? (
+            <Input type="date" autoFocus className="h-8" defaultValue={a.due_date || ""} onBlur={e => updateItem(a.id, { due_date: e.target.value || null })} />
+          ) : a.due_date ? (
+            <span className={cn("inline-flex items-center gap-1 text-sm", overdue && "text-red-600 font-medium")}>{overdue && <AlertCircle className="h-3 w-3" />}{format(parseISO(a.due_date), "d MMM yyyy")}</span>
+          ) : <span className="text-muted-foreground">—</span>}
+        </td>
+        {/* severity */}
+        <td className={cn(cellCls, "cursor-pointer")} onDoubleClick={() => setEditCell({ id: a.id, field: "priority" })}>
+          {isEditing(a.id, "priority") ? (
+            <Select defaultOpen defaultValue={a.priority} onValueChange={v => updateItem(a.id, { priority: v })} onOpenChange={o => { if (!o) setEditCell(null); }}>
+              <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+              <SelectContent>{PRIORITIES.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}</SelectContent>
+            </Select>
+          ) : <Badge variant="outline" className={cn("text-[10px]", pr.cls)}>{pr.label}</Badge>}
+        </td>
+        {/* status */}
+        <td className={cn(cellCls, "cursor-pointer")} onDoubleClick={() => setEditCell({ id: a.id, field: "status" })}>
+          {isEditing(a.id, "status") ? (
+            <Select defaultOpen defaultValue={a.status} onValueChange={v => updateItem(a.id, { status: v })} onOpenChange={o => { if (!o) setEditCell(null); }}>
+              <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+              <SelectContent>{ACTION_STATUS.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}</SelectContent>
+            </Select>
+          ) : <span className={cn("rounded-full border px-2.5 py-0.5 text-[11px] font-medium whitespace-nowrap", st.cls)}>{st.label}</span>}
+        </td>
+        {/* delete */}
+        <td className="border-b border-border/60 px-2 py-2 text-center align-top">
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => deleteItem(a.id)}><Trash2 className="h-4 w-4" /></Button>
+        </td>
+      </tr>
+    );
+  };
+
+  const ItemsTable = (rows: MeetingItem[]) => (
+    <div className="overflow-x-auto rounded-lg border border-border/60">
+      <table className="w-full text-sm border-collapse">
+        <thead className="bg-muted/50 text-[11px] uppercase tracking-wide text-muted-foreground">
+          <tr>
+            <th className="w-9 border-b border-r border-border/60 px-2 py-2"><Flag className="h-3 w-3 mx-auto" /></th>
+            <th className="text-left font-medium border-b border-r border-border/60 px-3 py-2">Item</th>
+            <th className="text-left font-medium border-b border-r border-border/60 px-3 py-2 w-40">Owner</th>
+            <th className="text-left font-medium border-b border-r border-border/60 px-3 py-2 w-32">Due</th>
+            <th className="text-left font-medium border-b border-r border-border/60 px-3 py-2 w-24">Severity</th>
+            <th className="text-left font-medium border-b border-r border-border/60 px-3 py-2 w-28">Status</th>
+            <th className="w-9 border-b border-border/60 px-2 py-2"></th>
+          </tr>
+        </thead>
+        <tbody>{rows.map(EditRow)}</tbody>
+      </table>
+    </div>
+  );
+
+  // A group body: read-only cards while presenting, editable table otherwise.
+  const groupBody = (rows: MeetingItem[], big: boolean) =>
+    present ? <div className="space-y-2">{rows.map(a => ItemRow(a, big))}</div> : ItemsTable(rows);
 
   // ---- Section renderers ----
   const renderVision = (big: boolean) => (
@@ -437,18 +552,15 @@ export function StaffMeetingsSection() {
         </div>
         {groups.agenda.length === 0 ? (
           <p className="text-sm text-muted-foreground italic">Nothing flagged for the agenda{!present && " — flag any item below with the flag icon"}.</p>
-        ) : (
-          <div className="space-y-2 rounded-xl border border-amber-300/50 bg-amber-50/40 dark:bg-amber-500/5 p-2">
-            {groups.agenda.map(a => ItemRow(a, big))}
-          </div>
-        )}
+        ) : groupBody(groups.agenda, big)}
+        {!present && groups.agenda.length > 0 && <p className="text-[11px] text-muted-foreground">Double-click any cell to edit.</p>}
       </div>
 
       {/* Ongoing tracked items */}
       {groups.ongoing.length > 0 && (
         <div className="space-y-2">
           <p className="text-xs uppercase tracking-widest text-primary/70 font-semibold">Ongoing &amp; tracked</p>
-          <div className="space-y-2">{groups.ongoing.map(a => ItemRow(a, big))}</div>
+          {groupBody(groups.ongoing, big)}
         </div>
       )}
 
@@ -458,7 +570,7 @@ export function StaffMeetingsSection() {
           <button type="button" onClick={() => setShowResolved(v => !v)} className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
             <Check className="h-3.5 w-3.5" /> {showResolved ? "Hide" : "Show"} {groups.resolved.length} resolved
           </button>
-          {showResolved && <div className="space-y-2">{groups.resolved.map(a => ItemRow(a, big))}</div>}
+          {showResolved && groupBody(groups.resolved, big)}
         </div>
       )}
 
