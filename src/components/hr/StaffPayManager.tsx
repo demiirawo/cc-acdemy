@@ -1290,6 +1290,7 @@ export function StaffPayManager() {
       const rating = (hrFull?.performance_rating ?? null) as Rank | null;
       return {
         userId: s.userId,
+        displayName: s.displayName,
         currency: s.currency,
         rank: rating && RANK_ORDER.includes(rating) ? rating : null,
         years: tenureYears(hrFull?.start_date || hrFull?.created_at) ?? 0,
@@ -1297,12 +1298,34 @@ export function StaffPayManager() {
     });
   }, [payrollSummary, hrProfilesFull]);
 
+  // Monthly bonus pot input state (declared before the allocation memo/effects).
+  const [bonusPotInput, setBonusPotInput] = useState("");
+  const [potBusy, setPotBusy] = useState(false);
+  const [potAllocOpen, setPotAllocOpen] = useState(false);
+
+  // Live allocation of the current pot across staff (largest-remainder in GBP).
+  const potAllocation = useMemo(() => {
+    const potGbp = Math.max(0, parseFloat(bonusPotInput) || 0);
+    const withPoints = potStaff.map(s => ({ ...s, points: bonusPoints(s.rank, s.years) }));
+    const totalPoints = withPoints.reduce((a, s) => a + s.points, 0);
+    if (potGbp <= 0 || totalPoints <= 0) {
+      return { potGbp, totalPoints, items: [] as Array<typeof withPoints[number] & { shareGbp: number; shareLocal: number }> };
+    }
+    const raw = withPoints.map(s => (potGbp * s.points) / totalPoints);
+    const shareGbp = raw.map(v => Math.floor(v * 100) / 100);
+    const pennies = Math.round((potGbp - shareGbp.reduce((a, b) => a + b, 0)) * 100);
+    raw.map((v, i) => i).sort((a, b) => raw[b] - raw[a]).forEach((idx, k) => { if (k < pennies) shareGbp[idx] += 0.01; });
+    const items = withPoints
+      .map((s, i) => ({ ...s, shareGbp: shareGbp[i], shareLocal: Math.round(gbpToCurrency(shareGbp[i], s.currency) * 100) / 100 }))
+      .sort((a, b) => b.points - a.points);
+    return { potGbp, totalPoints, items };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [potStaff, bonusPotInput, manualRates, exchangeRates]);
+
   // --- Monthly bonus pot input (beside Total Payroll) ---------------------
   // Typing a pot amount auto-writes each staff member's share as a bonus
   // record (tagged "Bonus pot · <month>") so it flows into the existing
   // Bonuses column and totals — no button. Re-entering replaces the prior pot.
-  const [bonusPotInput, setBonusPotInput] = useState("");
-  const [potBusy, setPotBusy] = useState(false);
   const loadedPotRef = useRef<number | null>(null); // last value known to be persisted
   const potSyncToken = useRef(0);
   const monthLabel = format(selectedMonth, "MMM yyyy");
@@ -2047,6 +2070,62 @@ export function StaffPayManager() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Bonus pot allocation — collapsible breakdown across all staff */}
+      {potAllocation.potGbp > 0 && potAllocation.items.length > 0 && (
+        <Card className="overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setPotAllocOpen(o => !o)}
+            className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-muted/40 transition-colors text-left"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Coins className="h-4 w-4 text-amber-500 flex-shrink-0" />
+              <span className="text-sm font-medium">Bonus pot allocation</span>
+              <span className="text-xs text-muted-foreground truncate">
+                £{potAllocation.potGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {potAllocation.items.length} staff · £{(potAllocation.potGbp / potAllocation.totalPoints).toFixed(2)}/point
+              </span>
+              {potBusy && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground flex-shrink-0" />}
+            </div>
+            {potAllocOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground flex-shrink-0" /> : <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />}
+          </button>
+          {potAllocOpen && (
+            <div className="border-t overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="text-left font-medium px-4 py-2">Staff</th>
+                    <th className="text-left font-medium px-4 py-2">Tenure · rank</th>
+                    <th className="text-right font-medium px-4 py-2">Points</th>
+                    <th className="text-right font-medium px-4 py-2">Share (£)</th>
+                    <th className="text-right font-medium px-4 py-2">Paid</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {potAllocation.items.map(s => (
+                    <tr key={s.userId} className="border-t">
+                      <td className="px-4 py-2">
+                        <div className="flex items-center gap-2">
+                          <PerformanceRankBadge rank={s.rank} years={s.years} size="sm" />
+                          <span className="font-medium truncate">{s.displayName}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2 text-muted-foreground whitespace-nowrap">
+                        {s.years} yr{s.years === 1 ? "" : "s"} · {s.rank ?? "unrated"}
+                      </td>
+                      <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{s.points.toFixed(2)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums font-semibold">£{s.shareGbp.toFixed(2)}</td>
+                      <td className="px-4 py-2 text-right tabular-nums text-muted-foreground whitespace-nowrap">
+                        {s.currency === "GBP" ? "—" : formatCurrency(s.shareLocal, s.currency)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Manual Currency Rate Inputs */}
       {currenciesInPayroll.length > 0 && (
@@ -2870,7 +2949,7 @@ export function StaffPayManager() {
 
       {/* Edit Adjustments Dialog */}
       <Dialog open={adjustmentDialogOpen} onOpenChange={setAdjustmentDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto overflow-x-hidden">
           <DialogHeader>
             <DialogTitle>Edit Adjustments</DialogTitle>
             <DialogDescription>
@@ -2879,7 +2958,7 @@ export function StaffPayManager() {
           </DialogHeader>
 
           {adjustmentEdit && (
-            <div className="space-y-6 py-4">
+            <div className="space-y-6 py-4 min-w-0">
               {/* Overtime Override Section */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -2936,7 +3015,7 @@ export function StaffPayManager() {
                   <TrendingUp className="h-4 w-4 text-success" />
                   <Label className="text-base font-medium">Bonuses</Label>
                 </div>
-                <div className="pl-6">
+                <div className="pl-6 min-w-0">
                   {(() => {
                     const staff = payrollSummary.find(s => s.userId === adjustmentEdit.staffId);
                     const monthStartStr = format(monthStart, 'yyyy-MM-dd');
