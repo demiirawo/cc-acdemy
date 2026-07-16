@@ -1823,12 +1823,12 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                       </span>
                     </div>
                     <div className="flex justify-between gap-2">
-                      <span className="text-muted-foreground">Your share of the pot</span>
+                      <span className="text-muted-foreground">Bonus share based on your current rating</span>
                       <span className="font-medium tabular-nums">{((myPoints / teamTotalPoints) * 100).toFixed(1)}% · ≈ £{myShare.toFixed(2)} of a £1,000 pot</span>
                     </div>
                     {nextUp && nextShare !== null && (
                       <div className="flex justify-between gap-2 pt-1.5 border-t text-primary">
-                        <span>Reaching {RANK_STYLES[nextUp].label}</span>
+                        <span>Bonus if you were to get {nextUp} rating</span>
                         <span className="font-medium tabular-nums">≈ £{nextShare.toFixed(2)} (+£{(nextShare - myShare).toFixed(2)} / £1,000)</span>
                       </div>
                     )}
