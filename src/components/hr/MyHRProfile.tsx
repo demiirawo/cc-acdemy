@@ -1770,43 +1770,79 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                 </div>
                 )}
 
-                {/* 2 — How you compare to the team */}
-                <div className="space-y-2">
+                {/* 2 — How you compare to the team (anonymous — counts only) */}
+                {(() => {
+                  const ratedCount = teamSize - dist.unrated;
+                  const bars = [
+                    ...RANK_ORDER.map(r => ({ key: r as string, label: r as string, count: dist[r], emoji: RANK_STYLES[r].emoji, fill: RANK_STYLES[r].bar, isMine: r === myRank })),
+                    ...(dist.unrated > 0 ? [{ key: 'unrated', label: '—', count: dist.unrated, emoji: '', fill: 'bg-gradient-to-t from-muted-foreground/30 to-muted-foreground/15', isMine: false }] : []),
+                  ];
+                  const maxCount = Math.max(1, ...bars.map(b => b.count));
+                  const pctAbove = Math.round((higher / Math.max(1, teamSize)) * 100);
+                  const positionLabel = !myRank ? 'Not yet rated' : higher === 0 ? 'Top of the team' : `Top ${Math.max(1, pctAbove)}%`;
+                  return (
+                <div className="space-y-3">
                   <p className="text-sm font-medium">How you compare</p>
+
+                  {/* Headline stat chips */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-lg border bg-muted/20 p-2.5 text-center">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Your rating</p>
+                      <p className="text-base font-bold flex items-center justify-center gap-1 mt-0.5">
+                        {myRank ? <>{RANK_STYLES[myRank].emoji} {myRank}</> : <span className="text-muted-foreground text-sm">—</span>}
+                      </p>
+                    </div>
+                    <div className="rounded-lg border bg-primary/5 border-primary/20 p-2.5 text-center">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Team position</p>
+                      <p className="text-base font-bold text-primary mt-0.5">{positionLabel}</p>
+                    </div>
+                    <div className="rounded-lg border bg-muted/20 p-2.5 text-center">
+                      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Rated staff</p>
+                      <p className="text-base font-bold mt-0.5">{ratedCount}<span className="text-xs font-normal text-muted-foreground"> / {teamSize}</span></p>
+                    </div>
+                  </div>
+
+                  {/* Distribution — bars coloured by rank, scaled to the tallest */}
+                  <div className="rounded-lg border bg-gradient-to-b from-muted/20 to-transparent p-4">
+                    <div className="flex items-end gap-2" style={{ height: 168 }}>
+                      {bars.map((b, i) => {
+                        const h = b.count > 0 ? Math.max(8, (b.count / maxCount) * 100) : 0;
+                        return (
+                          <div key={b.key} className="flex-1 flex flex-col items-center justify-end h-full gap-1 min-w-0">
+                            <span className={cn("text-xs font-bold tabular-nums", b.isMine ? "text-primary" : "text-foreground")}>{b.count}</span>
+                            <div className="w-full flex-1 flex items-end rounded-md bg-muted/25 overflow-hidden">
+                              {b.count > 0 && (
+                                <div
+                                  className={cn(
+                                    "w-full rounded-md animate-in fade-in-0 slide-in-from-bottom-4 duration-500",
+                                    b.fill,
+                                    b.isMine && "ring-2 ring-primary ring-offset-2 ring-offset-background shadow-lg",
+                                  )}
+                                  style={{ height: `${h}%`, animationDelay: `${i * 70}ms`, animationFillMode: "backwards" }}
+                                />
+                              )}
+                            </div>
+                            <div className="flex flex-col items-center gap-0.5">
+                              <span className="text-sm leading-none">{b.emoji || <span className="text-muted-foreground">·</span>}</span>
+                              <span className={cn("text-[11px] font-semibold", b.isMine ? "text-primary" : "text-muted-foreground")}>{b.label}</span>
+                              {b.isMine && (
+                                <span className="rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-bold text-primary-foreground leading-none">YOU</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   <p className="text-xs text-muted-foreground">
                     {myRank
-                      ? <>You're rated <strong className="text-foreground">{RANK_STYLES[myRank].label}</strong>. {higher === 0 ? "No one is rated higher — you're at the top of the team." : `${higher} teammate${higher === 1 ? " is" : "s are"} rated higher`}{higher > 0 && sameLevel > 0 ? `, and ${sameLevel} ${sameLevel === 1 ? "is" : "are"} at your level.` : sameLevel > 0 ? `; ${sameLevel} ${sameLevel === 1 ? "is" : "are"} at your level.` : "."}</>
-                      : <>You haven't been rated yet. Once rated, you'll see where you stand across the {teamSize}-person team.</>}
+                      ? <>You're rated <strong className="text-foreground">{RANK_STYLES[myRank].label}</strong>. {higher === 0 ? "No one is rated higher — you're at the top of the team." : `${higher} teammate${higher === 1 ? " is" : "s are"} rated higher`}{higher > 0 && sameLevel > 0 ? `, and ${sameLevel} ${sameLevel === 1 ? "is" : "are"} at your level.` : sameLevel > 0 ? `; ${sameLevel} ${sameLevel === 1 ? "is" : "are"} at your level.` : "."} Bars show how many teammates sit at each rating — names are never shown.</>
+                      : <>You haven't been rated yet. Once rated, you'll see where you stand across the {teamSize}-person team. Bars show how many teammates sit at each rating — names are never shown.</>}
                   </p>
-                  <div className="flex items-end gap-1.5 pt-1">
-                    {RANK_ORDER.map(r => {
-                      const count = dist[r];
-                      const pct = Math.round((count / teamSize) * 100);
-                      const isMine = r === myRank;
-                      return (
-                        <div key={r} className="flex-1 flex flex-col items-center gap-1" title={`${count} staff rated ${r} (${pct}%)`}>
-                          <span className="text-[10px] text-muted-foreground tabular-nums">{count}</span>
-                          <div className="w-full rounded-t bg-muted/50 relative" style={{ height: 60 }}>
-                            <div
-                              className={cn("absolute bottom-0 left-0 right-0 rounded-t", isMine ? "bg-primary" : "bg-muted-foreground/40")}
-                              style={{ height: `${Math.max(count > 0 ? 8 : 0, pct)}%` }}
-                            />
-                          </div>
-                          <span className={cn("text-[11px] font-semibold", isMine && "text-primary")}>{r}</span>
-                        </div>
-                      );
-                    })}
-                    {dist.unrated > 0 && (
-                      <div className="flex-1 flex flex-col items-center gap-1" title={`${dist.unrated} not yet rated`}>
-                        <span className="text-[10px] text-muted-foreground tabular-nums">{dist.unrated}</span>
-                        <div className="w-full rounded-t bg-muted/50 relative" style={{ height: 60 }}>
-                          <div className="absolute bottom-0 left-0 right-0 rounded-t bg-muted-foreground/25" style={{ height: `${Math.max(dist.unrated > 0 ? 8 : 0, Math.round((dist.unrated / teamSize) * 100))}%` }} />
-                        </div>
-                        <span className="text-[11px] text-muted-foreground">—</span>
-                      </div>
-                    )}
-                  </div>
                 </div>
+                  );
+                })()}
 
                 {/* 3 — How rating + tenure drive the bonus */}
                 <div className="space-y-2">

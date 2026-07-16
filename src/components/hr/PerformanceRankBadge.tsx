@@ -4,12 +4,12 @@ import { cn } from "@/lib/utils";
 export const RANK_ORDER = ['S', 'A', 'B', 'C', 'D'] as const;
 export type Rank = typeof RANK_ORDER[number];
 
-export const RANK_STYLES: Record<Rank, { label: string; tile: string; glow: string; emoji: string; description: string }> = {
-  S: { label: 'S Rank', tile: 'bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-500 text-amber-950', glow: 'shadow-[0_0_18px_rgba(251,191,36,0.7)]', emoji: '👑', description: 'Exceptional — consistently exceeds expectations and sets the standard for the team.' },
-  A: { label: 'A Rank', tile: 'bg-gradient-to-br from-emerald-300 to-green-500 text-emerald-950', glow: 'shadow-[0_0_16px_rgba(16,185,129,0.55)]', emoji: '⭐', description: 'Strong — reliably high performer who goes beyond in key areas.' },
-  B: { label: 'B Rank', tile: 'bg-gradient-to-br from-sky-300 to-blue-500 text-sky-950', glow: 'shadow-[0_0_16px_rgba(59,130,246,0.5)]', emoji: '✨', description: 'Solid — dependably meets all expectations of the role.' },
-  C: { label: 'C Rank', tile: 'bg-gradient-to-br from-violet-300 to-purple-500 text-violet-950', glow: 'shadow-[0_0_14px_rgba(168,85,247,0.45)]', emoji: '🔧', description: 'Developing — meets most expectations, with clear areas to build on.' },
-  D: { label: 'D Rank', tile: 'bg-gradient-to-br from-slate-300 to-slate-500 text-slate-900', glow: '', emoji: '🌱', description: 'Needs support — below expectations; active development in progress.' },
+export const RANK_STYLES: Record<Rank, { label: string; tile: string; glow: string; emoji: string; description: string; bar: string }> = {
+  S: { label: 'S Rank', tile: 'bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-500 text-amber-950', glow: 'shadow-[0_0_18px_rgba(251,191,36,0.7)]', emoji: '👑', description: 'Exceptional — consistently exceeds expectations and sets the standard for the team.', bar: 'bg-gradient-to-t from-amber-500 to-amber-300' },
+  A: { label: 'A Rank', tile: 'bg-gradient-to-br from-emerald-300 to-green-500 text-emerald-950', glow: 'shadow-[0_0_16px_rgba(16,185,129,0.55)]', emoji: '⭐', description: 'Strong — reliably high performer who goes beyond in key areas.', bar: 'bg-gradient-to-t from-emerald-500 to-green-300' },
+  B: { label: 'B Rank', tile: 'bg-gradient-to-br from-sky-300 to-blue-500 text-sky-950', glow: 'shadow-[0_0_16px_rgba(59,130,246,0.5)]', emoji: '✨', description: 'Solid — dependably meets all expectations of the role.', bar: 'bg-gradient-to-t from-blue-500 to-sky-300' },
+  C: { label: 'C Rank', tile: 'bg-gradient-to-br from-violet-300 to-purple-500 text-violet-950', glow: 'shadow-[0_0_14px_rgba(168,85,247,0.45)]', emoji: '🔧', description: 'Developing — meets most expectations, with clear areas to build on.', bar: 'bg-gradient-to-t from-purple-500 to-violet-300' },
+  D: { label: 'D Rank', tile: 'bg-gradient-to-br from-slate-300 to-slate-500 text-slate-900', glow: '', emoji: '🌱', description: 'Needs support — below expectations; active development in progress.', bar: 'bg-gradient-to-t from-slate-500 to-slate-300' },
 };
 
 // Bonus-pot weighting: a staff member's share of a monthly pot is proportional
