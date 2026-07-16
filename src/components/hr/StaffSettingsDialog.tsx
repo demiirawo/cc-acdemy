@@ -15,7 +15,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Shield, Infinity, Plus, X, Loader2 } from "lucide-react";
+import { Shield, Infinity, Plus, X, Loader2, Coins } from "lucide-react";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 
 // Per-staff settings editor, shared between the Staffing Settings roster and
@@ -78,6 +78,7 @@ const EMPTY_FORM = {
   annual_holiday_allowance: 28,
   unlimited_holiday: false,
   public_holiday_pay_disabled: false,
+  bonus_pot_eligible: true,
   notes: '',
   scheduling_role: 'viewer',
   employment_status: 'onboarding_probation' as EmploymentStatus,
@@ -136,6 +137,7 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
           annual_holiday_allowance: hr?.annual_holiday_allowance || 28,
           unlimited_holiday: hr?.unlimited_holiday || false,
           public_holiday_pay_disabled: (hr as any)?.public_holiday_pay_disabled || false,
+          bonus_pot_eligible: (hr as any)?.bonus_pot_eligible !== false,
           notes: hr?.notes || '',
           scheduling_role: hr?.scheduling_role || 'viewer',
           employment_status: (hr?.employment_status as EmploymentStatus) || 'onboarding_probation',
@@ -202,16 +204,17 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
         annual_holiday_allowance: formData.annual_holiday_allowance,
         unlimited_holiday: formData.unlimited_holiday,
         public_holiday_pay_disabled: formData.public_holiday_pay_disabled,
+        bonus_pot_eligible: formData.bonus_pot_eligible,
         notes: formData.notes || null,
         scheduling_role: formData.scheduling_role,
         employment_status: formData.employment_status,
       };
 
       if (existingHRId) {
-        const { error } = await supabase.from('hr_profiles').update(profileData).eq('id', existingHRId);
+        const { error } = await supabase.from('hr_profiles').update(profileData as any).eq('id', existingHRId);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('hr_profiles').insert(profileData);
+        const { error } = await supabase.from('hr_profiles').insert(profileData as any);
         if (error) throw error;
       }
 
@@ -363,6 +366,22 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
                 <Switch
                   checked={!!formData.public_holiday_pay_disabled}
                   onCheckedChange={(checked) => setFormData({ ...formData, public_holiday_pay_disabled: checked })}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
+                <div className="flex items-center gap-3">
+                  <Coins className="h-5 w-5 text-amber-500" />
+                  <div>
+                    <Label className="text-base font-medium">Eligible for bonus pot</Label>
+                    <p className="text-sm text-muted-foreground">
+                      When off, this staff member never receives a share of the monthly bonus pot. (C and D ratings are excluded automatically regardless.)
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={formData.bonus_pot_eligible !== false}
+                  onCheckedChange={(checked) => setFormData({ ...formData, bonus_pot_eligible: checked })}
                 />
               </div>
 

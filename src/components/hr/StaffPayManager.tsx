@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PerformanceRankBadge, RANK_ORDER, tenureYears, bonusPoints, bonusEligible, type Rank } from "./PerformanceRankBadge";
+import { PerformanceRankBadge, RANK_ORDER, tenureYears, bonusPoints, type Rank } from "./PerformanceRankBadge";
 import { cn } from "@/lib/utils";
 
 // Monthly bonus pot: each staff member's slice is proportional to
@@ -225,7 +225,7 @@ export function StaffPayManager() {
   const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; status: string; absence_type: string }[]>([]);
-  const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; employment_end_date: string | null; unlimited_holiday: boolean; public_holiday_pay_disabled?: boolean; created_at?: string; performance_rating?: string | null }[]>([]);
+  const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; employment_end_date: string | null; unlimited_holiday: boolean; public_holiday_pay_disabled?: boolean; created_at?: string; performance_rating?: string | null; bonus_pot_eligible?: boolean }[]>([]);
   const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null; swap_with_user_id: string | null; coverage_metadata: Json | null }[]>([]);
   const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string }[]>([]);
   const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<{ user_id: string; start_date: string; end_date: string }[]>([]);
@@ -501,9 +501,9 @@ export function StaffPayManager() {
       // Fetch full HR profiles for holiday allowance and employment window
       const { data: hrFullData } = await supabase
         .from('hr_profiles')
-        .select('user_id, annual_holiday_allowance, start_date, employment_end_date, unlimited_holiday, public_holiday_pay_disabled, created_at, performance_rating');
+        .select('user_id, annual_holiday_allowance, start_date, employment_end_date, unlimited_holiday, public_holiday_pay_disabled, created_at, performance_rating, bonus_pot_eligible');
 
-      setHRProfilesFull(hrFullData || []);
+      setHRProfilesFull((hrFullData as any) || []);
 
       // Fetch approved overtime and shift_swap requests for overtime pay calculation
       const { data: overtimeRequestsData, error: overtimeRequestsError } = await supabase
@@ -1310,6 +1310,8 @@ export function StaffPayManager() {
         currency: s.currency,
         rank: rating && RANK_ORDER.includes(rating) ? rating : null,
         years: tenureYears(hrFull?.start_date || hrFull?.created_at) ?? 0,
+        // Explicit per-staff opt-out flag (default eligible).
+        flagEligible: hrFull?.bonus_pot_eligible !== false,
       };
     });
   }, [payrollSummary, hrProfilesFull]);
@@ -1322,7 +1324,7 @@ export function StaffPayManager() {
   // Live allocation of the current pot across staff (largest-remainder in GBP).
   const potAllocation = useMemo(() => {
     const potGbp = Math.max(0, parseFloat(bonusPotInput) || 0);
-    const withPoints = potStaff.map(s => ({ ...s, points: bonusPoints(s.rank, s.years) }));
+    const withPoints = potStaff.map(s => ({ ...s, points: s.flagEligible ? bonusPoints(s.rank, s.years) : 0 }));
     const totalPoints = withPoints.reduce((a, s) => a + s.points, 0);
     if (potGbp <= 0 || totalPoints <= 0) {
       return { potGbp, totalPoints, items: [] as Array<typeof withPoints[number] & { shareGbp: number; shareLocal: number }> };
@@ -1381,7 +1383,7 @@ export function StaffPayManager() {
         .ilike("description", `${POT_DESC_TAG} · ${monthLabel}%`);
 
       if (amountGbp > 0 && potStaff.length > 0) {
-        const withPoints = potStaff.map(s => ({ ...s, points: bonusPoints(s.rank, s.years) }));
+        const withPoints = potStaff.map(s => ({ ...s, points: s.flagEligible ? bonusPoints(s.rank, s.years) : 0 }));
         const totalPoints = withPoints.reduce((a, s) => a + s.points, 0);
         if (totalPoints > 0) {
           const raw = withPoints.map(s => (amountGbp * s.points) / totalPoints);
@@ -2111,7 +2113,7 @@ export function StaffPayManager() {
               <Coins className="h-4 w-4 text-amber-500 flex-shrink-0" />
               <span className="text-sm font-medium">Bonus pot allocation</span>
               <span className="text-xs text-muted-foreground truncate">
-                £{potAllocation.potGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {potAllocation.items.filter(i => bonusEligible(i.rank)).length} eligible staff · £{(potAllocation.potGbp / potAllocation.totalPoints).toFixed(2)}/point · C/D excluded
+                £{potAllocation.potGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {potAllocation.items.filter(i => i.points > 0).length} eligible staff · £{(potAllocation.potGbp / potAllocation.totalPoints).toFixed(2)}/point · C/D & opted-out excluded
               </span>
               {potBusy && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground flex-shrink-0" />}
             </div>
@@ -2131,7 +2133,8 @@ export function StaffPayManager() {
                 </thead>
                 <tbody>
                   {potAllocation.items.map(s => {
-                    const eligible = bonusEligible(s.rank);
+                    const eligible = s.points > 0;
+                    const reason = !s.flagEligible ? "excluded" : `${s.rank}`;
                     return (
                     <tr key={s.userId} className={cn("border-t", !eligible && "opacity-60")}>
                       <td className="px-4 py-2">
@@ -2145,7 +2148,7 @@ export function StaffPayManager() {
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{s.points.toFixed(2)}</td>
                       <td className="px-4 py-2 text-right tabular-nums font-semibold">
-                        {eligible ? `£${s.shareGbp.toFixed(2)}` : <span className="text-muted-foreground font-normal">Ineligible ({s.rank})</span>}
+                        {eligible ? `£${s.shareGbp.toFixed(2)}` : <span className="text-muted-foreground font-normal">Ineligible ({reason})</span>}
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums text-muted-foreground whitespace-nowrap">
                         {!eligible || s.currency === "GBP" ? "—" : formatCurrency(s.shareLocal, s.currency)}

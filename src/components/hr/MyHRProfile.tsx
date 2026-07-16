@@ -92,6 +92,7 @@ interface HRProfile {
   notes: string | null;
   performance_rating: string | null;
   performance_guidance?: string | null;
+  bonus_pot_eligible?: boolean;
   employment_status: string | null;
 }
 interface Holiday {
@@ -1563,8 +1564,11 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         const sameLevel = Math.max(0, teamPerf.filter(t => rankBonusMult(t.rank) === myMult).length - 1);
 
         const examplePot = 1000;
-        const myShare = (examplePot * myPoints) / teamTotalPoints;
-        const eligible = bonusEligible(myRank);
+        const flagEligible = hrProfile.bonus_pot_eligible !== false;
+        const eligible = bonusEligible(myRank) && flagEligible;
+        // myPoints is rank-only; zero it out when opted out so the share is £0.
+        const effPoints = flagEligible ? myPoints : 0;
+        const myShare = (examplePot * effPoints) / teamTotalPoints;
         const idx = myRank ? RANK_ORDER.indexOf(myRank) : -1;
         // For eligible staff show the next rank up; for ineligible (C/D) show the
         // threshold they must reach to earn any pot share at all.
@@ -1678,9 +1682,11 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   ) : (
                   <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 space-y-1.5 text-sm">
                     <p className="font-medium text-amber-700 dark:text-amber-300">
-                      Your {myRank} rating isn't eligible for the monthly bonus pot — this applies regardless of how long you've been here.
+                      {!flagEligible
+                        ? "You're currently excluded from the monthly bonus pot. Speak to your manager if you think this is a mistake."
+                        : `Your ${myRank} rating isn't eligible for the monthly bonus pot — this applies regardless of how long you've been here.`}
                     </p>
-                    {nextUp && nextShare !== null && (
+                    {flagEligible && nextUp && nextShare !== null && (
                       <p className="text-muted-foreground">
                         Reaching <strong className="text-foreground">{RANK_STYLES[nextUp].label}</strong> would make you eligible — worth ≈ <strong className="text-foreground">£{nextShare.toFixed(2)}</strong> of a £1,000 pot at your current tenure.
                       </p>
