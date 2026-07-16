@@ -33,12 +33,14 @@ const PRIORITIES = [
 ];
 const statusMeta = (v: string) => ACTION_STATUS.find(s => s.value === v) ?? ACTION_STATUS[0];
 const prioMeta = (v: string) => PRIORITIES.find(p => p.value === v) ?? PRIORITIES[1];
+const EMPTY_ITEM = { title: "", detail: "", owner: "none", due_date: "", priority: "medium", status: "not_started", on_agenda: true };
 
 interface MeetingItem {
   id: string; title: string; detail: string | null; owner_user_id: string | null;
   owner_name: string | null; due_date: string | null; status: string; priority: string;
   on_agenda: boolean; sort_order: number;
 }
+interface Objective { id: string; title: string; target_date: string | null; is_done: boolean; sort_order: number; }
 interface Spotlight { id: string; user_id: string; note: string | null; }
 interface StaffProfile { user_id: string; display_name: string | null; email: string | null; }
 type PerfInfo = { rank: Rank | null; years: number | null };
@@ -55,20 +57,23 @@ export function StaffMeetingsSection() {
 
   const [loading, setLoading] = useState(true);
   const [vision, setVision] = useState("");
-  const [mission, setMission] = useState("");
   const [editingVision, setEditingVision] = useState(false);
   const [visionDraft, setVisionDraft] = useState("");
-  const [missionDraft, setMissionDraft] = useState("");
+
+  const [objectives, setObjectives] = useState<Objective[]>([]);
+  const [newObj, setNewObj] = useState({ title: "", target_date: "" });
 
   const [items, setItems] = useState<MeetingItem[]>([]);
+  const [itemAdding, setItemAdding] = useState(false);
+  const [itemForm, setItemForm] = useState({ ...EMPTY_ITEM });
+  const [savingItem, setSavingItem] = useState(false);
+
   const [spotlights, setSpotlights] = useState<Spotlight[]>([]);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [perf, setPerf] = useState<Record<string, PerfInfo>>({});
 
   const [present, setPresent] = useState(false);
   const [sectionIdx, setSectionIdx] = useState(0);
-
-  const [itemDialog, setItemDialog] = useState(false);
   const [spotlightDialog, setSpotlightDialog] = useState(false);
   const [showResolved, setShowResolved] = useState(false);
 
@@ -77,19 +82,19 @@ export function StaffMeetingsSection() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [settingsRes, itemRes, spotRes, staffRes, hrRes] = await Promise.all([
-      (supabase as any).from("meeting_settings").select("vision, mission").eq("id", true).maybeSingle(),
+    const [settingsRes, objRes, itemRes, spotRes, staffRes, hrRes] = await Promise.all([
+      (supabase as any).from("meeting_settings").select("vision").eq("id", true).maybeSingle(),
+      (supabase as any).from("meeting_objectives").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       (supabase as any).from("meeting_actions").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       (supabase as any).from("meeting_spotlights").select("*").order("created_at", { ascending: false }),
       supabase.from("profiles").select("user_id, display_name, email").order("display_name"),
       supabase.from("hr_profiles").select("user_id, performance_rating, start_date, created_at"),
     ]);
     setVision(settingsRes.data?.vision || "");
-    setMission(settingsRes.data?.mission || "");
+    setObjectives((objRes.data as Objective[]) || []);
     setItems((itemRes.data as MeetingItem[]) || []);
     setSpotlights((spotRes.data as Spotlight[]) || []);
     setStaff((staffRes.data as StaffProfile[]) || []);
-
     const pmap: Record<string, PerfInfo> = {};
     (hrRes.data || []).forEach((h: any) => {
       pmap[h.user_id] = {
@@ -115,13 +120,47 @@ export function StaffMeetingsSection() {
   }, [present]);
 
   const saveVision = async () => {
-    setVision(visionDraft); setMission(missionDraft); setEditingVision(false);
+    setVision(visionDraft); setEditingVision(false);
     const { error } = await (supabase as any).from("meeting_settings")
-      .update({ vision: visionDraft.trim() || null, mission: missionDraft.trim() || null, updated_by: user?.id, updated_at: new Date().toISOString() })
+      .update({ vision: visionDraft.trim() || null, updated_by: user?.id, updated_at: new Date().toISOString() })
       .eq("id", true);
     if (error) toast({ title: "Couldn't save vision", description: error.message, variant: "destructive" });
   };
 
+  // Objectives
+  const addObjective = async () => {
+    if (!newObj.title.trim()) return;
+    const { data } = await (supabase as any).from("meeting_objectives")
+      .insert({ title: newObj.title.trim(), target_date: newObj.target_date || null, sort_order: objectives.length })
+      .select("*").single();
+    if (data) setObjectives(prev => [...prev, data as Objective]);
+    setNewObj({ title: "", target_date: "" });
+  };
+  const toggleObjective = async (o: Objective) => {
+    setObjectives(prev => prev.map(x => x.id === o.id ? { ...x, is_done: !x.is_done } : x));
+    await (supabase as any).from("meeting_objectives").update({ is_done: !o.is_done }).eq("id", o.id);
+  };
+  const deleteObjective = async (id: string) => {
+    setObjectives(prev => prev.filter(o => o.id !== id));
+    await (supabase as any).from("meeting_objectives").delete().eq("id", id);
+  };
+
+  // Items
+  const addItemInline = async () => {
+    if (!itemForm.title.trim()) return;
+    setSavingItem(true);
+    const owner = staff.find(s => s.user_id === itemForm.owner);
+    const { data, error } = await (supabase as any).from("meeting_actions").insert({
+      title: itemForm.title.trim(), detail: itemForm.detail.trim() || null,
+      owner_user_id: owner?.user_id ?? null, owner_name: owner?.display_name ?? owner?.email ?? null,
+      due_date: itemForm.due_date || null, priority: itemForm.priority, status: itemForm.status,
+      on_agenda: itemForm.on_agenda, sort_order: items.length,
+    }).select("*").single();
+    setSavingItem(false);
+    if (error) { toast({ title: "Couldn't add item", description: error.message, variant: "destructive" }); return; }
+    setItems(prev => [...prev, data as MeetingItem]);
+    setItemForm({ ...EMPTY_ITEM, on_agenda: itemForm.on_agenda }); // keep composer open for rapid entry
+  };
   const cycleStatus = async (a: MeetingItem) => {
     const idx = ACTION_STATUS.findIndex(s => s.value === a.status);
     const next = ACTION_STATUS[(idx + 1) % ACTION_STATUS.length].value;
@@ -156,7 +195,6 @@ export function StaffMeetingsSection() {
   const stats = useMemo(() => ({
     overdue: items.filter(a => a.status !== "done" && a.due_date && differenceInCalendarDays(parseISO(a.due_date), new Date()) < 0).length,
     open: items.filter(a => a.status !== "done").length,
-    resolved: items.filter(a => a.status === "done").length,
   }), [items]);
 
   // ---- Item row ----
@@ -166,12 +204,9 @@ export function StaffMeetingsSection() {
     return (
       <div key={a.id} className={cn("rounded-lg border bg-card p-3 flex items-start gap-3", a.status === "done" && "opacity-70")}>
         {!present && (
-          <button
-            type="button"
-            onClick={() => toggleAgenda(a)}
+          <button type="button" onClick={() => toggleAgenda(a)}
             title={a.on_agenda ? "On the next agenda — click to remove" : "Flag for the next meeting's agenda"}
-            className={cn("mt-0.5 flex-shrink-0 rounded-md p-1 transition", a.on_agenda ? "text-amber-500" : "text-muted-foreground/40 hover:text-muted-foreground")}
-          >
+            className={cn("mt-0.5 flex-shrink-0 rounded-md p-1 transition", a.on_agenda ? "text-amber-500" : "text-muted-foreground/40 hover:text-muted-foreground")}>
             <Flag className={cn("h-4 w-4", a.on_agenda && "fill-amber-500")} />
           </button>
         )}
@@ -189,12 +224,9 @@ export function StaffMeetingsSection() {
             )}
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => !present && cycleStatus(a)}
+        <button type="button" onClick={() => !present && cycleStatus(a)}
           className={cn("rounded-full border px-2.5 py-0.5 text-[11px] font-medium whitespace-nowrap", st.cls, !present && "cursor-pointer hover:opacity-80")}
-          title={present ? undefined : "Click to advance status"}
-        >
+          title={present ? undefined : "Click to advance status"}>
           {st.label}
         </button>
         {!present && (
@@ -212,30 +244,59 @@ export function StaffMeetingsSection() {
       {editingVision ? (
         <div className="space-y-3">
           <div className="space-y-1.5"><Label>Vision</Label><Textarea value={visionDraft} onChange={e => setVisionDraft(e.target.value)} rows={3} placeholder="Where are we going as a company?" /></div>
-          <div className="space-y-1.5"><Label>Mission</Label><Textarea value={missionDraft} onChange={e => setMissionDraft(e.target.value)} rows={3} placeholder="How we get there / what we do every day" /></div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={() => setEditingVision(false)}>Cancel</Button>
             <Button size="sm" onClick={saveVision}>Save</Button>
           </div>
         </div>
       ) : (
-        <>
+        <div className="space-y-2">
           <blockquote className={cn("font-semibold text-foreground leading-tight", big ? "text-3xl md:text-5xl" : "text-2xl")}>
             {vision ? `“${vision}”` : <span className="text-muted-foreground font-normal italic text-xl">Add your company vision…</span>}
           </blockquote>
-          {mission && (
-            <div>
-              <p className={cn("uppercase tracking-widest text-primary/70 font-semibold mb-1", big ? "text-sm" : "text-xs")}>Our mission</p>
-              <p className={cn("text-muted-foreground", big ? "text-xl md:text-2xl" : "text-base")}>{mission}</p>
-            </div>
-          )}
           {!present && (
-            <Button variant="outline" size="sm" onClick={() => { setVisionDraft(vision); setMissionDraft(mission); setEditingVision(true); }}>
-              <Pencil className="h-4 w-4 mr-1" /> Edit vision &amp; mission
+            <Button variant="outline" size="sm" onClick={() => { setVisionDraft(vision); setEditingVision(true); }}>
+              <Pencil className="h-4 w-4 mr-1" /> Edit vision
             </Button>
           )}
-        </>
+        </div>
       )}
+
+      {/* Time-bound objectives */}
+      <div className="space-y-2">
+        <p className={cn("uppercase tracking-widest text-primary/70 font-semibold", big ? "text-sm" : "text-xs")}>Time-bound objectives</p>
+        {objectives.length === 0 && present && <p className="text-muted-foreground italic">No objectives set.</p>}
+        <div className="space-y-2">
+          {objectives.map(o => {
+            const overdue = !o.is_done && o.target_date && differenceInCalendarDays(parseISO(o.target_date), new Date()) < 0;
+            return (
+              <div key={o.id} className={cn("flex items-center gap-3 rounded-lg border p-3", o.is_done && "bg-muted/30")}>
+                <Checkbox checked={o.is_done} onCheckedChange={() => toggleObjective(o)} disabled={present} />
+                <span className={cn("flex-1", big ? "text-xl" : "text-sm", o.is_done && "line-through text-muted-foreground")}>{o.title}</span>
+                {o.target_date && (
+                  <Badge variant="outline" className={cn("text-[10px] whitespace-nowrap", overdue ? "border-red-300 text-red-600" : "border-primary/30 text-primary")}>
+                    <CalendarDays className="h-3 w-3 mr-1" /> by {format(parseISO(o.target_date), "d MMM yyyy")}
+                  </Badge>
+                )}
+                {!present && (
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => deleteObjective(o.id)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {!present && (
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Input value={newObj.title} onChange={e => setNewObj(o => ({ ...o, title: e.target.value }))} placeholder="Add an objective…" onKeyDown={e => e.key === "Enter" && addObjective()} className="flex-1" />
+            <div className="flex gap-2">
+              <Input type="date" value={newObj.target_date} onChange={e => setNewObj(o => ({ ...o, target_date: e.target.value }))} className="w-[150px]" title="Target date" />
+              <Button onClick={addObjective} disabled={!newObj.title.trim()}><Plus className="h-4 w-4" /></Button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 
@@ -245,8 +306,47 @@ export function StaffMeetingsSection() {
         <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">{groups.agenda.length} on agenda</Badge>
         <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">{stats.open} open</Badge>
         {stats.overdue > 0 && <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">{stats.overdue} overdue</Badge>}
-        {!present && <Button size="sm" className="ml-auto" onClick={() => setItemDialog(true)}><Plus className="h-4 w-4 mr-1" /> Add item</Button>}
+        {!present && !itemAdding && <Button size="sm" className="ml-auto" onClick={() => setItemAdding(true)}><Plus className="h-4 w-4 mr-1" /> Add item</Button>}
       </div>
+
+      {/* Inline composer */}
+      {!present && itemAdding && (
+        <div className="rounded-xl border bg-muted/20 p-3 space-y-2.5">
+          <Input autoFocus value={itemForm.title} onChange={e => setItemForm(f => ({ ...f, title: e.target.value }))}
+            placeholder="What are we discussing / tracking?" onKeyDown={e => { if (e.key === "Enter") addItemInline(); }} />
+          <Textarea value={itemForm.detail} onChange={e => setItemForm(f => ({ ...f, detail: e.target.value }))} rows={2} placeholder="Detail (optional)" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <Select value={itemForm.owner} onValueChange={v => setItemForm(f => ({ ...f, owner: v }))}>
+              <SelectTrigger className="h-9"><SelectValue placeholder="Owner" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Unassigned</SelectItem>
+                {staff.map(s => <SelectItem key={s.user_id} value={s.user_id}>{s.display_name || s.email}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Input type="date" className="h-9" value={itemForm.due_date} onChange={e => setItemForm(f => ({ ...f, due_date: e.target.value }))} title="Delivery date" />
+            <Select value={itemForm.priority} onValueChange={v => setItemForm(f => ({ ...f, priority: v }))}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>{PRIORITIES.map(p => <SelectItem key={p.value} value={p.value}>{p.label} severity</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={itemForm.status} onValueChange={v => setItemForm(f => ({ ...f, status: v }))}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>{ACTION_STATUS.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <label className="flex items-center gap-2 cursor-pointer text-sm">
+              <Checkbox checked={itemForm.on_agenda} onCheckedChange={c => setItemForm(f => ({ ...f, on_agenda: c === true }))} />
+              Flag for the next agenda
+            </label>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => { setItemAdding(false); setItemForm({ ...EMPTY_ITEM }); }}>Done</Button>
+              <Button size="sm" onClick={addItemInline} disabled={savingItem || !itemForm.title.trim()}>
+                <Plus className="h-4 w-4 mr-1" /> {savingItem ? "Adding…" : "Add"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* On the agenda for the next meeting */}
       <div className="space-y-2">
@@ -282,7 +382,7 @@ export function StaffMeetingsSection() {
         </div>
       )}
 
-      {items.length === 0 && groups.agenda.length === 0 && (
+      {items.length === 0 && !itemAdding && (
         <p className="text-muted-foreground italic">No items yet. Add the first thing you're tracking.</p>
       )}
     </div>
@@ -291,9 +391,7 @@ export function StaffMeetingsSection() {
   const renderSpotlight = (big: boolean) => (
     <div className="space-y-3">
       {!present && (
-        <div className="flex">
-          <Button size="sm" variant="outline" className="ml-auto" onClick={() => setSpotlightDialog(true)}><Plus className="h-4 w-4 mr-1" /> Add shout-out</Button>
-        </div>
+        <div className="flex"><Button size="sm" variant="outline" className="ml-auto" onClick={() => setSpotlightDialog(true)}><Plus className="h-4 w-4 mr-1" /> Add shout-out</Button></div>
       )}
       {spotlights.length === 0 ? (
         <p className="text-muted-foreground italic">No shout-outs yet — recognise someone great.</p>
@@ -395,81 +493,8 @@ export function StaffMeetingsSection() {
         })}
       </div>
 
-      {itemDialog && <ItemDialog staff={staff} order={items.length} onClose={() => setItemDialog(false)} onAdded={(a) => { setItems(prev => [...prev, a]); setItemDialog(false); }} />}
       {spotlightDialog && <SpotlightDialog staff={staff} existing={new Set(spotlights.map(s => s.user_id))} onClose={() => setSpotlightDialog(false)} onAdd={addSpotlight} />}
     </div>
-  );
-}
-
-// ---- Add item dialog ----
-function ItemDialog({ staff, order, onClose, onAdded }: {
-  staff: StaffProfile[]; order: number; onClose: () => void; onAdded: (a: MeetingItem) => void;
-}) {
-  const { toast } = useToast();
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({ title: "", detail: "", owner: "none", due_date: "", priority: "medium", status: "not_started", on_agenda: true });
-
-  const submit = async () => {
-    if (!form.title.trim()) { toast({ title: "Title is required", variant: "destructive" }); return; }
-    setSaving(true);
-    const owner = staff.find(s => s.user_id === form.owner);
-    const { data, error } = await (supabase as any).from("meeting_actions").insert({
-      title: form.title.trim(), detail: form.detail.trim() || null,
-      owner_user_id: owner?.user_id ?? null, owner_name: owner?.display_name ?? owner?.email ?? null,
-      due_date: form.due_date || null, priority: form.priority, status: form.status, on_agenda: form.on_agenda, sort_order: order,
-    }).select("*").single();
-    setSaving(false);
-    if (error) { toast({ title: "Couldn't add item", description: error.message, variant: "destructive" }); return; }
-    onAdded(data as MeetingItem);
-  };
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md max-h-[88vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>Add an item</DialogTitle></DialogHeader>
-        <div className="space-y-3 py-1">
-          <div className="space-y-1.5"><Label>Item *</Label><Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="What are we discussing / tracking?" /></div>
-          <div className="space-y-1.5"><Label>Detail</Label><Textarea value={form.detail} onChange={e => setForm(f => ({ ...f, detail: e.target.value }))} rows={2} placeholder="Optional context" /></div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Owner</Label>
-              <Select value={form.owner} onValueChange={v => setForm(f => ({ ...f, owner: v }))}>
-                <SelectTrigger><SelectValue placeholder="Owner" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Unassigned</SelectItem>
-                  {staff.map(s => <SelectItem key={s.user_id} value={s.user_id}>{s.display_name || s.email}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5"><Label>Delivery date</Label><Input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} /></div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label>Severity</Label>
-              <Select value={form.priority} onValueChange={v => setForm(f => ({ ...f, priority: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{PRIORITIES.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Status</Label>
-              <Select value={form.status} onValueChange={v => setForm(f => ({ ...f, status: v }))}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{ACTION_STATUS.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-          </div>
-          <label className="flex items-center gap-2.5 rounded-lg border bg-muted/20 p-3 cursor-pointer">
-            <Checkbox checked={form.on_agenda} onCheckedChange={(c) => setForm(f => ({ ...f, on_agenda: c === true }))} />
-            <span className="text-sm">Flag for the next meeting's agenda</span>
-          </label>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={submit} disabled={saving}>{saving ? "Adding…" : "Add item"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 
