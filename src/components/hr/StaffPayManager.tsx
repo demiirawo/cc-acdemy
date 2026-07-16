@@ -398,6 +398,21 @@ export function StaffPayManager() {
     return rate > 0 ? amountGbp / rate : amountGbp;
   };
 
+  // Cycle a staff member's performance rating S→A→B→C→D→S by clicking their
+  // payroll badge (same behaviour as the staff-profile card). Optimistic.
+  const cyclePayrollRank = async (userId: string) => {
+    const hrFull = hrProfilesFull.find(h => h.user_id === userId);
+    const cur = (hrFull?.performance_rating ?? null) as Rank | null;
+    const idx = RANK_ORDER.indexOf(cur as Rank);
+    const next = RANK_ORDER[(idx + 1) % RANK_ORDER.length];
+    setHRProfilesFull(prev => prev.map(h => h.user_id === userId ? { ...h, performance_rating: next } : h));
+    const { error } = await supabase.from('hr_profiles').update({ performance_rating: next }).eq('user_id', userId);
+    if (error) {
+      setHRProfilesFull(prev => prev.map(h => h.user_id === userId ? { ...h, performance_rating: cur } : h));
+      toast({ title: "Couldn't update rating", description: error.message, variant: "destructive" });
+    }
+  };
+
   const fetchData = async () => {
     try {
       const { data: users, error: usersError } = await supabase
@@ -2411,7 +2426,15 @@ export function StaffPayManager() {
                         <div className="flex items-center gap-3">
                           {(() => {
                             const b = rankBadgeFor(staff.userId);
-                            return <PerformanceRankBadge rank={b.rank} years={b.years} />;
+                            return (
+                              <PerformanceRankBadge
+                                rank={b.rank}
+                                years={b.years}
+                                onClick={() => cyclePayrollRank(staff.userId)}
+                                className="cursor-pointer hover:opacity-80 active:scale-95 transition"
+                                title={`Click to change rating${b.rank ? ` (currently ${b.rank})` : " (unrated)"}`}
+                              />
+                            );
                           })()}
                           <div className="min-w-0">
                             <div className="font-semibold">{staff.displayName}</div>
