@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { format, parseISO, differenceInCalendarDays } from "date-fns";
 import {
   Presentation, Target, Sparkles, Rocket, Plus, Trash2, Pencil,
-  ChevronLeft, ChevronRight, X, CalendarDays, AlertCircle, Loader2, Check, Flag,
+  ChevronLeft, ChevronRight, X, CalendarDays, AlertCircle, Loader2, Check, Flag, Share2, Copy,
 } from "lucide-react";
 import { RANK_ORDER, RANK_STYLES, tenureYears, type Rank } from "../hr/PerformanceRankBadge";
 
@@ -75,8 +75,17 @@ export function StaffMeetingsSection() {
 
   const [present, setPresent] = useState(false);
   const [sectionIdx, setSectionIdx] = useState(0);
-  const [spotlightDialog, setSpotlightDialog] = useState(false);
   const [showResolved, setShowResolved] = useState(false);
+
+  const [publicToken, setPublicToken] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [savingShare, setSavingShare] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  // Inline shout-out composer
+  const [spotAdding, setSpotAdding] = useState(false);
+  const [spotUser, setSpotUser] = useState("");
+  const [spotNote, setSpotNote] = useState("");
 
   const nameOf = (uid: string | null) =>
     (uid && (staff.find(s => s.user_id === uid)?.display_name || staff.find(s => s.user_id === uid)?.email)) || "Unknown";
@@ -84,7 +93,7 @@ export function StaffMeetingsSection() {
   const load = useCallback(async () => {
     setLoading(true);
     const [settingsRes, objRes, itemRes, spotRes, staffRes, hrRes, docRes] = await Promise.all([
-      (supabase as any).from("meeting_settings").select("vision").eq("id", true).maybeSingle(),
+      (supabase as any).from("meeting_settings").select("vision, public_token").eq("id", true).maybeSingle(),
       (supabase as any).from("meeting_objectives").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       (supabase as any).from("meeting_actions").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       (supabase as any).from("meeting_spotlights").select("*").order("created_at", { ascending: false }),
@@ -93,6 +102,7 @@ export function StaffMeetingsSection() {
       supabase.from("staff_onboarding_documents").select("user_id, photograph_path"),
     ]);
     setVision(settingsRes.data?.vision || "");
+    setPublicToken(settingsRes.data?.public_token || null);
     setObjectives((objRes.data as Objective[]) || []);
     setItems((itemRes.data as MeetingItem[]) || []);
     setSpotlights((spotRes.data as Spotlight[]) || []);
@@ -194,11 +204,32 @@ export function StaffMeetingsSection() {
     await (supabase as any).from("meeting_actions").delete().eq("id", id);
   };
 
-  const addSpotlight = async (userId: string, note: string) => {
+  const addSpotlight = async () => {
+    if (!spotUser) return;
     const { data } = await (supabase as any).from("meeting_spotlights")
-      .insert({ user_id: userId, note: note.trim() || null }).select("*").single();
+      .insert({ user_id: spotUser, note: spotNote.trim() || null }).select("*").single();
     if (data) setSpotlights(prev => [data as Spotlight, ...prev]);
-    setSpotlightDialog(false);
+    setSpotUser(""); setSpotNote("");
+  };
+
+  const publicUrl = publicToken ? `${window.location.origin}/public/staff-meeting?token=${publicToken}` : "";
+  const enableShare = async () => {
+    setSavingShare(true);
+    const token = (crypto as any).randomUUID();
+    const { error } = await (supabase as any).from("meeting_settings").update({ public_token: token }).eq("id", true);
+    setSavingShare(false);
+    if (error) { toast({ title: "Couldn't create link", description: error.message, variant: "destructive" }); return; }
+    setPublicToken(token);
+  };
+  const disableShare = async () => {
+    setSavingShare(true);
+    const { error } = await (supabase as any).from("meeting_settings").update({ public_token: null }).eq("id", true);
+    setSavingShare(false);
+    if (error) { toast({ title: "Couldn't disable link", description: error.message, variant: "destructive" }); return; }
+    setPublicToken(null);
+  };
+  const copyLink = () => {
+    navigator.clipboard?.writeText(publicUrl).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
   };
   const deleteSpotlight = async (id: string) => {
     setSpotlights(prev => prev.filter(s => s.id !== id));
@@ -370,8 +401,8 @@ export function StaffMeetingsSection() {
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <Flag className="h-4 w-4 text-amber-500 fill-amber-500" />
-          <p className={cn("font-semibold", big ? "text-xl" : "text-sm")}>On the agenda</p>
-          <span className="text-xs text-muted-foreground">this meeting</span>
+          <p className="text-xs uppercase tracking-widest text-primary/70 font-semibold">On the agenda</p>
+          <span className="text-[10px] text-muted-foreground">this meeting</span>
         </div>
         {groups.agenda.length === 0 ? (
           <p className="text-sm text-muted-foreground italic">Nothing flagged for the agenda{!present && " — flag any item below with the flag icon"}.</p>
@@ -385,7 +416,7 @@ export function StaffMeetingsSection() {
       {/* Ongoing tracked items */}
       {groups.ongoing.length > 0 && (
         <div className="space-y-2">
-          <p className={cn("font-semibold text-muted-foreground", big ? "text-lg" : "text-sm")}>Ongoing &amp; tracked</p>
+          <p className="text-xs uppercase tracking-widest text-primary/70 font-semibold">Ongoing &amp; tracked</p>
           <div className="space-y-2">{groups.ongoing.map(a => ItemRow(a, big))}</div>
         </div>
       )}
@@ -408,9 +439,25 @@ export function StaffMeetingsSection() {
 
   const renderSpotlight = (big: boolean) => (
     <div className="space-y-4">
-      {!present && (
-        <div className="flex"><Button size="sm" variant="outline" className="ml-auto" onClick={() => setSpotlightDialog(true)}><Plus className="h-4 w-4 mr-1" /> Add shout-out</Button></div>
+      <div className="flex items-center gap-2">
+        <p className="text-xs uppercase tracking-widest text-primary/70 font-semibold">Shout-outs</p>
+        {!present && !spotAdding && <Button size="sm" variant="outline" className="ml-auto" onClick={() => setSpotAdding(true)}><Plus className="h-4 w-4 mr-1" /> Add shout-out</Button>}
+      </div>
+
+      {!present && spotAdding && (
+        <div className="rounded-xl border bg-muted/20 p-3 space-y-2.5">
+          <Select value={spotUser} onValueChange={setSpotUser}>
+            <SelectTrigger className="h-9"><SelectValue placeholder="Choose staff" /></SelectTrigger>
+            <SelectContent>{staff.map(s => <SelectItem key={s.user_id} value={s.user_id}>{s.display_name || s.email}</SelectItem>)}</SelectContent>
+          </Select>
+          <Textarea value={spotNote} onChange={e => setSpotNote(e.target.value)} rows={2} placeholder="What did they do well?" />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => { setSpotAdding(false); setSpotUser(""); setSpotNote(""); }}>Done</Button>
+            <Button size="sm" onClick={addSpotlight} disabled={!spotUser}><Plus className="h-4 w-4 mr-1" /> Add</Button>
+          </div>
+        </div>
       )}
+
       {spotlights.length === 0 ? (
         <p className="text-muted-foreground italic">No shout-outs yet — recognise someone great.</p>
       ) : (
@@ -497,7 +544,12 @@ export function StaffMeetingsSection() {
               <p className="text-muted-foreground text-sm flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" /> {format(new Date(), "EEEE d MMMM yyyy")}</p>
             </div>
           </div>
-          <Button onClick={() => { setSectionIdx(0); setPresent(true); }}><Presentation className="h-4 w-4 mr-1.5" /> Present</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setShareOpen(true)}>
+              <Share2 className="h-4 w-4 mr-1.5" /> Share{publicToken ? " · on" : ""}
+            </Button>
+            <Button onClick={() => { setSectionIdx(0); setPresent(true); }}><Presentation className="h-4 w-4 mr-1.5" /> Present</Button>
+          </div>
         </div>
 
         {SECTIONS.map(sec => {
@@ -516,7 +568,34 @@ export function StaffMeetingsSection() {
         })}
       </div>
 
-      {spotlightDialog && <SpotlightDialog staff={staff} existing={new Set(spotlights.map(s => s.user_id))} onClose={() => setSpotlightDialog(false)} onAdd={addSpotlight} />}
+      <Dialog open={shareOpen} onOpenChange={setShareOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Share this meeting</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-1">
+            <p className="text-sm text-muted-foreground">
+              Anyone with the link can view this meeting (vision, objectives, agenda &amp; tracked items and shout-outs) read-only — no login needed. Turn it off any time to revoke access.
+            </p>
+            {publicToken ? (
+              <>
+                <div className="flex gap-2">
+                  <Input readOnly value={publicUrl} className="text-xs" onFocus={e => e.currentTarget.select()} />
+                  <Button variant="outline" size="icon" onClick={copyLink} title="Copy link">
+                    {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <div className="flex justify-between items-center">
+                  <a href={publicUrl} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">Open preview ↗</a>
+                  <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={disableShare} disabled={savingShare}>Turn off link</Button>
+                </div>
+              </>
+            ) : (
+              <Button onClick={enableShare} disabled={savingShare}>
+                <Share2 className="h-4 w-4 mr-1.5" /> {savingShare ? "Creating…" : "Create public link"}
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -546,33 +625,3 @@ function SpotlightAvatar({ photo, name, rank, big }: { photo?: string; name: str
   );
 }
 
-// ---- Add shout-out dialog ----
-function SpotlightDialog({ staff, existing, onClose, onAdd }: {
-  staff: StaffProfile[]; existing: Set<string>; onClose: () => void; onAdd: (userId: string, note: string) => void;
-}) {
-  const [userId, setUserId] = useState("");
-  const [note, setNote] = useState("");
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Add a shout-out</DialogTitle></DialogHeader>
-        <div className="space-y-3 py-1">
-          <div className="space-y-1.5">
-            <Label>Staff member</Label>
-            <Select value={userId} onValueChange={setUserId}>
-              <SelectTrigger><SelectValue placeholder="Choose staff" /></SelectTrigger>
-              <SelectContent>
-                {staff.map(s => <SelectItem key={s.user_id} value={s.user_id}>{s.display_name || s.email}{existing.has(s.user_id) ? " ✓" : ""}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5"><Label>What did they do well?</Label><Textarea value={note} onChange={e => setNote(e.target.value)} rows={3} placeholder="Recognise their contribution…" /></div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => userId && onAdd(userId, note)} disabled={!userId}><Check className="h-4 w-4 mr-1" /> Add shout-out</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}

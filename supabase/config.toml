@@ -91,3 +91,6 @@ verify_jwt = true
 [functions.send-incident-invite-email]
 verify_jwt = true
 
+[functions.public-staff-meeting]
+verify_jwt = false
+

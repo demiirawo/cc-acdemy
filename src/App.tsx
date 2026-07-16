@@ -13,6 +13,7 @@ import { PublicClientSchedule } from "./components/PublicClientSchedule";
 import { PublicLiveView } from "./components/PublicLiveView";
 import { PublicTrainingMatrix } from "./components/PublicTrainingMatrix";
 import { CandidateApplyPage } from "./components/recruitment/CandidateApplyPage";
+import { PublicStaffMeeting } from "./components/PublicStaffMeeting";
 
 const queryClient = new QueryClient();
 
@@ -32,6 +33,7 @@ const App = () => (
           <Route path="/public/schedule-only/:clientName" element={<PublicClientSchedule scheduleOnly />} />
           <Route path="/embed/live-view" element={<PublicLiveView />} />
           <Route path="/public/training-matrix" element={<PublicTrainingMatrix />} />
+          <Route path="/public/staff-meeting" element={<PublicStaffMeeting />} />
           <Route path="/apply/:slug" element={<CandidateApplyPage />} />
           <Route path="/public/:token" element={<PublicPageView />} />
           <Route path="/project/:projectId" element={<ProjectView />} />
