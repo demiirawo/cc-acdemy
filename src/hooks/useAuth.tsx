@@ -140,8 +140,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
     initializeAuth();
 
+    // Safety net: never leave the app stuck on the loading splash. If auth
+    // hasn't resolved within a few seconds (e.g. a hung session refresh), stop
+    // showing the loader so the user reaches the app or the sign-in screen.
+    const safetyTimer = setTimeout(() => {
+      if (mounted) setLoading(false);
+    }, 5000);
+
     return () => {
       mounted = false;
+      clearTimeout(safetyTimer);
       subscription.unsubscribe();
     };
   }, [toast]);

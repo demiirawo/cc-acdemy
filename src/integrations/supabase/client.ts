@@ -13,5 +13,12 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
+    // Bypass the Web Locks API. Supabase's default cross-tab lock can deadlock:
+    // a crashed, duplicated or backgrounded tab may hold the auth lock and never
+    // release it, so getSession()/token-refresh block forever and the app hangs
+    // on the loading splash. A pass-through lock runs auth operations without
+    // cross-tab coordination — safe here (concurrent refreshes are handled) and
+    // far better than an indefinite hang.
+    lock: <R>(_name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> => fn(),
   }
 });
