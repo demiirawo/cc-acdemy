@@ -2133,6 +2133,19 @@ export function StaffPayManager() {
                 </TableRow>
               ) : (
                 (() => {
+                  // Tenure rank tile — styled like the Performance Rating badge
+                  // (a gradient square with the tenure inside). Matches the
+                  // loyalty-bonus tiers; gold = longest-serving, like S rank.
+                  const tenureRank = (userId: string): { value: string; title: string; tile: string; glow: string } | null => {
+                    const hrFull = hrProfilesFull.find(h => h.user_id === userId);
+                    const startRaw = hrFull?.start_date || hrFull?.created_at || null;
+                    if (!startRaw) return null;
+                    const years = Math.floor((Date.now() - new Date(startRaw).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+                    if (years >= 3) return { value: '3+', title: '3+ years — Year 3+ loyalty tier', tile: 'bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-500 text-amber-950', glow: 'shadow-[0_0_12px_rgba(251,191,36,0.6)]' };
+                    if (years === 2) return { value: '2', title: '2 years — Year 2 loyalty tier', tile: 'bg-gradient-to-br from-violet-300 to-purple-500 text-violet-950', glow: 'shadow-[0_0_10px_rgba(168,85,247,0.45)]' };
+                    if (years === 1) return { value: '1', title: '1 year — Year 1 loyalty tier', tile: 'bg-gradient-to-br from-sky-300 to-blue-500 text-sky-950', glow: 'shadow-[0_0_10px_rgba(59,130,246,0.45)]' };
+                    return { value: '<1', title: 'Under 1 year — not yet in a loyalty tier', tile: 'bg-gradient-to-br from-slate-200 to-slate-400 text-slate-700', glow: '' };
+                  };
                   // Group staff by status: Pending -> Ready -> Paid
                   const pendingGroup = payrollSummary.filter(s => !s.hasSalaryRecord && !readyStaff.has(s.userId));
                   const readyGroup = payrollSummary.filter(s => !s.hasSalaryRecord && readyStaff.has(s.userId));
@@ -2174,9 +2187,22 @@ export function StaffPayManager() {
                           <React.Fragment key={staff.userId}>
                     <TableRow className={`transition-colors border-b ${rowBgClass}`}>
                       <TableCell className="font-medium py-3">
-                        <div>
-                          <div className="font-semibold">{staff.displayName}</div>
-                          <div className="text-xs text-muted-foreground">{staff.email}</div>
+                        <div className="flex items-center gap-2.5">
+                          {(() => {
+                            const rank = tenureRank(staff.userId);
+                            return rank ? (
+                              <div
+                                title={rank.title}
+                                className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-sm font-extrabold ${rank.tile} ${rank.glow}`}
+                              >
+                                {rank.value}
+                              </div>
+                            ) : null;
+                          })()}
+                          <div className="min-w-0">
+                            <div className="font-semibold">{staff.displayName}</div>
+                            <div className="text-xs text-muted-foreground truncate">{staff.email}</div>
+                          </div>
                         </div>
                       </TableCell>
                       
