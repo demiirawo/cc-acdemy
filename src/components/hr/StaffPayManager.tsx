@@ -411,6 +411,18 @@ export function StaffPayManager() {
     if (error) {
       setHRProfilesFull(prev => prev.map(h => h.user_id === userId ? { ...h, performance_rating: cur } : h));
       toast({ title: "Couldn't update rating", description: error.message, variant: "destructive" });
+      return;
+    }
+    const recipient = userProfiles.find(u => u.user_id === userId);
+    if (recipient?.email) {
+      supabase.functions.invoke("send-rank-change-email", {
+        body: {
+          recipientEmail: recipient.email,
+          recipientName: recipient.display_name,
+          oldRank: cur,
+          newRank: next,
+        },
+      }).catch(() => {});
     }
   };
 
@@ -2148,7 +2160,16 @@ export function StaffPayManager() {
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{s.points.toFixed(2)}</td>
                       <td className="px-4 py-2 text-right tabular-nums font-semibold">
-                        {eligible ? `£${s.shareGbp.toFixed(2)}` : <span className="text-muted-foreground font-normal">Ineligible ({reason})</span>}
+                        {eligible ? (
+                          <>
+                            £{s.shareGbp.toFixed(2)}{" "}
+                            <span className="text-muted-foreground font-normal">
+                              ({formatCurrency(gbpToCurrency(s.shareGbp, "NGN"), "NGN")})
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground font-normal">Ineligible ({reason})</span>
+                        )}
                       </td>
                       <td className="px-4 py-2 text-right tabular-nums text-muted-foreground whitespace-nowrap">
                         {!eligible || s.currency === "GBP" ? "—" : formatCurrency(s.shareLocal, s.currency)}

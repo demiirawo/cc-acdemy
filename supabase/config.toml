@@ -79,3 +79,6 @@ verify_jwt = false
 [functions.send-handover-assignment-email]
 verify_jwt = true
 
+[functions.send-rank-change-email]
+verify_jwt = true
+

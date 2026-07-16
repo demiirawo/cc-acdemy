@@ -1310,6 +1310,18 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     if (error) {
       setHRProfile(prev);
       toast({ title: "Couldn't update rating", description: error.message, variant: "destructive" });
+      return;
+    }
+    const recipient = allStaff.find(s => s.user_id === selectedUserId);
+    if (recipient?.email) {
+      supabase.functions.invoke("send-rank-change-email", {
+        body: {
+          recipientEmail: recipient.email,
+          recipientName: recipient.display_name,
+          oldRank: cur,
+          newRank: next,
+        },
+      }).catch(() => {});
     }
   };
 
