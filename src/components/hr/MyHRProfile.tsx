@@ -20,7 +20,7 @@ import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { StaffSettingsDialog } from "./StaffSettingsDialog";
-import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusPoints, rankBonusMult, bonusEligible, LOWEST_ELIGIBLE_RANK, type Rank } from "./PerformanceRankBadge";
+import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, RANK_BONUS_MULT, tenureYears, bonusPoints, rankBonusMult, bonusEligible, LOWEST_ELIGIBLE_RANK, type Rank } from "./PerformanceRankBadge";
 import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItemsManager";
@@ -1670,7 +1670,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                 <div className="space-y-2">
                   <p className="text-sm font-medium">How this affects your bonus</p>
                   <p className="text-xs text-muted-foreground">
-                    Each month's bonus pot is split by <strong className="text-foreground">points = (1 + years of service) × rank multiplier</strong> (S ×2.0, A ×1.75, B ×1.5). Higher rank and longer tenure both increase your share. <strong className="text-foreground">C and D ratings receive no share, regardless of tenure.</strong>
+                    Each month's bonus pot is split by <strong className="text-foreground">points = (1 + years of service) × rank multiplier</strong> (S ×{RANK_BONUS_MULT.S}, A ×{RANK_BONUS_MULT.A}, B ×{RANK_BONUS_MULT.B}). Higher rank and longer tenure both increase your share. <strong className="text-foreground">C and D ratings receive no share, regardless of tenure.</strong>
                   </p>
                   {eligible ? (
                   <div className="rounded-lg border bg-muted/20 p-3 space-y-1.5 text-sm">

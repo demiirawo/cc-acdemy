@@ -15,7 +15,9 @@ export const RANK_STYLES: Record<Rank, { label: string; tile: string; glow: stri
 // Bonus-pot weighting: a staff member's share of a monthly pot is proportional
 // to (1 + tenure years) × rank multiplier. Single source of truth shared by the
 // payroll pot and the profile's performance section.
-export const RANK_BONUS_MULT: Record<Rank, number> = { S: 2.0, A: 1.75, B: 1.5, C: 1.25, D: 1.0 };
+// The rank spread is deliberately a little wider than the gaps between tenure
+// years, so a higher rating counts for slightly more than an extra year served.
+export const RANK_BONUS_MULT: Record<Rank, number> = { S: 2.4, A: 1.95, B: 1.5, C: 1.2, D: 1.0 };
 export const UNRATED_BONUS_MULT = 1.5;
 export const rankBonusMult = (rank: Rank | null): number =>
   rank && RANK_BONUS_MULT[rank] ? RANK_BONUS_MULT[rank] : UNRATED_BONUS_MULT;
