@@ -2185,7 +2185,7 @@ export function StaffPayManager() {
                         <div className="flex items-center gap-3">
                           {(() => {
                             const b = rankBadgeFor(staff.userId);
-                            return <PerformanceRankBadge rank={b.rank} years={b.years} size="sm" />;
+                            return <PerformanceRankBadge rank={b.rank} years={b.years} />;
                           })()}
                           <div className="min-w-0">
                             <div className="font-semibold">{staff.displayName}</div>
