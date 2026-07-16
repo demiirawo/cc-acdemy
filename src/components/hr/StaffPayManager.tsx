@@ -1332,24 +1332,25 @@ export function StaffPayManager() {
   const monthStartISO = format(startOfMonth(selectedMonth), "yyyy-MM-dd");
   const monthEndISO = format(endOfMonth(selectedMonth), "yyyy-MM-dd");
 
-  // On month change, seed the input from any pot already distributed that month.
+  // On month change, seed the input from the exact pot amount saved for that
+  // month (monthly_bonus_pots). This is the source of truth for the value the
+  // admin typed — the per-staff bonus records are derived from it.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
-        .from("staff_pay_records")
-        .select("amount, currency")
-        .eq("record_type", "bonus")
-        .eq("pay_period_start", monthStartISO)
-        .ilike("description", `${POT_DESC_TAG} · ${monthLabel}%`);
+      const { data } = await (supabase as any)
+        .from("monthly_bonus_pots")
+        .select("amount_gbp")
+        .eq("month", monthStartISO)
+        .maybeSingle();
       if (cancelled) return;
-      const gbp = (data || []).reduce((sum, r) => sum + convertToGBP(Number(r.amount), r.currency), 0);
-      loadedPotRef.current = Math.round(gbp * 100) / 100;
-      setBonusPotInput(gbp > 0 ? String(Math.round(gbp * 100) / 100) : "");
+      const amt = Number(data?.amount_gbp ?? 0);
+      loadedPotRef.current = amt;
+      setBonusPotInput(amt > 0 ? String(amt) : "");
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthStartISO, monthLabel]);
+  }, [monthStartISO]);
 
   const syncBonusPot = async (amountGbp: number) => {
     if (!user?.id) return;
@@ -1389,6 +1390,17 @@ export function StaffPayManager() {
             if (error) throw error;
           }
         }
+      }
+      // Persist the exact amount for this month (source of truth for the input).
+      if (amountGbp > 0) {
+        await (supabase as any).from("monthly_bonus_pots").upsert({
+          month: monthStartISO,
+          amount_gbp: amountGbp,
+          updated_by: user.id,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "month" });
+      } else {
+        await (supabase as any).from("monthly_bonus_pots").delete().eq("month", monthStartISO);
       }
       loadedPotRef.current = amountGbp;
       if (token === potSyncToken.current) await fetchData();
