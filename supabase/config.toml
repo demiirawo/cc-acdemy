@@ -88,3 +88,6 @@ verify_jwt = true
 [functions.send-feedback-email]
 verify_jwt = true
 
+[functions.send-incident-invite-email]
+verify_jwt = true
+

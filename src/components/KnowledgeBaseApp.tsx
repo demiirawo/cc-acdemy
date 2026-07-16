@@ -26,6 +26,7 @@ import { HRSection } from "./hr/HRSection";
 import { RecruitmentSection } from "./recruitment/RecruitmentSection";
 import { TrainingMatrix } from "./hr/training/TrainingMatrix";
 import { ClientsSection } from "./clients/ClientsSection";
+import { IncidentsSection } from "./incidents/IncidentsSection";
 import { SchedulePage } from "./SchedulePage";
 import { useGlossary } from "@/hooks/useGlossary";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -431,7 +432,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'clients' | 'schedule' | 'recruitment' | 'training';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'clients' | 'schedule' | 'recruitment' | 'training' | 'incidents';
 interface SidebarItem {
   id: string;
   title: string;
@@ -553,7 +554,8 @@ export function KnowledgeBaseApp() {
         'clients': 'clients',
         'schedule': 'schedule',
         'recruitment': 'recruitment',
-        'training': 'training'
+        'training': 'training',
+        'incidents': 'incidents'
       };
         
         if (viewMap[viewName]) {
@@ -700,6 +702,11 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
       setBreadcrumbs([]);
       navigate('/view/training');
+    } else if (item.id === 'incidents') {
+      setCurrentView('incidents');
+      setCurrentPage(null);
+      setBreadcrumbs([]);
+      navigate('/view/incidents');
     } else if (item.type === 'page') {
       try {
         // Fetch real page data from Supabase
@@ -1169,6 +1176,7 @@ export function KnowledgeBaseApp() {
         )}
         {currentView === 'hr' && <HRSection initialUserId={selectedHRUserId} onProfileClosed={() => setSelectedHRUserId(null)} />}
         {currentView === 'clients' && <ClientsSection />}
+        {currentView === 'incidents' && <IncidentsSection />}
         {currentView === 'schedule' && <SchedulePage 
           initialRequestId={selectedRequestId} 
           onRequestClosed={() => setSelectedRequestId(null)}
