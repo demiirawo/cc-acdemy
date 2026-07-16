@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { StaffBonusEditor } from "./StaffBonusEditor";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,11 +15,17 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PerformanceRankBadge, RANK_ORDER, tenureYears, type Rank } from "./PerformanceRankBadge";
-import { BonusPotPanel, type PotStaff } from "./BonusPotPanel";
+
+// Monthly bonus pot: each staff member's slice is proportional to
+// (1 + tenure years) × rank multiplier. Longer tenure + higher rank compound.
+const POT_RANK_MULT: Record<Rank, number> = { S: 2.0, A: 1.75, B: 1.5, C: 1.25, D: 1.0 };
+const potPointsFor = (rank: Rank | null, years: number) =>
+  (1 + Math.max(0, years)) * (rank && POT_RANK_MULT[rank] ? POT_RANK_MULT[rank] : 1.5);
+const POT_DESC_TAG = "Bonus pot";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat, FileBadge, ArrowUp, ArrowDown, ArrowUpDown, Landmark } from "lucide-react";
+import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat, FileBadge, ArrowUp, ArrowDown, ArrowUpDown, Landmark, Coins } from "lucide-react";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { downloadInvoicePdf, type InvoiceData } from "@/lib/invoice/generatePdf";
@@ -1281,19 +1287,106 @@ export function StaffPayManager() {
 
   // Staff for the monthly bonus pot — everyone on this month's payroll, with
   // their rank + tenure driving the distribution.
-  const potStaff = useMemo<PotStaff[]>(() => {
+  const potStaff = useMemo(() => {
     return payrollSummary.map(s => {
       const hrFull = hrProfilesFull.find(h => h.user_id === s.userId);
       const rating = (hrFull?.performance_rating ?? null) as Rank | null;
       return {
         userId: s.userId,
-        displayName: s.displayName,
         currency: s.currency,
         rank: rating && RANK_ORDER.includes(rating) ? rating : null,
         years: tenureYears(hrFull?.start_date || hrFull?.created_at) ?? 0,
       };
     });
   }, [payrollSummary, hrProfilesFull]);
+
+  // --- Monthly bonus pot input (beside Total Payroll) ---------------------
+  // Typing a pot amount auto-writes each staff member's share as a bonus
+  // record (tagged "Bonus pot · <month>") so it flows into the existing
+  // Bonuses column and totals — no button. Re-entering replaces the prior pot.
+  const [bonusPotInput, setBonusPotInput] = useState("");
+  const [potBusy, setPotBusy] = useState(false);
+  const loadedPotRef = useRef<number | null>(null); // last value known to be persisted
+  const potSyncToken = useRef(0);
+  const monthLabel = format(selectedMonth, "MMM yyyy");
+  const monthStartISO = format(startOfMonth(selectedMonth), "yyyy-MM-dd");
+  const monthEndISO = format(endOfMonth(selectedMonth), "yyyy-MM-dd");
+
+  // On month change, seed the input from any pot already distributed that month.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("staff_pay_records")
+        .select("amount, currency")
+        .eq("record_type", "bonus")
+        .eq("pay_period_start", monthStartISO)
+        .ilike("description", `${POT_DESC_TAG} · ${monthLabel}%`);
+      if (cancelled) return;
+      const gbp = (data || []).reduce((sum, r) => sum + convertToGBP(Number(r.amount), r.currency), 0);
+      loadedPotRef.current = Math.round(gbp * 100) / 100;
+      setBonusPotInput(gbp > 0 ? String(Math.round(gbp * 100) / 100) : "");
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthStartISO, monthLabel]);
+
+  const syncBonusPot = async (amountGbp: number) => {
+    if (!user?.id) return;
+    const token = ++potSyncToken.current;
+    setPotBusy(true);
+    try {
+      await supabase
+        .from("staff_pay_records")
+        .delete()
+        .eq("record_type", "bonus")
+        .eq("pay_period_start", monthStartISO)
+        .ilike("description", `${POT_DESC_TAG} · ${monthLabel}%`);
+
+      if (amountGbp > 0 && potStaff.length > 0) {
+        const withPoints = potStaff.map(s => ({ ...s, points: potPointsFor(s.rank, s.years) }));
+        const totalPoints = withPoints.reduce((a, s) => a + s.points, 0);
+        if (totalPoints > 0) {
+          const raw = withPoints.map(s => (amountGbp * s.points) / totalPoints);
+          const shareGbp = raw.map(v => Math.floor(v * 100) / 100);
+          let pennies = Math.round((amountGbp - shareGbp.reduce((a, b) => a + b, 0)) * 100);
+          raw.map((v, i) => i).sort((a, b) => raw[b] - raw[a]).forEach((idx, k) => { if (k < pennies) shareGbp[idx] += 0.01; });
+          const inserts = withPoints
+            .map((s, i) => ({
+              user_id: s.userId,
+              record_type: "bonus" as const,
+              amount: Math.round(gbpToCurrency(shareGbp[i], s.currency) * 100) / 100,
+              currency: s.currency,
+              description: `${POT_DESC_TAG} · ${monthLabel} (${s.rank ?? "unrated"} · ${s.years}y · ${s.points.toFixed(2)} pts)`,
+              pay_date: monthEndISO,
+              pay_period_start: monthStartISO,
+              pay_period_end: monthEndISO,
+              created_by: user.id,
+            }))
+            .filter(r => r.amount > 0);
+          if (inserts.length > 0) {
+            const { error } = await supabase.from("staff_pay_records").insert(inserts);
+            if (error) throw error;
+          }
+        }
+      }
+      loadedPotRef.current = amountGbp;
+      if (token === potSyncToken.current) await fetchData();
+    } catch (e: any) {
+      toast({ title: "Could not update bonus pot", description: e.message ?? String(e), variant: "destructive" });
+    } finally {
+      if (token === potSyncToken.current) setPotBusy(false);
+    }
+  };
+
+  // Debounced auto-sync when the pot input changes (skips the seeded value).
+  useEffect(() => {
+    const amt = Math.max(0, parseFloat(bonusPotInput) || 0);
+    if (loadedPotRef.current !== null && amt === loadedPotRef.current) return;
+    const t = setTimeout(() => { void syncBonusPot(amt); }, 800);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bonusPotInput]);
 
   // Total payroll for the month (converted to GBP)
   const totalPayroll = useMemo(() => {
@@ -1908,6 +2001,28 @@ export function StaffPayManager() {
               <div className="flex justify-between"><span className="text-blue-500">Ready</span><span className="font-medium">£{payrollTotalsByStatus.ready.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
               <div className="flex justify-between"><span className="text-warning">Pending</span><span className="font-medium">£{payrollTotalsByStatus.pending.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
             </div>
+            {/* Monthly bonus pot — auto-split across staff into the Bonuses column */}
+            <div className="mt-2 pt-2 border-t">
+              <label className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-muted-foreground whitespace-nowrap flex items-center gap-1">
+                  <Coins className="h-3.5 w-3.5 text-amber-500" /> Bonus pot (£)
+                  {potBusy && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />}
+                </span>
+                <Input
+                  type="number"
+                  min="0"
+                  step="50"
+                  value={bonusPotInput}
+                  onChange={(e) => setBonusPotInput(e.target.value)}
+                  placeholder="0"
+                  className="h-7 w-24 text-right text-sm"
+                  disabled={payrollSummary.length === 0}
+                />
+              </label>
+              <p className="text-[10px] text-muted-foreground mt-1 leading-tight">
+                Split across all staff by tenure × rank, added to Bonuses.
+              </p>
+            </div>
           </CardContent>
         </Card>
         <Card>
@@ -2095,17 +2210,6 @@ export function StaffPayManager() {
           </Accordion>
         </CardContent>
       </Card>
-
-      {/* Monthly Bonus Pot — distribute a pot across staff by tenure × rank */}
-      {payrollSummary.length > 0 && (
-        <BonusPotPanel
-          staff={potStaff}
-          selectedMonth={selectedMonth}
-          gbpToCurrency={gbpToCurrency}
-          createdBy={user?.id}
-          onDistributed={fetchData}
-        />
-      )}
 
       {/* Payroll Table — desktop only */}
       <Card className="overflow-hidden hidden md:block">
