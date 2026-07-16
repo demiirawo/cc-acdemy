@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { PerformanceRankBadge, RANK_ORDER, tenureYears, type Rank } from "./PerformanceRankBadge";
+import { BonusPotPanel, type PotStaff } from "./BonusPotPanel";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -386,6 +387,12 @@ export function StaffPayManager() {
   const convertToGBP = (amount: number, currency: string): number => {
     const rate = manualRates[currency] ?? exchangeRates[currency] ?? 1;
     return amount * rate;
+  };
+
+  // Inverse: convert a GBP amount into the given currency (for the bonus pot).
+  const gbpToCurrency = (amountGbp: number, currency: string): number => {
+    const rate = manualRates[currency] ?? exchangeRates[currency] ?? 1;
+    return rate > 0 ? amountGbp / rate : amountGbp;
   };
 
   const fetchData = async () => {
@@ -1272,6 +1279,22 @@ export function StaffPayManager() {
     });
   }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses, staffHolidays, hrProfilesFull, selectedMonth, approvedOvertimeRequests, unpaidHolidayRequests, approvedLeaveRequests]);
 
+  // Staff for the monthly bonus pot — everyone on this month's payroll, with
+  // their rank + tenure driving the distribution.
+  const potStaff = useMemo<PotStaff[]>(() => {
+    return payrollSummary.map(s => {
+      const hrFull = hrProfilesFull.find(h => h.user_id === s.userId);
+      const rating = (hrFull?.performance_rating ?? null) as Rank | null;
+      return {
+        userId: s.userId,
+        displayName: s.displayName,
+        currency: s.currency,
+        rank: rating && RANK_ORDER.includes(rating) ? rating : null,
+        years: tenureYears(hrFull?.start_date || hrFull?.created_at) ?? 0,
+      };
+    });
+  }, [payrollSummary, hrProfilesFull]);
+
   // Total payroll for the month (converted to GBP)
   const totalPayroll = useMemo(() => {
     return payrollSummary.reduce((sum, s) => sum + s.totalPayInGBP, 0);
@@ -2072,6 +2095,17 @@ export function StaffPayManager() {
           </Accordion>
         </CardContent>
       </Card>
+
+      {/* Monthly Bonus Pot — distribute a pot across staff by tenure × rank */}
+      {payrollSummary.length > 0 && (
+        <BonusPotPanel
+          staff={potStaff}
+          selectedMonth={selectedMonth}
+          gbpToCurrency={gbpToCurrency}
+          createdBy={user?.id}
+          onDistributed={fetchData}
+        />
+      )}
 
       {/* Payroll Table — desktop only */}
       <Card className="overflow-hidden hidden md:block">
