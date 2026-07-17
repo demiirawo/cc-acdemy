@@ -281,26 +281,78 @@ serve(async (req) => {
       });
     }
 
+    // Expand logs into per-person events. A "replace" is an UPDATE that changes
+    // user_id — split it into a removal for the OLD person and an addition for
+    // the NEW person, so BOTH are told (the removed person was previously silent).
     const grouped = new Map<string, ShiftAuditLog[]>();
-    for (const log of meaningfulLogs) {
-      const data = log.new_data || log.old_data;
-      const affectedUserId = data?.user_id as string | undefined;
-      if (!affectedUserId) continue;
-
-      const list = grouped.get(affectedUserId) || [];
+    const pushGrouped = (userId: string | undefined, log: ShiftAuditLog) => {
+      if (!userId) return;
+      const list = grouped.get(userId) || [];
       list.push(log);
-      grouped.set(affectedUserId, list);
+      grouped.set(userId, list);
+    };
+    // Team-composition events per client (added/removed people) for co-workers.
+    type TeamEvent = { client: string; kind: "added" | "removed"; personId: string };
+    const teamEvents: TeamEvent[] = [];
+
+    for (const log of meaningfulLogs) {
+      const oldU = log.old_data?.user_id as string | undefined;
+      const newU = log.new_data?.user_id as string | undefined;
+      const isReplace = log.action === "UPDATE" && oldU && newU && oldU !== newU;
+
+      if (isReplace) {
+        // Removed person: render as a DELETE of the old shift.
+        pushGrouped(oldU, { ...log, action: "DELETE", new_data: null });
+        // Added person: render as an INSERT of the new shift.
+        pushGrouped(newU, { ...log, action: "INSERT", old_data: null });
+        const oldClient = String(log.old_data?.client_name ?? "").trim();
+        const newClient = String(log.new_data?.client_name ?? "").trim();
+        if (oldClient) teamEvents.push({ client: oldClient, kind: "removed", personId: oldU! });
+        if (newClient) teamEvents.push({ client: newClient, kind: "added", personId: newU! });
+      } else {
+        const data = log.new_data || log.old_data;
+        const uid = data?.user_id as string | undefined;
+        pushGrouped(uid, log);
+        // Co-workers care about people joining/leaving a client (not edits).
+        const client = String(data?.client_name ?? "").trim();
+        if (client && uid && log.action === "INSERT") teamEvents.push({ client, kind: "added", personId: uid });
+        if (client && uid && log.action === "DELETE") teamEvents.push({ client, kind: "removed", personId: uid });
+      }
     }
 
-    if (grouped.size === 0) {
+    if (grouped.size === 0 && teamEvents.length === 0) {
       return new Response(JSON.stringify({ success: true, message: "No staff-affecting changes" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const affectedIds = Array.from(grouped.keys());
+    // Work out which clients had team changes, and who else works there.
+    const affectedClients = [...new Set(teamEvents.map((e) => e.client))];
+    const coworkerIdsByClient = new Map<string, Set<string>>();
+    if (affectedClients.length) {
+      const today = new Date().toISOString().slice(0, 10);
+      const [{ data: assigns }, { data: pats }] = await Promise.all([
+        supabase.from("staff_client_assignments").select("staff_user_id, client_name").in("client_name", affectedClients),
+        supabase.from("recurring_shift_patterns").select("user_id, client_name, end_date").in("client_name", affectedClients),
+      ]);
+      for (const a of assigns || []) {
+        const c = String(a.client_name).trim();
+        if (!coworkerIdsByClient.has(c)) coworkerIdsByClient.set(c, new Set());
+        coworkerIdsByClient.get(c)!.add(a.staff_user_id);
+      }
+      for (const p of pats || []) {
+        if (p.end_date && String(p.end_date) < today) continue; // ended pattern
+        const c = String(p.client_name).trim();
+        if (!coworkerIdsByClient.has(c)) coworkerIdsByClient.set(c, new Set());
+        coworkerIdsByClient.get(c)!.add(p.user_id);
+      }
+    }
+
+    // Fetch profiles for everyone we might name or email.
     const changerIds = [...new Set(meaningfulLogs.map((l) => l.changed_by).filter(Boolean) as string[])];
-    const allIds = [...new Set([...affectedIds, ...changerIds])];
+    const coworkerIds = [...new Set([...coworkerIdsByClient.values()].flatMap((s) => [...s]))];
+    const eventPersonIds = teamEvents.map((e) => e.personId);
+    const allIds = [...new Set([...grouped.keys(), ...changerIds, ...coworkerIds, ...eventPersonIds])];
 
     const { data: profiles } = await supabase
       .from("profiles")
@@ -310,8 +362,10 @@ serve(async (req) => {
     const profileMap = new Map(
       (profiles || []).map((p) => [p.user_id, { name: p.display_name || p.email || "Unknown", email: p.email }])
     );
+    const nameOf = (id: string) => profileMap.get(id)?.name || "A team member";
 
     let emailsSent = 0;
+    let coworkerEmailsSent = 0;
     const errors: string[] = [];
 
     for (const [userId, logs] of grouped.entries()) {
@@ -336,7 +390,7 @@ serve(async (req) => {
       <table width="560" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
         <tr><td style="background-color: ${BRAND_COLOR}; padding: 24px 40px; text-align: center;">
           <img src="${LOGO_URL}" alt="Care Cuddle Academy" width="140" style="display: block; margin: 0 auto 16px;" />
-          <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 600;">📅 Your schedule has changed</h1>
+          <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 600;">Your schedule has changed</h1>
           <p style="color: rgba(255,255,255,0.9); margin: 6px 0 0 0; font-size: 13px;">${logs.length} change(s) to your shifts</p>
         </td></tr>
         <tr><td style="padding: 32px 40px;">
@@ -351,7 +405,7 @@ serve(async (req) => {
           <p style="color: #6b7280; font-size: 12px; margin: 24px 0 0; text-align: center;">If anything looks incorrect, please contact your manager.</p>
         </td></tr>
         <tr><td style="padding: 20px 40px; background-color: #f9fafb; text-align: center; border-top: 1px solid #e5e7eb;">
-          <p style="margin: 0; color: #9ca3af; font-size: 12px;">© ${new Date().getFullYear()} Care Cuddle Academy. All rights reserved.</p>
+          <p style="margin: 0; color: #9ca3af; font-size: 12px;">(c) ${new Date().getFullYear()} Care Cuddle Academy. All rights reserved.</p>
         </td></tr>
       </table>
     </td></tr>
@@ -368,7 +422,7 @@ serve(async (req) => {
         body: JSON.stringify({
           from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
           to: [profile.email],
-          subject: `📅 Your schedule has changed (${logs.length} update${logs.length > 1 ? "s" : ""})`,
+          subject: `Your schedule has changed (${logs.length} update${logs.length > 1 ? "s" : ""})`,
           html: emailHtml,
         }),
       });
@@ -381,10 +435,76 @@ serve(async (req) => {
       }
     }
 
+    // ---- Co-worker ("team at this client changed") notifications ----
+    // For each client that had people added/removed, tell everyone else who
+    // works there. The people directly involved already got a personal email.
+    for (const client of affectedClients) {
+      const events = teamEvents.filter((e) => e.client === client);
+      if (events.length === 0) continue;
+
+      const added = [...new Set(events.filter((e) => e.kind === "added").map((e) => e.personId))];
+      const removed = [...new Set(events.filter((e) => e.kind === "removed").map((e) => e.personId))];
+      const involved = new Set([...added, ...removed]);
+
+      const summaryItems: string[] = [];
+      for (const id of added) summaryItems.push(`<li style="margin:4px 0;color:#166534;"><strong>${escapeHtml(nameOf(id))}</strong> has been added to the team</li>`);
+      for (const id of removed) summaryItems.push(`<li style="margin:4px 0;color:#991b1b;"><strong>${escapeHtml(nameOf(id))}</strong> has been removed from the team</li>`);
+      if (summaryItems.length === 0) continue;
+
+      const recipients = [...(coworkerIdsByClient.get(client) || [])]
+        .filter((id) => !involved.has(id) && !changerIds.includes(id)) // involved got a personal email; the changer made the change
+        .map((id) => profileMap.get(id))
+        .filter((p): p is { name: string; email: string } => !!p?.email);
+
+      if (recipients.length === 0) continue;
+
+      const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:'Figtree',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 20px;"><tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+      <tr><td style="background:${BRAND_COLOR};padding:24px 40px;text-align:center;">
+        <img src="${LOGO_URL}" alt="Care Cuddle Academy" width="140" style="display:block;margin:0 auto 16px;" />
+        <h1 style="margin:0;color:#fff;font-size:20px;font-weight:600;">Your client team has changed</h1>
+        <p style="color:rgba(255,255,255,0.9);margin:6px 0 0;font-size:13px;">${escapeHtml(client)}</p>
+      </td></tr>
+      <tr><td style="padding:32px 40px;">
+        <p style="color:#374151;font-size:15px;margin:0 0 16px;">Hi {{NAME}},</p>
+        <p style="color:#4b5563;font-size:14px;margin:0 0 12px;">There's been a change to the team working with <strong>${escapeHtml(client)}</strong>, one of the clients you support:</p>
+        <ul style="margin:0 0 8px;padding-left:20px;font-size:14px;">${summaryItems.join("")}</ul>
+        <div style="text-align:center;margin-top:24px;">
+          <a href="${APP_URL}" style="display:inline-block;background:${BRAND_COLOR};color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">View the Schedule</a>
+        </div>
+        <p style="color:#6b7280;font-size:12px;margin:24px 0 0;text-align:center;">You're receiving this because you also work with this client.</p>
+      </td></tr>
+      <tr><td style="padding:20px 40px;background:#f9fafb;text-align:center;border-top:1px solid #e5e7eb;">
+        <p style="margin:0;color:#9ca3af;font-size:12px;">(c) ${new Date().getFullYear()} Care Cuddle Academy. All rights reserved.</p>
+      </td></tr>
+    </table>
+  </td></tr></table>
+</body></html>`;
+
+      for (const r of recipients) {
+        const resp = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
+            to: [r.email],
+            subject: `Team change for ${client}`,
+            html: html.replace("{{NAME}}", escapeHtml(r.name?.split(" ")[0] || "there")),
+          }),
+        });
+        if (!resp.ok) errors.push(`${r.email}: ${await resp.text()}`);
+        else coworkerEmailsSent++;
+      }
+    }
+
     return new Response(JSON.stringify({
       success: true,
       changeCount: meaningfulLogs.length,
       staffNotified: emailsSent,
+      coworkersNotified: coworkerEmailsSent,
       errors: errors.length ? errors : undefined,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
