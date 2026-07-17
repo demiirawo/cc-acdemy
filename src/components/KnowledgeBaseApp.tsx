@@ -1183,7 +1183,14 @@ export function KnowledgeBaseApp() {
         )}
         {currentView === 'hr' && <HRSection initialUserId={selectedHRUserId} onProfileClosed={() => setSelectedHRUserId(null)} />}
         {currentView === 'clients' && <ClientsSection />}
-        {currentView === 'incidents' && <IncidentsSection />}
+        {currentView === 'incidents' && <IncidentsSection
+          onViewProfile={(userId) => {
+            setSelectedHRUserId(userId);
+            setCurrentView('hr');
+            setSelectedItemId('hr');
+            navigate('/view/hr');
+          }}
+        />}
         {currentView === 'staff-meetings' && isAdmin && <StaffMeetingsSection />}
         {currentView === 'staff-meetings' && !isAdmin && (
           <div className="p-8 text-center text-muted-foreground">You do not have permission to view this page.</div>

@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
 import {
   AlertTriangle, Plus, ArrowLeft, ShieldAlert, Users, Share2, Loader2,
-  MapPin, Calendar, Clock, CheckCircle2, MessageSquarePlus, Trash2, UserPlus,
+  MapPin, Calendar, Clock, CheckCircle2, MessageSquarePlus, Trash2, UserPlus, ExternalLink,
 } from "lucide-react";
 
 // ---- Shared vocab -----------------------------------------------------------
@@ -67,7 +67,7 @@ interface IncidentStatement {
 }
 interface StaffProfile { user_id: string; display_name: string | null; email: string | null; }
 
-export function IncidentsSection() {
+export function IncidentsSection({ onViewProfile }: { onViewProfile?: (userId: string) => void }) {
   const { user } = useAuth();
   const { isAdmin } = useUserRole();
 
@@ -107,6 +107,7 @@ export function IncidentsSection() {
         isAdmin={isAdmin}
         currentUserId={user?.id ?? null}
         staff={staff}
+        onViewProfile={onViewProfile}
         onBack={() => { setSelectedId(null); loadIncidents(); }}
       />
     );
@@ -169,7 +170,18 @@ export function IncidentsSection() {
                       </div>
                       <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{inc.description}</p>
                       <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
-                        {inc.client_name && <span className="flex items-center gap-1"><Users className="h-3 w-3" /> {inc.client_name}</span>}
+                        {inc.client_name && (
+                          <a
+                            href={`/public/schedule/${encodeURIComponent(inc.client_name.trim())}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="flex items-center gap-1 text-primary hover:underline"
+                            title={`Open ${inc.client_name}'s public page`}
+                          >
+                            <Users className="h-3 w-3" /> {inc.client_name}
+                          </a>
+                        )}
                         <span className="flex items-center gap-1"><Calendar className="h-3 w-3" /> {format(parseISO(inc.incident_date), "d MMM yyyy")}</span>
                         {inc.category && <span>· {inc.category}</span>}
                       </div>
@@ -309,12 +321,13 @@ function CreateIncidentDialog({
 
 // ---- Detail view ------------------------------------------------------------
 function IncidentDetail({
-  incidentId, isAdmin, currentUserId, staff, onBack,
+  incidentId, isAdmin, currentUserId, staff, onViewProfile, onBack,
 }: {
   incidentId: string;
   isAdmin: boolean;
   currentUserId: string | null;
   staff: StaffProfile[];
+  onViewProfile?: (userId: string) => void;
   onBack: () => void;
 }) {
   const { toast } = useToast();
@@ -399,7 +412,18 @@ function IncidentDetail({
                 <div className="flex items-center gap-3 mt-1.5 text-sm text-muted-foreground flex-wrap">
                   <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" /> {format(parseISO(incident.incident_date), "d MMM yyyy")}</span>
                   {incident.incident_time && <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {incident.incident_time}</span>}
-                  {incident.client_name && <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {incident.client_name}</span>}
+                  {incident.client_name && (
+                    <a
+                      href={`/public/schedule/${encodeURIComponent(incident.client_name.trim())}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1 text-primary hover:underline"
+                      title={`Open ${incident.client_name}'s public page`}
+                    >
+                      <Users className="h-3.5 w-3.5" /> {incident.client_name}
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
                   {incident.location && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {incident.location}</span>}
                 </div>
               </div>
@@ -507,7 +531,18 @@ function IncidentDetail({
                     <div key={s.id} className="rounded-lg border p-3">
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{nameOf(s.user_id)}</span>
+                          {onViewProfile ? (
+                            <button
+                              type="button"
+                              onClick={() => onViewProfile(s.user_id)}
+                              className="text-sm font-medium text-primary hover:underline inline-flex items-center gap-1"
+                              title="Open staff profile"
+                            >
+                              {nameOf(s.user_id)} <ExternalLink className="h-3 w-3" />
+                            </button>
+                          ) : (
+                            <span className="text-sm font-medium">{nameOf(s.user_id)}</span>
+                          )}
                           {isMine && <Badge variant="outline" className="text-[10px]">You</Badge>}
                           {submitted
                             ? <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-600 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Submitted</Badge>
