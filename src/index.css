@@ -333,3 +333,314 @@ input[type="datetime-local"]::-webkit-date-and-time-value {
   pointer-events: none;
   color: hsl(var(--muted-foreground));
 }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   GLASS DESIGN LANGUAGE — ported verbatim from CCFORMS so the two products
+   share one visual language. Applied via the shadcn primitives (card/button/
+   input/textarea/switch/tabs/overlays) and the sidebar shell.
+   ════════════════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════════════════════
+   GLASS STYLE — Stage 1: dashboard shell
+   A translucent "frosted" finish layered OVER the existing brand palette. Every
+   colour still comes from existing tokens (--sidebar-background, white-tints,
+   ambient shadow) so per-company brand theming (brandTheme.ts) is fully preserved.
+   To revert: delete this block and remove the .glass-* classes in
+   src/components/layout/DashboardLayout.tsx.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* Sidebar: keep the brand background colour, add depth — a top-light→bottom-shade
+   sheen, an inner right-edge highlight, and a soft outer drop shadow. The gradient
+   uses alpha-white/black so it composites over whatever brand hue is active. */
+.glass-sidebar {
+  position: relative;
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.10) 0%,
+    rgba(255, 255, 255, 0.02) 16%,
+    rgba(0, 0, 0, 0.06) 72%,
+    rgba(0, 0, 0, 0.12) 100%
+  );
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.08),
+    6px 0 28px -10px rgba(0, 0, 0, 0.40);
+}
+/* faint vertical highlight running down the inner (right) edge */
+.glass-sidebar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), transparent 55%);
+  pointer-events: none;
+}
+
+/* Nav items: frosted hover + a glass "pill" for the active route (inner top
+   highlight + ambient depth shadow + subtle blur). White-tint only — no hue change. */
+.glass-nav-item {
+  border: 1px solid transparent;
+  transition: var(--transition-smooth);
+}
+.glass-nav-item:hover {
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.10);
+}
+.glass-nav-active {
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.30),
+    0 4px 12px -4px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+/* Company-profile button (sidebar footer): a quiet glass tile. */
+.glass-tile {
+  transition: var(--transition-smooth);
+}
+.glass-tile:hover {
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+/* ── GLASS STYLE — Stage 2: content surfaces ─────────────────────────────────
+   Cards become floating "glass panels": opaque white kept (bg-card unchanged),
+   with a layered soft shadow, an inset top highlight, and a refined hairline
+   border. Depth only — no translucency — so it stays readable on any background.
+   The content frame gets a soft wash within the existing slate family so the
+   panels have something to float on. Revert: remove .glass-card / .glass-content
+   here and in card.tsx + DashboardLayout.tsx. */
+.glass-card {
+  box-shadow:
+    0 1px 2px -1px rgba(16, 24, 40, 0.06),
+    0 12px 30px -16px rgba(16, 24, 40, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  border-color: rgba(16, 24, 40, 0.07);
+  transition: box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-content {
+  background-image: linear-gradient(180deg, hsl(210 24% 98%) 0%, hsl(214 22% 95%) 100%);
+}
+
+/* ── GLASS STYLE — Stage 3: interactive controls (forms family) ──────────────
+   Buttons + inputs get the "self-illuminated" finish. Colours are unchanged —
+   the button sheen is a hue-agnostic white→dark gradient over the existing
+   bg-primary/etc, and the glow/focus-halo are driven by --primary / --ring
+   (which brandTheme.ts sets per company). Revert: remove this block + the
+   glass-btn and glass-input classnames in button.tsx, input.tsx, textarea.tsx. */
+
+/* Coloured CTAs: glossy convex sheen + brand-coloured outer glow. */
+.glass-btn,
+.glass-btn-primary {
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0) 45%,
+    rgba(0, 0, 0, 0.10) 100%
+  );
+}
+.glass-btn-primary {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 4px 16px -6px hsl(var(--primary) / 0.50);
+}
+.glass-btn-primary:hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 7px 22px -6px hsl(var(--primary) / 0.62);
+}
+/* Other coloured variants (action/success/destructive): same sheen, neutral
+   ambient glow so the halo never clashes with the button's own hue. */
+.glass-btn {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 4px 14px -6px rgba(16, 24, 40, 0.32);
+}
+.glass-btn:hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 7px 20px -6px rgba(16, 24, 40, 0.40);
+}
+
+/* Inputs/textareas: a subtle recessed "glass well" at rest, and a soft
+   brand-coloured focus halo (replaces the flat 1px ring). */
+.glass-input {
+  box-shadow: inset 0 1px 2px rgba(16, 24, 40, 0.035);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+/* Element-qualified so it outranks Tailwind's focus-visible:ring-1 (injected
+   after index.css at equal class specificity): crisp brand ring + soft halo. */
+input.glass-input:focus,
+input.glass-input:focus-visible,
+textarea.glass-input:focus,
+textarea.glass-input:focus-visible {
+  box-shadow: inset 0 1px 2px rgba(16, 24, 40, 0.04),
+    0 0 0 1px hsl(var(--ring) / 0.55),
+    0 0 0 4px hsl(var(--ring) / 0.13);
+}
+
+/* ── GLASS STYLE — Stage 4: floating overlays + segmented controls ───────────
+   Dialogs, dropdowns, popovers, selects, sheets, context menus get the same
+   card-like depth as .glass-card. Kept OPAQUE (bg-popover/bg-background
+   unchanged) so text over them stays readable — only shadow/highlight/border
+   change. Replaces the components' shadow-md/lg utilities (don't stack both).
+   Segmented tab tracks get a frosted recess. Revert: remove this block and the
+   glass-overlay/glass-segment classnames in the ui/ overlay + tabs components. */
+.glass-overlay {
+  box-shadow: 0 1px 2px -1px rgba(16, 24, 40, 0.10),
+    0 18px 44px -20px rgba(16, 24, 40, 0.40),
+    inset 0 1px 0 rgba(255, 255, 255, 0.60);
+  border-color: rgba(16, 24, 40, 0.08);
+}
+.glass-segment {
+  box-shadow: inset 0 1px 2px rgba(16, 24, 40, 0.06);
+}
+
+/* Grey form CTAs (bg #78797E Submit/Save/Next): neutral grey glow instead of
+   the brand-coloured glass-btn-primary glow. Defined after glass-btn-primary so
+   it wins at equal specificity when both classes are present. */
+.glass-btn-grey {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 4px 16px -6px rgba(120, 121, 126, 0.55);
+}
+.glass-btn-grey:hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 7px 22px -6px rgba(120, 121, 126, 0.65);
+}
+
+/* ── GLASS STYLE — Stage 5: brand purple backgrounds (auth pages + marketing
+   hero/CTA). The flat #5E18EB / #5F17EB becomes a lit glass pane: a top-left
+   white sheen (light catching the surface), a warm pink brand glow bottom-right
+   (ties to the #D24D91 CTA), and a diagonal depth gradient from a lighter to a
+   deeper purple. The purple stays dominant — this is a finish, not a recolour.
+   Revert: remove this block + the glass-brand-bg classnames on AuthPage.tsx and
+   marketing/HomePage.tsx. */
+.glass-brand-bg {
+  background-color: #5E18EB;
+  background-image:
+    radial-gradient(115% 80% at 12% -10%, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 46%),
+    radial-gradient(92% 78% at 108% 112%, rgba(210, 77, 145, 0.32) 0%, rgba(210, 77, 145, 0) 56%),
+    linear-gradient(158deg, #6A22F4 0%, #5E18EB 46%, #4A12C2 100%);
+}
+
+/* ── GLASS STYLE — company-themed card surface. Same lit-glass finish as
+   .glass-brand-bg, but driven by the runtime brand token (--primary, set per
+   company from companies.theme_color via brandTheme.ts) instead of a fixed
+   purple — so the card follows the account's colour. Depth is built from
+   white/black alpha sheens that composite over ANY hue (glass is a finish, not
+   a recolour); --primary is contrast-clamped so the white card text stays
+   legible. Used by the CCMD Meeting Details + Actions Summary cards in place of
+   the old flat grey #73798C. Revert: remove this block + the glass-brand-card
+   classnames in MeetingDetailsSection.tsx / ActionsPanel.tsx. */
+.glass-brand-card {
+  background-color: hsl(var(--primary));
+  background-image:
+    radial-gradient(120% 85% at 14% -12%, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 48%),
+    linear-gradient(158deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0) 38%, rgba(0, 0, 0, 0.16) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 10px 30px -14px hsl(var(--primary) / 0.55);
+}
+
+/* Hue-agnostic glass overlay — adds only the lit-glass sheen + glow on top of
+   whatever background-color the element already has (e.g. the status green/
+   amber/red/grey on the CCMD major section cards). No background-color of its
+   own, so it composites over ANY colour. Used by the top-level DashboardSection
+   cards; sub-topic rows inside deliberately do NOT get it. */
+.glass-status-card {
+  background-image:
+    radial-gradient(120% 85% at 14% -12%, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 48%),
+    linear-gradient(158deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0) 38%, rgba(0, 0, 0, 0.16) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 10px 30px -14px rgba(0, 0, 0, 0.45);
+}
+
+/* Fixed-blue glass card — same lit-glass finish as .glass-brand-card but a
+   constant blue base instead of the company --primary. Used by the CCMD
+   Meeting Details + Actions Summary cards (these stay blue, not company-tinted). */
+.glass-blue-card {
+  background-color: hsl(217 91% 50%);
+  background-image:
+    radial-gradient(120% 85% at 14% -12%, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 48%),
+    linear-gradient(158deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0) 38%, rgba(0, 0, 0, 0.16) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 10px 30px -14px hsl(217 91% 50% / 0.55);
+}
+
+/* Form toolbar strips (accessibility + save bars on FormView/PublicForm): a
+   frosted-glass finish over their existing grey/status colour — a top→bottom
+   sheen, an inset top highlight, and a soft drop shadow. Hue-agnostic, so it
+   composites over the #82868a / #cdcfd0 greys and the save-status colours alike
+   without recolouring them. Revert: remove this block + the glass-bar classnames
+   on the bars in FormView.tsx / PublicForm.tsx. */
+.glass-bar {
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(255, 255, 255, 0) 42%,
+    rgba(0, 0, 0, 0.07) 100%
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 2px 6px -2px rgba(16, 24, 40, 0.18);
+}
+
+/* Compact list rows on light surfaces (the dashboard-home FileExplorer folder
+   and form tiles). Depth-only glass — a hairline top highlight + a soft resting
+   shadow that lifts on hover. No translucency, so text stays crisp over bg-card.
+   Revert: remove this block + the glass-row classnames in FileExplorer.tsx. */
+.glass-row {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.7),
+    0 1px 2px -1px rgba(16, 24, 40, 0.06),
+    0 6px 16px -12px rgba(16, 24, 40, 0.20);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.glass-row:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 2px 4px -1px rgba(16, 24, 40, 0.08),
+    0 12px 26px -14px rgba(16, 24, 40, 0.28);
+}
+
+/* Glass toggle (shared ui/Switch) — glassy finish with state colours:
+   OFF = red groove, ON = green, each with a matching soft glow. The top
+   sheen (::before) and glossy white thumb give the glass look.
+   Revert: remove this block + the glass-switch classes in ui/switch.tsx. */
+.glass-switch {
+  /* OFF = red */
+  background-color: #dc2626;
+  background-image: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
+  box-shadow:
+    inset 0 1px 2px rgba(16, 24, 40, 0.22),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.25),
+    0 0 0 1px rgba(220, 38, 38, 0.35),
+    0 2px 10px -1px rgba(220, 38, 38, 0.45);
+}
+.glass-switch::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.38) 0%,
+    rgba(255, 255, 255, 0) 55%
+  );
+  pointer-events: none;
+}
+.glass-switch[data-state="checked"] {
+  /* ON = green */
+  background-color: #16a34a;
+  background-image: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 0 0 1px rgba(22, 163, 74, 0.35),
+    0 2px 10px -1px rgba(22, 163, 74, 0.55);
+}
+.glass-switch-thumb {
+  background-image: linear-gradient(180deg, #ffffff 0%, #eef0f4 100%);
+  box-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}

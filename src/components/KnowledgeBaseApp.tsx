@@ -1090,7 +1090,7 @@ export function KnowledgeBaseApp() {
         mobileOpen={mobileMenuOpen}
         onMobileClose={() => setMobileMenuOpen(false)}
       />
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0 glass-content">
         {/* Header with breadcrumbs / user */}
         <div className="border-b border-border p-4 bg-background/95 backdrop-blur-sm">
           <div className="flex items-center justify-between">

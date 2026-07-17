@@ -276,9 +276,8 @@ function SidebarTreeItem({
   return (
     <div className="relative group">
       <div className={cn(
-        "flex items-center gap-2 px-2 py-1.5 text-sm rounded-md cursor-pointer transition-all duration-200",
-        "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-        isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium",
+        "flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg cursor-pointer glass-nav-item",
+        isSelected ? "glass-nav-active text-white font-medium" : "text-white/90 hover:text-white",
         level > 0 && "ml-2",
         isLoading && "opacity-50 pointer-events-none"
       )} 
@@ -854,7 +853,7 @@ export function RealKnowledgeBaseSidebar({
   );
 
   return (
-    <div className="w-full border-r-0 flex flex-col h-full bg-[#5e18eb]">
+    <div className="w-full border-r-0 flex flex-col h-full bg-sidebar glass-sidebar relative">
       {/* Header */}
       <div className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2 mb-4">
@@ -943,9 +942,8 @@ export function RealKnowledgeBaseSidebar({
               <div 
                 key={item.id}
                 className={cn(
-                  "flex items-center gap-3 px-2 py-2 text-sm rounded-md cursor-pointer transition-colors",
-                  "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                  isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                  "flex items-center gap-3 px-2 py-2 text-sm rounded-lg cursor-pointer font-medium glass-nav-item",
+                  isSelected ? "glass-nav-active text-white" : "text-white"
                 )}
                 onClick={() => handleItemSelect({
                   ...item,
