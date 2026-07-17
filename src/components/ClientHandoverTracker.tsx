@@ -457,6 +457,42 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
 
   const { data: users = [] } = useHandoverUsers();
 
+  // Resolve a display name to a staff record (case-insensitive).
+  const userByName = (name?: string | null) => {
+    const trimmed = (name || "").trim();
+    if (!trimmed) return undefined;
+    return users.find((u) => u.name.toLowerCase() === trimmed.toLowerCase());
+  };
+
+  // Tell the previous assignee they've been taken off a handover task, and tell
+  // the person whose leave is being covered that their cover has changed.
+  // Both are silent on failure — the reassignment itself still succeeds.
+  const notifyCoverChange = async (
+    type: "removed" | "cover_changed",
+    recipientName: string,
+    task: { task_name: string; target_date?: string | null },
+    change: { previousAssignee?: string | null; newAssignee?: string | null },
+  ) => {
+    const user = userByName(recipientName);
+    if (!user?.email) return;
+    try {
+      await supabase.functions.invoke("send-handover-change-email", {
+        body: {
+          type,
+          recipientEmail: user.email,
+          recipientName: user.name,
+          clientName,
+          taskName: task.task_name || "Untitled task",
+          previousAssignee: change.previousAssignee ?? null,
+          newAssignee: change.newAssignee ?? null,
+          targetDate: task.target_date ?? null,
+        },
+      });
+    } catch (e) {
+      console.warn("Handover cover-change email failed", e);
+    }
+  };
+
   // Notify an assignee (by display name) that they have a new handover task.
   // Silent on failure — assignment still succeeds.
   const notifyAssignment = async (
@@ -465,7 +501,7 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
   ) => {
     const trimmed = (assigneeName || "").trim();
     if (!trimmed) return;
-    const user = users.find((u) => u.name.toLowerCase() === trimmed.toLowerCase());
+    const user = userByName(trimmed);
     if (!user?.email) return;
     try {
       await supabase.functions.invoke("send-handover-assignment-email", {
@@ -794,8 +830,12 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
           onCommit={(v) => {
             const next = v.trim();
             const prev = (t.handed_over_to || "").trim();
+            if (next.toLowerCase() === prev.toLowerCase()) return; // nothing changed
             updateMutation.mutate({ id: t.id, patch: { handed_over_to: next || null } });
-            if (next && next.toLowerCase() !== prev.toLowerCase()) {
+
+            const notified: string[] = [];
+            // 1. The new assignee — they've picked up the cover.
+            if (next) {
               notifyAssignment(next, {
                 task_name: t.task_name,
                 task_description: t.task_description,
@@ -803,8 +843,20 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
                 target_date: t.target_date,
                 handed_over_by: t.handed_over_by,
               });
-              toast.success(`Notified ${next}`);
+              notified.push(next);
             }
+            // 2. The previous assignee — they're off it (also fires when cleared).
+            if (prev) {
+              notifyCoverChange("removed", prev, t, { previousAssignee: prev, newAssignee: next || null });
+              notified.push(prev);
+            }
+            // 3. The person whose leave is being covered — their cover changed.
+            const coveredFor = (t.handed_over_by || "").trim();
+            if (coveredFor && coveredFor.toLowerCase() !== next.toLowerCase() && coveredFor.toLowerCase() !== prev.toLowerCase()) {
+              notifyCoverChange("cover_changed", coveredFor, t, { previousAssignee: prev || null, newAssignee: next || null });
+              notified.push(coveredFor);
+            }
+            if (notified.length) toast.success(`Notified ${notified.join(", ")}`);
           }}
         />
       </div>
