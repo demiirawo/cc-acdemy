@@ -36,7 +36,7 @@ export function ResizableSidebar({
   mobileOpen = false,
   onMobileClose,
 }: ResizableSidebarProps) {
-  const [desktopWidth, setDesktopWidth] = useState(280);
+  const [desktopWidth, setDesktopWidth] = useState(320);
   const [isResizing, setIsResizing] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
