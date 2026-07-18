@@ -150,7 +150,7 @@ export function IncidentsSection({ onViewProfile }: { onViewProfile?: (userId: s
 
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6">
-      <div className="max-w-5xl mx-auto space-y-4">
+      <div className="max-w-7xl mx-auto space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="h-10 w-10 rounded-lg bg-red-500/10 flex items-center justify-center flex-shrink-0">
@@ -660,7 +660,7 @@ function IncidentDetail({
 
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6">
-      <div className="max-w-4xl mx-auto space-y-4">
+      <div className="max-w-7xl mx-auto space-y-4">
         <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2"><ArrowLeft className="h-4 w-4 mr-1" /> All incidents</Button>
 
         {/* ---- Incident record ---- */}

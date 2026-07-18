@@ -145,7 +145,7 @@ export function SupervisionsSection({ onViewProfile }: { onViewProfile?: (userId
 
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6">
-      <div className="max-w-4xl mx-auto space-y-4">
+      <div className="max-w-7xl mx-auto space-y-4">
         <div className="flex items-start gap-3">
           <div className="rounded-xl bg-primary/10 p-2.5"><ClipboardList className="h-5 w-5 text-primary" /></div>
           <div>
@@ -317,7 +317,7 @@ function SupervisionDetail({ userId, staff, hr, onBack, onViewProfile }: {
 
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6">
-      <div className="max-w-4xl mx-auto space-y-4">
+      <div className="max-w-7xl mx-auto space-y-4">
         <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2"><ArrowLeft className="h-4 w-4 mr-1" /> All staff</Button>
 
         {/* Header */}

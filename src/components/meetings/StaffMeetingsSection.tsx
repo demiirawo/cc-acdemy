@@ -798,7 +798,7 @@ export function StaffMeetingsSection() {
   // ---- Edit / overview mode ----
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6">
-      <div className="max-w-5xl mx-auto space-y-4">
+      <div className="max-w-7xl mx-auto space-y-4">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0"><Presentation className="h-5 w-5 text-primary" /></div>
