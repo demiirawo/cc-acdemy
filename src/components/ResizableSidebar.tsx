@@ -86,7 +86,7 @@ export function ResizableSidebar({
   };
 
   const sidebarContent = (
-    <div className="flex h-full flex-col bg-sidebar-background relative">
+    <div className="flex h-full flex-col bg-sidebar relative">
       {/* Mobile close button — only shown inside the mobile drawer */}
       <div className="flex h-14 items-center justify-end px-4 lg:hidden">
         <Button
@@ -152,7 +152,7 @@ export function ResizableSidebar({
       <div
         ref={sidebarRef}
         className={cn(
-          "relative hidden lg:flex flex-col bg-sidebar-background transition-all duration-300 flex-shrink-0",
+          "relative hidden lg:flex flex-col bg-sidebar transition-all duration-300 flex-shrink-0",
           isCollapsed ? "w-0 overflow-hidden border-r-0" : "border-r border-sidebar-border"
         )}
         style={{ width: isCollapsed ? 0 : desktopWidth }}
