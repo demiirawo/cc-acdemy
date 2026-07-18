@@ -1798,7 +1798,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
               <AccordionTrigger className="px-6 py-4 hover:no-underline">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <Award className="h-5 w-5 text-primary flex-shrink-0" />
-                  <span className="text-lg font-semibold">Performance Rating</span>
+                  <span className="text-lg font-semibold">Performance</span>
                   <StatusPill tone={overallTone}>
                     {myRank ? RANK_STYLES[myRank].label : 'Not yet rated'}
                   </StatusPill>
