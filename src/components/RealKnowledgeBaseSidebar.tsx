@@ -287,32 +287,16 @@ function SidebarTreeItem({
   return (
     <div className="relative group">
       <div className={cn(
-        "flex items-center gap-2 px-2 py-1.5 text-sm rounded-lg cursor-pointer glass-nav-item",
-        isSelected ? "glass-nav-active text-white font-medium" : "text-white/90 hover:text-white",
-        level > 0 && "ml-2",
+        "flex items-center px-2 py-2 text-sm rounded-lg cursor-pointer glass-nav-item font-medium",
+        isSelected ? "glass-nav-active text-white" : "text-white",
         isLoading && "opacity-50 pointer-events-none"
-      )} 
-      style={{ paddingLeft: `${level * 12 + 8}px` }}
-      onClick={() => onSelect(item)}
+      )}
+      style={{ paddingLeft: `${level * 14 + 8}px` }}
+      onClick={() => { onSelect(item); if (hasChildren) onToggleExpanded(item.id); }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}>
-        
-        {hasChildren && (
-          <Button variant="ghost" size="sm" className="h-4 w-4 p-0 hover:bg-transparent" onClick={(e) => {
-            e.stopPropagation();
-            onToggleExpanded(item.id);
-          }}>
-            {isExpanded ? <ChevronDown className="h-3 w-3 text-white hover:animate-pulse" /> : <ChevronRight className="h-3 w-3 text-white hover:animate-pulse" />}
-          </Button>
-        )}
-        {!hasChildren && <div className="w-4" />}
-        
-        {item.type === 'space' || hasChildren || (!item.parent_page_id && item.type === 'page') ? 
-          (isExpanded ? <FolderOpen className="h-4 w-4 text-pink-500 flex-shrink-0" /> : <Folder className="h-4 w-4 text-pink-500 flex-shrink-0" />) : 
-          <FileText className="h-4 w-4 text-white flex-shrink-0" />
-        }
-        
-        <span className="truncate flex-1 text-neutral-50 font-medium">{item.title}</span>
+
+        <span className="truncate flex-1 text-zinc-50">{item.title}</span>
         
         {/* Action buttons */}
         <div className={cn(
