@@ -941,7 +941,6 @@ export function RealKnowledgeBaseSidebar({
           {navigationItems
             .filter(item => (item.id !== 'clients' || isAdmin) && (item.id !== 'training' || canManageTraining) && (!('adminOnly' in item) || !item.adminOnly || isAdmin))
             .map((item) => {
-            const Icon = item.icon;
             const isSelected = selectedId === item.id;
             const kids = (canManageHR && (item as any).adminChildren) ? (item as any).adminChildren as SidebarItem[] : null;
             return (
@@ -956,7 +955,6 @@ export function RealKnowledgeBaseSidebar({
                     type: ['chat', 'hr', 'payroll', 'home', 'whiteboard', 'settings', 'clients', 'schedule', 'incidents', 'staff-meetings', 'supervisions'].includes(item.id) ? 'space' : 'page'
                   })}
                 >
-                  <Icon className="h-4 w-4 text-sidebar-foreground/70" />
                   <span className="text-zinc-50 flex-1">{item.title}</span>
                   {kids && (
                     <button
@@ -969,20 +967,16 @@ export function RealKnowledgeBaseSidebar({
                   )}
                 </div>
                 {kids && hrExpanded && (
-                  <div className="ml-5 mt-1 space-y-0.5 border-l border-white/15 pl-2">
-                    {kids.map((child, ci) => {
-                      const CIcon: any = child.icon;
-                      return (
-                        <div
-                          key={ci}
-                          className="flex items-center gap-2.5 px-2 py-1.5 text-sm rounded-lg cursor-pointer glass-nav-item text-white/90"
-                          onClick={() => handleItemSelect({ ...child, type: 'space' })}
-                        >
-                          {CIcon && <CIcon className="h-4 w-4 text-sidebar-foreground/70" />}
-                          <span className="text-zinc-50">{child.title}</span>
-                        </div>
-                      );
-                    })}
+                  <div className="ml-4 mt-1 space-y-0.5 border-l border-white/15 pl-2">
+                    {kids.map((child, ci) => (
+                      <div
+                        key={ci}
+                        className="flex items-center px-2 py-1.5 text-sm rounded-lg cursor-pointer glass-nav-item text-white/90"
+                        onClick={() => handleItemSelect({ ...child, type: 'space' })}
+                      >
+                        <span className="text-zinc-50">{child.title}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -1064,13 +1058,12 @@ export function RealKnowledgeBaseSidebar({
                   {pagesUtilityItems
                     .filter((item) => !item.adminOnly || isAdmin)
                     .map((item) => {
-                      const Icon = item.icon;
                       const isSelected = selectedId === item.id;
                       return (
-                        <div 
+                        <div
                           key={item.id}
                           className={cn(
-                            "flex items-center gap-3 px-2 py-1.5 text-sm rounded-md cursor-pointer transition-colors",
+                            "flex items-center px-2 py-1.5 text-sm rounded-md cursor-pointer transition-colors",
                             "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                             isSelected && "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                           )}
@@ -1079,7 +1072,6 @@ export function RealKnowledgeBaseSidebar({
                             type: 'space'
                           })}
                         >
-                          <Icon className="h-4 w-4 text-sidebar-foreground/70" />
                           <span className="text-zinc-50">{item.title}</span>
                         </div>
                       );

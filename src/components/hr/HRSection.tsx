@@ -12,7 +12,6 @@ import { IncidentsSection } from "../incidents/IncidentsSection";
 import { StaffMeetingsSection } from "../meetings/StaffMeetingsSection";
 import { SupervisionsSection } from "../supervisions/SupervisionsSection";
 import { RecruitmentSection } from "../recruitment/RecruitmentSection";
-import { User, GraduationCap, FileText, FileSignature, Presentation, AlertTriangle, ClipboardCheck, Briefcase } from "lucide-react";
 
 interface HRSectionProps {
   initialUserId?: string | null;
@@ -87,26 +86,24 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
   };
 
   const adminTabs = [
-    { value: "my-profile", label: "Staff Profile", icon: User },
-    { value: "training", label: "Training", icon: GraduationCap },
-    { value: "staff-meetings", label: "Staff Meetings", icon: Presentation },
-    { value: "incidents", label: "Incidents", icon: AlertTriangle },
-    { value: "supervisions", label: "Supervisions", icon: ClipboardCheck },
-    { value: "recruitment", label: "Recruitment", icon: Briefcase },
+    { value: "my-profile", label: "Staff Profile" },
+    { value: "training", label: "Training" },
+    { value: "staff-meetings", label: "Staff Meetings" },
+    { value: "incidents", label: "Incidents" },
+    { value: "supervisions", label: "Supervisions" },
+    { value: "recruitment", label: "Recruitment" },
   ];
   const staffTabs = [
-    { value: "my-profile", label: "Staff Profile", icon: User },
-    { value: "my-contracts", label: "My Contracts", icon: FileSignature },
-    { value: "onboarding-form", label: "Onboarding Form", icon: FileText },
-    { value: "onboarding", label: "Onboarding Steps", icon: GraduationCap },
+    { value: "my-profile", label: "Staff Profile" },
+    { value: "my-contracts", label: "My Contracts" },
+    { value: "onboarding-form", label: "Onboarding Form" },
+    { value: "onboarding", label: "Onboarding Steps" },
     // Staff keep their existing incident access, now under HR.
-    { value: "incidents", label: "Incidents", icon: AlertTriangle },
-    // Training managers who aren't full admins keep the matrix.
-    ...(canManageTraining ? [{ value: "training", label: "Training", icon: GraduationCap }] : []),
+    { value: "incidents", label: "Incidents" },
+    // HR staff who aren't full admins keep the matrix.
+    ...(canManageTraining ? [{ value: "training", label: "Training" }] : []),
   ];
   const tabs = canManageHR ? adminTabs : staffTabs;
-  const activeMeta = tabs.find(t => t.value === activeTab) ?? tabs[0];
-  const ActiveIcon = activeMeta.icon;
 
   // Section tabs bring their own full-width layout + padding.
   const sectionBreakout = "-mx-4 md:-mx-6 -mb-4 md:-mb-6 mt-2";
@@ -126,23 +123,12 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
           <div className="md:hidden mb-4">
             <Select value={activeTab} onValueChange={handleTabChange}>
               <SelectTrigger className="w-full h-11">
-                <div className="flex items-center gap-2">
-                  <ActiveIcon className="h-4 w-4" />
-                  <SelectValue />
-                </div>
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {tabs.map(t => {
-                  const Icon = t.icon;
-                  return (
-                    <SelectItem key={t.value} value={t.value}>
-                      <div className="flex items-center gap-2">
-                        <Icon className="h-4 w-4" />
-                        {t.label}
-                      </div>
-                    </SelectItem>
-                  );
-                })}
+                {tabs.map(t => (
+                  <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -152,15 +138,9 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
             className="hidden md:grid w-full mb-6"
             style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }}
           >
-            {tabs.map(t => {
-              const Icon = t.icon;
-              return (
-                <TabsTrigger key={t.value} value={t.value} className="flex items-center gap-2">
-                  <Icon className="h-4 w-4" />
-                  {t.label}
-                </TabsTrigger>
-              );
-            })}
+            {tabs.map(t => (
+              <TabsTrigger key={t.value} value={t.value}>{t.label}</TabsTrigger>
+            ))}
           </TabsList>
 
           <TabsContent value="my-profile" className="mt-0">

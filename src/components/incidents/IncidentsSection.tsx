@@ -69,7 +69,9 @@ interface StaffProfile { user_id: string; display_name: string | null; email: st
 
 export function IncidentsSection({ onViewProfile }: { onViewProfile?: (userId: string) => void }) {
   const { user } = useAuth();
-  const { isAdmin } = useUserRole();
+  // HR manages incidents alongside admins (RLS allows both).
+  const { canManageHR: isAdmin } = useUserRole();
+  const { toast } = useToast();
 
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
@@ -77,6 +79,22 @@ export function IncidentsSection({ onViewProfile }: { onViewProfile?: (userId: s
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
+  // Airtable-style inline editing: which list cell is being edited.
+  const [editCell, setEditCell] = useState<{ id: string; field: string } | null>(null);
+
+  // Inline patch from the list table — optimistic, then persist.
+  const patchListIncident = async (id: string, patch: Partial<Incident>) => {
+    setIncidents(prev => prev.map(i => i.id === id ? { ...i, ...patch } : i));
+    setEditCell(null);
+    const { error } = await (supabase as any)
+      .from("incidents")
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) {
+      toast({ title: "Couldn't update", description: error.message, variant: "destructive" });
+      loadIncidents();
+    }
+  };
 
   const loadIncidents = useCallback(async () => {
     setLoading(true);
@@ -147,50 +165,190 @@ export function IncidentsSection({ onViewProfile }: { onViewProfile?: (userId: s
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-2">
-            {incidents.map(inc => {
-              const sev = sevMeta(inc.severity);
-              const st = statusMeta(inc.status);
-              return (
-                <button
-                  key={inc.id}
-                  onClick={() => setSelectedId(inc.id)}
-                  className="w-full text-left rounded-lg border bg-card hover:bg-muted/40 transition-colors p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold truncate">{inc.title}</span>
-                        <Badge variant="outline" className={cn("text-[10px]", sev.cls)}>{sev.label}</Badge>
-                        <Badge variant="outline" className={cn("text-[10px]", st.cls)}>{st.label}</Badge>
-                        {inc.shared_with_staff && (
-                          <Badge variant="outline" className="text-[10px] border-primary/40 text-primary flex items-center gap-1">
-                            <Share2 className="h-3 w-3" /> Shared
-                          </Badge>
+          /* Airtable-style table — double-click text cells to edit, click pills to change */
+          <div className="rounded-lg border overflow-x-auto bg-card">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <th className="text-left font-medium px-3 py-2 min-w-[220px]">Title</th>
+                  <th className="text-left font-medium px-3 py-2 min-w-[140px]">Client</th>
+                  <th className="text-left font-medium px-3 py-2 w-[120px]">Date</th>
+                  <th className="text-left font-medium px-3 py-2 w-[110px]">Severity</th>
+                  <th className="text-left font-medium px-3 py-2 w-[130px]">Status</th>
+                  <th className="text-left font-medium px-3 py-2 w-[130px]">Category</th>
+                  <th className="w-[44px]" />
+                </tr>
+              </thead>
+              <tbody>
+                {incidents.map(inc => {
+                  const sev = sevMeta(inc.severity);
+                  const st = statusMeta(inc.status);
+                  const editing = (field: string) => editCell?.id === inc.id && editCell?.field === field;
+                  return (
+                    <tr key={inc.id} className="border-b last:border-0 hover:bg-muted/30 align-top">
+                      {/* Title */}
+                      <td
+                        className={cn("px-3 py-2 font-medium", isAdmin && "cursor-text")}
+                        onDoubleClick={() => isAdmin && setEditCell({ id: inc.id, field: "title" })}
+                        title={isAdmin ? "Double-click to edit" : undefined}
+                      >
+                        {editing("title") ? (
+                          <Input
+                            autoFocus
+                            defaultValue={inc.title}
+                            className="h-8"
+                            onBlur={e => {
+                              const v = e.target.value.trim();
+                              if (v && v !== inc.title) patchListIncident(inc.id, { title: v });
+                              else setEditCell(null);
+                            }}
+                            onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEditCell(null); }}
+                          />
+                        ) : (
+                          <span className="line-clamp-2">{inc.title}</span>
                         )}
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{inc.description}</p>
-                      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground flex-wrap">
-                        {inc.client_name && (
-                          <a
-                            href={`/public/schedule/${encodeURIComponent(inc.client_name.trim())}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={e => e.stopPropagation()}
-                            className="flex items-center gap-1 text-primary hover:underline"
-                            title={`Open ${inc.client_name}'s public page`}
+                      </td>
+                      {/* Client */}
+                      <td className="px-3 py-2">
+                        {editing("client") ? (
+                          <Select
+                            defaultOpen
+                            value={inc.client_id ?? "none"}
+                            onValueChange={v => {
+                              const c = clients.find(x => x.id === v);
+                              patchListIncident(inc.id, { client_id: v === "none" ? null : v, client_name: c?.name ?? null });
+                            }}
+                            onOpenChange={o => { if (!o) setEditCell(null); }}
                           >
-                            <Users className="h-3 w-3" /> {inc.client_name}
-                          </a>
+                            <SelectTrigger className="h-8"><SelectValue placeholder="Client" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">No specific client</SelectItem>
+                              {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        ) : inc.client_name ? (
+                          <span className={cn(isAdmin && "cursor-pointer")} onClick={() => isAdmin && setEditCell({ id: inc.id, field: "client" })}>
+                            <a
+                              href={`/public/schedule/${encodeURIComponent(inc.client_name.trim())}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              className="text-primary hover:underline"
+                              title={`Open ${inc.client_name}'s public page`}
+                            >
+                              {inc.client_name}
+                            </a>
+                          </span>
+                        ) : (
+                          <span
+                            className={cn("text-muted-foreground/60", isAdmin && "cursor-pointer hover:text-foreground")}
+                            onClick={() => isAdmin && setEditCell({ id: inc.id, field: "client" })}
+                          >—</span>
                         )}
-                        <span className="flex items-center gap-1"><Calendar className="h-3 w-3" /> {format(parseISO(inc.incident_date), "d MMM yyyy")}</span>
-                        {inc.category && <span>· {inc.category}</span>}
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
+                      </td>
+                      {/* Date */}
+                      <td
+                        className={cn("px-3 py-2 whitespace-nowrap text-muted-foreground", isAdmin && "cursor-text")}
+                        onDoubleClick={() => isAdmin && setEditCell({ id: inc.id, field: "date" })}
+                        title={isAdmin ? "Double-click to edit" : undefined}
+                      >
+                        {editing("date") ? (
+                          <Input
+                            autoFocus
+                            type="date"
+                            defaultValue={inc.incident_date}
+                            className="h-8 w-[135px]"
+                            onBlur={e => {
+                              if (e.target.value && e.target.value !== inc.incident_date) patchListIncident(inc.id, { incident_date: e.target.value });
+                              else setEditCell(null);
+                            }}
+                          />
+                        ) : format(parseISO(inc.incident_date), "d MMM yyyy")}
+                      </td>
+                      {/* Severity */}
+                      <td className="px-3 py-2">
+                        {editing("severity") ? (
+                          <Select
+                            defaultOpen
+                            value={inc.severity}
+                            onValueChange={v => patchListIncident(inc.id, { severity: v })}
+                            onOpenChange={o => { if (!o) setEditCell(null); }}
+                          >
+                            <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                            <SelectContent>{SEVERITIES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}</SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className={cn("text-[10px]", sev.cls, isAdmin && "cursor-pointer")}
+                            onClick={() => isAdmin && setEditCell({ id: inc.id, field: "severity" })}
+                          >{sev.label}</Badge>
+                        )}
+                      </td>
+                      {/* Status */}
+                      <td className="px-3 py-2">
+                        {editing("status") ? (
+                          <Select
+                            defaultOpen
+                            value={inc.status}
+                            onValueChange={v => patchListIncident(inc.id, { status: v })}
+                            onOpenChange={o => { if (!o) setEditCell(null); }}
+                          >
+                            <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                            <SelectContent>{STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}</SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className={cn("text-[10px]", st.cls, isAdmin && "cursor-pointer")}
+                            onClick={() => isAdmin && setEditCell({ id: inc.id, field: "status" })}
+                          >{st.label}</Badge>
+                        )}
+                      </td>
+                      {/* Category */}
+                      <td className="px-3 py-2">
+                        {editing("category") ? (
+                          <Select
+                            defaultOpen
+                            value={inc.category ?? "none"}
+                            onValueChange={v => patchListIncident(inc.id, { category: v === "none" ? null : v })}
+                            onOpenChange={o => { if (!o) setEditCell(null); }}
+                          >
+                            <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Uncategorised</SelectItem>
+                              {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span
+                            className={cn("text-muted-foreground", isAdmin && "cursor-pointer hover:text-foreground")}
+                            onClick={() => isAdmin && setEditCell({ id: inc.id, field: "category" })}
+                          >{inc.category || "—"}</span>
+                        )}
+                      </td>
+                      {/* Open detail */}
+                      <td className="px-2 py-2 text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={() => setSelectedId(inc.id)}
+                          title="Open incident"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {isAdmin && (
+              <p className="px-3 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
+                Double-click title or date to edit · click a pill to change it · open a row for statements &amp; details.
+              </p>
+            )}
           </div>
         )}
       </div>
