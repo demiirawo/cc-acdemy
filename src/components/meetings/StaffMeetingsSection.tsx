@@ -12,10 +12,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { format, parseISO, differenceInCalendarDays } from "date-fns";
+import { format, parseISO, differenceInCalendarDays, subMonths } from "date-fns";
 import {
   Presentation, Target, Sparkles, Rocket, Plus, Trash2, Pencil,
-  ChevronLeft, ChevronRight, X, CalendarDays, AlertCircle, Loader2, Check, Flag, Share2, Copy, Megaphone,
+  ChevronLeft, ChevronRight, X, CalendarDays, AlertCircle, Loader2, Check, Flag, Share2, Copy, Megaphone, ShieldAlert,
 } from "lucide-react";
 import { RANK_ORDER, RANK_STYLES, tenureYears, type Rank } from "../hr/PerformanceRankBadge";
 
@@ -52,12 +52,21 @@ interface Objective { id: string; title: string; target_date: string | null; is_
 interface Update { id: string; title: string; body: string | null; category: string | null; created_at: string; }
 interface Spotlight { id: string; user_id: string; note: string | null; }
 interface StaffProfile { user_id: string; display_name: string | null; email: string | null; }
+interface Incident { id: string; title: string; description: string; client_name: string | null; incident_date: string; severity: string; category: string | null; status: string; }
 type PerfInfo = { rank: Rank | null; years: number | null };
+
+const INCIDENT_SEVERITY: Record<string, { label: string; cls: string }> = {
+  low: { label: "Low", cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  medium: { label: "Medium", cls: "bg-amber-100 text-amber-700 border-amber-200" },
+  high: { label: "High", cls: "bg-orange-100 text-orange-700 border-orange-200" },
+  critical: { label: "Critical", cls: "bg-red-100 text-red-700 border-red-200" },
+};
 
 const SECTIONS = [
   { key: "vision", title: "Our Vision", icon: Rocket },
   { key: "updates", title: "Updates", icon: Megaphone },
   { key: "items", title: "Agenda", icon: Target },
+  { key: "incidents", title: "Recent Incidents", icon: ShieldAlert },
   { key: "spotlight", title: "Staff Spotlight", icon: Sparkles },
 ] as const;
 // The presentation walks the sections in reverse (spotlight → … → vision).
@@ -89,6 +98,7 @@ export function StaffMeetingsSection() {
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [perf, setPerf] = useState<Record<string, PerfInfo>>({});
   const [photos, setPhotos] = useState<Record<string, string>>({});
+  const [incidents, setIncidents] = useState<Incident[]>([]);
 
   const [present, setPresent] = useState(false);
   const [sectionIdx, setSectionIdx] = useState(0);
@@ -109,7 +119,8 @@ export function StaffMeetingsSection() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [settingsRes, objRes, itemRes, spotRes, updRes, staffRes, hrRes, docRes] = await Promise.all([
+    const threeMonthsAgo = format(subMonths(new Date(), 3), "yyyy-MM-dd");
+    const [settingsRes, objRes, itemRes, spotRes, updRes, staffRes, hrRes, docRes, incRes] = await Promise.all([
       (supabase as any).from("meeting_settings").select("vision, public_token").eq("id", true).maybeSingle(),
       (supabase as any).from("meeting_objectives").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       (supabase as any).from("meeting_actions").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
@@ -118,6 +129,8 @@ export function StaffMeetingsSection() {
       supabase.from("profiles").select("user_id, display_name, email").order("display_name"),
       supabase.from("hr_profiles").select("user_id, performance_rating, start_date, created_at"),
       supabase.from("staff_onboarding_documents").select("user_id, photograph_path"),
+      (supabase as any).from("incidents").select("id, title, description, client_name, incident_date, severity, category, status")
+        .gte("incident_date", threeMonthsAgo).order("incident_date", { ascending: false }),
     ]);
     setVision(settingsRes.data?.vision || "");
     setPublicToken(settingsRes.data?.public_token || null);
@@ -125,6 +138,7 @@ export function StaffMeetingsSection() {
     setItems((itemRes.data as MeetingItem[]) || []);
     setSpotlights((spotRes.data as Spotlight[]) || []);
     setUpdates((updRes.data as Update[]) || []);
+    setIncidents((incRes.data as Incident[]) || []);
     setStaff((staffRes.data as StaffProfile[]) || []);
     const pmap: Record<string, PerfInfo> = {};
     (hrRes.data || []).forEach((h: any) => {
@@ -690,8 +704,43 @@ export function StaffMeetingsSection() {
     </div>
   );
 
+  const renderIncidents = (big: boolean) => (
+    <div className="space-y-3">
+      <p className="text-xs uppercase tracking-widest text-primary/70 font-semibold">Last 3 months</p>
+      {incidents.length === 0 ? (
+        <p className="text-muted-foreground italic">No incidents logged in the last 3 months.</p>
+      ) : (
+        <div className="space-y-2">
+          {incidents.map(inc => {
+            const sev = INCIDENT_SEVERITY[inc.severity] || INCIDENT_SEVERITY.medium;
+            return (
+              <div key={inc.id} className="rounded-xl border bg-card p-3">
+                <div className="flex items-start justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <Badge variant="outline" className={cn("text-[10px]", sev.cls)}>{sev.label}</Badge>
+                    {inc.category && <Badge variant="outline" className="text-[10px]">{inc.category}</Badge>}
+                    <p className={cn("font-semibold", big ? "text-xl" : "text-base")}>{inc.title}</p>
+                  </div>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">{format(parseISO(inc.incident_date), "d MMM yyyy")}</span>
+                </div>
+                <p className={cn("text-muted-foreground mt-1", big ? "text-base" : "text-sm")}>
+                  {inc.client_name ? <span className="font-medium text-foreground">{inc.client_name}: </span> : null}
+                  {inc.description}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
   const renderBody = (key: string, big: boolean) =>
-    key === "vision" ? renderVision(big) : key === "updates" ? renderUpdates(big) : key === "items" ? renderItems(big) : renderSpotlight(big);
+    key === "vision" ? renderVision(big)
+      : key === "updates" ? renderUpdates(big)
+      : key === "items" ? renderItems(big)
+      : key === "incidents" ? renderIncidents(big)
+      : renderSpotlight(big);
 
   if (loading) {
     return <div className="flex-1 flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading meeting…</div>;
