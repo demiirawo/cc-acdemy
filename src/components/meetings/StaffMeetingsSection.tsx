@@ -482,7 +482,6 @@ export function StaffMeetingsSection() {
 
       {/* Time-bound objectives */}
       <div className="space-y-2">
-        <p className={cn("uppercase tracking-widest text-primary/70 font-semibold", big ? "text-sm" : "text-xs")}>Time-bound objectives</p>
         {objectives.length === 0 && present && <p className="text-muted-foreground italic">No objectives set.</p>}
         <div className="space-y-2">
           {objectives.map(o => {
@@ -569,15 +568,10 @@ export function StaffMeetingsSection() {
 
       {/* On the agenda for the next meeting */}
       <div className="space-y-2">
-        <div className="flex items-center gap-2">
-          <Flag className="h-4 w-4 text-amber-500 fill-amber-500" />
-          <p className="text-xs uppercase tracking-widest text-primary/70 font-semibold">On the agenda</p>
-          <span className="text-[10px] text-muted-foreground">this meeting</span>
-        </div>
+        <p className="text-xs uppercase tracking-widest text-primary/70 font-semibold">On the agenda</p>
         {groups.agenda.length === 0 ? (
-          <p className="text-sm text-muted-foreground italic">Nothing flagged for the agenda{!present && " — flag any item below with the flag icon"}.</p>
+          <p className="text-sm text-muted-foreground italic">Nothing flagged for the agenda.</p>
         ) : groupBody(groups.agenda, big)}
-        {!present && groups.agenda.length > 0 && <p className="text-[11px] text-muted-foreground">Double-click any cell to edit.</p>}
       </div>
 
       {/* Ongoing tracked items */}
@@ -606,10 +600,11 @@ export function StaffMeetingsSection() {
 
   const renderSpotlight = (big: boolean) => (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <p className="text-xs uppercase tracking-widest text-primary/70 font-semibold">Shout-outs</p>
-        {!present && !spotAdding && <Button size="sm" variant="outline" className="ml-auto" onClick={() => setSpotAdding(true)}><Plus className="h-4 w-4 mr-1" /> Add shout-out</Button>}
-      </div>
+      {!present && !spotAdding && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="outline" onClick={() => setSpotAdding(true)}><Plus className="h-4 w-4 mr-1" /> Add shout-out</Button>
+        </div>
+      )}
 
       {!present && spotAdding && (
         <div className="rounded-xl border bg-muted/20 p-3 space-y-2.5">
@@ -658,10 +653,11 @@ export function StaffMeetingsSection() {
 
   const renderUpdates = (big: boolean) => (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <p className="text-xs uppercase tracking-widest text-primary/70 font-semibold">Team updates</p>
-        {!present && !updAdding && <Button size="sm" variant="outline" className="ml-auto" onClick={() => setUpdAdding(true)}><Plus className="h-4 w-4 mr-1" /> Add update</Button>}
-      </div>
+      {!present && !updAdding && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="outline" onClick={() => setUpdAdding(true)}><Plus className="h-4 w-4 mr-1" /> Add update</Button>
+        </div>
+      )}
 
       {!present && updAdding && (
         <div className="rounded-xl border bg-muted/20 p-3 space-y-2.5">
@@ -709,41 +705,33 @@ export function StaffMeetingsSection() {
   );
 
   const renderIncidents = (big: boolean) => (
-    <div className="space-y-3">
-      <p className="text-xs uppercase tracking-widest text-primary/70 font-semibold">Last 3 months</p>
+    <div className="space-y-2">
       {incidents.length === 0 ? (
         <p className="text-muted-foreground italic">No incidents logged in the last 3 months.</p>
       ) : (
-        <div className="space-y-2">
-          {incidents.map(inc => {
-            const sev = INCIDENT_SEVERITY[inc.severity] || INCIDENT_SEVERITY.medium;
-            return (
-              <div key={inc.id} className={cn("rounded-xl border bg-card p-3", inc.on_meeting_agenda && "border-amber-400/60 bg-amber-500/5")}>
-                <div className="flex items-start justify-between gap-2 flex-wrap">
-                  <div className="flex items-center gap-2 flex-wrap min-w-0">
-                    <button
-                      type="button"
-                      onClick={() => toggleIncidentAgenda(inc)}
-                      title={inc.on_meeting_agenda ? "On the agenda — click to remove" : "Flag for the agenda"}
-                      className={cn("flex-shrink-0 rounded-md p-1 transition", inc.on_meeting_agenda ? "text-amber-500" : "text-muted-foreground/40 hover:text-muted-foreground")}
-                    >
-                      <Flag className={cn("h-4 w-4", inc.on_meeting_agenda && "fill-amber-500")} />
-                    </button>
-                    <Badge variant="outline" className={cn("text-[10px]", sev.cls)}>{sev.label}</Badge>
-                    {inc.category && <Badge variant="outline" className="text-[10px]">{inc.category}</Badge>}
-                    <p className={cn("font-semibold", big ? "text-xl" : "text-base")}>{inc.title}</p>
-                    {inc.on_meeting_agenda && <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600">On agenda</Badge>}
-                  </div>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">{format(parseISO(inc.incident_date), "d MMM yyyy")}</span>
-                </div>
-                <p className={cn("text-muted-foreground mt-1", big ? "text-base" : "text-sm")}>
-                  {inc.client_name ? <span className="font-medium text-foreground">{inc.client_name}: </span> : null}
-                  {inc.description}
-                </p>
+        incidents.map(inc => (
+          <div key={inc.id} className={cn("rounded-xl border bg-card p-3", inc.on_meeting_agenda && "border-amber-400/60 bg-amber-500/5")}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => toggleIncidentAgenda(inc)}
+                  title={inc.on_meeting_agenda ? "On the agenda — click to remove" : "Flag for the agenda"}
+                  className={cn("flex-shrink-0 rounded-md p-1 transition", inc.on_meeting_agenda ? "text-amber-500" : "text-muted-foreground/40 hover:text-muted-foreground")}
+                >
+                  <Flag className={cn("h-4 w-4", inc.on_meeting_agenda && "fill-amber-500")} />
+                </button>
+                <p className={cn("font-semibold truncate", big ? "text-xl" : "text-base")}>{inc.title}</p>
+                {inc.on_meeting_agenda && <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600 flex-shrink-0">On agenda</Badge>}
               </div>
-            );
-          })}
-        </div>
+              <span className="text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">{format(parseISO(inc.incident_date), "d MMM yyyy")}</span>
+            </div>
+            <p className={cn("text-muted-foreground mt-1", big ? "text-base" : "text-sm")}>
+              {inc.client_name ? <span className="font-medium text-foreground">{inc.client_name}: </span> : null}
+              {inc.description}
+            </p>
+          </div>
+        ))
       )}
     </div>
   );
@@ -800,12 +788,9 @@ export function StaffMeetingsSection() {
     <div className="flex-1 overflow-auto p-4 md:p-6">
       <div className="max-w-7xl mx-auto space-y-4">
         <div className="flex items-start justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0"><Presentation className="h-5 w-5 text-primary" /></div>
-            <div>
-              <h1 className="text-2xl font-bold">Staff Meeting</h1>
-              <p className="text-muted-foreground text-sm flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" /> {format(new Date(), "EEEE d MMMM yyyy")}</p>
-            </div>
+          <div>
+            <h1 className="text-2xl font-bold">Staff Meeting</h1>
+            <p className="text-muted-foreground text-sm">{format(new Date(), "EEEE d MMMM yyyy")}</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => setShareOpen(true)}>
@@ -815,20 +800,14 @@ export function StaffMeetingsSection() {
           </div>
         </div>
 
-        {SECTIONS.map(sec => {
-          const Icon = sec.icon;
-          return (
-            <Card key={sec.key}>
-              <CardContent className="p-5 space-y-4">
-                <div className="flex items-center gap-2">
-                  <Icon className="h-5 w-5 text-primary" />
-                  <h2 className="text-lg font-semibold">{sec.title}</h2>
-                </div>
-                {renderBody(sec.key, false)}
-              </CardContent>
-            </Card>
-          );
-        })}
+        {SECTIONS.map(sec => (
+          <Card key={sec.key}>
+            <CardContent className="p-5 space-y-4">
+              <h2 className="text-lg font-semibold">{sec.title}</h2>
+              {renderBody(sec.key, false)}
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       <Dialog open={shareOpen} onOpenChange={setShareOpen}>

@@ -163,30 +163,40 @@ export function SupervisionsSection({ onViewProfile }: { onViewProfile?: (userId
         {loading ? (
           <div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading…</div>
         ) : (
-          <div className="space-y-1.5">
-            {rows.map(({ staff: s, last, meta }) => {
-              const rating = (hr[s.user_id]?.performance_rating && RANK_ORDER.includes(hr[s.user_id]!.performance_rating as Rank)) ? hr[s.user_id]!.performance_rating as Rank : null;
-              return (
-                <button
-                  key={s.user_id}
-                  onClick={() => setSelected(s.user_id)}
-                  className="w-full flex items-center gap-3 rounded-lg border bg-card p-3 text-left hover:border-primary/40 hover:bg-muted/30 transition"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium truncate">{s.display_name || s.email}</span>
-                      {rating && <Badge variant="outline" className="text-[10px]">{RANK_STYLES[rating].emoji} {RANK_STYLES[rating].label}</Badge>}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {last ? `Last supervision ${format(parseISO(last.supervision_date), "d MMM yyyy")}` : "No supervision on record yet"}
-                    </p>
-                  </div>
-                  <Badge variant="outline" className={cn("text-[11px] flex-shrink-0", DUE_CLS[meta.tone])}>
-                    <CalendarClock className="h-3 w-3 mr-1" />{meta.label}
-                  </Badge>
-                </button>
-              );
-            })}
+          <div className="rounded-lg border overflow-x-auto bg-card">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <th className="text-left font-medium px-3 py-2">Staff</th>
+                  <th className="text-left font-medium px-3 py-2 w-[120px]">Rating</th>
+                  <th className="text-left font-medium px-3 py-2 w-[180px]">Last supervision</th>
+                  <th className="text-left font-medium px-3 py-2 w-[160px]">Next due</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(({ staff: s, last, meta }) => {
+                  const rating = (hr[s.user_id]?.performance_rating && RANK_ORDER.includes(hr[s.user_id]!.performance_rating as Rank)) ? hr[s.user_id]!.performance_rating as Rank : null;
+                  return (
+                    <tr
+                      key={s.user_id}
+                      onClick={() => setSelected(s.user_id)}
+                      className="border-b last:border-0 hover:bg-muted/30 cursor-pointer"
+                    >
+                      <td className="px-3 py-2 font-medium">{s.display_name || s.email}</td>
+                      <td className="px-3 py-2">
+                        {rating ? <Badge variant="outline" className="text-[10px]">{RANK_STYLES[rating].emoji} {RANK_STYLES[rating].label}</Badge> : <span className="text-muted-foreground/60">—</span>}
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                        {last ? format(parseISO(last.supervision_date), "d MMM yyyy") : "—"}
+                      </td>
+                      <td className="px-3 py-2">
+                        <Badge variant="outline" className={cn("text-[11px]", DUE_CLS[meta.tone])}>{meta.label}</Badge>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
