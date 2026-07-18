@@ -179,7 +179,7 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
                   required
                 />
               </div>
-              <Button type="submit" className="w-full bg-gradient-primary" disabled={isLoading}>
+              <Button type="submit" variant="outline" className="w-full text-foreground" disabled={isLoading}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Send Magic Link
               </Button>
