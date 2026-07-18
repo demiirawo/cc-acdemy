@@ -28,6 +28,7 @@ import { TrainingMatrix } from "./hr/training/TrainingMatrix";
 import { ClientsSection } from "./clients/ClientsSection";
 import { IncidentsSection } from "./incidents/IncidentsSection";
 import { StaffMeetingsSection } from "./meetings/StaffMeetingsSection";
+import { SupervisionsSection } from "./supervisions/SupervisionsSection";
 import { SchedulePage } from "./SchedulePage";
 import { useGlossary } from "@/hooks/useGlossary";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -433,7 +434,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'clients' | 'schedule' | 'recruitment' | 'training' | 'incidents' | 'staff-meetings';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'clients' | 'schedule' | 'recruitment' | 'training' | 'incidents' | 'staff-meetings' | 'supervisions';
 interface SidebarItem {
   id: string;
   title: string;
@@ -557,7 +558,8 @@ export function KnowledgeBaseApp() {
         'recruitment': 'recruitment',
         'training': 'training',
         'incidents': 'incidents',
-        'staff-meetings': 'staff-meetings'
+        'staff-meetings': 'staff-meetings',
+        'supervisions': 'supervisions'
       };
         
         if (viewMap[viewName]) {
@@ -714,6 +716,11 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
       setBreadcrumbs([]);
       navigate('/view/staff-meetings');
+    } else if (item.id === 'supervisions') {
+      setCurrentView('supervisions');
+      setCurrentPage(null);
+      setBreadcrumbs([]);
+      navigate('/view/supervisions');
     } else if (item.type === 'page') {
       try {
         // Fetch real page data from Supabase
@@ -1193,6 +1200,17 @@ export function KnowledgeBaseApp() {
         />}
         {currentView === 'staff-meetings' && isAdmin && <StaffMeetingsSection />}
         {currentView === 'staff-meetings' && !isAdmin && (
+          <div className="p-8 text-center text-muted-foreground">You do not have permission to view this page.</div>
+        )}
+        {currentView === 'supervisions' && isAdmin && <SupervisionsSection
+          onViewProfile={(userId) => {
+            setSelectedHRUserId(userId);
+            setCurrentView('hr');
+            setSelectedItemId('hr');
+            navigate('/view/hr');
+          }}
+        />}
+        {currentView === 'supervisions' && !isAdmin && (
           <div className="p-8 text-center text-muted-foreground">You do not have permission to view this page.</div>
         )}
         {currentView === 'schedule' && <SchedulePage 
