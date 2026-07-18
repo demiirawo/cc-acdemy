@@ -17,6 +17,7 @@ interface SidebarItem {
   type: 'space' | 'page';
   icon?: any;
   children?: SidebarItem[];
+  hrTab?: string;
   href?: string;
   is_public?: boolean;
   parent_page_id?: string | null;
@@ -76,15 +77,44 @@ const navigationItems = [{
         <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
         <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
       </svg>,
-  href: '/hr'
+  href: '/hr',
+  // Nested HR sub-sections — each opens HR on its tab (admin only).
+  adminChildren: [
+    {
+      id: 'hr', hrTab: 'training', title: 'Training',
+      icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>,
+    },
+    {
+      id: 'hr', hrTab: 'staff-meetings', title: 'Staff Meetings',
+      icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>,
+    },
+    {
+      id: 'hr', hrTab: 'incidents', title: 'Incidents',
+      icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
+    },
+    {
+      id: 'hr', hrTab: 'supervisions', title: 'Supervisions',
+      icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>,
+    },
+    {
+      id: 'hr', hrTab: 'recruitment', title: 'Recruitment',
+      icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M20 7h-4V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M10 5h4v2h-4z"/></svg>,
+    },
+  ],
 }, {
-  id: 'training',
-  title: 'Training',
+  id: 'payroll',
+  title: 'Payroll',
+  adminOnly: true,
   icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
-        <path d="M6 12v5c3 3 9 3 12 0v-5"/>
+        <line x1="12" y1="1" x2="12" y2="23"/>
+        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
       </svg>,
-  href: '/training'
+  href: '/payroll'
 }, {
   id: 'clients',
   title: 'Clients',
@@ -99,43 +129,6 @@ const navigationItems = [{
         <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16" />
       </svg>,
   href: '/clients'
-}, {
-  id: 'staff-meetings',
-  title: 'Staff Meetings',
-  adminOnly: true,
-  icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="2" y="3" width="20" height="14" rx="2"/>
-        <line x1="8" y1="21" x2="16" y2="21"/>
-        <line x1="12" y1="17" x2="12" y2="21"/>
-      </svg>,
-  href: '/staff-meetings'
-}, {
-  id: 'incidents',
-  title: 'Incidents',
-  icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-        <line x1="12" y1="9" x2="12" y2="13"/>
-        <line x1="12" y1="17" x2="12.01" y2="17"/>
-      </svg>,
-  href: '/incidents'
-}, {
-  id: 'supervisions',
-  title: 'Supervisions',
-  adminOnly: true,
-  icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 11l3 3L22 4"/>
-        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-      </svg>,
-  href: '/supervisions'
-}, {
-  id: 'recruitment',
-  title: 'Recruitment',
-  adminOnly: true,
-  icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M20 7h-4V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
-        <path d="M10 5h4v2h-4z"/>
-      </svg>,
-  href: '/recruitment'
 }, {
   id: 'whiteboard',
   title: 'Whiteboard',
@@ -493,6 +486,7 @@ export function RealKnowledgeBaseSidebar({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SidebarItem[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [hrExpanded, setHrExpanded] = useState(true);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [pages, setPages] = useState<Page[]>([]);
   const [hierarchyData, setHierarchyData] = useState<SidebarItem[]>([]);
@@ -756,6 +750,7 @@ export function RealKnowledgeBaseSidebar({
       item.id === 'glossary' ||
       item.id === 'recycling-bin' ||
       item.id === 'hr' ||
+      item.id === 'payroll' ||
       item.id === 'clients' ||
       item.id === 'schedule' ||
       item.id === 'recruitment' ||
@@ -948,20 +943,48 @@ export function RealKnowledgeBaseSidebar({
             .map((item) => {
             const Icon = item.icon;
             const isSelected = selectedId === item.id;
+            const kids = (isAdmin && (item as any).adminChildren) ? (item as any).adminChildren as SidebarItem[] : null;
             return (
-              <div 
-                key={item.id}
-                className={cn(
-                  "flex items-center gap-3 px-2 py-2 text-sm rounded-lg cursor-pointer font-medium glass-nav-item",
-                  isSelected ? "glass-nav-active text-white" : "text-white"
+              <div key={item.id}>
+                <div
+                  className={cn(
+                    "flex items-center gap-3 px-2 py-2 text-sm rounded-lg cursor-pointer font-medium glass-nav-item",
+                    isSelected ? "glass-nav-active text-white" : "text-white"
+                  )}
+                  onClick={() => handleItemSelect({
+                    ...item,
+                    type: ['chat', 'hr', 'payroll', 'home', 'whiteboard', 'settings', 'clients', 'schedule', 'incidents', 'staff-meetings', 'supervisions'].includes(item.id) ? 'space' : 'page'
+                  })}
+                >
+                  <Icon className="h-4 w-4 text-sidebar-foreground/70" />
+                  <span className="text-zinc-50 flex-1">{item.title}</span>
+                  {kids && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setHrExpanded(v => !v); }}
+                      className="p-0.5 -mr-1 text-white/70 hover:text-white"
+                      aria-label={hrExpanded ? "Collapse" : "Expand"}
+                    >
+                      {hrExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    </button>
+                  )}
+                </div>
+                {kids && hrExpanded && (
+                  <div className="ml-5 mt-1 space-y-0.5 border-l border-white/15 pl-2">
+                    {kids.map((child, ci) => {
+                      const CIcon: any = child.icon;
+                      return (
+                        <div
+                          key={ci}
+                          className="flex items-center gap-2.5 px-2 py-1.5 text-sm rounded-lg cursor-pointer glass-nav-item text-white/90"
+                          onClick={() => handleItemSelect({ ...child, type: 'space' })}
+                        >
+                          {CIcon && <CIcon className="h-4 w-4 text-sidebar-foreground/70" />}
+                          <span className="text-zinc-50">{child.title}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 )}
-                onClick={() => handleItemSelect({
-                  ...item,
-                  type: ['chat', 'hr', 'home', 'whiteboard', 'settings', 'clients', 'schedule', 'incidents', 'staff-meetings', 'supervisions'].includes(item.id) ? 'space' : 'page'
-                })}
-              >
-                <Icon className="h-4 w-4 text-sidebar-foreground/70" />
-                <span className="text-zinc-50">{item.title}</span>
               </div>
             );
           })}

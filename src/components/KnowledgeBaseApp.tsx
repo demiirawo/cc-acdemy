@@ -29,6 +29,7 @@ import { ClientsSection } from "./clients/ClientsSection";
 import { IncidentsSection } from "./incidents/IncidentsSection";
 import { StaffMeetingsSection } from "./meetings/StaffMeetingsSection";
 import { SupervisionsSection } from "./supervisions/SupervisionsSection";
+import { StaffPayManager } from "./hr/StaffPayManager";
 import { SchedulePage } from "./SchedulePage";
 import { useGlossary } from "@/hooks/useGlossary";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -434,7 +435,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'clients' | 'schedule' | 'recruitment' | 'training' | 'incidents' | 'staff-meetings' | 'supervisions';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'payroll' | 'clients' | 'schedule' | 'recruitment' | 'training' | 'incidents' | 'staff-meetings' | 'supervisions';
 interface SidebarItem {
   id: string;
   title: string;
@@ -553,6 +554,7 @@ export function KnowledgeBaseApp() {
         'glossary': 'glossary',
         'recycling-bin': 'recycling-bin',
         'hr': 'hr',
+        'payroll': 'payroll',
         'clients': 'clients',
         'schedule': 'schedule',
         'recruitment': 'recruitment',
@@ -683,7 +685,14 @@ export function KnowledgeBaseApp() {
       setCurrentView('hr');
       setCurrentPage(null);
       setBreadcrumbs([]);
-      navigate('/view/hr');
+      // Nested HR children carry a target tab (Training, Incidents, …).
+      const hrTab = (item as any).hrTab as string | undefined;
+      navigate(hrTab ? `/view/hr?tab=${hrTab}` : '/view/hr');
+    } else if (item.id === 'payroll') {
+      setCurrentView('payroll');
+      setCurrentPage(null);
+      setBreadcrumbs([]);
+      navigate('/view/payroll');
     } else if (item.id === 'clients') {
       setCurrentView('clients');
       setCurrentPage(null);
@@ -1189,6 +1198,18 @@ export function KnowledgeBaseApp() {
           </div>
         )}
         {currentView === 'hr' && <HRSection initialUserId={selectedHRUserId} onProfileClosed={() => setSelectedHRUserId(null)} />}
+        {currentView === 'payroll' && isAdmin && (
+          <div className="flex-1 overflow-auto p-4 md:p-6">
+            <div className="mb-4 md:mb-6">
+              <h1 className="text-2xl md:text-3xl font-bold text-foreground">Payroll</h1>
+              <p className="text-sm md:text-base text-muted-foreground mt-1">Run and adjust monthly staff pay</p>
+            </div>
+            <StaffPayManager />
+          </div>
+        )}
+        {currentView === 'payroll' && !isAdmin && (
+          <div className="p-8 text-center text-muted-foreground">You do not have permission to view this page.</div>
+        )}
         {currentView === 'clients' && <ClientsSection />}
         {currentView === 'incidents' && <IncidentsSection
           onViewProfile={(userId) => {
