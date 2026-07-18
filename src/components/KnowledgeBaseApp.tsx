@@ -31,6 +31,7 @@ import { StaffMeetingsSection } from "./meetings/StaffMeetingsSection";
 import { SupervisionsSection } from "./supervisions/SupervisionsSection";
 import { StaffPayManager } from "./hr/StaffPayManager";
 import { InspectionsSection } from "./inspections/InspectionsSection";
+import { FinanceSection } from "./finance/FinanceSection";
 import { SchedulePage } from "./SchedulePage";
 import { useGlossary } from "@/hooks/useGlossary";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -436,7 +437,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'payroll' | 'inspections' | 'clients' | 'schedule' | 'recruitment' | 'training' | 'incidents' | 'staff-meetings' | 'supervisions';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'payroll' | 'finance' | 'inspections' | 'clients' | 'schedule' | 'recruitment' | 'training' | 'incidents' | 'staff-meetings' | 'supervisions';
 interface SidebarItem {
   id: string;
   title: string;
@@ -557,6 +558,7 @@ export function KnowledgeBaseApp() {
         'hr': 'hr',
         'payroll': 'payroll',
         'inspections': 'inspections',
+        'finance': 'finance',
         'clients': 'clients',
         'schedule': 'schedule',
         'recruitment': 'recruitment',
@@ -700,6 +702,11 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
       setBreadcrumbs([]);
       navigate('/view/inspections');
+    } else if (item.id === 'finance') {
+      setCurrentView('finance');
+      setCurrentPage(null);
+      setBreadcrumbs([]);
+      navigate('/view/finance');
     } else if (item.id === 'clients') {
       setCurrentView('clients');
       setCurrentPage(null);
@@ -1219,6 +1226,10 @@ export function KnowledgeBaseApp() {
         )}
         {currentView === 'inspections' && canManageHR && <InspectionsSection />}
         {currentView === 'inspections' && !canManageHR && (
+          <div className="p-8 text-center text-muted-foreground">You do not have permission to view this page.</div>
+        )}
+        {currentView === 'finance' && isAdmin && <FinanceSection />}
+        {currentView === 'finance' && !isAdmin && (
           <div className="p-8 text-center text-muted-foreground">You do not have permission to view this page.</div>
         )}
         {currentView === 'clients' && <ClientsSection />}

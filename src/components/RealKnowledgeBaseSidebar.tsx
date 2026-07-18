@@ -130,6 +130,14 @@ const navigationItems = [{
       </svg>,
   href: '/payroll'
 }, {
+  id: 'finance',
+  title: 'Finance',
+  adminOnly: true,
+  icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>
+      </svg>,
+  href: '/finance'
+}, {
   id: 'clients',
   title: 'Clients',
   icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -749,6 +757,7 @@ export function RealKnowledgeBaseSidebar({
       item.id === 'recycling-bin' ||
       item.id === 'hr' ||
       item.id === 'payroll' ||
+      item.id === 'finance' ||
       item.id === 'inspections' ||
       item.id === 'clients' ||
       item.id === 'schedule' ||
@@ -951,7 +960,7 @@ export function RealKnowledgeBaseSidebar({
                   )}
                   onClick={() => handleItemSelect({
                     ...item,
-                    type: ['chat', 'hr', 'payroll', 'home', 'whiteboard', 'settings', 'clients', 'schedule', 'incidents', 'staff-meetings', 'supervisions', 'inspections'].includes(item.id) ? 'space' : 'page'
+                    type: ['chat', 'hr', 'payroll', 'home', 'whiteboard', 'settings', 'clients', 'schedule', 'incidents', 'staff-meetings', 'supervisions', 'inspections', 'finance'].includes(item.id) ? 'space' : 'page'
                   })}
                 >
                   <span className="text-zinc-50 flex-1">{item.title}</span>
