@@ -127,6 +127,25 @@ export function FinanceSection() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // Keep the P&L's payroll line live: StaffPayManager (Payroll tab) writes every
+  // bonus pot recalc, manual bonus/overtime/deduction straight to staff_pay_records,
+  // so a realtime subscription here means edits made there don't need a page reload.
+  const refreshPayAdjustments = useCallback(async () => {
+    const now = new Date();
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
+    const { data } = await (supabase as any).from("staff_pay_records").select("user_id, record_type, amount, currency")
+      .gte("pay_period_start", monthStart).lt("pay_period_start", monthEnd);
+    setPayAdjustments((data as PayAdjustment[]) || []);
+  }, []);
+  useEffect(() => {
+    const channel = supabase
+      .channel("finance-payroll-sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: "staff_pay_records" }, () => { refreshPayAdjustments(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [refreshPayAdjustments]);
+
   const patchClient = async (id: string, patch: Partial<ClientRow>) => {
     setClients(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
     const { error } = await (supabase as any).from("clients").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
@@ -531,6 +550,7 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
           <tr className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
             <th className="text-left font-medium px-4 py-2.5">Client</th>
             <th className="text-left font-medium px-4 py-2.5 w-[150px]">Sales Stage</th>
+            <th className="text-left font-medium px-4 py-2.5 w-[120px]">Contract start</th>
             <th className="text-right font-medium px-4 py-2.5 w-[120px]">MRR (gross)</th>
             <th className="text-right font-medium px-4 py-2.5 w-[130px]">Est. profit</th>
             <th className="text-right font-medium px-4 py-2.5 w-[90px]">Margin</th>
@@ -545,7 +565,7 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
                 className="cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors border-b"
                 onClick={() => setCollapsed(prev => ({ ...prev, [g.key]: !isCollapsed }))}
               >
-                <td colSpan={5} className="px-4 py-2">
+                <td colSpan={6} className="px-4 py-2">
                   <div className="flex items-center gap-2">
                     {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
                     <span className={cn("h-3 w-1 rounded-full", g.meta.bar)} />
@@ -585,6 +605,19 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
                       )}
                     </td>
                     <td
+                      className="px-4 py-3 text-muted-foreground cursor-text"
+                      onDoubleClick={() => setEdit({ id: c.id, field: "contract_start_date" })}
+                      title="Double-click to edit"
+                    >
+                      {edit?.id === c.id && edit.field === "contract_start_date" ? (
+                        <Input
+                          autoFocus type="date" defaultValue={c.contract_start_date ?? ""} className="h-8"
+                          onBlur={e => { onPatch(c.id, { contract_start_date: e.target.value || null }); setEdit(null); }}
+                          onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEdit(null); }}
+                        />
+                      ) : c.contract_start_date ? new Date(c.contract_start_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                    </td>
+                    <td
                       className="px-4 py-3 text-right tabular-nums cursor-text"
                       onDoubleClick={() => setEdit({ id: c.id, field: "mrr" })}
                       title="Double-click to edit"
@@ -607,7 +640,7 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
         })}
       </table>
       <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
-        Only "Active" stage clients count toward revenue &amp; profit. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Double-click MRR to edit · click the stage pill to change it · click a group header to collapse it.
+        Only "Active" stage clients count toward revenue &amp; profit. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start date feeds the revenue trend chart above. Double-click MRR or contract start to edit · click the stage pill to change it · click a group header to collapse it.
       </p>
     </div>
   );
