@@ -52,7 +52,7 @@ interface Objective { id: string; title: string; target_date: string | null; is_
 interface Update { id: string; title: string; body: string | null; category: string | null; created_at: string; }
 interface Spotlight { id: string; user_id: string; note: string | null; }
 interface StaffProfile { user_id: string; display_name: string | null; email: string | null; }
-interface Incident { id: string; title: string; description: string; client_name: string | null; incident_date: string; severity: string; category: string | null; status: string; }
+interface Incident { id: string; title: string; description: string; client_name: string | null; incident_date: string; severity: string; category: string | null; status: string; on_meeting_agenda: boolean; }
 type PerfInfo = { rank: Rank | null; years: number | null };
 
 const INCIDENT_SEVERITY: Record<string, { label: string; cls: string }> = {
@@ -129,7 +129,7 @@ export function StaffMeetingsSection() {
       supabase.from("profiles").select("user_id, display_name, email").order("display_name"),
       supabase.from("hr_profiles").select("user_id, performance_rating, start_date, created_at"),
       supabase.from("staff_onboarding_documents").select("user_id, photograph_path"),
-      (supabase as any).from("incidents").select("id, title, description, client_name, incident_date, severity, category, status")
+      (supabase as any).from("incidents").select("id, title, description, client_name, incident_date, severity, category, status, on_meeting_agenda")
         .gte("incident_date", threeMonthsAgo).order("incident_date", { ascending: false }),
     ]);
     setVision(settingsRes.data?.vision || "");
@@ -237,6 +237,10 @@ export function StaffMeetingsSection() {
   const deleteItem = async (id: string) => {
     setItems(prev => prev.filter(a => a.id !== id));
     await (supabase as any).from("meeting_actions").delete().eq("id", id);
+  };
+  const toggleIncidentAgenda = async (inc: Incident) => {
+    setIncidents(prev => prev.map(x => x.id === inc.id ? { ...x, on_meeting_agenda: !x.on_meeting_agenda } : x));
+    await (supabase as any).from("incidents").update({ on_meeting_agenda: !inc.on_meeting_agenda }).eq("id", inc.id);
   };
   const updateItem = async (id: string, patch: Partial<MeetingItem>) => {
     setItems(prev => prev.map(x => x.id === id ? { ...x, ...patch } : x));
@@ -714,12 +718,21 @@ export function StaffMeetingsSection() {
           {incidents.map(inc => {
             const sev = INCIDENT_SEVERITY[inc.severity] || INCIDENT_SEVERITY.medium;
             return (
-              <div key={inc.id} className="rounded-xl border bg-card p-3">
+              <div key={inc.id} className={cn("rounded-xl border bg-card p-3", inc.on_meeting_agenda && "border-amber-400/60 bg-amber-500/5")}>
                 <div className="flex items-start justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2 flex-wrap min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleIncidentAgenda(inc)}
+                      title={inc.on_meeting_agenda ? "On the agenda — click to remove" : "Flag for the agenda"}
+                      className={cn("flex-shrink-0 rounded-md p-1 transition", inc.on_meeting_agenda ? "text-amber-500" : "text-muted-foreground/40 hover:text-muted-foreground")}
+                    >
+                      <Flag className={cn("h-4 w-4", inc.on_meeting_agenda && "fill-amber-500")} />
+                    </button>
                     <Badge variant="outline" className={cn("text-[10px]", sev.cls)}>{sev.label}</Badge>
                     {inc.category && <Badge variant="outline" className="text-[10px]">{inc.category}</Badge>}
                     <p className={cn("font-semibold", big ? "text-xl" : "text-base")}>{inc.title}</p>
+                    {inc.on_meeting_agenda && <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600">On agenda</Badge>}
                   </div>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">{format(parseISO(inc.incident_date), "d MMM yyyy")}</span>
                 </div>
