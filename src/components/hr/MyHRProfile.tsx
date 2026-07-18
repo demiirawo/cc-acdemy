@@ -1646,70 +1646,42 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Briefcase className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Job Title</p>
-                <p className="font-medium">{hrProfile.job_title || 'Not set'}</p>
-              </div>
-            </div>
+            <p className="text-sm text-muted-foreground">Job Title</p>
+            <p className="font-medium">{hrProfile.job_title || 'Not set'}</p>
           </CardContent>
         </Card>
 
         {showSalary && (
         <Card>
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <DollarSign className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Base Salary</p>
-                <p className="font-medium">
-                  {hrProfile.base_salary ? formatCurrency(hrProfile.base_salary, hrProfile.base_currency) : 'Not set'}
-                </p>
-              </div>
-            </div>
+            <p className="text-sm text-muted-foreground">Base Salary</p>
+            <p className="font-medium">
+              {hrProfile.base_salary ? formatCurrency(hrProfile.base_salary, hrProfile.base_currency) : 'Not set'}
+            </p>
           </CardContent>
         </Card>
         )}
 
         <Card>
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Calendar className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Holiday Allowance (Jun-May)</p>
-                {hrProfile.unlimited_holiday ? (
-                  <p className="font-medium text-primary">Unlimited</p>
-                ) : (
-                  <p className="font-medium">
-                    {totalHolidaysTaken} / {allowanceInfo.annualAllowance} days used
-                    <span className="text-muted-foreground text-sm ml-1">({allowanceInfo.accruedAllowance.toFixed(1)} accrued)</span>
-                  </p>
-                )}
-              </div>
-            </div>
+            <p className="text-sm text-muted-foreground">Holiday Allowance (Jun-May)</p>
+            {hrProfile.unlimited_holiday ? (
+              <p className="font-medium text-primary">Unlimited</p>
+            ) : (
+              <p className="font-medium">
+                {totalHolidaysTaken} / {allowanceInfo.annualAllowance} days used
+                <span className="text-muted-foreground text-sm ml-1">({allowanceInfo.accruedAllowance.toFixed(1)} accrued)</span>
+              </p>
+            )}
           </CardContent>
         </Card>
 
         <Card>
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Clock className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Start Date</p>
-                <p className="font-medium">
-                  {hrProfile.start_date ? format(new Date(hrProfile.start_date), 'dd MMM yyyy') : 'Not set'}
-                </p>
-              </div>
-            </div>
+            <p className="text-sm text-muted-foreground">Start Date</p>
+            <p className="font-medium">
+              {hrProfile.start_date ? format(new Date(hrProfile.start_date), 'dd MMM yyyy') : 'Not set'}
+            </p>
           </CardContent>
         </Card>
 
@@ -1781,7 +1753,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
 
         return (
           <Accordion type="single" collapsible className="w-full">
-            <AccordionItem value="performance" className="border-2 border-primary/20 rounded-lg bg-card">
+            <AccordionItem value="performance" className="border rounded-lg bg-card">
               <AccordionTrigger className="px-6 py-4 hover:no-underline">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <Award className="h-5 w-5 text-primary flex-shrink-0" />
@@ -2194,7 +2166,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
 
         return (
           <Accordion type="single" collapsible className="w-full">
-            <AccordionItem value="onboarding-steps" className="border-2 border-primary/20 rounded-lg bg-card">
+            <AccordionItem value="onboarding-steps" className="border rounded-lg bg-card">
               <AccordionTrigger className="px-6 py-4 hover:no-underline">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <ListChecks className="h-5 w-5 text-primary flex-shrink-0" />
@@ -2317,7 +2289,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
 
         return (
           <Accordion type="single" collapsible className="w-full">
-            <AccordionItem value="training" className="border-2 border-primary/20 rounded-lg bg-card">
+            <AccordionItem value="training" className="border rounded-lg bg-card">
               <AccordionTrigger className="px-6 py-4 hover:no-underline">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <Award className="h-5 w-5 text-primary flex-shrink-0" />
@@ -2357,7 +2329,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
 
       {/* Clients — scheduled over the next 4 weeks */}
       <Accordion type="single" collapsible className="w-full">
-        <AccordionItem value="clients" className="border-2 border-primary/20 rounded-lg bg-card">
+        <AccordionItem value="clients" className="border rounded-lg bg-card">
           <AccordionTrigger className="px-6 py-4 hover:no-underline">
             <div className="flex items-center gap-3 flex-1 min-w-0">
               <MapPin className="h-5 w-5 text-primary flex-shrink-0" />
@@ -2441,7 +2413,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
             : 'neutral';
         return (
           <Accordion type="single" collapsible className="w-full">
-            <AccordionItem value="handover" className="border-2 border-primary/20 rounded-lg bg-card">
+            <AccordionItem value="handover" className="border rounded-lg bg-card">
               <AccordionTrigger className="px-6 py-4 hover:no-underline">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <Handshake className="h-5 w-5 text-primary flex-shrink-0" />
@@ -2509,7 +2481,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
 
       {/* Personal Details Section - from onboarding form */}
       {onboardingData && <Accordion type="single" collapsible className="w-full">
-          <AccordionItem value="personal-details" className="border-2 border-primary/20 rounded-lg bg-card">
+          <AccordionItem value="personal-details" className="border rounded-lg bg-card">
             <AccordionTrigger className="px-6 py-4 hover:no-underline">
               <div className="flex items-center gap-2">
                 <User className="h-5 w-5 text-primary" />
@@ -2751,7 +2723,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
 
       {/* 12-Month Pay Forecast Section */}
       {showSalary && monthlyPreviews.length > 0 && <Accordion type="single" collapsible className="w-full">
-          <AccordionItem value="pay-forecast" className="border-2 border-primary/20 rounded-lg bg-card">
+          <AccordionItem value="pay-forecast" className="border rounded-lg bg-card">
             <AccordionTrigger className="px-6 py-4 hover:no-underline">
               <div className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5 text-primary" />
@@ -2985,7 +2957,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       {/* Contractor / Invoicing Details Section (bank/pay details — salary-level access) */}
       {showSalary && selectedUserId && (
         <Accordion type="single" collapsible className="w-full">
-          <AccordionItem value="contractor-details" className="border-2 border-primary/20 rounded-lg bg-card">
+          <AccordionItem value="contractor-details" className="border rounded-lg bg-card">
             <AccordionTrigger className="px-6 py-4 hover:no-underline">
               <div className="flex items-center gap-2">
                 <Building2 className="h-5 w-5 text-primary" />
@@ -3008,7 +2980,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
 
       {/* My Requests Section */}
       <Accordion type="single" collapsible className="w-full">
-        <AccordionItem value="my-requests" className="border-2 border-primary/20 rounded-lg bg-card">
+        <AccordionItem value="my-requests" className="border rounded-lg bg-card">
           <AccordionTrigger className="px-6 py-4 hover:no-underline">
             <div className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" />
