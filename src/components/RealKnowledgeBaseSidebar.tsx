@@ -18,6 +18,7 @@ interface SidebarItem {
   icon?: any;
   children?: SidebarItem[];
   hrTab?: string;
+  financeTab?: string;
   href?: string;
   is_public?: boolean;
   parent_page_id?: string | null;
@@ -121,22 +122,23 @@ const navigationItems = [{
       </svg>,
   href: '/inspections'
 }, {
-  id: 'payroll',
-  title: 'Payroll',
-  adminOnly: true,
-  icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <line x1="12" y1="1" x2="12" y2="23"/>
-        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
-      </svg>,
-  href: '/payroll'
-}, {
   id: 'finance',
   title: 'Finance',
   adminOnly: true,
   icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/>
       </svg>,
-  href: '/finance'
+  href: '/finance',
+  // Nested Finance sub-sections — each opens Finance on its tab (admin only).
+  adminChildren: [
+    {
+      id: 'finance', financeTab: 'payroll', title: 'Payroll',
+      icon: () => <svg className="h-4 w-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="12" y1="1" x2="12" y2="23"/>
+        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+      </svg>,
+    },
+  ],
 }, {
   id: 'clients',
   title: 'Clients',
@@ -492,7 +494,8 @@ export function RealKnowledgeBaseSidebar({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SidebarItem[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
-  const [hrExpanded, setHrExpanded] = useState(true);
+  // Per-nav-group expand state for items with adminChildren (HR, Finance, …). Expanded by default.
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [pages, setPages] = useState<Page[]>([]);
   const [hierarchyData, setHierarchyData] = useState<SidebarItem[]>([]);
@@ -950,7 +953,9 @@ export function RealKnowledgeBaseSidebar({
             .filter(item => item.id !== 'chat' && (item.id !== 'clients' || isAdmin) && (item.id !== 'training' || canManageTraining) && (!('adminOnly' in item) || !item.adminOnly || isAdmin) && (!('hrOnly' in item) || !item.hrOnly || canManageHR))
             .map((item) => {
             const isSelected = selectedId === item.id;
-            const kids = (canManageHR && (item as any).adminChildren) ? (item as any).adminChildren as SidebarItem[] : null;
+            const canSeeChildren = (item as any).adminOnly ? isAdmin : canManageHR;
+            const kids = (canSeeChildren && (item as any).adminChildren) ? (item as any).adminChildren as SidebarItem[] : null;
+            const isExpanded = !collapsedGroups[item.id];
             return (
               <div key={item.id}>
                 <div
@@ -966,15 +971,15 @@ export function RealKnowledgeBaseSidebar({
                   <span className="text-zinc-50 flex-1">{item.title}</span>
                   {kids && (
                     <button
-                      onClick={(e) => { e.stopPropagation(); setHrExpanded(v => !v); }}
+                      onClick={(e) => { e.stopPropagation(); setCollapsedGroups(prev => ({ ...prev, [item.id]: isExpanded })); }}
                       className="p-0.5 -mr-1 text-white/70 hover:text-white"
-                      aria-label={hrExpanded ? "Collapse" : "Expand"}
+                      aria-label={isExpanded ? "Collapse" : "Expand"}
                     >
-                      {hrExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                     </button>
                   )}
                 </div>
-                {kids && hrExpanded && (
+                {kids && isExpanded && (
                   <div className="ml-4 mt-1 space-y-0.5 border-l border-white/15 pl-2">
                     {kids.map((child, ci) => (
                       <div

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useToast } from "@/hooks/use-toast";
@@ -8,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { StaffPayManager } from "../hr/StaffPayManager";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
@@ -47,9 +49,24 @@ const monthlyFromFreq = (base: number, freq: string | null) => {
   return base; // monthly
 };
 
+const FINANCE_TABS = ["overview", "clients", "staff", "payroll", "expenses"];
+
 export function FinanceSection() {
   const { isAdmin } = useUserRole();
   const { toast } = useToast();
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState(FINANCE_TABS.includes(tabParam || "") ? (tabParam as string) : "overview");
+  useEffect(() => {
+    if (tabParam && FINANCE_TABS.includes(tabParam) && tabParam !== activeTab) setActiveTab(tabParam);
+  }, [tabParam]);
+  const handleTabChange = (next: string) => {
+    setActiveTab(next);
+    const params = new URLSearchParams(searchParams);
+    params.set("tab", next);
+    setSearchParams(params, { replace: true });
+  };
 
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState<ClientRow[]>([]);
@@ -191,7 +208,7 @@ export function FinanceSection() {
 
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6">
-      <div className="max-w-7xl mx-auto space-y-4">
+      <div className={cn(activeTab === "payroll" ? "w-full" : "max-w-7xl mx-auto", "space-y-4")}>
         <div>
           <h1 className="text-2xl font-bold">Finance</h1>
           <p className="text-muted-foreground text-sm">Profitability, revenue by processor, per-client & per-staff contribution, expenses and projections.</p>
@@ -205,11 +222,12 @@ export function FinanceSection() {
           <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Margin</p><p className={cn("text-2xl font-bold tabular-nums", netTone)}>{pct(model.margin)}</p></CardContent></Card>
         </div>
 
-        <Tabs defaultValue="overview" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 mb-4">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+          <TabsList className="grid w-full grid-cols-5 mb-4">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="clients">Clients</TabsTrigger>
             <TabsTrigger value="staff">Staff</TabsTrigger>
+            <TabsTrigger value="payroll">Payroll</TabsTrigger>
             <TabsTrigger value="expenses">Expenses</TabsTrigger>
           </TabsList>
 
@@ -242,23 +260,22 @@ export function FinanceSection() {
             {/* Monthly P&L */}
             <Card>
               <CardContent className="p-5 space-y-1.5 text-sm">
-                <p className="font-semibold mb-1">Monthly profit &amp; loss</p>
-                <Line label={`Revenue — Zoho`} value={model.revZoho} />
-                <Line label={`Revenue — FreeAgent`} value={model.revFree} />
+                <p className="font-semibold mb-1">Monthly profit &amp; loss (UK company — FreeAgent only)</p>
+                <Line label="Revenue — FreeAgent" value={model.revFree} />
                 {model.revOther > 0 && <Line label="Revenue — other" value={model.revOther} />}
-                <Line label="Total revenue" value={model.revenue} strong />
+                <Line label="Total revenue" value={model.revFree + model.revOther} strong />
                 <div className="border-t my-1.5" />
                 <Line label={`Payroll — ${model.activeStaffCount} staff (live)`} value={-model.payrollCost} />
                 <Line label="Business expenses" value={-model.opExpenses} />
                 <Line label="Beneficial costs (owner salary, dividends, pension…)" value={-model.beneficialExp} />
                 <Line label="Total costs" value={-model.totalCost} strong />
                 <div className="border-t my-1.5" />
-                <Line label="Net profit (before UK tax)" value={model.netProfit} strong tone />
+                <Line label="Net profit (before UK tax)" value={model.ukProfit} strong tone />
                 <div className="border-t my-1.5" />
                 <Line label={`Est. UK Corporation Tax (${pct(settings.corporation_tax_rate)} on UK profit)`} value={-model.corpTax} />
-                <Line label="Estimated take-home after UK tax" value={model.afterTaxNet} strong tone />
+                <Line label="Net profit after UK tax" value={model.ukProfit - model.corpTax} strong tone />
                 <p className="text-[11px] text-muted-foreground pt-2">
-                  Estimate only. Zoho income is treated as tax-free (Dubai personal account); UK Corporation Tax is applied to the FreeAgent side after costs. VAT on FreeAgent invoices is collected from clients and passed to HMRC, so it isn't a cost here.
+                  Estimate only. This P&amp;L covers the UK company (FreeAgent) only — Zoho income is personal (Dubai account, tax-free) and shown separately above, not mixed into this table. VAT on FreeAgent invoices is collected from clients and passed to HMRC, so it isn't a cost here.
                 </p>
               </CardContent>
             </Card>
@@ -366,6 +383,11 @@ export function FinanceSection() {
               </table>
               <p className="px-3 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">Revenue is attributed by splitting each client's MRR across the staff assigned to it. Cost is each staff member's monthly pay in GBP.</p>
             </div>
+          </TabsContent>
+
+          {/* ---- Payroll ---- */}
+          <TabsContent value="payroll" className="mt-0">
+            <StaffPayManager />
           </TabsContent>
 
           {/* ---- Expenses ---- */}

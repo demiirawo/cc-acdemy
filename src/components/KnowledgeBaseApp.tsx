@@ -29,7 +29,6 @@ import { ClientsSection } from "./clients/ClientsSection";
 import { IncidentsSection } from "./incidents/IncidentsSection";
 import { StaffMeetingsSection } from "./meetings/StaffMeetingsSection";
 import { SupervisionsSection } from "./supervisions/SupervisionsSection";
-import { StaffPayManager } from "./hr/StaffPayManager";
 import { InspectionsSection } from "./inspections/InspectionsSection";
 import { FinanceSection } from "./finance/FinanceSection";
 import { SchedulePage } from "./SchedulePage";
@@ -437,7 +436,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'payroll' | 'finance' | 'inspections' | 'clients' | 'schedule' | 'recruitment' | 'training' | 'incidents' | 'staff-meetings' | 'supervisions';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'finance' | 'inspections' | 'clients' | 'schedule' | 'recruitment' | 'training' | 'incidents' | 'staff-meetings' | 'supervisions';
 interface SidebarItem {
   id: string;
   title: string;
@@ -544,6 +543,9 @@ export function KnowledgeBaseApp() {
           title: '',
           type: 'page'
         });
+      } else if (viewName === 'payroll') {
+        // Payroll moved to be a Finance tab — send old links there.
+        navigate('/view/finance?tab=payroll', { replace: true });
       } else if (viewName) {
         // Navigate to specific view
       const viewMap: Record<string, ViewMode> = {
@@ -556,7 +558,6 @@ export function KnowledgeBaseApp() {
         'glossary': 'glossary',
         'recycling-bin': 'recycling-bin',
         'hr': 'hr',
-        'payroll': 'payroll',
         'inspections': 'inspections',
         'finance': 'finance',
         'clients': 'clients',
@@ -567,7 +568,7 @@ export function KnowledgeBaseApp() {
         'staff-meetings': 'staff-meetings',
         'supervisions': 'supervisions'
       };
-        
+
         if (viewMap[viewName]) {
           setCurrentView(viewMap[viewName]);
           setSelectedItemId(viewName === 'dashboard' ? 'home' : viewName);
@@ -693,10 +694,11 @@ export function KnowledgeBaseApp() {
       const hrTab = (item as any).hrTab as string | undefined;
       navigate(hrTab ? `/view/hr?tab=${hrTab}` : '/view/hr');
     } else if (item.id === 'payroll') {
-      setCurrentView('payroll');
+      // Payroll now lives nested under Finance.
+      setCurrentView('finance');
       setCurrentPage(null);
       setBreadcrumbs([]);
-      navigate('/view/payroll');
+      navigate('/view/finance?tab=payroll');
     } else if (item.id === 'inspections') {
       setCurrentView('inspections');
       setCurrentPage(null);
@@ -706,7 +708,9 @@ export function KnowledgeBaseApp() {
       setCurrentView('finance');
       setCurrentPage(null);
       setBreadcrumbs([]);
-      navigate('/view/finance');
+      // Nested Finance children carry a target tab (Payroll, …).
+      const financeTab = (item as any).financeTab as string | undefined;
+      navigate(financeTab ? `/view/finance?tab=${financeTab}` : '/view/finance');
     } else if (item.id === 'clients') {
       setCurrentView('clients');
       setCurrentPage(null);
@@ -1212,18 +1216,6 @@ export function KnowledgeBaseApp() {
           </div>
         )}
         {currentView === 'hr' && <HRSection initialUserId={selectedHRUserId} onProfileClosed={() => setSelectedHRUserId(null)} />}
-        {currentView === 'payroll' && isAdmin && (
-          <div className="flex-1 overflow-auto p-4 md:p-6">
-            <div className="mb-4 md:mb-6">
-              <h1 className="text-2xl md:text-3xl font-bold text-foreground">Payroll</h1>
-              <p className="text-sm md:text-base text-muted-foreground mt-1">Run and adjust monthly staff pay</p>
-            </div>
-            <StaffPayManager />
-          </div>
-        )}
-        {currentView === 'payroll' && !isAdmin && (
-          <div className="p-8 text-center text-muted-foreground">You do not have permission to view this page.</div>
-        )}
         {currentView === 'inspections' && canManageHR && <InspectionsSection />}
         {currentView === 'inspections' && !canManageHR && (
           <div className="p-8 text-center text-muted-foreground">You do not have permission to view this page.</div>
