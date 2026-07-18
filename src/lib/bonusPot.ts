@@ -26,10 +26,11 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
   if (!pots?.length) return 0;
 
   const today = new Date().toISOString().slice(0, 10);
-  const [{ data: hr }, { data: rateRows }, { data: profs }] = await Promise.all([
-    supabase.from("hr_profiles").select("user_id, performance_rating, start_date, created_at, base_salary, base_currency, employment_end_date, bonus_pot_eligible"),
+  const [{ data: hr }, { data: rateRows }, { data: profs }, { data: salaries }] = await Promise.all([
+    supabase.from("hr_profiles").select("user_id, performance_rating, start_date, created_at, employment_end_date, bonus_pot_eligible"),
     (supabase as any).from("manual_currency_rates").select("currency_code, rate_to_gbp"),
     supabase.from("profiles").select("user_id"),
+    (supabase as any).from("staff_salaries").select("user_id, base_salary, base_currency"),
   ]);
 
   const rates: Record<string, number> = { ...FALLBACK_RATES };
@@ -41,10 +42,15 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
   // Only staff who appear on the payroll (have a profiles row) — same set the
   // payroll page distributes across, so the pot never leaks to hidden staff.
   const payrollUsers = new Set(((profs as any[]) || []).map((p) => p.user_id));
+  // Salary now lives in the private staff_salaries table.
+  const salaryByUser = new Map<string, { base_salary: number | null; base_currency: string }>(
+    ((salaries as any[]) || []).map((s) => [s.user_id, { base_salary: s.base_salary, base_currency: s.base_currency }])
+  );
 
   // The pot is shared among actively-employed, salaried staff. Ineligible ranks
   // (D) and opted-out staff (bonus_pot_eligible = false) get 0 points.
   const staff = ((hr as any[]) || [])
+    .map((h) => ({ ...h, base_salary: salaryByUser.get(h.user_id)?.base_salary ?? null, base_currency: salaryByUser.get(h.user_id)?.base_currency ?? "GBP" }))
     .filter((h) => (h.base_salary ?? 0) > 0 && payrollUsers.has(h.user_id) && (!h.employment_end_date || h.employment_end_date >= today))
     .map((h) => {
       const rating = (h.performance_rating && RANK_ORDER.includes(h.performance_rating) ? h.performance_rating : null) as Rank | null;

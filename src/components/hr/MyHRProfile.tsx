@@ -368,7 +368,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     user
   } = useAuth();
   const {
-    isAdmin
+    isAdmin, canManageHR
   } = useUserRole();
   const {
     toast
@@ -445,7 +445,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   // Fetch all staff for admin dropdown
   useEffect(() => {
     const fetchAllStaff = async () => {
-      if (!isAdmin) return;
+      if (!canManageHR) return;
       const {
         data: profiles
       } = await supabase.from('profiles').select('user_id, display_name, email').order('display_name');
@@ -454,7 +454,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       }
     };
     fetchAllStaff();
-  }, [isAdmin]);
+  }, [canManageHR]);
 
   // Set initial selected user
   useEffect(() => {
@@ -465,10 +465,10 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
 
   // Deep link from elsewhere (e.g. schedule "View profile") preselects a user.
   useEffect(() => {
-    if (initialUserId && isAdmin) {
+    if (initialUserId && canManageHR) {
       setSelectedUserId(initialUserId);
     }
-  }, [initialUserId, isAdmin]);
+  }, [initialUserId, canManageHR]);
 
   // Fetch data when selected user changes
   useEffect(() => {
@@ -481,13 +481,10 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   // show how each rating/tenure combination shares a bonus pot).
   useEffect(() => {
     (async () => {
-      const todayISO = new Date().toISOString().slice(0, 10);
-      const { data } = await supabase
-        .from('hr_profiles')
-        .select('performance_rating, start_date, created_at, employment_end_date, base_salary')
-        .gt('base_salary', 0);
-      const active = (data || []).filter(h => !h.employment_end_date || h.employment_end_date >= todayISO);
-      setTeamPerf(active.map(h => ({
+      // Anonymised rating spread (no identities, no salary) — safe for everyone,
+      // since salary now lives in the private staff_salaries table.
+      const { data } = await (supabase as any).rpc('get_rating_spread');
+      setTeamPerf(((data as any[]) || []).map(h => ({
         rank: (h.performance_rating && RANK_ORDER.includes(h.performance_rating as Rank) ? h.performance_rating : null) as Rank | null,
         years: tenureYears(h.start_date || h.created_at) ?? 0,
       })));
@@ -513,7 +510,11 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       const {
         data: profile
       } = await supabase.from('hr_profiles').select('*').eq('user_id', targetUserId).maybeSingle();
-      setHRProfile(profile);
+      // Salary lives in the private staff_salaries table — RLS returns a row only
+      // for admins or the staff member themselves (HR viewing others gets nothing).
+      const { data: sal } = await (supabase as any)
+        .from('staff_salaries').select('base_salary, base_currency').eq('user_id', targetUserId).maybeSingle();
+      setHRProfile(profile ? ({ ...profile, base_salary: sal?.base_salary ?? null, base_currency: sal?.base_currency ?? 'GBP' } as any) : profile as any);
 
       // Feedback (praise + warnings) on this staff member's record.
       const { data: warnData } = await (supabase as any)
@@ -1456,7 +1457,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   // Save the admin's "how to improve your rating" note for this staff member.
   // Add a feedback entry (praise or warning) to the record + email the staff member.
   const addFeedback = async () => {
-    if (!isAdmin || !selectedUserId || !warnReason.trim()) return;
+    if (!canManageHR || !selectedUserId || !warnReason.trim()) return;
     setSavingWarning(true);
     const isPraise = fbKind === 'praise';
     const category = warnCategory === 'none' ? null : warnCategory;
@@ -1502,9 +1503,9 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     });
   };
 
-  // Remove a feedback entry (admin only).
+  // Remove a feedback entry (HR/admin).
   const deleteWarning = async (id: string) => {
-    if (!isAdmin) return;
+    if (!canManageHR) return;
     const prev = warnings;
     setWarnings(prev.filter(w => w.id !== id)); // optimistic
     const { error } = await (supabase as any).from('staff_warnings').delete().eq('id', id);
@@ -1547,10 +1548,13 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   }
   // Get selected user's display name for the header
   const selectedUserName = allStaff.find(s => s.user_id === selectedUserId)?.display_name || allStaff.find(s => s.user_id === selectedUserId)?.email || 'Staff Member';
+  // Salary is visible only to admins (any staff) and to each person on their own
+  // profile. HR sees everything here except salary.
+  const showSalary = isAdmin || selectedUserId === user?.id;
   if (!hrProfile) {
     return <div className="space-y-6">
       {/* Admin Staff Selector */}
-      {isAdmin && allStaff.length > 0 && <Card>
+      {canManageHR && allStaff.length > 0 && <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-primary/10 rounded-lg">
@@ -1578,9 +1582,9 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
           <UserCircle className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
           <h3 className="text-lg font-medium mb-2">No HR Profile Found</h3>
           <p className="text-muted-foreground">
-            {isAdmin && selectedUserId !== user?.id ? `${selectedUserName}'s HR profile has not been set up yet.` : 'Your HR profile has not been set up yet. Please contact your administrator.'}
+            {canManageHR && selectedUserId !== user?.id ? `${selectedUserName}'s HR profile has not been set up yet.` : 'Your HR profile has not been set up yet. Please contact your administrator.'}
           </p>
-          {isAdmin && selectedUserId && (
+          {canManageHR && selectedUserId && (
             <Button className="mt-4" onClick={() => setSettingsDialogOpen(true)}>
               <Settings className="h-4 w-4 mr-2" />
               Set Up Profile
@@ -1589,7 +1593,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         </CardContent>
       </Card>
 
-      {isAdmin && (
+      {canManageHR && (
         <StaffSettingsDialog
           userId={selectedUserId}
           open={settingsDialogOpen}
@@ -1602,7 +1606,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   const allowanceInfo = calculateHolidayAllowance(hrProfile.start_date);
   return <div className="space-y-6">
       {/* Admin Staff Selector */}
-      {isAdmin && allStaff.length > 0 && <Card>
+      {canManageHR && allStaff.length > 0 && <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-primary/10 rounded-lg">
@@ -1629,7 +1633,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
           </CardContent>
         </Card>}
 
-      {isAdmin && (
+      {canManageHR && (
         <StaffSettingsDialog
           userId={selectedUserId}
           open={settingsDialogOpen}
@@ -1654,6 +1658,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
           </CardContent>
         </Card>
 
+        {showSalary && (
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
@@ -1669,6 +1674,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
             </div>
           </CardContent>
         </Card>
+        )}
 
         <Card>
           <CardContent className="p-4">
@@ -1928,7 +1934,8 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   );
                 })()}
 
-                {/* 3 — How rating + tenure drive the bonus */}
+                {/* 3 — How rating + tenure drive the bonus (pay info — hidden from HR viewing others) */}
+                {showSalary && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">How this affects your bonus</p>
                   <p className="text-xs text-muted-foreground">
@@ -1962,6 +1969,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   </div>
                   )}
                 </div>
+                )}
 
                 {/* 3b — Feedback on record (positive + warnings) + Incidents */}
                 {(() => {
@@ -1990,7 +1998,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                     Feedback captures both what's going well and where expectations weren't met. It doesn't automatically change your rating, but a pattern of positive feedback supports a higher rating, while repeated or unaddressed warnings can pull it down — and your rating drives your bonus-pot share.
                   </p>
 
-                  {isAdmin && (
+                  {canManageHR && (
                     <div className="rounded-lg border bg-muted/10 p-3 space-y-2">
                       {/* Positive vs warning toggle */}
                       <div className="inline-flex rounded-lg border bg-background p-0.5">
@@ -2075,7 +2083,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                               </div>
                               <p className="text-sm mt-1 whitespace-pre-wrap break-words">{w.reason}</p>
                             </div>
-                            {isAdmin && (
+                            {canManageHR && (
                               <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-destructive" onClick={() => deleteWarning(w.id)}>
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -2742,7 +2750,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         </Accordion>}
 
       {/* 12-Month Pay Forecast Section */}
-      {monthlyPreviews.length > 0 && <Accordion type="single" collapsible className="w-full">
+      {showSalary && monthlyPreviews.length > 0 && <Accordion type="single" collapsible className="w-full">
           <AccordionItem value="pay-forecast" className="border-2 border-primary/20 rounded-lg bg-card">
             <AccordionTrigger className="px-6 py-4 hover:no-underline">
               <div className="flex items-center gap-2">
@@ -2974,8 +2982,8 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
           </AccordionItem>
         </Accordion>}
 
-      {/* Contractor / Invoicing Details Section */}
-      {selectedUserId && (
+      {/* Contractor / Invoicing Details Section (bank/pay details — salary-level access) */}
+      {showSalary && selectedUserId && (
         <Accordion type="single" collapsible className="w-full">
           <AccordionItem value="contractor-details" className="border-2 border-primary/20 rounded-lg bg-card">
             <AccordionTrigger className="px-6 py-4 hover:no-underline">

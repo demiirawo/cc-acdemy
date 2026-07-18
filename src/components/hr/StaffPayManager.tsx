@@ -439,11 +439,20 @@ export function StaffPayManager() {
       if (usersError) throw usersError;
       setUserProfiles(users || []);
 
-      const { data: hrData } = await supabase
-        .from('hr_profiles')
-        .select('user_id, base_currency, base_salary, pay_frequency');
-      
-      setHRProfiles(hrData || []);
+      const [{ data: hrData }, { data: salaryData }] = await Promise.all([
+        supabase.from('hr_profiles').select('user_id, pay_frequency'),
+        (supabase as any).from('staff_salaries').select('user_id, base_salary, base_currency'),
+      ]);
+      // Salary now lives in the private staff_salaries table (admins read all).
+      const salaryMap = new Map<string, { base_salary: number | null; base_currency: string }>(
+        ((salaryData as any[]) || []).map((s) => [s.user_id, { base_salary: s.base_salary, base_currency: s.base_currency }])
+      );
+      setHRProfiles(((hrData as any[]) || []).map((h) => ({
+        user_id: h.user_id,
+        pay_frequency: h.pay_frequency,
+        base_salary: salaryMap.get(h.user_id)?.base_salary ?? null,
+        base_currency: salaryMap.get(h.user_id)?.base_currency ?? 'GBP',
+      })));
 
       const { data: records, error: recordsError } = await supabase
         .from('staff_pay_records')

@@ -18,6 +18,7 @@ import {
 import { Shield, Infinity, Plus, X, Loader2, Coins } from "lucide-react";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { recalcAllBonusPots } from "@/lib/bonusPot";
+import { useUserRole } from "@/hooks/useUserRole";
 
 // Per-staff settings editor, shared between the Staffing Settings roster and
 // the Staff Profile view. Self-contained: give it a userId and it fetches,
@@ -62,7 +63,7 @@ const PAY_FREQUENCIES = [
 const APP_ROLES = [
   { value: 'viewer', label: 'Viewer' },
   { value: 'editor', label: 'Editor' },
-  { value: 'training_manager', label: 'Training Manager' },
+  { value: 'human_resources', label: 'Human Resources' },
   { value: 'admin', label: 'Admin' },
 ];
 
@@ -96,6 +97,7 @@ interface StaffSettingsDialogProps {
 
 export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: StaffSettingsDialogProps) {
   const { toast } = useToast();
+  const { isAdmin } = useUserRole();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [existingHRId, setExistingHRId] = useState<string | null>(null);
@@ -112,11 +114,13 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
     (async () => {
       setLoading(true);
       try {
-        const [{ data: profile }, { data: hr }, { data: assignments }, { data: clients }] = await Promise.all([
+        const [{ data: profile }, { data: hr }, { data: assignments }, { data: clients }, { data: salary }] = await Promise.all([
           supabase.from('profiles').select('user_id, display_name, email, role').eq('user_id', userId).maybeSingle(),
           supabase.from('hr_profiles').select('*').eq('user_id', userId).maybeSingle(),
           supabase.from('staff_client_assignments').select('client_name').eq('staff_user_id', userId),
           supabase.from('clients').select('id, name').order('name'),
+          // Salary lives in the private staff_salaries table (admins/own only).
+          (supabase as any).from('staff_salaries').select('base_salary, base_currency').eq('user_id', userId).maybeSingle(),
         ]);
         if (cancelled) return;
         setStaffEmail(profile?.email ?? null);
@@ -132,8 +136,8 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
           work_phone: (hr as any)?.work_phone || '',
           start_date: hr?.start_date || '',
           employment_end_date: (hr as any)?.employment_end_date || '',
-          base_currency: hr?.base_currency || 'GBP',
-          base_salary: hr?.base_salary || 0,
+          base_currency: (salary as any)?.base_currency || 'GBP',
+          base_salary: (salary as any)?.base_salary || 0,
           pay_frequency: hr?.pay_frequency || 'monthly',
           annual_holiday_allowance: hr?.annual_holiday_allowance || 28,
           unlimited_holiday: hr?.unlimited_holiday || false,
@@ -185,12 +189,15 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
     try {
       const profileUpdate: { display_name?: string; role?: string } = {};
       if (formData.display_name.trim()) profileUpdate.display_name = formData.display_name.trim();
-      if (formData.app_role) profileUpdate.role = formData.app_role;
+      // Only admins may change a person's app role (enforced by DB too).
+      if (formData.app_role && isAdmin) profileUpdate.role = formData.app_role;
       if (Object.keys(profileUpdate).length > 0) {
         const { error } = await supabase.from('profiles').update(profileUpdate).eq('user_id', userId);
         if (error) throw error;
       }
 
+      // Salary is stored separately in staff_salaries; base_salary/base_currency
+      // are no longer columns on hr_profiles.
       const profileData = {
         user_id: userId,
         employee_id: formData.employee_id || null,
@@ -199,8 +206,6 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
         department: null,
         start_date: formData.start_date || null,
         employment_end_date: formData.employment_end_date || null,
-        base_currency: formData.base_currency,
-        base_salary: formData.base_salary || null,
         pay_frequency: formData.pay_frequency || 'monthly',
         annual_holiday_allowance: formData.annual_holiday_allowance,
         unlimited_holiday: formData.unlimited_holiday,
@@ -217,6 +222,14 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
       } else {
         const { error } = await supabase.from('hr_profiles').insert(profileData as any);
         if (error) throw error;
+      }
+
+      // Salary — admins only (RLS also blocks non-admins from writing staff_salaries).
+      if (isAdmin) {
+        const { error: salErr } = await (supabase as any)
+          .from('staff_salaries')
+          .upsert({ user_id: userId, base_salary: formData.base_salary || null, base_currency: formData.base_currency, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+        if (salErr) throw salErr;
       }
 
       const { error: deleteError } = await supabase
@@ -253,7 +266,8 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
 
       // The bonus-pot eligibility flag affects pot shares — recompute any pots
       // already distributed so an opted-out staff member drops out everywhere.
-      recalcAllBonusPots().catch(() => {});
+      // Pay/pots are admin-only (HR can't read salaries to recompute).
+      if (isAdmin) recalcAllBonusPots().catch(() => {});
 
       toast({ title: "Success", description: existingHRId ? "Staff settings updated" : "Staff profile created" });
       onOpenChange(false);
@@ -519,6 +533,7 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
                 )}
               </div>
 
+              {isAdmin && (
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label>Base Salary</Label>
@@ -562,6 +577,7 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
                   </Select>
                 </div>
               </div>
+              )}
 
               <div className="space-y-2">
                 <Label>Notes</Label>

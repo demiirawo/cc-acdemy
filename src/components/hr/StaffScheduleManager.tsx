@@ -380,10 +380,11 @@ export function StaffScheduleManager() {
   const { data: hrProfiles = [] } = useQuery({
     queryKey: ["hr-profiles-for-schedule"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("hr_profiles")
+      // Salary now lives in the private staff_salaries table (admins read all).
+      const { data, error } = await (supabase as any)
+        .from("staff_salaries")
         .select("user_id, base_salary, base_currency");
-      
+
       if (error) throw error;
       return data as HRProfile[];
     }

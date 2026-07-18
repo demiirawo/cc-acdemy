@@ -43,7 +43,7 @@ const NoPermission = () => (
 );
 
 export function HRSection({ initialUserId }: HRSectionProps = {}) {
-  const { isAdmin, canManageTraining } = useUserRole();
+  const { isAdmin, canManageHR, canManageTraining } = useUserRole();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
@@ -58,11 +58,11 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
   // Deep links with a target user (e.g. schedule "View profile") land on the
   // Staff Profile tab, which preselects that user.
   useEffect(() => {
-    if (initialUserId && isAdmin) {
+    if (initialUserId && canManageHR) {
       setProfileUserId(initialUserId);
       setActiveTab("my-profile");
     }
-  }, [initialUserId, isAdmin]);
+  }, [initialUserId, canManageHR]);
 
   // React to ?tab= param changes; old payroll links now redirect to its own page.
   useEffect(() => {
@@ -104,7 +104,7 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
     // Training managers who aren't full admins keep the matrix.
     ...(canManageTraining ? [{ value: "training", label: "Training", icon: GraduationCap }] : []),
   ];
-  const tabs = isAdmin ? adminTabs : staffTabs;
+  const tabs = canManageHR ? adminTabs : staffTabs;
   const activeMeta = tabs.find(t => t.value === activeTab) ?? tabs[0];
   const ActiveIcon = activeMeta.icon;
 
@@ -117,7 +117,7 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
         <div className="mb-4 md:mb-6">
           <h1 className="text-2xl md:text-3xl font-bold text-foreground">HR Management</h1>
           <p className="text-sm md:text-base text-muted-foreground mt-1">
-            {isAdmin ? "Staff profiles, training, meetings, incidents, supervisions & recruitment" : "View your HR profile and onboarding"}
+            {canManageHR ? "Staff profiles, training, meetings, incidents, supervisions & recruitment" : "View your HR profile and onboarding"}
           </p>
         </div>
 
@@ -199,15 +199,15 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
           </TabsContent>
 
           <TabsContent value="staff-meetings" className={sectionBreakout}>
-            {isAdmin ? <StaffMeetingsSection /> : <NoPermission />}
+            {canManageHR ? <StaffMeetingsSection /> : <NoPermission />}
           </TabsContent>
 
           <TabsContent value="supervisions" className={sectionBreakout}>
-            {isAdmin ? <SupervisionsSection onViewProfile={goToProfile} /> : <NoPermission />}
+            {canManageHR ? <SupervisionsSection onViewProfile={goToProfile} /> : <NoPermission />}
           </TabsContent>
 
           <TabsContent value="recruitment" className={sectionBreakout}>
-            {isAdmin ? <RecruitmentSection /> : <NoPermission />}
+            {canManageHR ? <RecruitmentSection /> : <NoPermission />}
           </TabsContent>
         </Tabs>
       </div>

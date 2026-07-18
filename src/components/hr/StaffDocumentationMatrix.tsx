@@ -126,13 +126,21 @@ export function StaffDocumentationMatrix() {
       if (profilesError) throw profilesError;
       setUserProfiles(profilesData || []);
 
-      // Fetch all HR profiles
-      const { data: hrData, error: hrError } = await supabase
-        .from('hr_profiles')
-        .select('user_id, employee_id, job_title, start_date, base_salary, base_currency, employment_status');
+      // Fetch all HR profiles (salary comes from the private staff_salaries table).
+      const [{ data: hrData, error: hrError }, { data: salaryData }] = await Promise.all([
+        supabase.from('hr_profiles').select('user_id, employee_id, job_title, start_date, employment_status'),
+        (supabase as any).from('staff_salaries').select('user_id, base_salary, base_currency'),
+      ]);
 
       if (hrError) throw hrError;
-      setHRProfiles(hrData || []);
+      const salaryMap = new Map<string, { base_salary: number | null; base_currency: string }>(
+        ((salaryData as any[]) || []).map((s) => [s.user_id, { base_salary: s.base_salary, base_currency: s.base_currency }])
+      );
+      setHRProfiles(((hrData as any[]) || []).map((h) => ({
+        ...h,
+        base_salary: salaryMap.get(h.user_id)?.base_salary ?? null,
+        base_currency: salaryMap.get(h.user_id)?.base_currency ?? 'GBP',
+      })));
 
       // Fetch all onboarding documents
       const { data: onboardingData, error: onboardingError } = await supabase

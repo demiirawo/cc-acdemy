@@ -771,8 +771,6 @@ export type Database = {
       hr_profiles: {
         Row: {
           annual_holiday_allowance: number | null
-          base_currency: string
-          base_salary: number | null
           created_at: string
           department: string | null
           employee_id: string | null
@@ -796,8 +794,6 @@ export type Database = {
         }
         Insert: {
           annual_holiday_allowance?: number | null
-          base_currency?: string
-          base_salary?: number | null
           created_at?: string
           department?: string | null
           employee_id?: string | null
@@ -821,8 +817,6 @@ export type Database = {
         }
         Update: {
           annual_holiday_allowance?: number | null
-          base_currency?: string
-          base_salary?: number | null
           created_at?: string
           department?: string | null
           employee_id?: string | null

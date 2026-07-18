@@ -140,7 +140,7 @@ const PAY_FREQUENCIES = [
 const APP_ROLES = [
   { value: 'viewer', label: 'Viewer', description: 'Read-only access to knowledge base' },
   { value: 'editor', label: 'Editor', description: 'Can edit pages and content' },
-  { value: 'training_manager', label: 'Training Manager', description: 'Can view and update the training matrix' },
+  { value: 'human_resources', label: 'Human Resources', description: 'Can manage HR (staff profiles, training, meetings, incidents, supervisions, recruitment) — but not salaries' },
   { value: 'admin', label: 'Admin', description: 'Full administrative access' },
 ];
 
@@ -302,7 +302,7 @@ export function HRProfileManager({ initialUserId, onProfileClosed }: HRProfileMa
         .select('*');
 
       if (hrError) throw hrError;
-      setHRProfiles(hrData || []);
+      setHRProfiles((hrData || []) as any);
 
       // Fetch all client assignments
       const { data: clientData, error: clientError } = await supabase

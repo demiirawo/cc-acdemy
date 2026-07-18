@@ -495,7 +495,7 @@ export function RealKnowledgeBaseSidebar({
   const [pageToMove, setPageToMove] = useState<{ id: string; title: string } | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const { toast } = useToast();
-  const { isAdmin, isEditor, canManageTraining } = useUserRole();
+  const { isAdmin, isEditor, canManageHR, canManageTraining } = useUserRole();
 
   const toggleExpanded = (itemId: string) => {
     setExpandedItems(prev => {
@@ -943,7 +943,7 @@ export function RealKnowledgeBaseSidebar({
             .map((item) => {
             const Icon = item.icon;
             const isSelected = selectedId === item.id;
-            const kids = (isAdmin && (item as any).adminChildren) ? (item as any).adminChildren as SidebarItem[] : null;
+            const kids = (canManageHR && (item as any).adminChildren) ? (item as any).adminChildren as SidebarItem[] : null;
             return (
               <div key={item.id}>
                 <div

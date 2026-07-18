@@ -339,6 +339,8 @@ export function UserManagement() {
     switch (role) {
       case 'admin':
         return 'destructive';
+      case 'human_resources':
+        return 'default';
       case 'editor':
         return 'default';
       case 'viewer':
@@ -488,7 +490,7 @@ export function UserManagement() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant={getRoleBadgeVariant(profile.role)}>
-                        {profile.role || 'viewer'}
+                        {profile.role === 'human_resources' ? 'Human Resources' : (profile.role || 'viewer')}
                       </Badge>
                       <Dialog open={editDialogOpen && selectedProfile?.id === profile.id} onOpenChange={setEditDialogOpen}>
                         <DialogTrigger asChild>
@@ -524,6 +526,7 @@ export function UserManagement() {
                                 <SelectContent>
                                   <SelectItem value="viewer">Viewer</SelectItem>
                                   <SelectItem value="editor">Editor</SelectItem>
+                                  <SelectItem value="human_resources">Human Resources</SelectItem>
                                   <SelectItem value="admin">Admin</SelectItem>
                                 </SelectContent>
                               </Select>

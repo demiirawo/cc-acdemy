@@ -42,9 +42,11 @@ export const useUserRole = () => {
   const isAdmin = role === 'admin';
   const isEditor = role === 'editor' || role === 'admin';
   const isViewer = role === 'viewer' || role === 'editor' || role === 'admin';
-  const isTrainingManager = role === 'training_manager';
+  const isHumanResources = role === 'human_resources';
+  // HR can manage everything on the HR tab except staff salaries; admins can do everything.
+  const canManageHR = isAdmin || isHumanResources;
   // Who may view & edit the training matrix.
-  const canManageTraining = isAdmin || isTrainingManager;
+  const canManageTraining = isAdmin || isHumanResources;
 
   return {
     role,
@@ -52,7 +54,10 @@ export const useUserRole = () => {
     isAdmin,
     isEditor,
     isViewer,
-    isTrainingManager,
+    isHumanResources,
+    canManageHR,
+    // Back-compat alias (training_manager was renamed to human_resources).
+    isTrainingManager: isHumanResources,
     canManageTraining
   };
 };
