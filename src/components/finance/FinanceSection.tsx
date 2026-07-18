@@ -40,6 +40,7 @@ interface Profile { user_id: string; display_name: string | null; email: string 
 interface Assignment { staff_user_id: string; client_name: string | null; }
 interface Expense { id: string; name: string; amount_gbp: number; category: string; vat_able: boolean | null; recurring: boolean; notes: string | null; active: boolean; }
 interface Settings { vat_rate: number; corporation_tax_rate: number; monthly_growth_pct: number; projection_months: number; }
+interface PayAdjustment { user_id: string; record_type: string; amount: number; currency: string; }
 
 const monthlyFromFreq = (base: number, freq: string | null) => {
   const f = (freq || "monthly").toLowerCase();
@@ -77,10 +78,14 @@ export function FinanceSection() {
   const [rates, setRates] = useState<Record<string, number>>(FALLBACK_RATES);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [settings, setSettings] = useState<Settings>({ vat_rate: 0.2, corporation_tax_rate: 0.19, monthly_growth_pct: 0, projection_months: 6 });
+  const [payAdjustments, setPayAdjustments] = useState<PayAdjustment[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [cl, sp, hrp, pr, asg, rt, ex, st] = await Promise.all([
+    const now = new Date();
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
+    const [cl, sp, hrp, pr, asg, rt, ex, st, pr2] = await Promise.all([
       supabase.from("clients").select("id, name, mrr, software, status"),
       (supabase as any).from("staff_salaries").select("user_id, base_salary, base_currency"),
       supabase.from("hr_profiles").select("user_id, pay_frequency, employment_end_date"),
@@ -89,6 +94,11 @@ export function FinanceSection() {
       (supabase as any).from("manual_currency_rates").select("currency_code, rate_to_gbp"),
       (supabase as any).from("expenses").select("*").order("sort_order"),
       (supabase as any).from("finance_settings").select("*").maybeSingle(),
+      // This month's bonus pot / manual bonuses / overtime / deductions — the same
+      // records the Payroll tab's "Total Payroll" figure is built from, so the two
+      // stay in sync instead of Finance re-deriving base salary alone.
+      (supabase as any).from("staff_pay_records").select("user_id, record_type, amount, currency")
+        .gte("pay_period_start", monthStart).lt("pay_period_start", monthEnd),
     ]);
     setClients((cl.data as ClientRow[]) || []);
     setPay(((sp.data as StaffPay[]) || []).filter(s => (s.base_salary ?? 0) > 0));
@@ -103,6 +113,7 @@ export function FinanceSection() {
       vat_rate: Number(st.data.vat_rate), corporation_tax_rate: Number(st.data.corporation_tax_rate),
       monthly_growth_pct: Number(st.data.monthly_growth_pct), projection_months: Number(st.data.projection_months),
     });
+    setPayAdjustments((pr2.data as PayAdjustment[]) || []);
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -119,6 +130,14 @@ export function FinanceSection() {
       const monthlyNative = monthlyFromFreq(s.base_salary, hr[s.user_id]?.pay_frequency ?? "monthly");
       const rate = rates[s.base_currency] ?? 1;
       staffCostByUser[s.user_id] = monthlyNative * (rate > 0 ? rate : 1);
+    });
+    // Fold in this month's bonus pot / manual bonuses / overtime / deductions — the
+    // same records the Payroll tab totals, so the two don't drift apart.
+    payAdjustments.forEach(a => {
+      const rate = rates[a.currency] ?? 1;
+      const gbpAmount = Number(a.amount) * (rate > 0 ? rate : 1);
+      const signed = a.record_type === "deduction" ? -gbpAmount : gbpAmount;
+      staffCostByUser[a.user_id] = (staffCostByUser[a.user_id] || 0) + signed;
     });
     const payrollCost = Object.values(staffCostByUser).reduce((a, b) => a + b, 0);
 
@@ -183,7 +202,7 @@ export function FinanceSection() {
       freeCount: withMrr.filter(c => processorOf(c.software) === "freeagent").length,
       clientRows, staffRows, activeStaffCount: activeStaff.length,
     };
-  }, [clients, pay, hr, profiles, assignments, rates, expenses, settings]);
+  }, [clients, pay, hr, profiles, assignments, rates, expenses, settings, payAdjustments]);
 
   // Projection over the coming months.
   const projection = useMemo(() => {
@@ -266,7 +285,7 @@ export function FinanceSection() {
                 {model.revOther > 0 && <Line label="Revenue — other" value={model.revOther} />}
                 <Line label="Total revenue" value={model.revFree + model.revOther} strong />
                 <div className="border-t my-1.5" />
-                <Line label={`Payroll — ${model.activeStaffCount} staff (live)`} value={-model.payrollCost} />
+                <Line label={`Payroll — ${model.activeStaffCount} staff, incl. bonus pot (live)`} value={-model.payrollCost} />
                 <Line label="Business expenses" value={-model.opExpenses} />
                 <Line label="Beneficial costs (owner salary, dividends, pension…)" value={-model.beneficialExp} />
                 <Line label="Total costs" value={-model.totalCost} strong />
@@ -276,7 +295,7 @@ export function FinanceSection() {
                 <Line label={`Est. UK Corporation Tax (${pct(settings.corporation_tax_rate)} on UK profit)`} value={-model.corpTax} />
                 <Line label="Net profit after UK tax" value={model.ukProfit - model.corpTax} strong tone />
                 <p className="text-[11px] text-muted-foreground pt-2">
-                  Estimate only. This P&amp;L covers the UK company (FreeAgent) only — Zoho income is personal (Dubai account, tax-free) and shown separately above, not mixed into this table. VAT on FreeAgent invoices is collected from clients and passed to HMRC, so it isn't a cost here.
+                  Estimate only. This P&amp;L covers the UK company (FreeAgent) only — Zoho income is personal (Dubai account, tax-free) and shown separately above, not mixed into this table. VAT on FreeAgent invoices is collected from clients and passed to HMRC, so it isn't a cost here. Payroll = base salary + this month's bonus pot / manual bonuses, overtime and deductions logged on the Payroll tab; it doesn't yet include schedule-derived holiday-overtime bonuses or unused-holiday payouts, so it can run slightly under the Payroll tab's "Total Payroll" figure in months with those.
                 </p>
               </CardContent>
             </Card>
