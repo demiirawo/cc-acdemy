@@ -30,6 +30,7 @@ import { IncidentsSection } from "./incidents/IncidentsSection";
 import { StaffMeetingsSection } from "./meetings/StaffMeetingsSection";
 import { SupervisionsSection } from "./supervisions/SupervisionsSection";
 import { StaffPayManager } from "./hr/StaffPayManager";
+import { InspectionsSection } from "./inspections/InspectionsSection";
 import { SchedulePage } from "./SchedulePage";
 import { useGlossary } from "@/hooks/useGlossary";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -435,7 +436,7 @@ function PageView({
       </div>
     </div>;
 }
-type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'payroll' | 'clients' | 'schedule' | 'recruitment' | 'training' | 'incidents' | 'staff-meetings' | 'supervisions';
+type ViewMode = 'dashboard' | 'editor' | 'page' | 'tags' | 'settings' | 'whiteboard' | 'user-management' | 'chat' | 'glossary' | 'recycling-bin' | 'hr' | 'payroll' | 'inspections' | 'clients' | 'schedule' | 'recruitment' | 'training' | 'incidents' | 'staff-meetings' | 'supervisions';
 interface SidebarItem {
   id: string;
   title: string;
@@ -491,7 +492,7 @@ export function KnowledgeBaseApp() {
   const {
     toast
   } = useToast();
-  const { isAdmin, canManageTraining } = useUserRole();
+  const { isAdmin, canManageHR, canManageTraining } = useUserRole();
 
   // Handle URL parameters for email confirmation and password reset on component mount
   useEffect(() => {
@@ -555,6 +556,7 @@ export function KnowledgeBaseApp() {
         'recycling-bin': 'recycling-bin',
         'hr': 'hr',
         'payroll': 'payroll',
+        'inspections': 'inspections',
         'clients': 'clients',
         'schedule': 'schedule',
         'recruitment': 'recruitment',
@@ -693,6 +695,11 @@ export function KnowledgeBaseApp() {
       setCurrentPage(null);
       setBreadcrumbs([]);
       navigate('/view/payroll');
+    } else if (item.id === 'inspections') {
+      setCurrentView('inspections');
+      setCurrentPage(null);
+      setBreadcrumbs([]);
+      navigate('/view/inspections');
     } else if (item.id === 'clients') {
       setCurrentView('clients');
       setCurrentPage(null);
@@ -1208,6 +1215,10 @@ export function KnowledgeBaseApp() {
           </div>
         )}
         {currentView === 'payroll' && !isAdmin && (
+          <div className="p-8 text-center text-muted-foreground">You do not have permission to view this page.</div>
+        )}
+        {currentView === 'inspections' && canManageHR && <InspectionsSection />}
+        {currentView === 'inspections' && !canManageHR && (
           <div className="p-8 text-center text-muted-foreground">You do not have permission to view this page.</div>
         )}
         {currentView === 'clients' && <ClientsSection />}
