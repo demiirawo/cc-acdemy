@@ -12,6 +12,7 @@ import { IncidentsSection } from "../incidents/IncidentsSection";
 import { StaffMeetingsSection } from "../meetings/StaffMeetingsSection";
 import { SupervisionsSection } from "../supervisions/SupervisionsSection";
 import { RecruitmentSection } from "../recruitment/RecruitmentSection";
+import { InspectionsSection } from "../inspections/InspectionsSection";
 
 interface HRSectionProps {
   initialUserId?: string | null;
@@ -35,6 +36,7 @@ const TAB_ALIASES: Record<string, string> = {
   incidents: "incidents",
   supervisions: "supervisions",
   recruitment: "recruitment",
+  inspections: "inspections",
 };
 
 const NoPermission = () => (
@@ -92,6 +94,7 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
     { value: "incidents", label: "Incidents" },
     { value: "supervisions", label: "Supervisions" },
     { value: "recruitment", label: "Recruitment" },
+    { value: "inspections", label: "Inspections" },
   ];
   const staffTabs = [
     { value: "my-profile", label: "Staff Profile" },
@@ -188,6 +191,10 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
 
           <TabsContent value="recruitment" className={sectionBreakout}>
             {canManageHR ? <RecruitmentSection /> : <NoPermission />}
+          </TabsContent>
+
+          <TabsContent value="inspections" className={sectionBreakout}>
+            {canManageHR ? <InspectionsSection /> : <NoPermission />}
           </TabsContent>
         </Tabs>
       </div>
