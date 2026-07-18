@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -143,6 +143,13 @@ export function SupervisionsSection({ onViewProfile }: { onViewProfile?: (userId
   const overdue = rows.filter(r => r.meta.tone === "overdue" || r.meta.tone === "never").length;
   const soon = rows.filter(r => r.meta.tone === "soon").length;
 
+  // Group the staff by their performance rating (S → D, then Unrated).
+  const ratingKey = (uid: string): Rank | null =>
+    (hr[uid]?.performance_rating && RANK_ORDER.includes(hr[uid]!.performance_rating as Rank)) ? hr[uid]!.performance_rating as Rank : null;
+  const grouped = ([...RANK_ORDER, null] as (Rank | null)[])
+    .map(rank => ({ rank, items: rows.filter(r => ratingKey(r.staff.user_id) === rank) }))
+    .filter(g => g.items.length > 0);
+
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6">
       <div className="max-w-7xl mx-auto space-y-4">
@@ -174,27 +181,33 @@ export function SupervisionsSection({ onViewProfile }: { onViewProfile?: (userId
                 </tr>
               </thead>
               <tbody>
-                {rows.map(({ staff: s, last, meta }) => {
-                  const rating = (hr[s.user_id]?.performance_rating && RANK_ORDER.includes(hr[s.user_id]!.performance_rating as Rank)) ? hr[s.user_id]!.performance_rating as Rank : null;
-                  return (
-                    <tr
-                      key={s.user_id}
-                      onClick={() => setSelected(s.user_id)}
-                      className="border-b last:border-0 hover:bg-muted/30 cursor-pointer"
-                    >
-                      <td className="px-3 py-2 font-medium">{s.display_name || s.email}</td>
-                      <td className="px-3 py-2">
-                        {rating ? <Badge variant="outline" className="text-[10px]">{RANK_STYLES[rating].emoji} {RANK_STYLES[rating].label}</Badge> : <span className="text-muted-foreground/60">—</span>}
-                      </td>
-                      <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
-                        {last ? format(parseISO(last.supervision_date), "d MMM yyyy") : "—"}
-                      </td>
-                      <td className="px-3 py-2">
-                        <Badge variant="outline" className={cn("text-[11px]", DUE_CLS[meta.tone])}>{meta.label}</Badge>
+                {grouped.map(g => (
+                  <Fragment key={g.rank ?? "unrated"}>
+                    <tr className="bg-muted/30 border-b">
+                      <td colSpan={4} className="px-3 py-1.5 text-[11px] uppercase tracking-wide font-semibold text-muted-foreground">
+                        {g.rank ? `${RANK_STYLES[g.rank].emoji} ${RANK_STYLES[g.rank].label}` : "Unrated"} · {g.items.length}
                       </td>
                     </tr>
-                  );
-                })}
+                    {g.items.map(({ staff: s, last, meta }) => (
+                      <tr
+                        key={s.user_id}
+                        onClick={() => setSelected(s.user_id)}
+                        className="border-b last:border-0 hover:bg-muted/30 cursor-pointer"
+                      >
+                        <td className="px-3 py-2 font-medium">{s.display_name || s.email}</td>
+                        <td className="px-3 py-2">
+                          {g.rank ? <Badge variant="outline" className="text-[10px]">{RANK_STYLES[g.rank].emoji} {RANK_STYLES[g.rank].label}</Badge> : <span className="text-muted-foreground/60">—</span>}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
+                          {last ? format(parseISO(last.supervision_date), "d MMM yyyy") : "—"}
+                        </td>
+                        <td className="px-3 py-2">
+                          <Badge variant="outline" className={cn("text-[11px]", DUE_CLS[meta.tone])}>{meta.label}</Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                ))}
               </tbody>
             </table>
           </div>
