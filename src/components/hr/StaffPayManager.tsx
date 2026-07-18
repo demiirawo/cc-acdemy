@@ -2087,8 +2087,8 @@ export function StaffPayManager() {
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 md:gap-4">
         <Card>
           <CardContent className="p-4">
-            <div className="text-sm text-muted-foreground">Total Payroll (GBP)</div>
-            <div className="text-2xl font-bold">£{totalPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            <div className="text-xs text-muted-foreground">Total Payroll (GBP)</div>
+            <div className="text-2xl font-bold tabular-nums">£{totalPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
             <div className="text-xs text-muted-foreground mt-1">Converted from all currencies</div>
             <div className="mt-2 pt-2 border-t space-y-0.5 text-xs">
               <div className="flex justify-between"><span className="text-success">Paid</span><span className="font-medium">£{payrollTotalsByStatus.paid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
@@ -2132,26 +2132,26 @@ export function StaffPayManager() {
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-sm text-muted-foreground">Staff Members</div>
-            <div className="text-2xl font-bold">{payrollSummary.length}</div>
+            <div className="text-xs text-muted-foreground">Staff Members</div>
+            <div className="text-2xl font-bold tabular-nums">{payrollSummary.length}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-sm text-muted-foreground">Paid</div>
-            <div className="text-2xl font-bold text-success">{payrollSummary.filter(s => s.hasSalaryRecord).length}</div>
+            <div className="text-xs text-muted-foreground">Paid</div>
+            <div className="text-2xl font-bold tabular-nums text-success">{payrollSummary.filter(s => s.hasSalaryRecord).length}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-sm text-muted-foreground">Ready</div>
-            <div className="text-2xl font-bold text-blue-500">{readyStaffCount}</div>
+            <div className="text-xs text-muted-foreground">Ready</div>
+            <div className="text-2xl font-bold tabular-nums text-blue-500">{readyStaffCount}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
-            <div className="text-sm text-muted-foreground">Pending</div>
-            <div className="text-2xl font-bold text-warning">{pendingStaffCount}</div>
+            <div className="text-xs text-muted-foreground">Pending</div>
+            <div className="text-2xl font-bold tabular-nums text-warning">{pendingStaffCount}</div>
           </CardContent>
         </Card>
       </div>
@@ -2389,8 +2389,8 @@ export function StaffPayManager() {
 
       {/* Payroll Table — desktop only */}
       <Card className="overflow-hidden hidden md:block">
-        <CardHeader className="bg-muted/40 border-b">
-          <CardTitle className="text-lg">Staff Payroll Summary</CardTitle>
+        <CardHeader className="bg-muted/40 border-b py-3">
+          <CardTitle className="text-sm font-semibold">Staff Payroll Summary</CardTitle>
           <CardDescription>
             Monthly breakdown for {format(selectedMonth, 'MMMM yyyy')} · Rows colored by status:
             <span className="inline-flex items-center gap-1 ml-2"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-amber-200 border border-amber-400" /> Pending</span>
@@ -2401,13 +2401,13 @@ export function StaffPayManager() {
         <CardContent className="p-0">
           <Table>
             <TableHeader>
-              <TableRow className="bg-muted/60 hover:bg-muted/60">
+              <TableRow className="bg-muted/40 hover:bg-muted/40 border-b">
                 {(() => {
                   const SortableHead = ({ k, label, align = 'left' }: { k: SortKey; label: string; align?: 'left' | 'right' }) => {
                     const active = sortKey === k;
                     const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
                     return (
-                      <TableHead className={`font-semibold ${align === 'right' ? 'text-right' : ''}`}>
+                      <TableHead className={`text-[11px] uppercase tracking-wide text-muted-foreground font-medium ${align === 'right' ? 'text-right' : ''}`}>
                         <button
                           type="button"
                           onClick={() => handleSort(k)}

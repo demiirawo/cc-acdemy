@@ -50,6 +50,30 @@ interface Assignment { staff_user_id: string; client_name: string | null; }
 interface Expense { id: string; name: string; amount_gbp: number; category: string; vat_able: boolean | null; recurring: boolean; notes: string | null; active: boolean; }
 interface Settings { vat_rate: number; corporation_tax_rate: number; monthly_growth_pct: number; projection_months: number; }
 interface PayAdjustment { user_id: string; record_type: string; amount: number; currency: string; }
+interface ShiftPattern { user_id: string; client_name: string | null; days_of_week: string[] | null; start_time: string | null; end_time: string | null; recurrence_interval: string | null; is_overtime: boolean | null; }
+
+// Overtime hours are weighted heavier than regular hours when allocating cost &
+// revenue, reflecting their premium cost and the extra effort a client demands.
+const OVERTIME_WEIGHT = 1.5;
+const WEEKS_PER_MONTH = 52 / 12;      // 4.333…
+const FORTNIGHTS_PER_MONTH = 26 / 12; // 2.166…
+
+// A recurring shift pattern → the monthly "effort hours" it represents. Effort
+// hours = clock hours × occurrences-per-month × (overtime ? 1.5 : 1). This is the
+// currency we split each admin's cost and each client's revenue by.
+const patternEffortHours = (p: ShiftPattern): number => {
+  const parse = (t: string | null) => { const [h, m] = (t || "0:0").split(":").map(Number); return (h || 0) + (m || 0) / 60; };
+  let dur = parse(p.end_time) - parse(p.start_time);
+  if (dur <= 0) dur += 24; // overnight shift wraps past midnight
+  const days = Math.max(1, p.days_of_week?.length || 0);
+  const iv = (p.recurrence_interval || "weekly").toLowerCase();
+  const occ = iv === "biweekly" ? days * FORTNIGHTS_PER_MONTH
+    : iv === "daily" ? 7 * WEEKS_PER_MONTH
+    : iv === "one_off" ? days              // sporadic overtime — counts once this month
+    : days * WEEKS_PER_MONTH;              // weekly (default)
+  const hours = dur * occ;
+  return hours * (p.is_overtime ? OVERTIME_WEIGHT : 1);
+};
 
 const monthlyFromFreq = (base: number, freq: string | null) => {
   const f = (freq || "monthly").toLowerCase();
@@ -93,13 +117,14 @@ export function FinanceSection() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [settings, setSettings] = useState<Settings>({ vat_rate: 0.2, corporation_tax_rate: 0.19, monthly_growth_pct: 0, projection_months: 6 });
   const [payAdjustments, setPayAdjustments] = useState<PayAdjustment[]>([]);
+  const [patterns, setPatterns] = useState<ShiftPattern[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     const now = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
-    const [cl, sp, hrp, pr, asg, rt, ex, st, pr2] = await Promise.all([
+    const [cl, sp, hrp, pr, asg, rt, ex, st, pr2, pat] = await Promise.all([
       supabase.from("clients").select("id, name, mrr, software, status, contract_start_date"),
       (supabase as any).from("staff_salaries").select("user_id, base_salary, base_currency"),
       supabase.from("hr_profiles").select("user_id, pay_frequency, employment_end_date"),
@@ -113,6 +138,11 @@ export function FinanceSection() {
       // stay in sync instead of Finance re-deriving base salary alone.
       (supabase as any).from("staff_pay_records").select("user_id, record_type, amount, currency")
         .gte("pay_period_start", monthStart).lt("pay_period_start", monthEnd),
+      // Recurring shift patterns active this month — the schedule that tells us how each
+      // admin's time is split across clients, so cost & revenue follow the actual work.
+      (supabase as any).from("recurring_shift_patterns")
+        .select("user_id, client_name, days_of_week, start_time, end_time, recurrence_interval, is_overtime")
+        .lte("start_date", monthEnd).or(`end_date.is.null,end_date.gte.${monthStart}`),
     ]);
     setClients((cl.data as ClientRow[]) || []);
     setPay(((sp.data as StaffPay[]) || []).filter(s => (s.base_salary ?? 0) > 0));
@@ -128,6 +158,7 @@ export function FinanceSection() {
       monthly_growth_pct: Number(st.data.monthly_growth_pct), projection_months: Number(st.data.projection_months),
     });
     setPayAdjustments((pr2.data as PayAdjustment[]) || []);
+    setPatterns((pat.data as ShiftPattern[]) || []);
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -218,28 +249,61 @@ export function FinanceSection() {
       return { ...c, mrr: mrrGross, netRevenue, processor: processorOf(c.software), profit, margin: netRevenue > 0 ? profit / netRevenue : 0 };
     }).sort((a, b) => b.profit - a.profit);
 
-    // Per-staff contribution: split each client's ex-VAT revenue across its assigned staff.
-    const clientByName: Record<string, number> = {};
-    withMrr.forEach(c => { clientByName[c.name.trim().toLowerCase()] = netOf(c); });
+    // ---- Per-staff contribution, allocated by the schedule ------------------
+    // How each admin's month splits across clients, in weighted "effort hours"
+    // (overtime counts 1.5×). This is the basis for both revenue attribution and
+    // cost allocation, so both follow the work actually done — and a client shared
+    // by several admins splits proportionally to the hours each puts in.
+    const hoursStaffClient: Record<string, Record<string, number>> = {};
+    const hoursStaffTotal: Record<string, number> = {};
+    patterns.forEach(p => {
+      if (!p.user_id || !p.client_name) return;
+      const eff = patternEffortHours(p);
+      if (eff <= 0) return;
+      const key = p.client_name.trim().toLowerCase();
+      (hoursStaffClient[p.user_id] ||= {});
+      hoursStaffClient[p.user_id][key] = (hoursStaffClient[p.user_id][key] || 0) + eff;
+      hoursStaffTotal[p.user_id] = (hoursStaffTotal[p.user_id] || 0) + eff;
+    });
+
+    // Explicit assignments — the fallback split when a client has no scheduled hours.
     const staffForClient: Record<string, string[]> = {};
     assignments.forEach(a => {
       const key = (a.client_name || "").trim().toLowerCase();
       if (!key) return;
       (staffForClient[key] ||= []).push(a.staff_user_id);
     });
+
+    // Split each active client's ex-VAT revenue across its team, weighted by hours
+    // (falling back to an equal split among assigned staff when the schedule is silent).
     const revByStaff: Record<string, number> = {};
-    Object.entries(clientByName).forEach(([key, net]) => {
-      const team = staffForClient[key];
-      if (team && team.length) { const each = net / team.length; team.forEach(u => { revByStaff[u] = (revByStaff[u] || 0) + each; }); }
+    const clientTeamCount: Record<string, number> = {};   // # admins sharing each client
+    withMrr.forEach(c => {
+      const key = c.name.trim().toLowerCase();
+      const net = netOf(c);
+      const team: { u: string; w: number }[] = [];
+      Object.entries(hoursStaffClient).forEach(([u, m]) => { if ((m[key] || 0) > 0) team.push({ u, w: m[key] }); });
+      const usingSchedule = team.length > 0;
+      const roster = usingSchedule ? team : (staffForClient[key] || []).map(u => ({ u, w: 1 }));
+      clientTeamCount[key] = roster.length;
+      const totalW = roster.reduce((a, t) => a + t.w, 0);
+      if (totalW > 0) roster.forEach(t => { revByStaff[t.u] = (revByStaff[t.u] || 0) + net * (t.w / totalW); });
     });
+
+    // Which clients each staff member touches (scheduled hours ∪ explicit assignment).
+    const clientsForStaff: Record<string, Set<string>> = {};
+    Object.entries(hoursStaffClient).forEach(([u, m]) => { (clientsForStaff[u] ||= new Set()); Object.keys(m).forEach(k => clientsForStaff[u].add(k)); });
+    Object.entries(staffForClient).forEach(([key, team]) => team.forEach(u => { (clientsForStaff[u] ||= new Set()).add(key); }));
+
     const staffRows = activeStaff.map(s => {
       const cost = staffCostByUser[s.user_id] || 0;
       const attributed = revByStaff[s.user_id] || 0;
-      const clientCount = Object.entries(staffForClient).filter(([, team]) => team.includes(s.user_id)).length;
+      const hours = hoursStaffTotal[s.user_id] || 0;
+      const clientCount = clientsForStaff[s.user_id]?.size || 0;
       return {
         user_id: s.user_id,
         name: profiles[s.user_id]?.display_name || profiles[s.user_id]?.email || "Staff",
-        cost, attributed, clientCount, net: attributed - cost,
+        cost, attributed, clientCount, hours, net: attributed - cost,
       };
     }).sort((a, b) => b.net - a.net);
 
@@ -249,20 +313,9 @@ export function FinanceSection() {
       zohoCount: withMrr.filter(c => processorOf(c.software) === "zoho").length,
       freeCount: withMrr.filter(c => processorOf(c.software) === "freeagent").length,
       clientRows, staffRows, activeStaffCount: activeStaff.length,
+      scheduledStaffCount: Object.keys(hoursStaffTotal).length,
     };
-  }, [clients, pay, hr, profiles, assignments, rates, expenses, settings, payAdjustments]);
-
-  // Projection over the coming months.
-  const projection = useMemo(() => {
-    const g = settings.monthly_growth_pct / 100;
-    const fixed = model.totalCost;
-    const now = new Date();
-    return Array.from({ length: Math.max(1, settings.projection_months) }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-      const rev = model.revenue * Math.pow(1 + g, i);
-      return { label: d.toLocaleDateString(undefined, { month: "short", year: "2-digit" }), rev, cost: fixed, net: rev - fixed };
-    });
-  }, [model, settings]);
+  }, [clients, pay, hr, profiles, assignments, rates, expenses, settings, payAdjustments, patterns]);
 
   // Last 12 months of (reconstructed) revenue + next 6 months projected, for the trend chart.
   const revenueSeries = useMemo(() => {
@@ -305,7 +358,7 @@ export function FinanceSection() {
 
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6">
-      <div className={cn(activeTab === "payroll" ? "w-full" : "max-w-7xl mx-auto", "space-y-4")}>
+      <div className={cn("max-w-7xl mx-auto space-y-4")}>
         <div>
           <h1 className="text-2xl font-bold">Finance</h1>
           <p className="text-muted-foreground text-sm">Profitability, revenue by processor, per-client & per-staff contribution, expenses and projections.</p>
@@ -406,34 +459,6 @@ export function FinanceSection() {
               </CardContent>
             </Card>
 
-            {/* Projection */}
-            <Card>
-              <CardContent className="p-0">
-                <div className="px-5 pt-4 pb-2"><p className="font-semibold text-sm">Projected profitability</p></div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-y bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
-                        <th className="text-left font-medium px-4 py-2">Month</th>
-                        <th className="text-right font-medium px-4 py-2">Revenue</th>
-                        <th className="text-right font-medium px-4 py-2">Costs</th>
-                        <th className="text-right font-medium px-4 py-2">Net profit</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {projection.map((m, i) => (
-                        <tr key={i} className="border-b last:border-0">
-                          <td className="px-4 py-2">{m.label}</td>
-                          <td className="px-4 py-2 text-right tabular-nums">{gbp(m.rev)}</td>
-                          <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{gbp(m.cost)}</td>
-                          <td className={cn("px-4 py-2 text-right tabular-nums font-medium", m.net >= 0 ? "text-emerald-600" : "text-red-600")}>{gbp(m.net)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
           </TabsContent>
 
           {/* ---- Clients ---- */}
@@ -448,7 +473,8 @@ export function FinanceSection() {
                 <thead>
                   <tr className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
                     <th className="text-left font-medium px-4 py-2.5">Staff</th>
-                    <th className="text-right font-medium px-4 py-2.5 w-[90px]">Clients</th>
+                    <th className="text-right font-medium px-4 py-2.5 w-[80px]">Clients</th>
+                    <th className="text-right font-medium px-4 py-2.5 w-[100px]">Hours /mo</th>
                     <th className="text-right font-medium px-4 py-2.5 w-[140px]">Revenue attributed</th>
                     <th className="text-right font-medium px-4 py-2.5 w-[110px]">Cost /mo</th>
                     <th className="text-right font-medium px-4 py-2.5 w-[140px]">Net contribution</th>
@@ -459,6 +485,7 @@ export function FinanceSection() {
                     <tr key={s.user_id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
                       <td className="px-4 py-3 font-medium">{s.name}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{s.clientCount || "—"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{s.hours > 0 ? `${s.hours.toFixed(0)}h` : "—"}</td>
                       <td className="px-4 py-3 text-right tabular-nums">{gbp2(s.attributed)}</td>
                       <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{gbp2(s.cost)}</td>
                       <td className={cn("px-4 py-3 text-right tabular-nums font-medium", s.net >= 0 ? "text-emerald-600" : "text-red-600")}>{gbp2(s.net)}</td>
@@ -466,7 +493,9 @@ export function FinanceSection() {
                   ))}
                 </tbody>
               </table>
-              <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">Revenue (ex. VAT) is attributed by splitting each client's revenue across the staff assigned to it. Cost is each staff member's monthly pay in GBP, including this month's bonuses.</p>
+              <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
+                Hours /mo are weighted monthly shift hours from the schedule (overtime counts 1.5×). Each client's revenue (ex. VAT) is split across its admins in proportion to those hours — so a client shared by several admins is divided by how much each actually works it, not evenly. Cost is each admin's monthly pay in GBP incl. this month's bonuses; net contribution = revenue attributed − cost. Admins with no scheduled shifts fall back to an equal split of any clients they're assigned to.
+              </p>
             </div>
           </TabsContent>
 
