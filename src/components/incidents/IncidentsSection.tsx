@@ -13,6 +13,10 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
 import {
@@ -93,6 +97,18 @@ export function IncidentsSection({ onViewProfile }: { onViewProfile?: (userId: s
     if (error) {
       toast({ title: "Couldn't update", description: error.message, variant: "destructive" });
       loadIncidents();
+    }
+  };
+
+  // Delete an incident (its statements cascade). Confirmed via AlertDialog.
+  const deleteIncident = async (id: string) => {
+    setIncidents(prev => prev.filter(i => i.id !== id));
+    const { error } = await (supabase as any).from("incidents").delete().eq("id", id);
+    if (error) {
+      toast({ title: "Couldn't delete", description: error.message, variant: "destructive" });
+      loadIncidents();
+    } else {
+      toast({ title: "Incident deleted" });
     }
   };
 
@@ -327,17 +343,50 @@ export function IncidentsSection({ onViewProfile }: { onViewProfile?: (userId: s
                           >{inc.category || "—"}</span>
                         )}
                       </td>
-                      {/* Open detail */}
-                      <td className="px-2 py-2 text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                          onClick={() => setSelectedId(inc.id)}
-                          title="Open incident"
-                        >
-                          <ExternalLink className="h-4 w-4" />
-                        </Button>
+                      {/* Open detail + delete */}
+                      <td className="px-2 py-2">
+                        <div className="flex items-center justify-end gap-0.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            onClick={() => setSelectedId(inc.id)}
+                            title="Open incident"
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>
+                          {isAdmin && (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                  title="Delete incident"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete this incident?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    "{inc.title}" and all of its statements will be permanently removed. This can't be undone.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    onClick={() => deleteIncident(inc.id)}
+                                  >
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
