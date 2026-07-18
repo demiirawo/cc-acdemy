@@ -15,7 +15,8 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { ComposedChart, Area, Line as RLine, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 // GBP per 1 unit of currency (fallbacks; overridden by manual_currency_rates).
 const FALLBACK_RATES: Record<string, number> = {
@@ -33,7 +34,15 @@ const processorOf = (software: string | null): "zoho" | "freeagent" | "other" =>
   return "other";
 };
 
-interface ClientRow { id: string; name: string; mrr: number | null; software: string | null; status: string | null; }
+// Sales stage — only "active" clients count toward every revenue figure below.
+const SALES_STAGES = [
+  { value: "active", label: "Active", cls: "border-emerald-300 text-emerald-600" },
+  { value: "pending", label: "Pending", cls: "border-amber-300 text-amber-600" },
+  { value: "inactive", label: "Inactive / Churned", cls: "border-muted-foreground/30 text-muted-foreground" },
+];
+const stageMeta = (v: string | null) => SALES_STAGES.find(s => s.value === (v || "active")) ?? SALES_STAGES[0];
+
+interface ClientRow { id: string; name: string; mrr: number | null; software: string | null; status: string | null; contract_start_date: string | null; }
 interface StaffPay { user_id: string; base_salary: number; base_currency: string; }
 interface HrRow { user_id: string; pay_frequency: string | null; employment_end_date: string | null; }
 interface Profile { user_id: string; display_name: string | null; email: string | null; }
@@ -86,7 +95,7 @@ export function FinanceSection() {
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
     const [cl, sp, hrp, pr, asg, rt, ex, st, pr2] = await Promise.all([
-      supabase.from("clients").select("id, name, mrr, software, status"),
+      supabase.from("clients").select("id, name, mrr, software, status, contract_start_date"),
       (supabase as any).from("staff_salaries").select("user_id, base_salary, base_currency"),
       supabase.from("hr_profiles").select("user_id, pay_frequency, employment_end_date"),
       supabase.from("profiles").select("user_id, display_name, email"),
@@ -118,6 +127,12 @@ export function FinanceSection() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const patchClient = async (id: string, patch: Partial<ClientRow>) => {
+    setClients(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c));
+    const { error } = await (supabase as any).from("clients").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
+    if (error) { toast({ title: "Couldn't update client", description: error.message, variant: "destructive" }); load(); }
+  };
+
   // ---- Core computations -----------------------------------------------------
   const model = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -141,10 +156,18 @@ export function FinanceSection() {
     });
     const payrollCost = Object.values(staffCostByUser).reduce((a, b) => a + b, 0);
 
-    // Only currently-active clients count toward revenue (inactive = churned, no longer billing).
-    const withMrr = clients.filter(c => (c.mrr ?? 0) > 0 && (c.status ?? "active") !== "inactive");
+    // Only clients at the "Active" sales stage count toward revenue — Pending /
+    // Inactive stages are tracked but excluded from every figure below.
+    const withMrr = clients.filter(c => (c.mrr ?? 0) > 0 && (c.status ?? "active") === "active");
+    const vatDivisor = 1 + settings.vat_rate;
+    // FreeAgent MRR is what the client is invoiced — VAT-inclusive. Back the VAT out
+    // to get real revenue. Zoho is a personal Dubai account, outside the UK VAT
+    // scheme, so it needs no adjustment.
+    const netOf = (c: ClientRow) => processorOf(c.software) === "freeagent" ? Number(c.mrr) / vatDivisor : Number(c.mrr);
     const revZoho = withMrr.filter(c => processorOf(c.software) === "zoho").reduce((a, c) => a + Number(c.mrr), 0);
-    const revFree = withMrr.filter(c => processorOf(c.software) === "freeagent").reduce((a, c) => a + Number(c.mrr), 0);
+    const revFreeGross = withMrr.filter(c => processorOf(c.software) === "freeagent").reduce((a, c) => a + Number(c.mrr), 0);
+    const revFree = revFreeGross / vatDivisor; // ex-VAT — the real revenue figure
+    const revFreeVat = revFreeGross - revFree;
     const revOther = withMrr.filter(c => processorOf(c.software) === "other").reduce((a, c) => a + Number(c.mrr), 0);
     const revenue = revZoho + revFree + revOther;
 
@@ -157,22 +180,23 @@ export function FinanceSection() {
     const margin = revenue > 0 ? netProfit / revenue : 0;
 
     // UK tax estimate: Zoho is personal (Dubai, tax-free); FreeAgent is the UK company.
-    // Approximate UK taxable profit = FreeAgent revenue − all costs (conservative).
+    // revFree is already ex-VAT, so this is a clean estimate of taxable UK profit.
     const ukProfit = revFree + revOther - totalCost;
     const corpTax = Math.max(0, ukProfit) * settings.corporation_tax_rate;
     const afterTaxNet = revZoho + (ukProfit - corpTax);
 
-    // Per-client profit (cost allocated pro-rata to revenue share).
+    // Per-client profit (cost allocated pro-rata to each client's ex-VAT revenue share).
     const clientRows = withMrr.map(c => {
-      const mrr = Number(c.mrr);
-      const share = revenue > 0 ? mrr / revenue : 0;
-      const profit = mrr - share * totalCost;
-      return { ...c, mrr, processor: processorOf(c.software), profit, margin: mrr > 0 ? profit / mrr : 0 };
+      const mrrGross = Number(c.mrr);
+      const netRevenue = netOf(c);
+      const share = revenue > 0 ? netRevenue / revenue : 0;
+      const profit = netRevenue - share * totalCost;
+      return { ...c, mrr: mrrGross, netRevenue, processor: processorOf(c.software), profit, margin: netRevenue > 0 ? profit / netRevenue : 0 };
     }).sort((a, b) => b.profit - a.profit);
 
-    // Per-staff contribution: split each client's MRR across its assigned staff.
+    // Per-staff contribution: split each client's ex-VAT revenue across its assigned staff.
     const clientByName: Record<string, number> = {};
-    withMrr.forEach(c => { clientByName[c.name.trim().toLowerCase()] = Number(c.mrr); });
+    withMrr.forEach(c => { clientByName[c.name.trim().toLowerCase()] = netOf(c); });
     const staffForClient: Record<string, string[]> = {};
     assignments.forEach(a => {
       const key = (a.client_name || "").trim().toLowerCase();
@@ -180,9 +204,9 @@ export function FinanceSection() {
       (staffForClient[key] ||= []).push(a.staff_user_id);
     });
     const revByStaff: Record<string, number> = {};
-    Object.entries(clientByName).forEach(([key, mrr]) => {
+    Object.entries(clientByName).forEach(([key, net]) => {
       const team = staffForClient[key];
-      if (team && team.length) { const each = mrr / team.length; team.forEach(u => { revByStaff[u] = (revByStaff[u] || 0) + each; }); }
+      if (team && team.length) { const each = net / team.length; team.forEach(u => { revByStaff[u] = (revByStaff[u] || 0) + each; }); }
     });
     const staffRows = activeStaff.map(s => {
       const cost = staffCostByUser[s.user_id] || 0;
@@ -196,7 +220,7 @@ export function FinanceSection() {
     }).sort((a, b) => b.net - a.net);
 
     return {
-      payrollCost, revenue, revZoho, revFree, revOther, businessExp, beneficialExp, otherExp, opExpenses,
+      payrollCost, revenue, revZoho, revFree, revFreeGross, revFreeVat, revOther, businessExp, beneficialExp, otherExp, opExpenses,
       totalCost, netProfit, margin, corpTax, afterTaxNet, ukProfit,
       zohoCount: withMrr.filter(c => processorOf(c.software) === "zoho").length,
       freeCount: withMrr.filter(c => processorOf(c.software) === "freeagent").length,
@@ -215,6 +239,34 @@ export function FinanceSection() {
       return { label: d.toLocaleDateString(undefined, { month: "short", year: "2-digit" }), rev, cost: fixed, net: rev - fixed };
     });
   }, [model, settings]);
+
+  // Last 12 months of (reconstructed) revenue + next 6 months projected, for the trend chart.
+  const revenueSeries = useMemo(() => {
+    const vatDivisor = 1 + settings.vat_rate;
+    const netOf = (c: ClientRow) => processorOf(c.software) === "freeagent" ? Number(c.mrr) / vatDivisor : Number(c.mrr);
+    const activeClients = clients.filter(c => (c.mrr ?? 0) > 0 && (c.status ?? "active") === "active");
+    const now = new Date();
+    const months = Array.from({ length: 12 }, (_, idx) => {
+      const i = 11 - idx;
+      return new Date(now.getFullYear(), now.getMonth() - i, 1);
+    });
+    const actual = months.map(d => {
+      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+      const total = activeClients
+        .filter(c => !c.contract_start_date || new Date(c.contract_start_date) <= monthEnd)
+        .reduce((a, c) => a + netOf(c), 0);
+      return { label: d.toLocaleDateString(undefined, { month: "short", year: "2-digit" }), actual: total, projected: null as number | null };
+    });
+    const g = settings.monthly_growth_pct / 100;
+    const currentTotal = actual.length ? actual[actual.length - 1].actual : 0;
+    const projected = Array.from({ length: Math.max(1, settings.projection_months) }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() + i + 1, 1);
+      return { label: d.toLocaleDateString(undefined, { month: "short", year: "2-digit" }), actual: null as number | null, projected: currentTotal * Math.pow(1 + g, i + 1) };
+    });
+    // Bridge point so the projected line visually connects onto the actual line's end.
+    if (actual.length) actual[actual.length - 1] = { ...actual[actual.length - 1], projected: actual[actual.length - 1].actual };
+    return [...actual, ...projected];
+  }, [clients, settings]);
 
   const saveSetting = async (patch: Partial<Settings>) => {
     setSettings(s => ({ ...s, ...patch }));
@@ -236,7 +288,7 @@ export function FinanceSection() {
 
         {/* KPI row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Monthly revenue</p><p className="text-2xl font-bold tabular-nums">{gbp(model.revenue)}</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Monthly revenue (ex. VAT)</p><p className="text-2xl font-bold tabular-nums">{gbp(model.revenue)}</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Monthly costs</p><p className="text-2xl font-bold tabular-nums">{gbp(model.totalCost)}</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Net profit / mo</p><p className={cn("text-2xl font-bold tabular-nums", netTone)}>{gbp(model.netProfit)}</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Margin</p><p className={cn("text-2xl font-bold tabular-nums", netTone)}>{pct(model.margin)}</p></CardContent></Card>
@@ -262,7 +314,7 @@ export function FinanceSection() {
                     <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-600">{model.zohoCount} clients</Badge>
                   </div>
                   <p className="text-2xl font-bold tabular-nums">{gbp(model.revZoho)}<span className="text-sm font-normal text-muted-foreground"> /mo</span></p>
-                  <p className="text-xs text-muted-foreground">Paid into your personal Dubai account — kept in full, no UK tax.</p>
+                  <p className="text-xs text-muted-foreground">Paid into your personal Dubai account — kept in full, no UK tax, no VAT.</p>
                 </CardContent>
               </Card>
               <Card className="border-blue-300/40">
@@ -271,17 +323,33 @@ export function FinanceSection() {
                     <p className="font-semibold">FreeAgent — UK company (taxable)</p>
                     <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600">{model.freeCount} clients</Badge>
                   </div>
-                  <p className="text-2xl font-bold tabular-nums">{gbp(model.revFree)}<span className="text-sm font-normal text-muted-foreground"> /mo</span></p>
-                  <p className="text-xs text-muted-foreground">UK-invoiced — subject to VAT ({pct(settings.vat_rate)}) and Corporation Tax ({pct(settings.corporation_tax_rate)}).</p>
+                  <p className="text-2xl font-bold tabular-nums">{gbp(model.revFree)}<span className="text-sm font-normal text-muted-foreground"> /mo ex. VAT</span></p>
+                  <p className="text-xs text-muted-foreground">
+                    Clients are invoiced {gbp(model.revFreeGross)} — {gbp(model.revFreeVat)} of that is VAT ({pct(settings.vat_rate)}) collected and passed to HMRC, not revenue. Also subject to Corporation Tax ({pct(settings.corporation_tax_rate)}).
+                  </p>
                 </CardContent>
               </Card>
             </div>
 
+            {/* Revenue trend */}
+            <Card>
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="font-semibold text-sm">Revenue trend — last 12 months &amp; next 6 projected</p>
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                    <span className="inline-flex items-center gap-1.5"><span className="inline-block w-3 h-[2px] bg-primary rounded-full" /> Actual</span>
+                    <span className="inline-flex items-center gap-1.5"><span className="inline-block w-3 h-[2px] bg-primary/50 rounded-full" style={{ backgroundImage: "repeating-linear-gradient(90deg, hsl(var(--primary)) 0 3px, transparent 3px 6px)" }} /> Projected</span>
+                  </div>
+                </div>
+                <RevenueChart data={revenueSeries} />
+              </CardContent>
+            </Card>
+
             {/* Monthly P&L */}
             <Card>
               <CardContent className="p-5 space-y-1.5 text-sm">
-                <p className="font-semibold mb-1">Monthly profit &amp; loss (UK company — FreeAgent only)</p>
-                <Line label="Revenue — FreeAgent" value={model.revFree} />
+                <p className="font-semibold mb-1">Monthly profit &amp; loss (UK company — FreeAgent only, ex. VAT)</p>
+                <Line label="Revenue — FreeAgent (ex. VAT)" value={model.revFree} />
                 {model.revOther > 0 && <Line label="Revenue — other" value={model.revOther} />}
                 <Line label="Total revenue" value={model.revFree + model.revOther} strong />
                 <div className="border-t my-1.5" />
@@ -295,7 +363,7 @@ export function FinanceSection() {
                 <Line label={`Est. UK Corporation Tax (${pct(settings.corporation_tax_rate)} on UK profit)`} value={-model.corpTax} />
                 <Line label="Net profit after UK tax" value={model.ukProfit - model.corpTax} strong tone />
                 <p className="text-[11px] text-muted-foreground pt-2">
-                  Estimate only. This P&amp;L covers the UK company (FreeAgent) only — Zoho income is personal (Dubai account, tax-free) and shown separately above, not mixed into this table. VAT on FreeAgent invoices is collected from clients and passed to HMRC, so it isn't a cost here. Payroll = base salary + this month's bonus pot / manual bonuses, overtime and deductions logged on the Payroll tab; it doesn't yet include schedule-derived holiday-overtime bonuses or unused-holiday payouts, so it can run slightly under the Payroll tab's "Total Payroll" figure in months with those.
+                  Estimate only. This P&amp;L covers the UK company (FreeAgent) only — Zoho income is personal (Dubai account, tax-free) and shown separately above, not mixed into this table. FreeAgent revenue is shown ex. VAT: the 20% VAT clients are invoiced is collected on HMRC's behalf and isn't real revenue or a cost here. Payroll = base salary + this month's bonus pot / manual bonuses, overtime and deductions logged on the Payroll tab; it doesn't yet include schedule-derived holiday-overtime bonuses or unused-holiday payouts, so it can run slightly under the Payroll tab's "Total Payroll" figure in months with those. Only clients at the "Active" sales stage are counted.
                 </p>
               </CardContent>
             </Card>
@@ -345,35 +413,7 @@ export function FinanceSection() {
 
           {/* ---- Clients ---- */}
           <TabsContent value="clients" className="mt-0">
-            <div className="rounded-lg border overflow-x-auto bg-card">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <th className="text-left font-medium px-3 py-2">Client</th>
-                    <th className="text-left font-medium px-3 py-2 w-[120px]">Processor</th>
-                    <th className="text-right font-medium px-3 py-2 w-[110px]">MRR</th>
-                    <th className="text-right font-medium px-3 py-2 w-[120px]">Est. profit</th>
-                    <th className="text-right font-medium px-3 py-2 w-[90px]">Margin</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {model.clientRows.map(c => (
-                    <tr key={c.id} className="border-b last:border-0 hover:bg-muted/30">
-                      <td className="px-3 py-2 font-medium">{c.name}</td>
-                      <td className="px-3 py-2">
-                        {c.processor === "zoho" ? <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-600">Zoho</Badge>
-                          : c.processor === "freeagent" ? <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600">FreeAgent</Badge>
-                          : <Badge variant="outline" className="text-[10px]">Other</Badge>}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{gbp2(c.mrr)}</td>
-                      <td className={cn("px-3 py-2 text-right tabular-nums font-medium", c.profit >= 0 ? "text-emerald-600" : "text-red-600")}>{gbp2(c.profit)}</td>
-                      <td className={cn("px-3 py-2 text-right tabular-nums", c.margin >= 0 ? "text-muted-foreground" : "text-red-600")}>{pct(c.margin)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p className="px-3 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">Profit allocates total monthly cost (payroll + expenses) across clients in proportion to revenue.</p>
-            </div>
+            <ClientsTable rows={model.clientRows} onPatch={patchClient} />
           </TabsContent>
 
           {/* ---- Staff ---- */}
@@ -382,26 +422,26 @@ export function FinanceSection() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <th className="text-left font-medium px-3 py-2">Staff</th>
-                    <th className="text-right font-medium px-3 py-2 w-[90px]">Clients</th>
-                    <th className="text-right font-medium px-3 py-2 w-[130px]">Revenue attributed</th>
-                    <th className="text-right font-medium px-3 py-2 w-[110px]">Cost /mo</th>
-                    <th className="text-right font-medium px-3 py-2 w-[130px]">Net contribution</th>
+                    <th className="text-left font-medium px-4 py-2.5">Staff</th>
+                    <th className="text-right font-medium px-4 py-2.5 w-[90px]">Clients</th>
+                    <th className="text-right font-medium px-4 py-2.5 w-[140px]">Revenue attributed</th>
+                    <th className="text-right font-medium px-4 py-2.5 w-[110px]">Cost /mo</th>
+                    <th className="text-right font-medium px-4 py-2.5 w-[140px]">Net contribution</th>
                   </tr>
                 </thead>
                 <tbody>
                   {model.staffRows.map(s => (
-                    <tr key={s.user_id} className="border-b last:border-0 hover:bg-muted/30">
-                      <td className="px-3 py-2 font-medium">{s.name}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{s.clientCount || "—"}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{gbp2(s.attributed)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{gbp2(s.cost)}</td>
-                      <td className={cn("px-3 py-2 text-right tabular-nums font-medium", s.net >= 0 ? "text-emerald-600" : "text-red-600")}>{gbp2(s.net)}</td>
+                    <tr key={s.user_id} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
+                      <td className="px-4 py-3 font-medium">{s.name}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{s.clientCount || "—"}</td>
+                      <td className="px-4 py-3 text-right tabular-nums">{gbp2(s.attributed)}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{gbp2(s.cost)}</td>
+                      <td className={cn("px-4 py-3 text-right tabular-nums font-medium", s.net >= 0 ? "text-emerald-600" : "text-red-600")}>{gbp2(s.net)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <p className="px-3 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">Revenue is attributed by splitting each client's MRR across the staff assigned to it. Cost is each staff member's monthly pay in GBP.</p>
+              <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">Revenue (ex. VAT) is attributed by splitting each client's revenue across the staff assigned to it. Cost is each staff member's monthly pay in GBP, including this month's bonuses.</p>
             </div>
           </TabsContent>
 
@@ -417,6 +457,33 @@ export function FinanceSection() {
         </Tabs>
       </div>
     </div>
+  );
+}
+
+// ---- Revenue trend chart ----
+function RevenueChart({ data }: { data: { label: string; actual: number | null; projected: number | null }[] }) {
+  const fmt = (v: number) => v >= 1000 ? `£${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : `£${v.toFixed(0)}`;
+  return (
+    <ResponsiveContainer width="100%" height={230}>
+      <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.18} />
+            <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.6} />
+        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={{ stroke: "hsl(var(--border))" }} tickLine={false} interval={2} />
+        <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} tickFormatter={fmt} width={46} />
+        <Tooltip
+          formatter={(v: number) => gbp2(v)}
+          contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+          labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
+        />
+        <Area type="monotone" dataKey="actual" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#revFill)" connectNulls dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />
+        <RLine type="monotone" dataKey="projected" stroke="hsl(var(--primary))" strokeWidth={2} strokeDasharray="4 4" strokeOpacity={0.65} dot={false} connectNulls activeDot={{ r: 4 }} isAnimationActive={false} />
+      </ComposedChart>
+    </ResponsiveContainer>
   );
 }
 
@@ -441,12 +508,123 @@ function SettingField({ label, value, onSave, step }: { label: string; value: nu
   );
 }
 
-// ---- Expenses CRUD table ----
+// ---- Clients: Airtable-style, grouped by payment processor ----
+const PROCESSOR_META: Record<string, { label: string; cls: string; bar: string }> = {
+  zoho: { label: "ZOHO", cls: "border-emerald-300 text-emerald-600 bg-emerald-50", bar: "bg-emerald-400" },
+  freeagent: { label: "FREEAGENT", cls: "border-blue-300 text-blue-600 bg-blue-50", bar: "bg-blue-400" },
+  other: { label: "OTHER", cls: "border-muted-foreground/30 text-muted-foreground", bar: "bg-muted-foreground/40" },
+};
+type ClientTableRow = ClientRow & { mrr: number; netRevenue: number; processor: "zoho" | "freeagent" | "other"; profit: number; margin: number };
+
+function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id: string, patch: Partial<ClientRow>) => void }) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [edit, setEdit] = useState<{ id: string; field: string } | null>(null);
+
+  const groups = (["zoho", "freeagent", "other"] as const)
+    .map(key => ({ key, meta: PROCESSOR_META[key], items: rows.filter(r => r.processor === key) }))
+    .filter(g => g.items.length > 0);
+
+  return (
+    <div className="rounded-lg border overflow-hidden bg-card">
+      <table className="w-full text-sm border-collapse">
+        <thead>
+          <tr className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
+            <th className="text-left font-medium px-4 py-2.5">Client</th>
+            <th className="text-left font-medium px-4 py-2.5 w-[150px]">Sales Stage</th>
+            <th className="text-right font-medium px-4 py-2.5 w-[120px]">MRR (gross)</th>
+            <th className="text-right font-medium px-4 py-2.5 w-[130px]">Est. profit</th>
+            <th className="text-right font-medium px-4 py-2.5 w-[90px]">Margin</th>
+          </tr>
+        </thead>
+        {groups.map(g => {
+          const isCollapsed = collapsed[g.key];
+          const sum = g.items.reduce((a, c) => a + c.mrr, 0);
+          return (
+            <tbody key={g.key}>
+              <tr
+                className="cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors border-b"
+                onClick={() => setCollapsed(prev => ({ ...prev, [g.key]: !isCollapsed }))}
+              >
+                <td colSpan={5} className="px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+                    <span className={cn("h-3 w-1 rounded-full", g.meta.bar)} />
+                    <Badge variant="outline" className={cn("text-[10px] font-semibold", g.meta.cls)}>{g.meta.label}</Badge>
+                    <span className="text-xs text-muted-foreground">{g.items.length}</span>
+                    <span className="ml-auto text-xs font-semibold text-foreground">Sum {gbp2(sum)}</span>
+                  </div>
+                </td>
+              </tr>
+              {!isCollapsed && g.items.map(c => {
+                const st = stageMeta(c.status);
+                return (
+                  <tr key={c.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
+                    <td className="px-4 py-3 font-medium">
+                      <div className="flex items-center gap-2">
+                        <span className={cn("h-4 w-1 rounded-full flex-shrink-0", g.meta.bar)} />
+                        {c.name}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {edit?.id === c.id && edit.field === "status" ? (
+                        <Select
+                          defaultOpen
+                          value={c.status ?? "active"}
+                          onValueChange={v => { onPatch(c.id, { status: v }); setEdit(null); }}
+                          onOpenChange={o => { if (!o) setEdit(null); }}
+                        >
+                          <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                          <SelectContent>{SALES_STAGES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}</SelectContent>
+                        </Select>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className={cn("text-[10px] cursor-pointer", st.cls)}
+                          onClick={() => setEdit({ id: c.id, field: "status" })}
+                        >{st.label}</Badge>
+                      )}
+                    </td>
+                    <td
+                      className="px-4 py-3 text-right tabular-nums cursor-text"
+                      onDoubleClick={() => setEdit({ id: c.id, field: "mrr" })}
+                      title="Double-click to edit"
+                    >
+                      {edit?.id === c.id && edit.field === "mrr" ? (
+                        <Input
+                          autoFocus type="number" step="0.01" defaultValue={c.mrr} className="h-8 text-right"
+                          onBlur={e => { const v = parseFloat(e.target.value); onPatch(c.id, { mrr: isNaN(v) ? c.mrr : v }); setEdit(null); }}
+                          onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEdit(null); }}
+                        />
+                      ) : gbp2(c.mrr)}
+                    </td>
+                    <td className={cn("px-4 py-3 text-right tabular-nums font-medium", c.profit >= 0 ? "text-emerald-600" : "text-red-600")}>{gbp2(c.profit)}</td>
+                    <td className={cn("px-4 py-3 text-right tabular-nums", c.margin >= 0 ? "text-muted-foreground" : "text-red-600")}>{pct(c.margin)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          );
+        })}
+      </table>
+      <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
+        Only "Active" stage clients count toward revenue &amp; profit. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Double-click MRR to edit · click the stage pill to change it · click a group header to collapse it.
+      </p>
+    </div>
+  );
+}
+
+// ---- Expenses CRUD table, grouped by category ----
 const EXP_CATEGORIES = ["Business Cost", "Beneficial Cost", "Other"];
+const CATEGORY_META: Record<string, { cls: string; bar: string }> = {
+  "Business Cost": { cls: "border-blue-300 text-blue-600 bg-blue-50", bar: "bg-blue-400" },
+  "Beneficial Cost": { cls: "border-violet-300 text-violet-600 bg-violet-50", bar: "bg-violet-400" },
+  "Other": { cls: "border-muted-foreground/30 text-muted-foreground", bar: "bg-muted-foreground/40" },
+};
 function ExpensesTable({ expenses, setExpenses, reload, toast }: {
   expenses: Expense[]; setExpenses: (fn: (p: Expense[]) => Expense[]) => void; reload: () => void; toast: ReturnType<typeof useToast>["toast"];
 }) {
   const [edit, setEdit] = useState<{ id: string; field: string } | null>(null);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const patch = async (id: string, p: Partial<Expense>) => {
     setExpenses(prev => prev.map(e => e.id === id ? { ...e, ...p } : e));
@@ -465,74 +643,107 @@ function ExpensesTable({ expenses, setExpenses, reload, toast }: {
   };
 
   const total = expenses.filter(e => e.active).reduce((a, e) => a + Number(e.amount_gbp), 0);
+  const groups = EXP_CATEGORIES
+    .map(cat => ({ cat, items: expenses.filter(e => e.category === cat) }))
+    .filter(g => g.items.length > 0);
+  // Any category outside the known three still needs to render (defensive).
+  const known = new Set(EXP_CATEGORIES);
+  const extra = Array.from(new Set(expenses.filter(e => !known.has(e.category)).map(e => e.category)))
+    .map(cat => ({ cat, items: expenses.filter(e => e.category === cat) }));
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Recurring monthly costs. Payroll is computed separately from staff pay.</p>
+        <p className="text-sm text-muted-foreground">Recurring monthly costs, grouped by category. Payroll is computed separately from staff pay.</p>
         <Button size="sm" onClick={add}><Plus className="h-4 w-4 mr-1" /> Add expense</Button>
       </div>
-      <div className="rounded-lg border overflow-x-auto bg-card">
-        <table className="w-full text-sm">
+      <div className="rounded-lg border overflow-hidden bg-card">
+        <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
-              <th className="text-left font-medium px-3 py-2">Name</th>
-              <th className="text-left font-medium px-3 py-2 w-[160px]">Category</th>
-              <th className="text-right font-medium px-3 py-2 w-[130px]">Amount /mo</th>
-              <th className="text-center font-medium px-3 py-2 w-[80px]">VAT-able</th>
+              <th className="text-left font-medium px-4 py-2.5">Name</th>
+              <th className="text-left font-medium px-4 py-2.5 w-[160px]">Category</th>
+              <th className="text-right font-medium px-4 py-2.5 w-[130px]">Amount /mo</th>
+              <th className="text-center font-medium px-4 py-2.5 w-[80px]">VAT-able</th>
               <th className="w-[44px]" />
             </tr>
           </thead>
+          {[...groups, ...extra].map(g => {
+            const isCollapsed = collapsed[g.cat];
+            const meta = CATEGORY_META[g.cat] || CATEGORY_META.Other;
+            const sum = g.items.filter(e => e.active).reduce((a, e) => a + Number(e.amount_gbp), 0);
+            return (
+              <tbody key={g.cat}>
+                <tr
+                  className="cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors border-b"
+                  onClick={() => setCollapsed(prev => ({ ...prev, [g.cat]: !isCollapsed }))}
+                >
+                  <td colSpan={5} className="px-4 py-2">
+                    <div className="flex items-center gap-2">
+                      {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+                      <span className={cn("h-3 w-1 rounded-full", meta.bar)} />
+                      <Badge variant="outline" className={cn("text-[10px] font-semibold", meta.cls)}>{g.cat.toUpperCase()}</Badge>
+                      <span className="text-xs text-muted-foreground">{g.items.length}</span>
+                      <span className="ml-auto text-xs font-semibold text-foreground">Sum {gbp2(sum)}</span>
+                    </div>
+                  </td>
+                </tr>
+                {!isCollapsed && g.items.map(e => (
+                  <tr key={e.id} className={cn("border-b last:border-0 hover:bg-muted/20 transition-colors", !e.active && "opacity-50")}>
+                    <td className="px-4 py-3 font-medium cursor-text" onDoubleClick={() => setEdit({ id: e.id, field: "name" })}>
+                      <div className="flex items-center gap-2">
+                        <span className={cn("h-4 w-1 rounded-full flex-shrink-0", meta.bar)} />
+                        {edit?.id === e.id && edit.field === "name" ? (
+                          <Input autoFocus defaultValue={e.name} className="h-8"
+                            onBlur={ev => patch(e.id, { name: ev.target.value.trim() || e.name })}
+                            onKeyDown={ev => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); if (ev.key === "Escape") setEdit(null); }} />
+                        ) : e.name}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {edit?.id === e.id && edit.field === "category" ? (
+                        <Select defaultOpen value={e.category} onValueChange={v => patch(e.id, { category: v })} onOpenChange={o => { if (!o) setEdit(null); }}>
+                          <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                          <SelectContent>{EXP_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+                        </Select>
+                      ) : <span className="cursor-pointer text-muted-foreground" onClick={() => setEdit({ id: e.id, field: "category" })}>{e.category}</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right cursor-text" onDoubleClick={() => setEdit({ id: e.id, field: "amount" })}>
+                      {edit?.id === e.id && edit.field === "amount" ? (
+                        <Input autoFocus type="number" step="0.01" defaultValue={e.amount_gbp} className="h-8 text-right"
+                          onBlur={ev => patch(e.id, { amount_gbp: parseFloat(ev.target.value) || 0 })}
+                          onKeyDown={ev => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); if (ev.key === "Escape") setEdit(null); }} />
+                      ) : <span className="tabular-nums">{gbp2(Number(e.amount_gbp))}</span>}
+                    </td>
+                    <td className="px-4 py-3 text-center text-muted-foreground">{e.vat_able === true ? "Yes" : e.vat_able === false ? "No" : "—"}</td>
+                    <td className="px-2 py-3 text-right">
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader><AlertDialogTitle>Delete "{e.name}"?</AlertDialogTitle><AlertDialogDescription>This expense will be removed from the finance model.</AlertDialogDescription></AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => remove(e.id)}>Delete</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            );
+          })}
           <tbody>
-            {expenses.map(e => (
-              <tr key={e.id} className={cn("border-b last:border-0 hover:bg-muted/30", !e.active && "opacity-50")}>
-                <td className="px-3 py-2 font-medium cursor-text" onDoubleClick={() => setEdit({ id: e.id, field: "name" })}>
-                  {edit?.id === e.id && edit.field === "name" ? (
-                    <Input autoFocus defaultValue={e.name} className="h-8"
-                      onBlur={ev => patch(e.id, { name: ev.target.value.trim() || e.name })}
-                      onKeyDown={ev => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); if (ev.key === "Escape") setEdit(null); }} />
-                  ) : e.name}
-                </td>
-                <td className="px-3 py-2">
-                  {edit?.id === e.id && edit.field === "category" ? (
-                    <Select defaultOpen value={e.category} onValueChange={v => patch(e.id, { category: v })} onOpenChange={o => { if (!o) setEdit(null); }}>
-                      <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                      <SelectContent>{EXP_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                    </Select>
-                  ) : <span className="cursor-pointer text-muted-foreground" onClick={() => setEdit({ id: e.id, field: "category" })}>{e.category}</span>}
-                </td>
-                <td className="px-3 py-2 text-right cursor-text" onDoubleClick={() => setEdit({ id: e.id, field: "amount" })}>
-                  {edit?.id === e.id && edit.field === "amount" ? (
-                    <Input autoFocus type="number" step="0.01" defaultValue={e.amount_gbp} className="h-8 text-right"
-                      onBlur={ev => patch(e.id, { amount_gbp: parseFloat(ev.target.value) || 0 })}
-                      onKeyDown={ev => { if (ev.key === "Enter") (ev.target as HTMLInputElement).blur(); if (ev.key === "Escape") setEdit(null); }} />
-                  ) : <span className="tabular-nums">{gbp2(Number(e.amount_gbp))}</span>}
-                </td>
-                <td className="px-3 py-2 text-center text-muted-foreground">{e.vat_able === true ? "Yes" : e.vat_able === false ? "No" : "—"}</td>
-                <td className="px-2 py-2 text-right">
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader><AlertDialogTitle>Delete "{e.name}"?</AlertDialogTitle><AlertDialogDescription>This expense will be removed from the finance model.</AlertDialogDescription></AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => remove(e.id)}>Delete</AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </td>
-              </tr>
-            ))}
-            <tr className="bg-muted/30 font-semibold">
-              <td className="px-3 py-2" colSpan={2}>Total (excl. payroll)</td>
-              <td className="px-3 py-2 text-right tabular-nums">{gbp2(total)}</td>
+            <tr className="bg-muted/30 font-semibold border-t">
+              <td className="px-4 py-2.5" colSpan={2}>Total (excl. payroll)</td>
+              <td className="px-4 py-2.5 text-right tabular-nums">{gbp2(total)}</td>
               <td colSpan={2} />
             </tr>
           </tbody>
         </table>
-        <p className="px-3 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">Double-click name or amount to edit · click the category to change it.</p>
+        <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">Double-click name or amount to edit · click the category to change it · click a group header to collapse it.</p>
       </div>
     </div>
   );
