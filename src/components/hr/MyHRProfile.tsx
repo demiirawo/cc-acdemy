@@ -325,6 +325,26 @@ interface StaffWarning {
   severity: string;
   issued_at: string;
 }
+// An incident this staff member is a party to (via their incident_statements row).
+interface StaffIncident {
+  statementId: string;
+  statementStatus: string; // 'invited' | 'submitted'
+  statement: string | null;
+  lessons: string | null;
+  incidentId: string;
+  title: string;
+  incidentDate: string;
+  severity: string;
+  status: string;
+  category: string | null;
+  clientName: string | null;
+}
+const INCIDENT_SEVERITY: Record<string, { label: string; tone: StatusTone }> = {
+  low: { label: 'Low', tone: 'neutral' },
+  medium: { label: 'Medium', tone: 'warning' },
+  high: { label: 'High', tone: 'danger' },
+  critical: { label: 'Critical', tone: 'danger' },
+};
 
 function StatusPill({ tone, children }: { tone: StatusTone; children: React.ReactNode }) {
   return (
@@ -398,6 +418,8 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   const [warnSeverity, setWarnSeverity] = useState<string>('minor');
   const [warnReason, setWarnReason] = useState("");
   const [savingWarning, setSavingWarning] = useState(false);
+  const [staffIncidents, setStaffIncidents] = useState<StaffIncident[]>([]);
+  const [feedbackTab, setFeedbackTab] = useState<'feedback' | 'incidents'>('feedback');
 
   // Fetch all staff for admin dropdown
   useEffect(() => {
@@ -480,6 +502,29 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         .eq('user_id', targetUserId)
         .order('issued_at', { ascending: false });
       setWarnings((warnData as StaffWarning[]) || []);
+
+      // Incidents this staff member is a party to (via their incident_statements row).
+      const { data: incData } = await (supabase as any)
+        .from('incident_statements')
+        .select('id, status, statement, lessons, incident:incidents(id, title, incident_date, severity, status, category, client_name)')
+        .eq('user_id', targetUserId);
+      const mappedIncidents: StaffIncident[] = ((incData as any[]) || [])
+        .filter(r => r.incident)
+        .map(r => ({
+          statementId: r.id,
+          statementStatus: r.status,
+          statement: r.statement,
+          lessons: r.lessons,
+          incidentId: r.incident.id,
+          title: r.incident.title,
+          incidentDate: r.incident.incident_date,
+          severity: r.incident.severity,
+          status: r.incident.status,
+          category: r.incident.category,
+          clientName: r.incident.client_name,
+        }))
+        .sort((a, b) => (a.incidentDate < b.incidentDate ? 1 : -1));
+      setStaffIncidents(mappedIncidents);
 
       // Fetch holidays
       const {
@@ -1904,15 +1949,26 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   )}
                 </div>
 
-                {/* 3b — Feedback on record (positive + warnings) */}
+                {/* 3b — Feedback on record (positive + warnings) + Incidents */}
                 {(() => {
                   const praiseCount = warnings.filter(w => w.kind === 'praise').length;
                   const warnCount = warnings.filter(w => w.kind !== 'praise').length;
                   const isPraise = fbKind === 'praise';
                   return (
-                <div className="space-y-2">
+                <Tabs value={feedbackTab} onValueChange={(v) => setFeedbackTab(v as 'feedback' | 'incidents')} className="space-y-2">
+                  <TabsList className="h-8">
+                    <TabsTrigger value="feedback" className="text-xs gap-1.5">
+                      Feedback
+                      {warnings.length > 0 && <span className="rounded-full bg-muted px-1.5 text-[10px] font-semibold">{warnings.length}</span>}
+                    </TabsTrigger>
+                    <TabsTrigger value="incidents" className="text-xs gap-1.5">
+                      Incidents
+                      {staffIncidents.length > 0 && <span className="rounded-full bg-muted px-1.5 text-[10px] font-semibold">{staffIncidents.length}</span>}
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="feedback" className="space-y-2 mt-2">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-medium">Feedback</p>
                     {praiseCount > 0 && <StatusPill tone="success">{praiseCount} positive</StatusPill>}
                     {warnCount > 0 && <StatusPill tone="warning">{warnCount} warning{warnCount === 1 ? "" : "s"}</StatusPill>}
                   </div>
@@ -2015,7 +2071,53 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                       })}
                     </div>
                   )}
-                </div>
+                  </TabsContent>
+
+                  <TabsContent value="incidents" className="space-y-2 mt-2">
+                    <p className="text-xs text-muted-foreground">
+                      Incidents {isAdmin ? `${selectedUserName} is` : "you're"} involved in — pulled from the Incidents log. Open one to view or add {isAdmin ? "their" : "your"} statement.
+                    </p>
+                    {staffIncidents.length === 0 ? (
+                      <p className="text-xs text-muted-foreground italic">
+                        {isAdmin ? `${selectedUserName} isn't linked to any incidents.` : "You're not linked to any incidents."}
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {staffIncidents.map(inc => {
+                          const sev = INCIDENT_SEVERITY[inc.severity] || INCIDENT_SEVERITY.low;
+                          const submitted = inc.statementStatus === 'submitted';
+                          return (
+                            <div key={inc.statementId} className="rounded-lg border p-3">
+                              <div className="flex items-start gap-3">
+                                <AlertCircle className={cn("h-4 w-4 mt-0.5 flex-shrink-0", sev.tone === "danger" ? "text-red-500" : sev.tone === "warning" ? "text-amber-500" : "text-muted-foreground")} />
+                                <div className="min-w-0 flex-1">
+                                  <a href="/view/incidents" className="text-sm font-medium hover:underline inline-flex items-center gap-1">
+                                    {inc.title} <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                                  </a>
+                                  <div className="flex items-center gap-2 flex-wrap mt-1">
+                                    <StatusPill tone={sev.tone}>{sev.label}</StatusPill>
+                                    <span className="text-xs text-muted-foreground">{format(parseISO(inc.incidentDate), "d MMM yyyy")}</span>
+                                    {inc.clientName && <Badge variant="outline" className="text-[10px]">{inc.clientName}</Badge>}
+                                    {inc.category && <Badge variant="outline" className="text-[10px]">{inc.category}</Badge>}
+                                    {submitted
+                                      ? <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-600">Statement submitted</Badge>
+                                      : <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600">Statement pending</Badge>}
+                                  </div>
+                                  {submitted && (inc.statement || inc.lessons) && (
+                                    <div className="mt-2 space-y-1 text-sm">
+                                      {inc.statement && <p className="whitespace-pre-wrap break-words"><span className="text-xs text-muted-foreground">Statement: </span>{inc.statement}</p>}
+                                      {inc.lessons && <p className="whitespace-pre-wrap break-words"><span className="text-xs text-muted-foreground">Lessons: </span>{inc.lessons}</p>}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </TabsContent>
+                </Tabs>
                   );
                 })()}
 
