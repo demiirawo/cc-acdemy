@@ -118,6 +118,11 @@ export function FinanceSection() {
   const [settings, setSettings] = useState<Settings>({ vat_rate: 0.2, corporation_tax_rate: 0.19, monthly_growth_pct: 0, projection_months: 6 });
   const [payAdjustments, setPayAdjustments] = useState<PayAdjustment[]>([]);
   const [patterns, setPatterns] = useState<ShiftPattern[]>([]);
+  // Fully-computed per-staff monthly pay (GBP) published by the Payroll tab —
+  // includes holiday overtime, bonuses, deductions, pro-rata etc. Used as Cost /mo
+  // so Finance matches the Payroll tab exactly.
+  const [payrollFromTab, setPayrollFromTab] = useState<{ month: string; totals: Record<string, number> } | null>(null);
+  const handlePayrollSummary = useCallback((data: { month: string; totals: Record<string, number> }) => setPayrollFromTab(data), []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -195,21 +200,40 @@ export function FinanceSection() {
       const h = hr[s.user_id];
       return !h?.employment_end_date || h.employment_end_date >= today;
     });
+    // The Payroll tab's fully-computed monthly total (GBP) is the source of truth for
+    // cost — it already folds in holiday overtime, bonuses, deductions and pro-rata.
+    // Use it whenever it's available for the current month; otherwise fall back to
+    // base salary + this month's logged bonus/overtime/deduction records so the page
+    // still shows sensible numbers before the Payroll tab has finished computing.
+    const nowD = new Date();
+    const currentMonthKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, "0")}`;
+    const tabTotals = payrollFromTab && payrollFromTab.month === currentMonthKey ? payrollFromTab.totals : null;
+
     const staffCostByUser: Record<string, number> = {};
     activeStaff.forEach(s => {
+      if (tabTotals && tabTotals[s.user_id] != null) {
+        staffCostByUser[s.user_id] = tabTotals[s.user_id]; // authoritative, all-in
+        return;
+      }
       const monthlyNative = monthlyFromFreq(s.base_salary, hr[s.user_id]?.pay_frequency ?? "monthly");
       const rate = rates[s.base_currency] ?? 1;
       staffCostByUser[s.user_id] = monthlyNative * (rate > 0 ? rate : 1);
     });
-    // Fold in this month's bonus pot / manual bonuses / overtime / deductions — the
-    // same records the Payroll tab totals, so the two don't drift apart.
+    // Fallback path only: fold in this month's bonus pot / manual bonuses / overtime /
+    // deductions for staff the Payroll tab hasn't provided an all-in total for yet.
     payAdjustments.forEach(a => {
+      if (tabTotals && tabTotals[a.user_id] != null) return; // already included in the all-in total
       const rate = rates[a.currency] ?? 1;
       const gbpAmount = Number(a.amount) * (rate > 0 ? rate : 1);
       const signed = a.record_type === "deduction" ? -gbpAmount : gbpAmount;
       staffCostByUser[a.user_id] = (staffCostByUser[a.user_id] || 0) + signed;
     });
-    const payrollCost = Object.values(staffCostByUser).reduce((a, b) => a + b, 0);
+    // When the Payroll tab has published its figures, the P&L payroll line is its
+    // exact "Total Payroll" (sum of every staff member's all-in total); otherwise
+    // fall back to the per-staff figures we derived above.
+    const payrollCost = tabTotals
+      ? Object.values(tabTotals).reduce((a, b) => a + b, 0)
+      : Object.values(staffCostByUser).reduce((a, b) => a + b, 0);
 
     // Only clients at the "Active" sales stage count toward revenue — Pending /
     // Inactive stages are tracked but excluded from every figure below.
@@ -314,8 +338,9 @@ export function FinanceSection() {
       freeCount: withMrr.filter(c => processorOf(c.software) === "freeagent").length,
       clientRows, staffRows, activeStaffCount: activeStaff.length,
       scheduledStaffCount: Object.keys(hoursStaffTotal).length,
+      payrollFromTabLive: !!tabTotals,
     };
-  }, [clients, pay, hr, profiles, assignments, rates, expenses, settings, payAdjustments, patterns]);
+  }, [clients, pay, hr, profiles, assignments, rates, expenses, settings, payAdjustments, patterns, payrollFromTab]);
 
   // Last 12 months of (reconstructed) revenue + next 6 months projected, for the trend chart.
   const revenueSeries = useMemo(() => {
@@ -431,7 +456,7 @@ export function FinanceSection() {
                 {model.revOther > 0 && <Line label="Revenue — other" value={model.revOther} />}
                 <Line label="Total revenue" value={model.revFree + model.revOther} strong />
                 <div className="border-t my-1.5" />
-                <Line label={`Payroll — ${model.activeStaffCount} staff, incl. bonus pot (live)`} value={-model.payrollCost} />
+                <Line label={`Payroll — ${model.activeStaffCount} staff, full pay${model.payrollFromTabLive ? " (live from Payroll)" : ""}`} value={-model.payrollCost} />
                 <Line label="Business expenses" value={-model.opExpenses} />
                 <Line label="Beneficial costs (owner salary, dividends, pension…)" value={-model.beneficialExp} />
                 <Line label="Total costs" value={-model.totalCost} strong />
@@ -441,7 +466,7 @@ export function FinanceSection() {
                 <Line label={`Est. UK Corporation Tax (${pct(settings.corporation_tax_rate)} on UK profit)`} value={-model.corpTax} />
                 <Line label="Net profit after UK tax" value={model.ukProfit - model.corpTax} strong tone />
                 <p className="text-[11px] text-muted-foreground pt-2">
-                  Estimate only. This P&amp;L covers the UK company (FreeAgent) only — Zoho income is personal (Dubai account, tax-free) and shown separately above, not mixed into this table. FreeAgent revenue is shown ex. VAT: the 20% VAT clients are invoiced is collected on HMRC's behalf and isn't real revenue or a cost here. Payroll = base salary + this month's bonus pot / manual bonuses, overtime and deductions logged on the Payroll tab; it doesn't yet include schedule-derived holiday-overtime bonuses or unused-holiday payouts, so it can run slightly under the Payroll tab's "Total Payroll" figure in months with those. Only clients at the "Active" sales stage are counted.
+                  Estimate only. This P&amp;L covers the UK company (FreeAgent) only — Zoho income is personal (Dubai account, tax-free) and shown separately above, not mixed into this table. FreeAgent revenue is shown ex. VAT: the 20% VAT clients are invoiced is collected on HMRC's behalf and isn't real revenue or a cost here. Payroll is each staff member's full monthly pay from the Payroll tab — base salary plus bonuses, overtime, holiday-overtime bonuses, unused-holiday payouts and any deductions/pro-rata — so this line matches the Payroll tab's "Total Payroll". Only clients at the "Active" sales stage are counted.
                 </p>
               </CardContent>
             </Card>
@@ -494,14 +519,16 @@ export function FinanceSection() {
                 </tbody>
               </table>
               <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
-                Hours /mo are weighted monthly shift hours from the schedule (overtime counts 1.5×). Each client's revenue (ex. VAT) is split across its admins in proportion to those hours — so a client shared by several admins is divided by how much each actually works it, not evenly. Cost is each admin's monthly pay in GBP incl. this month's bonuses; net contribution = revenue attributed − cost. Admins with no scheduled shifts fall back to an equal split of any clients they're assigned to.
+                Hours /mo are weighted monthly shift hours from the schedule (overtime counts 1.5×). Each client's revenue (ex. VAT) is split across its admins in proportion to those hours — so a client shared by several admins is divided by how much each actually works it, not evenly. Cost /mo is each admin's full monthly pay from the Payroll tab (base salary + bonuses, overtime, holiday-overtime bonuses, unused-holiday payouts, deductions and pro-rata); net contribution = revenue attributed − cost. Admins with no scheduled shifts fall back to an equal split of any clients they're assigned to.
               </p>
             </div>
           </TabsContent>
 
           {/* ---- Payroll ---- */}
-          <TabsContent value="payroll" className="mt-0">
-            <StaffPayManager />
+          {/* forceMount keeps this computing in the background so its per-staff totals
+              (incl. holiday overtime, bonuses, deductions) feed Cost /mo on every tab. */}
+          <TabsContent value="payroll" forceMount className={cn("mt-0", activeTab !== "payroll" && "hidden")}>
+            <StaffPayManager onSummaryComputed={handlePayrollSummary} />
           </TabsContent>
 
           {/* ---- Expenses ---- */}

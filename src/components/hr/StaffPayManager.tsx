@@ -162,7 +162,12 @@ interface AdjustmentEditState {
   calculatedOvertime: number;
 }
 
-export function StaffPayManager() {
+export function StaffPayManager({ onSummaryComputed }: {
+  // Publishes each staff member's fully-computed monthly pay in GBP (incl. holiday
+  // overtime, bonuses, deductions, pro-rata etc.) so callers like Finance can use
+  // the exact same figures instead of re-deriving them.
+  onSummaryComputed?: (data: { month: string; totals: Record<string, number> }) => void;
+} = {}) {
   const [payRecords, setPayRecords] = useState<(PayRecord & { user?: UserProfile })[]>([]);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
   const [hrProfiles, setHRProfiles] = useState<HRProfile[]>([]);
@@ -1486,6 +1491,16 @@ export function StaffPayManager() {
   const totalPayroll = useMemo(() => {
     return payrollSummary.reduce((sum, s) => sum + s.totalPayInGBP, 0);
   }, [payrollSummary]);
+
+  // Publish the fully-computed per-staff GBP totals to any parent (e.g. Finance),
+  // so the P&L / per-staff cost reflect holiday overtime, bonuses, deductions and
+  // pro-rata exactly as this tab does — no re-derivation, no drift.
+  useEffect(() => {
+    if (!onSummaryComputed) return;
+    const totals: Record<string, number> = {};
+    payrollSummary.forEach(s => { totals[s.userId] = s.totalPayInGBP; });
+    onSummaryComputed({ month: format(selectedMonth, "yyyy-MM"), totals });
+  }, [payrollSummary, selectedMonth, onSummaryComputed]);
 
   const payrollTotalsByStatus = useMemo(() => {
     let paid = 0, ready = 0, pending = 0;
