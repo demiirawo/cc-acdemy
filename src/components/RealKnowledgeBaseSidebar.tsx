@@ -867,9 +867,9 @@ export function RealKnowledgeBaseSidebar({
             onClick={() => handleItemSelect({ id: 'home', title: 'Home', type: 'space' })}
             title="Go to home"
             aria-label="Go to home"
-            className="w-40 h-40 bg-[#5e18eb] rounded-lg flex items-center justify-center overflow-hidden mx-auto cursor-pointer transition-transform hover:scale-[1.02] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
+            className="w-full py-5 px-2 flex items-center justify-center cursor-pointer transition-transform hover:scale-[1.02] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 rounded-lg"
           >
-            <img src="/lovable-uploads/d434f96d-1ac3-4f74-a546-93f9f1b3c09b.png" alt="Care Cuddle Logo" className="h-32 w-32 object-contain" />
+            <img src="/images/ccacademy-logo.svg" alt="CC Academy Logo" className="w-full max-w-[210px] h-auto" />
           </button>
         </div>
         

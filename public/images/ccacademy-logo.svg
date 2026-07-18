@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 90" role="img" aria-label="CC Academy">
+  <defs>
+    <filter id="s" x="-10%" y="-20%" width="120%" height="150%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+  <text x="50%" y="66"
+        text-anchor="middle"
+        font-family="'Arial Black','Avenir Next Heavy','Helvetica Neue',Arial,sans-serif"
+        font-size="58"
+        font-style="italic"
+        font-weight="900"
+        letter-spacing="3"
+        fill="#ffffff"
+        filter="url(#s)">CCACADEMY</text>
+</svg>
