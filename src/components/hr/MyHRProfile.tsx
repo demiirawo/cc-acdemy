@@ -219,6 +219,10 @@ const CURRENCIES: Record<string, string> = {
   'ZAR': 'R',
   'NGN': '₦'
 };
+// GBP conversion fallbacks (rate = GBP per 1 unit of currency). Matches bonusPot.ts.
+const FALLBACK_GBP_RATES: Record<string, number> = {
+  GBP: 1, EUR: 0.85, USD: 0.79, INR: 0.0095, AED: 0.21, AUD: 0.52, CAD: 0.58, PHP: 0.014, ZAR: 0.044, NGN: 0.00052,
+};
 const ABSENCE_TYPES: Record<string, string> = {
   'holiday': 'Holiday',
   'sick': 'Sick Leave',
@@ -334,10 +338,14 @@ interface StaffIncident {
   incidentId: string;
   title: string;
   incidentDate: string;
+  incidentTime: string | null;
   severity: string;
   status: string;
   category: string | null;
   clientName: string | null;
+  location: string | null;
+  description: string;
+  immediateActions: string | null;
 }
 const INCIDENT_SEVERITY: Record<string, { label: string; tone: StatusTone }> = {
   low: { label: 'Low', tone: 'neutral' },
@@ -420,6 +428,21 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   const [savingWarning, setSavingWarning] = useState(false);
   const [staffIncidents, setStaffIncidents] = useState<StaffIncident[]>([]);
   const [feedbackTab, setFeedbackTab] = useState<'feedback' | 'incidents'>('feedback');
+  const [gbpRates, setGbpRates] = useState<Record<string, number>>(FALLBACK_GBP_RATES);
+
+  // Load manual currency rates once (GBP per 1 unit) for the bonus-pot conversion.
+  useEffect(() => {
+    (async () => {
+      const { data } = await (supabase as any).from('manual_currency_rates').select('currency_code, rate_to_gbp');
+      if (data?.length) {
+        setGbpRates(prev => {
+          const next = { ...prev };
+          (data as any[]).forEach(r => { if (r.rate_to_gbp) next[r.currency_code] = Number(r.rate_to_gbp); });
+          return next;
+        });
+      }
+    })();
+  }, []);
 
   // Fetch all staff for admin dropdown
   useEffect(() => {
@@ -506,7 +529,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       // Incidents this staff member is a party to (via their incident_statements row).
       const { data: incData } = await (supabase as any)
         .from('incident_statements')
-        .select('id, status, statement, lessons, incident:incidents(id, title, incident_date, severity, status, category, client_name)')
+        .select('id, status, statement, lessons, incident:incidents(id, title, incident_date, incident_time, severity, status, category, client_name, location, description, immediate_actions)')
         .eq('user_id', targetUserId);
       const mappedIncidents: StaffIncident[] = ((incData as any[]) || [])
         .filter(r => r.incident)
@@ -518,10 +541,14 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
           incidentId: r.incident.id,
           title: r.incident.title,
           incidentDate: r.incident.incident_date,
+          incidentTime: r.incident.incident_time,
           severity: r.incident.severity,
           status: r.incident.status,
           category: r.incident.category,
           clientName: r.incident.client_name,
+          location: r.incident.location,
+          description: r.incident.description,
+          immediateActions: r.incident.immediate_actions,
         }))
         .sort((a, b) => (a.incidentDate < b.incidentDate ? 1 : -1));
       setStaffIncidents(mappedIncidents);
@@ -1513,6 +1540,17 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       maximumFractionDigits: 2
     })}`;
   };
+  // A GBP amount converted into the selected staff member's own currency, formatted
+  // for display in brackets beside the £ value (empty for GBP staff).
+  const ownCurrency = hrProfile?.base_currency || 'GBP';
+  const gbpToOwn = (amountGbp: number) => {
+    const rate = gbpRates[ownCurrency] ?? 1;
+    return rate > 0 ? amountGbp / rate : amountGbp;
+  };
+  const ownBracket = (amountGbp: number) =>
+    ownCurrency && ownCurrency !== 'GBP'
+      ? ` (${formatCurrency(gbpToOwn(amountGbp), ownCurrency)})`
+      : '';
   if (loading) {
     return <div className="space-y-4">
         <Card>
@@ -1924,12 +1962,12 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                     </div>
                     <div className="flex justify-between gap-2">
                       <span className="text-muted-foreground">Bonus share based on your current rating</span>
-                      <span className="font-medium tabular-nums">{((myPoints / teamTotalPoints) * 100).toFixed(1)}% · ≈ £{myShare.toFixed(2)} of a £1,000 pot</span>
+                      <span className="font-medium tabular-nums">{((myPoints / teamTotalPoints) * 100).toFixed(1)}% · ≈ £{myShare.toFixed(2)}{ownBracket(myShare)} of a £1,000 pot</span>
                     </div>
                     {nextUp && nextShare !== null && (
                       <div className="flex justify-between gap-2 pt-1.5 border-t text-primary">
                         <span>Bonus if you were to get {nextUp} rating</span>
-                        <span className="font-medium tabular-nums">≈ £{nextShare.toFixed(2)} (+£{(nextShare - myShare).toFixed(2)} / £1,000)</span>
+                        <span className="font-medium tabular-nums">≈ £{nextShare.toFixed(2)}{ownBracket(nextShare)} (+£{(nextShare - myShare).toFixed(2)}{ownBracket(nextShare - myShare)} / £1,000)</span>
                       </div>
                     )}
                   </div>
@@ -1942,7 +1980,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                     </p>
                     {flagEligible && nextUp && nextShare !== null && (
                       <p className="text-muted-foreground">
-                        Reaching <strong className="text-foreground">{RANK_STYLES[nextUp].label}</strong> would make you eligible — worth ≈ <strong className="text-foreground">£{nextShare.toFixed(2)}</strong> of a £1,000 pot at your current tenure.
+                        Reaching <strong className="text-foreground">{RANK_STYLES[nextUp].label}</strong> would make you eligible — worth ≈ <strong className="text-foreground">£{nextShare.toFixed(2)}{ownBracket(nextShare)}</strong> of a £1,000 pot at your current tenure.
                       </p>
                     )}
                   </div>
@@ -2096,18 +2134,40 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                                   </a>
                                   <div className="flex items-center gap-2 flex-wrap mt-1">
                                     <StatusPill tone={sev.tone}>{sev.label}</StatusPill>
-                                    <span className="text-xs text-muted-foreground">{format(parseISO(inc.incidentDate), "d MMM yyyy")}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {format(parseISO(inc.incidentDate), "d MMM yyyy")}{inc.incidentTime ? ` · ${inc.incidentTime}` : ""}
+                                    </span>
                                     {inc.clientName && <Badge variant="outline" className="text-[10px]">{inc.clientName}</Badge>}
+                                    {inc.location && <Badge variant="outline" className="text-[10px]">{inc.location}</Badge>}
                                     {inc.category && <Badge variant="outline" className="text-[10px]">{inc.category}</Badge>}
+                                    <Badge variant="outline" className="text-[10px] capitalize">{inc.status.replace(/_/g, " ")}</Badge>
                                     {submitted
                                       ? <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-600">Statement submitted</Badge>
                                       : <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600">Statement pending</Badge>}
                                   </div>
-                                  {submitted && (inc.statement || inc.lessons) && (
-                                    <div className="mt-2 space-y-1 text-sm">
-                                      {inc.statement && <p className="whitespace-pre-wrap break-words"><span className="text-xs text-muted-foreground">Statement: </span>{inc.statement}</p>}
+                                  {/* Incident details (from the log) */}
+                                  <div className="mt-2 space-y-1.5 text-sm">
+                                    {inc.description && (
+                                      <p className="whitespace-pre-wrap break-words">
+                                        <span className="text-xs text-muted-foreground uppercase tracking-wide">What happened · </span>{inc.description}
+                                      </p>
+                                    )}
+                                    {inc.immediateActions && (
+                                      <p className="whitespace-pre-wrap break-words">
+                                        <span className="text-xs text-muted-foreground uppercase tracking-wide">Immediate actions · </span>{inc.immediateActions}
+                                      </p>
+                                    )}
+                                  </div>
+                                  {/* This staff member's own statement */}
+                                  {submitted && (inc.statement || inc.lessons) ? (
+                                    <div className="mt-2 pt-2 border-t space-y-1 text-sm">
+                                      {inc.statement && <p className="whitespace-pre-wrap break-words"><span className="text-xs text-muted-foreground">{isAdmin ? "Their" : "Your"} statement: </span>{inc.statement}</p>}
                                       {inc.lessons && <p className="whitespace-pre-wrap break-words"><span className="text-xs text-muted-foreground">Lessons: </span>{inc.lessons}</p>}
                                     </div>
+                                  ) : (
+                                    <p className="mt-2 pt-2 border-t text-xs text-muted-foreground italic">
+                                      {isAdmin ? `${selectedUserName} hasn't added a statement yet.` : "You haven't added your statement yet."}
+                                    </p>
                                   )}
                                 </div>
                               </div>
