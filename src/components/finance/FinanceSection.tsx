@@ -122,7 +122,8 @@ export function FinanceSection() {
     });
     const payrollCost = Object.values(staffCostByUser).reduce((a, b) => a + b, 0);
 
-    const withMrr = clients.filter(c => (c.mrr ?? 0) > 0);
+    // Only currently-active clients count toward revenue (inactive = churned, no longer billing).
+    const withMrr = clients.filter(c => (c.mrr ?? 0) > 0 && (c.status ?? "active") !== "inactive");
     const revZoho = withMrr.filter(c => processorOf(c.software) === "zoho").reduce((a, c) => a + Number(c.mrr), 0);
     const revFree = withMrr.filter(c => processorOf(c.software) === "freeagent").reduce((a, c) => a + Number(c.mrr), 0);
     const revOther = withMrr.filter(c => processorOf(c.software) === "other").reduce((a, c) => a + Number(c.mrr), 0);
