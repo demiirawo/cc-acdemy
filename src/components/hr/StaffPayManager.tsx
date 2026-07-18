@@ -16,10 +16,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { PerformanceRankBadge, RANK_ORDER, tenureYears, bonusPoints, type Rank } from "./PerformanceRankBadge";
 import { cn } from "@/lib/utils";
+import { recalcAllBonusPots, POT_DESC_TAG } from "@/lib/bonusPot";
 
 // Monthly bonus pot: each staff member's slice is proportional to
 // (1 + tenure years) × rank multiplier — see bonusPoints in PerformanceRankBadge.
-const POT_DESC_TAG = "Bonus pot";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -1461,54 +1461,9 @@ export function StaffPayManager() {
     if (!user?.id) return;
     setPotBusy(true);
     try {
-      const { data: pots } = await (supabase as any).from("monthly_bonus_pots").select("month, amount_gbp");
-      if (pots?.length) {
-        // Read ratings/eligibility fresh so a just-saved change is reflected.
-        const { data: hr } = await supabase
-          .from("hr_profiles")
-          .select("user_id, performance_rating, start_date, created_at, bonus_pot_eligible");
-        const hrById = new Map((hr || []).map((h: any) => [h.user_id, h]));
-        const staffPts = payrollSummary.map(s => {
-          const h: any = hrById.get(s.userId);
-          const rating = (h?.performance_rating ?? null) as Rank | null;
-          const rank = rating && RANK_ORDER.includes(rating) ? rating : null;
-          const years = tenureYears(h?.start_date || h?.created_at) ?? 0;
-          const flagEligible = h?.bonus_pot_eligible !== false;
-          return { userId: s.userId, currency: s.currency, rank, years, points: flagEligible ? bonusPoints(rank, years) : 0 };
-        });
-        const totalPoints = staffPts.reduce((a, s) => a + s.points, 0);
-        for (const pot of (pots as { month: string; amount_gbp: number }[])) {
-          const d = parseISO(pot.month);
-          const mStart = format(startOfMonth(d), "yyyy-MM-dd");
-          const mEnd = format(endOfMonth(d), "yyyy-MM-dd");
-          const mLabel = format(d, "MMM yyyy");
-          const amt = Number(pot.amount_gbp) || 0;
-          await supabase.from("staff_pay_records").delete()
-            .eq("record_type", "bonus").eq("pay_period_start", mStart)
-            .ilike("description", `${POT_DESC_TAG} · ${mLabel}%`);
-          if (amt > 0 && totalPoints > 0) {
-            const raw = staffPts.map(s => (amt * s.points) / totalPoints);
-            const shareGbp = raw.map(v => Math.floor(v * 100) / 100);
-            const pennies = Math.round((amt - shareGbp.reduce((a, b) => a + b, 0)) * 100);
-            raw.map((v, i) => i).sort((a, b) => raw[b] - raw[a]).forEach((idx, k) => { if (k < pennies) shareGbp[idx] += 0.01; });
-            const inserts = staffPts.map((s, i) => ({
-              user_id: s.userId,
-              record_type: "bonus" as const,
-              amount: Math.round(gbpToCurrency(shareGbp[i], s.currency) * 100) / 100,
-              currency: s.currency,
-              description: `${POT_DESC_TAG} · ${mLabel} (${s.rank ?? "unrated"} · ${s.years}y · ${s.points.toFixed(2)} pts)`,
-              pay_date: mEnd,
-              pay_period_start: mStart,
-              pay_period_end: mEnd,
-              created_by: user.id,
-            })).filter(r => r.amount > 0);
-            if (inserts.length) {
-              const { error } = await supabase.from("staff_pay_records").insert(inserts);
-              if (error) throw error;
-            }
-          }
-        }
-        toast({ title: "Bonus pots recalculated", description: `Redistributed ${pots.length} month${pots.length === 1 ? "" : "s"} by current ratings.` });
+      const months = await recalcAllBonusPots(user.id);
+      if (months > 0) {
+        toast({ title: "Bonus pots recalculated", description: `Redistributed ${months} month${months === 1 ? "" : "s"} by current ratings.` });
       }
       await fetchData();
     } catch (e: any) {

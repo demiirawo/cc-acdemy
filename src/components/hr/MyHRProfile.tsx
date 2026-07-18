@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { recalcAllBonusPots } from "@/lib/bonusPot";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1378,6 +1379,9 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         },
       }).catch(() => {});
     }
+    // A rating change alters bonus-pot eligibility/points — recompute any pots
+    // already distributed so this person's share updates everywhere.
+    recalcAllBonusPots(user?.id).catch(() => {});
   };
 
   // Save the admin's "how to improve your rating" note for this staff member.

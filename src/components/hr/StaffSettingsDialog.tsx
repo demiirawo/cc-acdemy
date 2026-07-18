@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { Shield, Infinity, Plus, X, Loader2, Coins } from "lucide-react";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
+import { recalcAllBonusPots } from "@/lib/bonusPot";
 
 // Per-staff settings editor, shared between the Staffing Settings roster and
 // the Staff Profile view. Self-contained: give it a userId and it fetches,
@@ -249,6 +250,10 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
           console.error('onboarding invite failed', e);
         }
       }
+
+      // The bonus-pot eligibility flag affects pot shares — recompute any pots
+      // already distributed so an opted-out staff member drops out everywhere.
+      recalcAllBonusPots().catch(() => {});
 
       toast({ title: "Success", description: existingHRId ? "Staff settings updated" : "Staff profile created" });
       onOpenChange(false);
