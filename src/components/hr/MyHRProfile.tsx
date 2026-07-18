@@ -1547,10 +1547,11 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     const rate = gbpRates[ownCurrency] ?? 1;
     return rate > 0 ? amountGbp / rate : amountGbp;
   };
-  const ownBracket = (amountGbp: number) =>
+  // A single bonus figure in the staff member's own currency (falls back to £).
+  const oneValue = (amountGbp: number) =>
     ownCurrency && ownCurrency !== 'GBP'
-      ? ` (${formatCurrency(gbpToOwn(amountGbp), ownCurrency)})`
-      : '';
+      ? formatCurrency(gbpToOwn(amountGbp), ownCurrency)
+      : `£${amountGbp.toFixed(2)}`;
   if (loading) {
     return <div className="space-y-4">
         <Card>
@@ -1955,19 +1956,13 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   {eligible ? (
                   <div className="rounded-lg border bg-muted/20 p-3 space-y-1.5 text-sm">
                     <div className="flex justify-between gap-2">
-                      <span className="text-muted-foreground">Your points</span>
-                      <span className="font-medium tabular-nums">
-                        (1 + {myYears}) × {myMult.toFixed(2)} {myRank ? `(${myRank})` : "(unrated)"} = <strong>{myPoints.toFixed(2)}</strong>
-                      </span>
-                    </div>
-                    <div className="flex justify-between gap-2">
                       <span className="text-muted-foreground">Bonus share based on your current rating</span>
-                      <span className="font-medium tabular-nums">{((myPoints / teamTotalPoints) * 100).toFixed(1)}% · ≈ £{myShare.toFixed(2)}{ownBracket(myShare)} of a £1,000 pot</span>
+                      <span className="font-medium tabular-nums">≈ {oneValue(myShare)}</span>
                     </div>
                     {nextUp && nextShare !== null && (
                       <div className="flex justify-between gap-2 pt-1.5 border-t text-primary">
                         <span>Bonus if you were to get {nextUp} rating</span>
-                        <span className="font-medium tabular-nums">≈ £{nextShare.toFixed(2)}{ownBracket(nextShare)} (+£{(nextShare - myShare).toFixed(2)}{ownBracket(nextShare - myShare)} / £1,000)</span>
+                        <span className="font-medium tabular-nums">≈ {oneValue(nextShare)}</span>
                       </div>
                     )}
                   </div>
@@ -1980,7 +1975,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                     </p>
                     {flagEligible && nextUp && nextShare !== null && (
                       <p className="text-muted-foreground">
-                        Reaching <strong className="text-foreground">{RANK_STYLES[nextUp].label}</strong> would make you eligible — worth ≈ <strong className="text-foreground">£{nextShare.toFixed(2)}{ownBracket(nextShare)}</strong> of a £1,000 pot at your current tenure.
+                        Reaching <strong className="text-foreground">{RANK_STYLES[nextUp].label}</strong> would make you eligible — worth ≈ <strong className="text-foreground">{oneValue(nextShare)}</strong> at your current tenure.
                       </p>
                     )}
                   </div>
