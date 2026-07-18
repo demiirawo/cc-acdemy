@@ -15,7 +15,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { Loader2, Plus, Trash2, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Plus, Trash2, ChevronDown, ChevronRight, Lock } from "lucide-react";
 import { ComposedChart, Area, Line as RLine, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 // GBP per 1 unit of currency (fallbacks; overridden by manual_currency_rates).
@@ -61,9 +61,14 @@ const monthlyFromFreq = (base: number, freq: string | null) => {
 
 const FINANCE_TABS = ["overview", "clients", "staff", "payroll", "expenses"];
 
+const FINANCE_PASSCODE = "4210";
+const FINANCE_UNLOCK_KEY = "finance-unlocked";
+
 export function FinanceSection() {
   const { isAdmin } = useUserRole();
   const { toast } = useToast();
+
+  const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem(FINANCE_UNLOCK_KEY) === "1");
 
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
@@ -292,8 +297,9 @@ export function FinanceSection() {
     await (supabase as any).from("finance_settings").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", true);
   };
 
-  if (loading) return <div className="flex-1 flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading finance…</div>;
   if (!isAdmin) return <div className="p-8 text-center text-muted-foreground">You do not have permission to view this page.</div>;
+  if (!unlocked) return <PasscodeGate onUnlock={() => { sessionStorage.setItem(FINANCE_UNLOCK_KEY, "1"); setUnlocked(true); }} />;
+  if (loading) return <div className="flex-1 flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading finance…</div>;
 
   const netTone = model.netProfit >= 0 ? "text-emerald-600" : "text-red-600";
 
@@ -475,6 +481,55 @@ export function FinanceSection() {
           </TabsContent>
         </Tabs>
       </div>
+    </div>
+  );
+}
+
+// ---- Passcode gate (admin already required; this is a second, per-session lock) ----
+function PasscodeGate({ onUnlock }: { onUnlock: () => void }) {
+  const [value, setValue] = useState("");
+  const [error, setError] = useState(false);
+
+  const submit = (code: string) => {
+    if (code === FINANCE_PASSCODE) { onUnlock(); return; }
+    setError(true);
+    setValue("");
+  };
+
+  return (
+    <div className="flex-1 flex items-center justify-center p-6">
+      <Card className="w-full max-w-sm">
+        <CardContent className="p-6 space-y-4 text-center">
+          <div className="space-y-1">
+            <div className="mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-full bg-muted">
+              <Lock className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <p className="font-semibold">Finance is locked</p>
+            <p className="text-xs text-muted-foreground">Enter the 4-digit passcode to continue.</p>
+          </div>
+          <Input
+            autoFocus
+            type="password"
+            inputMode="numeric"
+            name="finance-passcode"
+            autoComplete="one-time-code"
+            data-1p-ignore
+            data-lpignore="true"
+            maxLength={4}
+            value={value}
+            className={cn("h-12 text-center text-2xl tracking-[0.5em]", error && "border-destructive")}
+            onChange={e => {
+              const v = e.target.value.replace(/\D/g, "").slice(0, 4);
+              setValue(v);
+              setError(false);
+              if (v.length === 4) submit(v);
+            }}
+            onKeyDown={e => { if (e.key === "Enter") submit(value); }}
+          />
+          {error && <p className="text-xs text-destructive">Incorrect passcode — try again.</p>}
+          <Button className="w-full" onClick={() => submit(value)} disabled={value.length !== 4}>Unlock</Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }
