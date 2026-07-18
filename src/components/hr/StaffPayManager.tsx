@@ -424,6 +424,10 @@ export function StaffPayManager() {
         },
       }).catch(() => {});
     }
+    // A rating change alters bonus-pot eligibility/points — recompute any pots
+    // that were already distributed so this person's share updates (e.g. a new
+    // D rating drops them out and redistributes to eligible staff).
+    void resyncAllBonusPots();
   };
 
   const fetchData = async () => {
@@ -1450,6 +1454,70 @@ export function StaffPayManager() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bonusPotInput]);
 
+  // Recompute EVERY month that has a bonus pot from the current ratings, tenure
+  // and eligibility — so changing a rating (e.g. to D) drops that person out of
+  // pots that were already distributed and redistributes to eligible staff.
+  const resyncAllBonusPots = async () => {
+    if (!user?.id) return;
+    setPotBusy(true);
+    try {
+      const { data: pots } = await (supabase as any).from("monthly_bonus_pots").select("month, amount_gbp");
+      if (pots?.length) {
+        // Read ratings/eligibility fresh so a just-saved change is reflected.
+        const { data: hr } = await supabase
+          .from("hr_profiles")
+          .select("user_id, performance_rating, start_date, created_at, bonus_pot_eligible");
+        const hrById = new Map((hr || []).map((h: any) => [h.user_id, h]));
+        const staffPts = payrollSummary.map(s => {
+          const h: any = hrById.get(s.userId);
+          const rating = (h?.performance_rating ?? null) as Rank | null;
+          const rank = rating && RANK_ORDER.includes(rating) ? rating : null;
+          const years = tenureYears(h?.start_date || h?.created_at) ?? 0;
+          const flagEligible = h?.bonus_pot_eligible !== false;
+          return { userId: s.userId, currency: s.currency, rank, years, points: flagEligible ? bonusPoints(rank, years) : 0 };
+        });
+        const totalPoints = staffPts.reduce((a, s) => a + s.points, 0);
+        for (const pot of (pots as { month: string; amount_gbp: number }[])) {
+          const d = parseISO(pot.month);
+          const mStart = format(startOfMonth(d), "yyyy-MM-dd");
+          const mEnd = format(endOfMonth(d), "yyyy-MM-dd");
+          const mLabel = format(d, "MMM yyyy");
+          const amt = Number(pot.amount_gbp) || 0;
+          await supabase.from("staff_pay_records").delete()
+            .eq("record_type", "bonus").eq("pay_period_start", mStart)
+            .ilike("description", `${POT_DESC_TAG} · ${mLabel}%`);
+          if (amt > 0 && totalPoints > 0) {
+            const raw = staffPts.map(s => (amt * s.points) / totalPoints);
+            const shareGbp = raw.map(v => Math.floor(v * 100) / 100);
+            const pennies = Math.round((amt - shareGbp.reduce((a, b) => a + b, 0)) * 100);
+            raw.map((v, i) => i).sort((a, b) => raw[b] - raw[a]).forEach((idx, k) => { if (k < pennies) shareGbp[idx] += 0.01; });
+            const inserts = staffPts.map((s, i) => ({
+              user_id: s.userId,
+              record_type: "bonus" as const,
+              amount: Math.round(gbpToCurrency(shareGbp[i], s.currency) * 100) / 100,
+              currency: s.currency,
+              description: `${POT_DESC_TAG} · ${mLabel} (${s.rank ?? "unrated"} · ${s.years}y · ${s.points.toFixed(2)} pts)`,
+              pay_date: mEnd,
+              pay_period_start: mStart,
+              pay_period_end: mEnd,
+              created_by: user.id,
+            })).filter(r => r.amount > 0);
+            if (inserts.length) {
+              const { error } = await supabase.from("staff_pay_records").insert(inserts);
+              if (error) throw error;
+            }
+          }
+        }
+        toast({ title: "Bonus pots recalculated", description: `Redistributed ${pots.length} month${pots.length === 1 ? "" : "s"} by current ratings.` });
+      }
+      await fetchData();
+    } catch (e: any) {
+      toast({ title: "Could not recalculate bonus pots", description: e.message ?? String(e), variant: "destructive" });
+    } finally {
+      setPotBusy(false);
+    }
+  };
+
   // Total payroll for the month (converted to GBP)
   const totalPayroll = useMemo(() => {
     return payrollSummary.reduce((sum, s) => sum + s.totalPayInGBP, 0);
@@ -2081,9 +2149,20 @@ export function StaffPayManager() {
                   disabled={payrollSummary.length === 0}
                 />
               </label>
-              <p className="text-[10px] text-muted-foreground mt-1 leading-tight">
-                Split across all staff by tenure × rank, added to Bonuses.
-              </p>
+              <div className="flex items-center justify-between gap-2 mt-1">
+                <p className="text-[10px] text-muted-foreground leading-tight">
+                  Split across all staff by tenure × rank, added to Bonuses.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void resyncAllBonusPots()}
+                  disabled={potBusy}
+                  title="Recompute every month's pot from current ratings & eligibility"
+                  className="text-[10px] text-primary hover:underline whitespace-nowrap flex items-center gap-1 disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3 w-3 ${potBusy ? "animate-spin" : ""}`} /> Recalculate
+                </button>
+              </div>
             </div>
           </CardContent>
         </Card>
