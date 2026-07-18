@@ -416,8 +416,6 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   // Team-wide performance data (for the "how you compare" + bonus-points views).
   const [teamPerf, setTeamPerf] = useState<{ rank: Rank | null; years: number }[]>([]);
   // Admin-authored "how to improve your rating" note for the selected staff.
-  const [guidanceDraft, setGuidanceDraft] = useState("");
-  const [savingGuidance, setSavingGuidance] = useState(false);
   // Success criteria (team-wide) + feedback entries (per selected staff).
   const [criteria, setCriteria] = useState<PerformanceCriterion[]>([]);
   const [warnings, setWarnings] = useState<StaffWarning[]>([]);
@@ -516,7 +514,6 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         data: profile
       } = await supabase.from('hr_profiles').select('*').eq('user_id', targetUserId).maybeSingle();
       setHRProfile(profile);
-      setGuidanceDraft((profile as any)?.performance_guidance || "");
 
       // Feedback (praise + warnings) on this staff member's record.
       const { data: warnData } = await (supabase as any)
@@ -1457,22 +1454,6 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   };
 
   // Save the admin's "how to improve your rating" note for this staff member.
-  const saveGuidance = async () => {
-    if (!hrProfile || !isAdmin) return;
-    setSavingGuidance(true);
-    const { error } = await supabase
-      .from('hr_profiles')
-      .update({ performance_guidance: guidanceDraft.trim() || null } as any)
-      .eq('id', hrProfile.id);
-    setSavingGuidance(false);
-    if (error) {
-      toast({ title: "Couldn't save guidance", description: error.message, variant: "destructive" });
-    } else {
-      setHRProfile({ ...hrProfile, performance_guidance: guidanceDraft.trim() || null });
-      toast({ title: "Guidance saved" });
-    }
-  };
-
   // Add a feedback entry (praise or warning) to the record + email the staff member.
   const addFeedback = async () => {
     if (!isAdmin || !selectedUserId || !warnReason.trim()) return;
@@ -2175,30 +2156,6 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                 </Tabs>
                   );
                 })()}
-
-                {/* 4 — Guidance on how to improve */}
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">How to improve your rating</p>
-                  {isAdmin ? (
-                    <>
-                      <Textarea
-                        value={guidanceDraft}
-                        onChange={(e) => setGuidanceDraft(e.target.value)}
-                        placeholder={`Explain what ${selectedUserName} can do to reach the next rating…`}
-                        rows={4}
-                      />
-                      <div className="flex justify-end">
-                        <Button size="sm" onClick={saveGuidance} disabled={savingGuidance || guidanceDraft === (hrProfile.performance_guidance || "")}>
-                          {savingGuidance ? "Saving…" : "Save guidance"}
-                        </Button>
-                      </div>
-                    </>
-                  ) : hrProfile.performance_guidance ? (
-                    <div className="rounded-lg border bg-muted/20 p-3 text-sm whitespace-pre-wrap">{hrProfile.performance_guidance}</div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground italic">Your manager hasn't added guidance yet. Reach out if you'd like feedback on progressing your rating.</p>
-                  )}
-                </div>
 
               </AccordionContent>
             </AccordionItem>
