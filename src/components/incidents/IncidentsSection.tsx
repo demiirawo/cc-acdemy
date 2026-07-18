@@ -107,6 +107,7 @@ export function IncidentsSection({ onViewProfile }: { onViewProfile?: (userId: s
         isAdmin={isAdmin}
         currentUserId={user?.id ?? null}
         staff={staff}
+        clients={clients}
         onViewProfile={onViewProfile}
         onBack={() => { setSelectedId(null); loadIncidents(); }}
       />
@@ -319,14 +320,24 @@ function CreateIncidentDialog({
   );
 }
 
-// ---- Detail view ------------------------------------------------------------
+// ---- Detail view (admin: inline-editable, Airtable-style) --------------------
+function LabeledField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1 min-w-0">
+      <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">{label}</p>
+      {children}
+    </div>
+  );
+}
+
 function IncidentDetail({
-  incidentId, isAdmin, currentUserId, staff, onViewProfile, onBack,
+  incidentId, isAdmin, currentUserId, staff, clients, onViewProfile, onBack,
 }: {
   incidentId: string;
   isAdmin: boolean;
   currentUserId: string | null;
   staff: StaffProfile[];
+  clients: { id: string; name: string }[];
   onViewProfile?: (userId: string) => void;
   onBack: () => void;
 }) {
@@ -334,9 +345,12 @@ function IncidentDetail({
   const [incident, setIncident] = useState<Incident | null>(null);
   const [statements, setStatements] = useState<IncidentStatement[]>([]);
   const [loading, setLoading] = useState(true);
-  const [inviteOpen, setInviteOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  // Current user's own statement draft
+  // Inline add-participant
+  const [addUser, setAddUser] = useState("");
+  const [emailOnAdd, setEmailOnAdd] = useState(true);
+  const [addBusy, setAddBusy] = useState(false);
+  // Current user's own statement draft (staff self-service)
   const [myStatement, setMyStatement] = useState("");
   const [myLessons, setMyLessons] = useState("");
   const [savingMine, setSavingMine] = useState(false);
@@ -360,11 +374,51 @@ function IncidentDetail({
 
   const patchIncident = async (patch: Partial<Incident>) => {
     if (!incident) return;
+    const next = { ...incident, ...patch };
+    setIncident(next);
     setBusy(true);
-    setIncident({ ...incident, ...patch });
     const { error } = await (supabase as any).from("incidents").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", incident.id);
     setBusy(false);
     if (error) { toast({ title: "Couldn't update", description: error.message, variant: "destructive" }); load(); }
+  };
+
+  // Admin: save (proxy-edit) any participant's statement + lessons.
+  const saveRow = async (id: string, statement: string, lessons: string) => {
+    const hasContent = !!(statement.trim() || lessons.trim());
+    const patch = {
+      statement: statement.trim() || null,
+      lessons: lessons.trim() || null,
+      status: hasContent ? "submitted" : "invited",
+      submitted_at: hasContent ? new Date().toISOString() : null,
+    };
+    setStatements(prev => prev.map(s => s.id === id ? { ...s, ...patch } as IncidentStatement : s));
+    const { error } = await (supabase as any).from("incident_statements").update(patch).eq("id", id);
+    if (error) { toast({ title: "Couldn't save", description: error.message, variant: "destructive" }); load(); }
+    else toast({ title: "Saved" });
+  };
+
+  const addParticipant = async () => {
+    if (!addUser || !incident) return;
+    setAddBusy(true);
+    const { data, error } = await (supabase as any).from("incident_statements")
+      .insert({ incident_id: incident.id, user_id: addUser, invited_by: currentUserId, status: "invited" })
+      .select("*").single();
+    setAddBusy(false);
+    if (error) { toast({ title: "Couldn't add", description: error.message, variant: "destructive" }); return; }
+    setStatements(prev => [...prev, data as IncidentStatement]);
+    const s = staff.find(x => x.user_id === addUser);
+    if (emailOnAdd && s?.email) {
+      supabase.functions.invoke("send-incident-invite-email", {
+        body: { recipientEmail: s.email, recipientName: s.display_name, incidentTitle: incident.title, incidentDate: incident.incident_date },
+      }).catch(() => {});
+    }
+    toast({ title: emailOnAdd ? "Added & emailed" : "Added", description: emailOnAdd ? "They've been asked for a statement." : "You can fill in their response below." });
+    setAddUser("");
+  };
+
+  const deleteRow = async (id: string) => {
+    setStatements(prev => prev.filter(s => s.id !== id));
+    await (supabase as any).from("incident_statements").delete().eq("id", id);
   };
 
   const myRow = statements.find(s => s.user_id === currentUserId);
@@ -372,14 +426,12 @@ function IncidentDetail({
     if (!myRow) return;
     setSavingMine(true);
     const { error } = await (supabase as any).from("incident_statements").update({
-      statement: myStatement.trim() || null,
-      lessons: myLessons.trim() || null,
-      status: "submitted",
-      submitted_at: new Date().toISOString(),
+      statement: myStatement.trim() || null, lessons: myLessons.trim() || null,
+      status: "submitted", submitted_at: new Date().toISOString(),
     }).eq("id", myRow.id);
     setSavingMine(false);
     if (error) { toast({ title: "Couldn't submit", description: error.message, variant: "destructive" }); return; }
-    toast({ title: "Statement submitted", description: "Thank you — your manager can now see it." });
+    toast({ title: "Statement submitted" });
     load();
   };
 
@@ -397,84 +449,131 @@ function IncidentDetail({
 
   const sev = sevMeta(incident.severity);
   const st = statusMeta(incident.status);
+  const available = staff.filter(s => !statements.some(x => x.user_id === s.user_id));
 
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6">
       <div className="max-w-4xl mx-auto space-y-4">
         <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2"><ArrowLeft className="h-4 w-4 mr-1" /> All incidents</Button>
 
-        {/* Header */}
+        {/* ---- Incident record ---- */}
         <Card>
           <CardContent className="p-5 space-y-4">
-            <div className="flex items-start justify-between gap-3 flex-wrap">
-              <div className="min-w-0">
-                <h1 className="text-xl font-bold">{incident.title}</h1>
-                <div className="flex items-center gap-3 mt-1.5 text-sm text-muted-foreground flex-wrap">
-                  <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" /> {format(parseISO(incident.incident_date), "d MMM yyyy")}</span>
-                  {incident.incident_time && <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {incident.incident_time}</span>}
-                  {incident.client_name && (
-                    <a
-                      href={`/public/schedule/${encodeURIComponent(incident.client_name.trim())}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-1 text-primary hover:underline"
-                      title={`Open ${incident.client_name}'s public page`}
-                    >
-                      <Users className="h-3.5 w-3.5" /> {incident.client_name}
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  )}
-                  {incident.location && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {incident.location}</span>}
+            {isAdmin ? (
+              <>
+                <Input
+                  key={`title-${incident.id}`}
+                  defaultValue={incident.title}
+                  onBlur={e => { const v = e.target.value.trim(); if (v && v !== incident.title) patchIncident({ title: v }); }}
+                  className="text-lg font-bold h-auto py-1.5 border-transparent hover:border-input focus:border-input px-2 -mx-2"
+                  placeholder="Incident title"
+                />
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <LabeledField label="Date">
+                    <Input type="date" className="h-9" defaultValue={incident.incident_date} key={`date-${incident.id}`}
+                      onChange={e => e.target.value && patchIncident({ incident_date: e.target.value })} />
+                  </LabeledField>
+                  <LabeledField label="Time">
+                    <Input type="time" className="h-9" defaultValue={incident.incident_time || ""} key={`time-${incident.id}`}
+                      onChange={e => patchIncident({ incident_time: e.target.value || null })} />
+                  </LabeledField>
+                  <LabeledField label="Severity">
+                    <Select value={incident.severity} onValueChange={v => patchIncident({ severity: v })}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>{SEVERITIES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </LabeledField>
+                  <LabeledField label="Status">
+                    <Select value={incident.status} onValueChange={v => patchIncident({ status: v })}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>{STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </LabeledField>
+                  <LabeledField label="Category">
+                    <Select value={incident.category ?? "none"} onValueChange={v => patchIncident({ category: v === "none" ? null : v })}>
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Uncategorised</SelectItem>
+                        {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </LabeledField>
+                  <LabeledField label="Client">
+                    <Select value={incident.client_id ?? "none"} onValueChange={v => {
+                      const c = clients.find(x => x.id === v);
+                      patchIncident({ client_id: v === "none" ? null : v, client_name: c?.name ?? null });
+                    }}>
+                      <SelectTrigger className="h-9"><SelectValue placeholder="Select client" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No specific client</SelectItem>
+                        {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </LabeledField>
+                  <LabeledField label="Location">
+                    <Input className="h-9" defaultValue={incident.location || ""} key={`loc-${incident.id}`}
+                      onBlur={e => patchIncident({ location: e.target.value.trim() || null })} placeholder="Where?" />
+                  </LabeledField>
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className={cn(sev.cls)}>{sev.label}</Badge>
-                {isAdmin ? (
-                  <Select value={incident.status} onValueChange={v => patchIncident({ status: v })}>
-                    <SelectTrigger className="h-8 w-[150px]"><SelectValue /></SelectTrigger>
-                    <SelectContent>{STATUSES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}</SelectContent>
-                  </Select>
-                ) : (
-                  <Badge variant="outline" className={cn(st.cls)}>{st.label}</Badge>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">What happened</p>
-              <p className="text-sm whitespace-pre-wrap">{incident.description}</p>
-            </div>
-            {incident.category && (
-              <div><span className="text-xs text-muted-foreground">Category: </span><span className="text-sm font-medium">{incident.category}</span></div>
-            )}
-            {incident.immediate_actions && (
-              <div>
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Immediate actions taken</p>
-                <p className="text-sm whitespace-pre-wrap">{incident.immediate_actions}</p>
-              </div>
-            )}
-
-            {/* Share control (admin) */}
-            {isAdmin && (
-              <div className="flex items-center justify-between rounded-lg border bg-muted/20 p-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <Share2 className="h-4 w-4 text-primary flex-shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">Share with all staff</p>
-                    <p className="text-xs text-muted-foreground">When on, every staff member can read this incident and its statements.</p>
+                <LabeledField label="What happened">
+                  <Textarea defaultValue={incident.description} key={`desc-${incident.id}`} rows={4}
+                    onBlur={e => { const v = e.target.value.trim(); if (v && v !== incident.description) patchIncident({ description: v }); }} />
+                </LabeledField>
+                <LabeledField label="Immediate actions taken">
+                  <Textarea defaultValue={incident.immediate_actions || ""} key={`act-${incident.id}`} rows={2}
+                    onBlur={e => patchIncident({ immediate_actions: e.target.value.trim() || null })} placeholder="What was done straight away?" />
+                </LabeledField>
+                <div className="flex items-center justify-between rounded-lg border bg-muted/20 p-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Share2 className="h-4 w-4 text-primary flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium">Share with all staff</p>
+                      <p className="text-xs text-muted-foreground">When on, every staff member can read this incident and its statements.</p>
+                    </div>
+                  </div>
+                  <Switch checked={incident.shared_with_staff} onCheckedChange={c => patchIncident({ shared_with_staff: c })} disabled={busy} />
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="min-w-0">
+                    <h1 className="text-xl font-bold">{incident.title}</h1>
+                    <div className="flex items-center gap-3 mt-1.5 text-sm text-muted-foreground flex-wrap">
+                      <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" /> {format(parseISO(incident.incident_date), "d MMM yyyy")}</span>
+                      {incident.incident_time && <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {incident.incident_time}</span>}
+                      {incident.client_name && (
+                        <a href={`/public/schedule/${encodeURIComponent(incident.client_name.trim())}`} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-primary hover:underline">
+                          <Users className="h-3.5 w-3.5" /> {incident.client_name} <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                      {incident.location && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {incident.location}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className={cn(sev.cls)}>{sev.label}</Badge>
+                    <Badge variant="outline" className={cn(st.cls)}>{st.label}</Badge>
                   </div>
                 </div>
-                <Switch checked={incident.shared_with_staff} onCheckedChange={c => patchIncident({ shared_with_staff: c })} disabled={busy} />
-              </div>
-            )}
-            {!isAdmin && incident.shared_with_staff && (
-              <p className="text-xs text-primary flex items-center gap-1"><Share2 className="h-3 w-3" /> Shared with the team for awareness and lessons learned.</p>
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">What happened</p>
+                  <p className="text-sm whitespace-pre-wrap">{incident.description}</p>
+                </div>
+                {incident.category && <div><span className="text-xs text-muted-foreground">Category: </span><span className="text-sm font-medium">{incident.category}</span></div>}
+                {incident.immediate_actions && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Immediate actions taken</p>
+                    <p className="text-sm whitespace-pre-wrap">{incident.immediate_actions}</p>
+                  </div>
+                )}
+                {incident.shared_with_staff && <p className="text-xs text-primary flex items-center gap-1"><Share2 className="h-3 w-3" /> Shared with the team for awareness and lessons learned.</p>}
+              </>
             )}
           </CardContent>
         </Card>
 
-        {/* My statement (if I've been invited) */}
-        {myRow && (
+        {/* ---- Staff self-service statement (non-admin only) ---- */}
+        {!isAdmin && myRow && (
           <Card className="border-primary/30">
             <CardContent className="p-5 space-y-3">
               <div className="flex items-center gap-2">
@@ -484,7 +583,6 @@ function IncidentDetail({
                   ? <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-600">Submitted</Badge>
                   : <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600">Awaiting your response</Badge>}
               </div>
-              <p className="text-xs text-muted-foreground">You've been asked to give an account of this incident and any lessons learned. You can update it at any time.</p>
               <div className="space-y-1.5">
                 <Label>Your account of what happened</Label>
                 <Textarea value={myStatement} onChange={e => setMyStatement(e.target.value)} rows={4} placeholder="Describe what you saw / did…" />
@@ -502,70 +600,68 @@ function IncidentDetail({
           </Card>
         )}
 
-        {/* Statements register */}
+        {/* ---- Involved parties ---- */}
         <Card>
           <CardContent className="p-5 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-muted-foreground" />
-                <p className="font-semibold">Statements &amp; lessons</p>
-                <Badge variant="outline" className="text-[10px]">{statements.filter(s => s.status === "submitted").length}/{statements.length}</Badge>
-              </div>
-              {isAdmin && (
-                <Button size="sm" variant="outline" onClick={() => setInviteOpen(true)}>
-                  <UserPlus className="h-4 w-4 mr-1" /> Invite staff
-                </Button>
-              )}
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <p className="font-semibold">Involved parties &amp; statements</p>
+              <Badge variant="outline" className="text-[10px]">{statements.filter(s => s.status === "submitted").length}/{statements.length}</Badge>
             </div>
 
-            {statements.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic">
-                {isAdmin ? "No one invited yet. Invite staff to give a statement and share lessons." : "No statements yet."}
-              </p>
+            {statements.length === 0 && !isAdmin && <p className="text-sm text-muted-foreground italic">No statements yet.</p>}
+
+            {isAdmin ? (
+              <div className="space-y-3">
+                {statements.map(s => (
+                  <AdminStatementRow
+                    key={s.id}
+                    row={s}
+                    name={nameOf(s.user_id)}
+                    isMine={s.user_id === currentUserId}
+                    onViewProfile={onViewProfile ? () => onViewProfile(s.user_id) : undefined}
+                    onSaveRow={saveRow}
+                    onDelete={() => deleteRow(s.id)}
+                  />
+                ))}
+
+                {/* Inline add */}
+                <div className="rounded-lg border border-dashed bg-muted/10 p-3 flex flex-col sm:flex-row sm:items-center gap-2">
+                  <Select value={addUser} onValueChange={setAddUser}>
+                    <SelectTrigger className="h-9 flex-1"><SelectValue placeholder="Add a staff member…" /></SelectTrigger>
+                    <SelectContent>
+                      {available.length === 0
+                        ? <div className="px-2 py-1.5 text-sm text-muted-foreground">Everyone is already added</div>
+                        : available.map(s => <SelectItem key={s.user_id} value={s.user_id}>{s.display_name || s.email}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer whitespace-nowrap">
+                    <Checkbox checked={emailOnAdd} onCheckedChange={c => setEmailOnAdd(c === true)} /> Email them
+                  </label>
+                  <Button size="sm" onClick={addParticipant} disabled={!addUser || addBusy}>
+                    <UserPlus className="h-4 w-4 mr-1" /> {addBusy ? "Adding…" : "Add"}
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">Add anyone involved — you can type their account and lessons in for them, or email them to fill it in themselves.</p>
+              </div>
             ) : (
               <div className="space-y-2">
                 {statements.map(s => {
                   const submitted = s.status === "submitted";
-                  const isMine = s.user_id === currentUserId;
                   return (
                     <div key={s.id} className="rounded-lg border p-3">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-2">
-                          {onViewProfile ? (
-                            <button
-                              type="button"
-                              onClick={() => onViewProfile(s.user_id)}
-                              className="text-sm font-medium text-primary hover:underline inline-flex items-center gap-1"
-                              title="Open staff profile"
-                            >
-                              {nameOf(s.user_id)} <ExternalLink className="h-3 w-3" />
-                            </button>
-                          ) : (
-                            <span className="text-sm font-medium">{nameOf(s.user_id)}</span>
-                          )}
-                          {isMine && <Badge variant="outline" className="text-[10px]">You</Badge>}
-                          {submitted
-                            ? <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-600 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Submitted</Badge>
-                            : <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600">Invited</Badge>}
-                        </div>
-                        {isAdmin && (
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                            onClick={async () => {
-                              await (supabase as any).from("incident_statements").delete().eq("id", s.id);
-                              load();
-                            }}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium">{nameOf(s.user_id)}</span>
+                        {submitted
+                          ? <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-600 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Submitted</Badge>
+                          : <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600">Invited</Badge>}
                       </div>
                       {submitted && (s.statement || s.lessons) ? (
                         <div className="mt-2 space-y-2 text-sm">
                           {s.statement && <div><span className="text-xs text-muted-foreground">Statement: </span><span className="whitespace-pre-wrap">{s.statement}</span></div>}
                           {s.lessons && <div><span className="text-xs text-muted-foreground">Lessons: </span><span className="whitespace-pre-wrap">{s.lessons}</span></div>}
                         </div>
-                      ) : (
-                        <p className="text-xs text-muted-foreground mt-1 italic">Awaiting their response.</p>
-                      )}
+                      ) : <p className="text-xs text-muted-foreground mt-1 italic">Awaiting their response.</p>}
                     </div>
                   );
                 })}
@@ -574,90 +670,45 @@ function IncidentDetail({
           </CardContent>
         </Card>
       </div>
-
-      {inviteOpen && (
-        <InviteStaffDialog
-          incident={incident}
-          staff={staff}
-          alreadyInvited={new Set(statements.map(s => s.user_id))}
-          inviterId={currentUserId}
-          onClose={() => setInviteOpen(false)}
-          onInvited={() => { setInviteOpen(false); load(); }}
-        />
-      )}
     </div>
   );
 }
 
-// ---- Invite dialog ----------------------------------------------------------
-function InviteStaffDialog({
-  incident, staff, alreadyInvited, inviterId, onClose, onInvited,
-}: {
-  incident: Incident;
-  staff: StaffProfile[];
-  alreadyInvited: Set<string>;
-  inviterId: string | null;
-  onClose: () => void;
-  onInvited: () => void;
+// ---- Editable statement row (admin proxy) ----
+function AdminStatementRow({ row, name, isMine, onViewProfile, onSaveRow, onDelete }: {
+  row: IncidentStatement;
+  name: string;
+  isMine: boolean;
+  onViewProfile?: () => void;
+  onSaveRow: (id: string, statement: string, lessons: string) => void;
+  onDelete: () => void;
 }) {
-  const { toast } = useToast();
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [saving, setSaving] = useState(false);
-  const [query, setQuery] = useState("");
-
-  const available = staff.filter(s =>
-    !alreadyInvited.has(s.user_id) &&
-    (s.display_name || s.email || "").toLowerCase().includes(query.toLowerCase())
-  );
-  const toggle = (uid: string) => setSelected(prev => {
-    const n = new Set(prev); n.has(uid) ? n.delete(uid) : n.add(uid); return n;
-  });
-
-  const invite = async () => {
-    if (selected.size === 0) return;
-    setSaving(true);
-    const rows = [...selected].map(uid => ({ incident_id: incident.id, user_id: uid, invited_by: inviterId, status: "invited" }));
-    const { error } = await (supabase as any).from("incident_statements").insert(rows);
-    setSaving(false);
-    if (error) { toast({ title: "Couldn't invite", description: error.message, variant: "destructive" }); return; }
-    // Fire-and-forget emails.
-    [...selected].forEach(uid => {
-      const s = staff.find(x => x.user_id === uid);
-      if (s?.email) {
-        supabase.functions.invoke("send-incident-invite-email", {
-          body: { recipientEmail: s.email, recipientName: s.display_name, incidentTitle: incident.title, incidentDate: incident.incident_date },
-        }).catch(() => {});
-      }
-    });
-    toast({ title: `Invited ${selected.size} staff member${selected.size === 1 ? "" : "s"}`, description: "They've been emailed to provide a statement." });
-    onInvited();
-  };
-
+  const [statement, setStatement] = useState(row.statement || "");
+  const [lessons, setLessons] = useState(row.lessons || "");
+  useEffect(() => { setStatement(row.statement || ""); setLessons(row.lessons || ""); }, [row.id]);
+  const dirty = statement !== (row.statement || "") || lessons !== (row.lessons || "");
+  const submitted = row.status === "submitted";
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md max-h-[85vh] overflow-hidden flex flex-col">
-        <DialogHeader><DialogTitle>Invite staff for a statement</DialogTitle></DialogHeader>
-        <Input placeholder="Search staff…" value={query} onChange={e => setQuery(e.target.value)} className="mb-2" />
-        <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
-          {available.length === 0 ? (
-            <p className="text-sm text-muted-foreground italic py-6 text-center">No staff to invite.</p>
-          ) : available.map(s => (
-            <label key={s.user_id} className="flex items-center gap-3 rounded-md p-2 hover:bg-muted/50 cursor-pointer">
-              <Checkbox checked={selected.has(s.user_id)} onCheckedChange={() => toggle(s.user_id)} />
-              <div className="min-w-0">
-                <p className="text-sm font-medium truncate">{s.display_name || s.email}</p>
-                {s.display_name && s.email && <p className="text-xs text-muted-foreground truncate">{s.email}</p>}
-              </div>
-            </label>
-          ))}
+    <div className="rounded-lg border p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          {onViewProfile ? (
+            <button type="button" onClick={onViewProfile} className="text-sm font-medium text-primary hover:underline inline-flex items-center gap-1" title="Open staff profile">
+              {name} <ExternalLink className="h-3 w-3" />
+            </button>
+          ) : <span className="text-sm font-medium">{name}</span>}
+          {isMine && <Badge variant="outline" className="text-[10px]">You</Badge>}
+          {submitted
+            ? <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-600 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Submitted</Badge>
+            : <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600">Awaiting response</Badge>}
         </div>
-        <DialogFooter className="mt-2">
-          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={invite} disabled={saving || selected.size === 0}>
-            {saving ? "Inviting…" : `Invite${selected.size ? ` (${selected.size})` : ""} & email`}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <div className="flex items-center gap-1">
+          {dirty && <Button size="sm" className="h-7" onClick={() => onSaveRow(row.id, statement, lessons)}>Save</Button>}
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={onDelete}><Trash2 className="h-4 w-4" /></Button>
+        </div>
+      </div>
+      <Textarea value={statement} onChange={e => setStatement(e.target.value)} rows={2} placeholder="Their account of what happened (you can fill this in for them)…" />
+      <Textarea value={lessons} onChange={e => setLessons(e.target.value)} rows={2} placeholder="Lessons learned / what could prevent it…" />
+    </div>
   );
 }
