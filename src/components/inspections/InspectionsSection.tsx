@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
-import { ClipboardCheck, Plus, ArrowLeft, Loader2, Trash2, ExternalLink } from "lucide-react";
+import { ClipboardCheck, Plus, ArrowLeft, Loader2, Trash2, ExternalLink, Paperclip, Upload } from "lucide-react";
 
 // ---- Vocab ------------------------------------------------------------------
 const BODIES = ["CQC", "Local Authority", "Home Office", "Ofsted", "Other"];
@@ -30,6 +30,8 @@ const OUTCOMES = [
 ];
 const outcomeMeta = (v: string | null) => OUTCOMES.find(o => o.value === v) ?? { value: v || "—", cls: "bg-muted text-muted-foreground border-border" };
 
+interface EvidenceFile { path: string; name: string; size: number; type: string; uploaded_at: string; }
+
 interface Inspection {
   id: string;
   inspection_date: string | null;
@@ -37,12 +39,16 @@ interface Inspection {
   inspection_type: string | null;
   outcome: string | null;
   client_name: string | null;
-  supporting_evidence: string | null;
+  evidence_files: EvidenceFile[] | null;
   inspector_feedback: string | null;
   lessons_learned: string | null;
   notes: string | null;
   created_at: string;
 }
+
+const EVIDENCE_BUCKET = "inspection-evidence";
+const prettySize = (b: number) =>
+  b < 1024 ? `${b} B` : b < 1024 * 1024 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1024 / 1024).toFixed(1)} MB`;
 
 export function InspectionsSection() {
   const { user } = useAuth();
@@ -275,6 +281,75 @@ function LabeledField({ label, children }: { label: string; children: React.Reac
   );
 }
 
+// File attachments for an inspection's supporting evidence (private storage bucket).
+function EvidenceFiles({ inspectionId, files, canEdit, onChange }: {
+  inspectionId: string;
+  files: EvidenceFile[];
+  canEdit: boolean;
+  onChange?: (files: EvidenceFile[]) => void;
+}) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const upload = async (fileList: FileList | null) => {
+    if (!fileList || !fileList.length) return;
+    setBusy(true);
+    const added: EvidenceFile[] = [];
+    for (const file of Array.from(fileList)) {
+      const safe = file.name.replace(/[^\w.\-]+/g, "_");
+      const path = `${inspectionId}/${Date.now()}-${safe}`;
+      const { error } = await supabase.storage.from(EVIDENCE_BUCKET).upload(path, file, { upsert: false });
+      if (error) { toast({ title: `Couldn't upload ${file.name}`, description: error.message, variant: "destructive" }); continue; }
+      added.push({ path, name: file.name, size: file.size, type: file.type, uploaded_at: new Date().toISOString() });
+    }
+    setBusy(false);
+    if (inputRef.current) inputRef.current.value = "";
+    if (added.length) onChange?.([...files, ...added]);
+  };
+
+  const open = async (f: EvidenceFile) => {
+    const { data, error } = await supabase.storage.from(EVIDENCE_BUCKET).createSignedUrl(f.path, 3600);
+    if (error || !data?.signedUrl) { toast({ title: "Couldn't open file", description: error?.message, variant: "destructive" }); return; }
+    window.open(data.signedUrl, "_blank", "noopener");
+  };
+
+  const remove = async (f: EvidenceFile) => {
+    await supabase.storage.from(EVIDENCE_BUCKET).remove([f.path]);
+    onChange?.(files.filter(x => x.path !== f.path));
+  };
+
+  return (
+    <div className="space-y-2">
+      {files.length > 0 ? (
+        <ul className="space-y-1.5">
+          {files.map(f => (
+            <li key={f.path} className="flex items-center gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm">
+              <Paperclip className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <button type="button" className="truncate text-left hover:underline flex-1 min-w-0" onClick={() => open(f)} title={f.name}>{f.name}</button>
+              <span className="text-[11px] text-muted-foreground flex-shrink-0">{prettySize(f.size)}</span>
+              {canEdit && (
+                <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-destructive flex-shrink-0" onClick={() => remove(f)} title="Remove file">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : !canEdit ? <p className="text-sm text-muted-foreground/60">—</p> : null}
+      {canEdit && (
+        <>
+          <input ref={inputRef} type="file" multiple className="hidden" onChange={e => upload(e.target.files)} />
+          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => inputRef.current?.click()}>
+            {busy ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Upload className="h-4 w-4 mr-1.5" />}
+            {busy ? "Uploading…" : "Attach files"}
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function InspectionDetail({ id, canEdit, onBack }: { id: string; canEdit: boolean; onBack: () => void }) {
   const { toast } = useToast();
   const [row, setRow] = useState<Inspection | null>(null);
@@ -345,8 +420,8 @@ function InspectionDetail({ id, canEdit, onBack }: { id: string; canEdit: boolea
                   </LabeledField>
                 </div>
                 <LabeledField label="Supporting evidence">
-                  <Textarea rows={2} defaultValue={row.supporting_evidence ?? ""} key={`se-${row.id}`}
-                    onBlur={e => patch({ supporting_evidence: e.target.value.trim() || null })} placeholder="Links or notes pointing to supporting evidence" />
+                  <EvidenceFiles inspectionId={row.id} files={row.evidence_files ?? []} canEdit
+                    onChange={fs => patch({ evidence_files: fs })} />
                 </LabeledField>
                 <LabeledField label="Inspector feedback">
                   <Textarea rows={4} defaultValue={row.inspector_feedback ?? ""} key={`if-${row.id}`}
@@ -374,7 +449,7 @@ function InspectionDetail({ id, canEdit, onBack }: { id: string; canEdit: boolea
                   </div>
                   <Badge variant="outline" className={cn("text-[11px] rounded-full px-3 py-0.5 uppercase", oc.cls)}>{oc.value}</Badge>
                 </div>
-                {row.supporting_evidence && <div><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Supporting evidence</p><p className="text-sm whitespace-pre-wrap">{ro(row.supporting_evidence)}</p></div>}
+                {(row.evidence_files?.length ?? 0) > 0 && <div><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Supporting evidence</p><EvidenceFiles inspectionId={row.id} files={row.evidence_files ?? []} canEdit={false} /></div>}
                 {row.inspector_feedback && <div><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Inspector feedback</p><p className="text-sm whitespace-pre-wrap">{ro(row.inspector_feedback)}</p></div>}
                 {row.lessons_learned && <div><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Lessons learned</p><p className="text-sm whitespace-pre-wrap">{ro(row.lessons_learned)}</p></div>}
                 {row.notes && <div><p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Notes</p><p className="text-sm whitespace-pre-wrap">{ro(row.notes)}</p></div>}
