@@ -676,9 +676,40 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
       task_name: t.name,
       task_description: t.description || "",
       link: t.link || "",
-      handed_over_by: last?.handed_over_by || "",
-      handed_over_to: last?.handed_over_to || "",
+      // When this handover is linked to a holiday, default From to the person on
+      // leave and To to whoever is covering them; otherwise carry over the last row.
+      handed_over_by: leave?.staffName || last?.handed_over_by || "",
+      handed_over_to: leave?.coverNames?.[0] || last?.handed_over_to || "",
     });
+  };
+
+  // Fill blank From/To on existing tasks from the linked leave (person on leave →
+  // From, their cover → To). Only touches empty cells, so manual entries are kept.
+  const [autofilling, setAutofilling] = useState(false);
+  const leaveFrom = (leave?.staffName || "").trim();
+  const leaveTo = (leave?.coverNames?.[0] || "").trim();
+  const tasksMissingParties = tasks.filter(
+    (t) => (leaveFrom && !(t.handed_over_by || "").trim()) || (leaveTo && !(t.handed_over_to || "").trim())
+  );
+  const autofillFromLeave = async () => {
+    if (!leave || tasksMissingParties.length === 0) return;
+    setAutofilling(true);
+    try {
+      for (const t of tasksMissingParties) {
+        const patch: { handed_over_by?: string; handed_over_to?: string } = {};
+        if (leaveFrom && !(t.handed_over_by || "").trim()) patch.handed_over_by = leaveFrom;
+        if (leaveTo && !(t.handed_over_to || "").trim()) patch.handed_over_to = leaveTo;
+        if (Object.keys(patch).length === 0) continue;
+        const { error } = await supabase.from("client_handover_tasks").update(patch).eq("id", t.id);
+        if (error) throw error;
+      }
+      qc.invalidateQueries({ queryKey: ["client-handover-tasks", clientName] });
+      toast.success(`Filled From/To from ${leaveFrom || "the linked leave"}${leaveTo ? ` → ${leaveTo}` : ""}`);
+    } catch (e: any) {
+      toast.error(e?.message || "Couldn't fill From/To");
+    } finally {
+      setAutofilling(false);
+    }
   };
 
   function LinkCell({
@@ -1008,6 +1039,22 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
       </CardHeader>
 
       {leave && <LeaveBanner leave={leave} />}
+      {leave && tasksMissingParties.length > 0 && (
+        <div className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-6 py-2 border-b bg-muted/10 text-xs text-muted-foreground">
+          <span>
+            {tasksMissingParties.length} task{tasksMissingParties.length === 1 ? "" : "s"} without a From/To.
+            {" "}Fill from this leave: <span className="font-medium text-foreground">{leaveFrom || "—"}</span> → <span className="font-medium text-foreground">{leaveTo || "cover not assigned yet"}</span>.
+          </span>
+          <button
+            type="button"
+            onClick={autofillFromLeave}
+            disabled={autofilling}
+            className="inline-flex items-center gap-1.5 font-medium text-primary hover:bg-primary/10 rounded-md px-2.5 py-1.5 transition disabled:opacity-50"
+          >
+            <User className="h-3.5 w-3.5" /> {autofilling ? "Filling…" : "Fill From/To"}
+          </button>
+        </div>
+      )}
 
       <CardContent className="p-0">
         {/* Task Library */}
@@ -1120,8 +1167,8 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
             <InlineAddRow
               defaultCategory=""
               allowCategoryEdit
-              defaultFrom={tasks[tasks.length - 1]?.handed_over_by || ""}
-              defaultTo={tasks[tasks.length - 1]?.handed_over_to || ""}
+              defaultFrom={leave?.staffName || tasks[tasks.length - 1]?.handed_over_by || ""}
+              defaultTo={leave?.coverNames?.[0] || tasks[tasks.length - 1]?.handed_over_to || ""}
               onCreate={(d, onDone) => createMutation.mutate(d, { onSuccess: () => onDone() })}
               isPending={createMutation.isPending}
             />

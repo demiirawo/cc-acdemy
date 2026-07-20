@@ -324,7 +324,7 @@ export async function getUpcomingLeaveForClients(
 
   const { data: rawHolidays } = await supabase
     .from("staff_holidays")
-    .select("user_id, start_date, end_date, no_cover_required, no_cover_dates")
+    .select("id, user_id, start_date, end_date, no_cover_required, no_cover_dates")
     .in("user_id", allUserIds)
     .eq("status", "approved")
     .gte("end_date", todayISO)
@@ -333,22 +333,18 @@ export async function getUpcomingLeaveForClients(
   const holidays = (rawHolidays || []).filter(h => !h.no_cover_required);
   if (holidays.length === 0) return result;
 
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("user_id, display_name, email")
-    .in("user_id", Array.from(new Set(holidays.map(h => h.user_id))));
-  const nameByUser = new Map((profiles || []).map(p => [p.user_id, (p.display_name || p.email || "Unknown").trim()]));
-  const emailByUser = new Map((profiles || []).map(p => [p.user_id, p.email || null]));
-
-  const holidaysByUser = new Map<string, { start_date: string; end_date: string; no_cover_dates: string[] | null }[]>();
+  const holidaysByUser = new Map<string, { id: string; start_date: string; end_date: string; no_cover_dates: string[] | null }[]>();
   for (const h of holidays) {
     if (!holidaysByUser.has(h.user_id)) holidaysByUser.set(h.user_id, []);
     holidaysByUser.get(h.user_id)!.push(h);
   }
 
-  const today = new Date(todayISO);
+  // Each client's soonest relevant leave, keeping the holiday id + this client's
+  // shift patterns so we can work out who is covering it below.
+  interface Best { userId: string; holidayId: string; start_date: string; end_date: string; noCover: Set<string>; clientPatterns: PatternWindow[]; }
+  const bestByClient = new Map<string, Best>();
   for (const [client, userIds] of userIdsByClient.entries()) {
-    let best: { userId: string; start_date: string; end_date: string } | null = null;
+    let best: Best | null = null;
     for (const uid of userIds) {
       const clientPatterns = patternsByUserClient.get(`${uid}|${client}`) || [];
       // Holidays are start_date ascending — first one where this client's
@@ -357,10 +353,56 @@ export async function getUpcomingLeaveForClients(
         needsCoverInWindow(clientPatterns, hol.start_date, hol.end_date, new Set(hol.no_cover_dates || []))
       );
       if (!h) continue;
-      if (!best || h.start_date < best.start_date) best = { userId: uid, start_date: h.start_date, end_date: h.end_date };
+      if (!best || h.start_date < best.start_date) {
+        best = { userId: uid, holidayId: h.id, start_date: h.start_date, end_date: h.end_date, noCover: new Set(h.no_cover_dates || []), clientPatterns };
+      }
     }
-    if (!best) continue;
+    if (best) bestByClient.set(client, best);
+  }
+  if (bestByClient.size === 0) return result;
+
+  // Approved cover requests for the chosen holidays — used to name who each
+  // client's shifts are being handed over TO during the leave.
+  const bestList = Array.from(bestByClient.values());
+  const holidayIds = Array.from(new Set(bestList.map(b => b.holidayId)));
+  const leaveUserIds = Array.from(new Set(bestList.map(b => b.userId)));
+  const { data: coverRequests } = await supabase
+    .from("staff_requests")
+    .select("user_id, request_type, swap_with_user_id, linked_holiday_id, start_date, end_date, coverage_metadata")
+    .eq("status", "approved")
+    .or(`swap_with_user_id.in.(${leaveUserIds.join(",")}),linked_holiday_id.in.(${holidayIds.join(",")})`);
+
+  const coverUserIds = Array.from(new Set((coverRequests || []).map(r => r.user_id)));
+  const { data: profiles } = await supabase
+    .from("profiles")
+    .select("user_id, display_name, email")
+    .in("user_id", Array.from(new Set([...leaveUserIds, ...coverUserIds])));
+  const nameByUser = new Map((profiles || []).map(p => [p.user_id, (p.display_name || p.email || "Unknown").trim()]));
+  const emailByUser = new Map((profiles || []).map(p => [p.user_id, p.email || null]));
+
+  const today = new Date(todayISO);
+  for (const [client, best] of bestByClient.entries()) {
     const daysUntil = differenceInCalendarDays(new Date(best.start_date), today);
+    // This client's in-window shift dates that still need cover.
+    const clientDates = Array.from(new Set(
+      best.clientPatterns.flatMap(p => patternDatesInWindow(p, best.start_date, best.end_date)).filter(d => !best.noCover.has(d))
+    ));
+    const holidayCovers = (coverRequests || []).filter(r =>
+      r.swap_with_user_id === best.userId || r.linked_holiday_id === best.holidayId
+    );
+    const coverNames = Array.from(new Set(
+      holidayCovers
+        .filter(r => {
+          const meta = r.coverage_metadata as { covered_dates?: string[] } | null;
+          const coveredDates = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0
+            ? meta!.covered_dates!
+            : null;
+          return coveredDates
+            ? clientDates.some(d => coveredDates.includes(d))
+            : clientDates.some(d => d >= r.start_date && d <= r.end_date);
+        })
+        .map(r => nameByUser.get(r.user_id) || "Unknown")
+    ));
     result.set(client, {
       userId: best.userId,
       staffName: nameByUser.get(best.userId) || "Unknown",
@@ -369,6 +411,7 @@ export async function getUpcomingLeaveForClients(
       endDate: best.end_date,
       daysUntil,
       ongoing: daysUntil < 0,
+      coverNames,
     });
   }
 
