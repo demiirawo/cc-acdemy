@@ -278,10 +278,68 @@ export interface UpcomingClientLeave {
   daysUntil: number;
   ongoing: boolean;
   /** Names of staff assigned to cover THIS client's shifts during the leave
-   * (from approved cover requests whose covered dates touch this client's
-   * shift dates). Empty = no cover assigned yet. Populated by
-   * getUpcomingLeaveByAllClients. */
+   * (client-scoped where the cover request records which clients it covers,
+   * else by covered-date overlap with this client's shift dates).
+   * Empty = no cover assigned yet. */
   coverNames?: string[];
+}
+
+/** The subset of a cover (shift_swap) request needed to scope it to a client. */
+export interface CoverRequestScope {
+  start_date: string;
+  end_date: string;
+  coverage_metadata: unknown;
+}
+
+/**
+ * Does this cover request cover the given client?
+ *
+ * Handovers are segregated per client: when one person's leave spans several
+ * clients, each client can have a different cover. Client-scoped requests say
+ * so explicitly in coverage_metadata (covered_clients, or shifts[] entries with
+ * client_name). Legacy requests only carry dates, so for those we fall back to
+ * date overlap with this client's shift dates during the leave.
+ */
+export function coverAppliesToClient(
+  req: CoverRequestScope,
+  clientName: string,
+  clientShiftDates: string[]
+): boolean {
+  const meta = req.coverage_metadata as {
+    covered_dates?: string[];
+    covered_clients?: string[];
+    shifts?: { date?: string; client_name?: string }[];
+  } | null;
+  const client = clientName.trim().toLowerCase();
+
+  // Client-scoped metadata wins: explicit covered_clients, or per-shift entries.
+  const scopedClients = new Set<string>();
+  if (Array.isArray(meta?.covered_clients)) {
+    meta!.covered_clients!.forEach(c => { if (c) scopedClients.add(c.trim().toLowerCase()); });
+  }
+  if (Array.isArray(meta?.shifts)) {
+    meta!.shifts!.forEach(s => { if (s?.client_name) scopedClients.add(s.client_name.trim().toLowerCase()); });
+  }
+  if (scopedClients.size > 0) {
+    if (!scopedClients.has(client)) return false;
+    // Scoped to this client — still require a date to actually touch it when
+    // per-shift dates exist for this client (partial covers).
+    if (Array.isArray(meta?.shifts) && meta!.shifts!.some(s => s?.client_name && s?.date)) {
+      return meta!.shifts!.some(s =>
+        (s.client_name || "").trim().toLowerCase() === client && s.date && clientShiftDates.includes(s.date)
+      ) || clientShiftDates.length === 0;
+    }
+    return true;
+  }
+
+  // Legacy date-only requests: covered dates (or the request's date range)
+  // touching this client's shift dates.
+  const coveredDates = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0
+    ? meta!.covered_dates!
+    : null;
+  return coveredDates
+    ? clientShiftDates.some(d => coveredDates.includes(d))
+    : clientShiftDates.some(d => d >= req.start_date && d <= req.end_date);
 }
 
 /**
@@ -392,15 +450,7 @@ export async function getUpcomingLeaveForClients(
     );
     const coverNames = Array.from(new Set(
       holidayCovers
-        .filter(r => {
-          const meta = r.coverage_metadata as { covered_dates?: string[] } | null;
-          const coveredDates = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0
-            ? meta!.covered_dates!
-            : null;
-          return coveredDates
-            ? clientDates.some(d => coveredDates.includes(d))
-            : clientDates.some(d => d >= r.start_date && d <= r.end_date);
-        })
+        .filter(r => coverAppliesToClient(r, client, clientDates))
         .map(r => nameByUser.get(r.user_id) || "Unknown")
     ));
     result.set(client, {
@@ -496,15 +546,7 @@ export async function getUpcomingLeaveByAllClients(): Promise<Map<string, Upcomi
       ));
       const coverNames = Array.from(new Set(
         holidayCovers
-          .filter(r => {
-            const meta = r.coverage_metadata as { covered_dates?: string[] } | null;
-            const coveredDates = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0
-              ? meta!.covered_dates!
-              : null;
-            return coveredDates
-              ? clientDates.some(d => coveredDates.includes(d))
-              : clientDates.some(d => d >= r.start_date && d <= r.end_date);
-          })
+          .filter(r => coverAppliesToClient(r, client, clientDates))
           .map(r => nameByUser.get(r.user_id) || "Unknown")
       ));
       result.set(client, {

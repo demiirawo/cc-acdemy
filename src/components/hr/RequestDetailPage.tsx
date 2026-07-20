@@ -18,7 +18,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification";
 import { invalidateAllCoverageQueries } from "@/lib/coverageUtils";
-import { computeHolidayHandoverStatus, patternDatesInWindow, PATTERN_WINDOW_COLS, type PatternWindow, HANDOVER_STATUS_LABEL, HANDOVER_STATUS_TONE } from "@/lib/handoverStatus";
+import { computeHolidayHandoverStatus, patternDatesInWindow, PATTERN_WINDOW_COLS, type PatternWindow, HANDOVER_STATUS_LABEL, HANDOVER_STATUS_TONE, coverAppliesToClient } from "@/lib/handoverStatus";
 type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
 interface StaffRequest {
   id: string;
@@ -117,7 +117,11 @@ export function RequestDetailPage({
   const [detailsValue, setDetailsValue] = useState("");
   const [coverAssignDialog, setCoverAssignDialog] = useState<{ userId: string; displayName: string } | null>(null);
   const [coverOvertimeType, setCoverOvertimeType] = useState<'none' | 'outside_hours' | 'inside_hours'>('none');
-  const [coverSelectedDates, setCoverSelectedDates] = useState<string[]>([]);
+  // Cover selection is per client × date ("shift keys"), so one person can cover
+  // only some of the leave-taker's clients and each client can have its own cover.
+  const [coverSelectedShifts, setCoverSelectedShifts] = useState<string[]>([]);
+  const shiftKey = (date: string, client: string) => `${date}::${client}`;
+  const parseShiftKey = (key: string) => ({ date: key.slice(0, 10), client: key.slice(12) });
   const [staffSearch, setStaffSearch] = useState("");
 
   // Fetch the specific request
@@ -535,26 +539,22 @@ export function RequestDetailPage({
 
   // Assign cover mutation
   const assignCoverMutation = useMutation({
-    mutationFn: async ({ coverUserId, overtimeType, selectedDates }: { coverUserId: string; overtimeType: 'none' | 'outside_hours' | 'inside_hours'; selectedDates: string[] }) => {
+    mutationFn: async ({ coverUserId, overtimeType, selectedShifts }: { coverUserId: string; overtimeType: 'none' | 'outside_hours' | 'inside_hours'; selectedShifts: string[] }) => {
       if (!user || !request) throw new Error("Not authenticated or no request");
 
-      // Compute working dates from the covered person's shift patterns
+      // Compute the covered person's shifts (client × date) during the leave.
       const affectedShifts = getAffectedShiftsByDay();
-      const allWorkingDates = Array.from(new Set(affectedShifts.map(s => s.date.toISOString().split('T')[0]))).sort();
+      const allShiftKeys = Array.from(new Set(
+        affectedShifts.map(s => shiftKey(s.date.toISOString().split('T')[0], s.clientName))
+      ));
 
-      // Determine the dates this cover will actually work
-      const coveredDates = selectedDates.length > 0
-        ? selectedDates.slice().sort()
-        : allWorkingDates;
+      // The client × date pairs this cover will actually work.
+      const chosen = (selectedShifts.length > 0 ? selectedShifts : allShiftKeys).map(parseShiftKey);
+      const coveredDates = Array.from(new Set(chosen.map(c => c.date))).sort();
+      const coveredClients = Array.from(new Set(chosen.map(c => c.client).filter(Boolean))).sort();
 
       // Clients the cover will actually work (for handover-tracker links in their email).
-      const coveredSet = new Set(coveredDates);
-      const impactedClients = Array.from(new Set(
-        affectedShifts
-          .filter(s => coveredSet.has(s.date.toISOString().split('T')[0]))
-          .map(s => s.clientName)
-          .filter(c => c && c !== 'Care Cuddle')
-      ));
+      const impactedClients = coveredClients.filter(c => c && c !== 'Care Cuddle' && c !== 'Unassigned');
       const coverResult = { coverUserId, coveredDates, impactedClients };
 
       const daysRequested = coveredDates.length > 0
@@ -562,16 +562,24 @@ export function RequestDetailPage({
         : (linkedHoliday?.days_taken ?? request.days_requested);
 
       // Map overtime selection to the overtime_type field
-      const mappedOvertimeType = overtimeType === 'outside_hours' ? 'outside_hours' 
-        : overtimeType === 'inside_hours' ? 'standard_hours' 
+      const mappedOvertimeType = overtimeType === 'outside_hours' ? 'outside_hours'
+        : overtimeType === 'inside_hours' ? 'standard_hours'
         : null;
 
       // Compute start/end dates from the selected covered dates so the cover only spans relevant dates
       const coverStartDate = coveredDates.length > 0 ? coveredDates[0] : request.start_date;
       const coverEndDate = coveredDates.length > 0 ? coveredDates[coveredDates.length - 1] : request.end_date;
 
+      // Client-scoped metadata: covered_clients + per-shift entries segregate the
+      // handover per client (each client can have a different cover), while
+      // covered_dates keeps every date-based consumer working.
       const coverageMetadata = coveredDates.length > 0
-        ? { type: 'holiday_days' as const, covered_dates: coveredDates }
+        ? {
+            type: 'holiday_days' as const,
+            covered_dates: coveredDates,
+            covered_clients: coveredClients,
+            shifts: chosen.map(c => ({ date: c.date, client_name: c.client })),
+          }
         : null;
 
       const payload = {
@@ -1159,21 +1167,8 @@ Care Cuddle Team`;
                 const readyCount = (handoverStatus?.clients || []).filter(c => c.taskCount > 0 && c.avgProgress >= 100).length;
                 const handoverByClient = new Map((handoverStatus?.clients || []).map(c => [c.client, c]));
 
-                // Per-date cover assignment (who + overtime type).
-                const affected = isHolidayRequest && linkedHoliday ? getAffectedShiftsByDay() : [];
-                const allDates = Array.from(new Set(affected.map(s => s.date.toISOString().split('T')[0])));
-                const coverInfoByDate = new Map<string, { name: string; otType: 'standard_hours' | 'outside_hours' | null }>();
-                (coveringStaff || []).forEach(cover => {
-                  const meta = cover.coverage_metadata as { covered_dates?: string[] } | null | undefined;
-                  const cds = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0 ? meta!.covered_dates! : null;
-                  const otType = (cover as { overtime_type?: 'standard_hours' | 'outside_hours' | null }).overtime_type ?? null;
-                  allDates.forEach(d => {
-                    const covers = cds ? cds.includes(d) : (d >= cover.start_date && d <= cover.end_date);
-                    if (covers && !coverInfoByDate.has(d)) coverInfoByDate.set(d, { name: getStaffName(cover.user_id), otType });
-                  });
-                });
-
                 // Shift dates grouped by client, merged with handover clients.
+                const affected = isHolidayRequest && linkedHoliday ? getAffectedShiftsByDay() : [];
                 const clientDates = new Map<string, string[]>();
                 affected.forEach(s => {
                   const d = s.date.toISOString().split('T')[0];
@@ -1184,6 +1179,23 @@ Care Cuddle Team`;
                 });
                 const clients = Array.from(new Set([...clientDates.keys(), ...handoverByClient.keys()]))
                   .sort((a, b) => a.localeCompare(b));
+
+                // Per-client, per-date cover assignment (who + overtime type). The
+                // handover is segregated per client, so a cover only counts for the
+                // clients it's scoped to (legacy date-only covers apply by date).
+                const coverInfoFor = (client: string, d: string): { name: string; otType: 'standard_hours' | 'outside_hours' | null } | undefined => {
+                  const dates = clientDates.get(client) || [];
+                  for (const cover of coveringStaff || []) {
+                    if (!coverAppliesToClient(cover, client, dates)) continue;
+                    const meta = cover.coverage_metadata as { covered_dates?: string[] } | null | undefined;
+                    const cds = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0 ? meta!.covered_dates! : null;
+                    const coversDate = cds ? cds.includes(d) : (d >= cover.start_date && d <= cover.end_date);
+                    if (!coversDate) continue;
+                    const otType = (cover as { overtime_type?: 'standard_hours' | 'outside_hours' | null }).overtime_type ?? null;
+                    return { name: getStaffName(cover.user_id), otType };
+                  }
+                  return undefined;
+                };
                 const noCoverDates: string[] = linkedHoliday?.no_cover_dates || [];
                 const busy = setDayNoCoverMutation.isPending;
 
@@ -1249,7 +1261,7 @@ Care Cuddle Team`;
                       const hs = handoverByClient.get(client);
                       const dates = (clientDates.get(client) || []).sort();
                       const clientCoverNames = Array.from(new Set(
-                        dates.map(d => coverInfoByDate.get(d)?.name).filter((n): n is string => !!n)
+                        dates.map(d => coverInfoFor(client, d)?.name).filter((n): n is string => !!n)
                       ));
                       return (
                         <div key={client} className="rounded-lg border overflow-hidden">
@@ -1289,7 +1301,7 @@ Care Cuddle Team`;
                           </div>
                           <div className="divide-y">
                             {dates.map(d => {
-                              const cov = coverInfoByDate.get(d);
+                              const cov = coverInfoFor(client, d);
                               const isNoCover = noCoverDates.includes(d);
                               return (
                                 <div key={d} className="flex items-center justify-between gap-2 px-3 py-2">
@@ -1562,8 +1574,8 @@ Care Cuddle Team`;
                                           } else {
                                             setCoverAssignDialog({ userId: staff.user_id, displayName: staff.display_name || staff.email || 'Staff' });
                                             setCoverOvertimeType('none');
-                                            const allDates = Array.from(new Set(getAffectedShiftsByDay().map(s => s.date.toISOString().split('T')[0])));
-                                            setCoverSelectedDates(allDates);
+                                            const allShifts = Array.from(new Set(getAffectedShiftsByDay().map(s => shiftKey(s.date.toISOString().split('T')[0], s.clientName))));
+                                            setCoverSelectedShifts(allShifts);
                                           }
                                         }}
                                         className={isAssigned
@@ -1681,56 +1693,84 @@ Care Cuddle Team`;
           <DialogHeader>
             <DialogTitle>Assign Cover: {coverAssignDialog?.displayName}</DialogTitle>
             <DialogDescription>
-              Choose which dates this person will cover and whether the work counts as overtime.
+              Handover is per client — choose which clients (and which of their dates) this person will cover, and whether the work counts as overtime. Other clients can be assigned a different cover.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             {(() => {
               const affected = getAffectedShiftsByDay();
-              const uniqueByDate = new Map<string, { date: Date; clientName: string; shiftTime: string }>();
+              // Group the leave-taker's shifts by client → per-date options.
+              const byClient = new Map<string, Map<string, { date: Date; shiftTime: string }>>();
               affected.forEach(s => {
-                const key = s.date.toISOString().split('T')[0];
-                if (!uniqueByDate.has(key)) uniqueByDate.set(key, s);
+                const d = s.date.toISOString().split('T')[0];
+                const client = s.clientName || 'Unassigned';
+                if (!byClient.has(client)) byClient.set(client, new Map());
+                if (!byClient.get(client)!.has(d)) byClient.get(client)!.set(d, { date: s.date, shiftTime: s.shiftTime });
               });
-              const dateOptions = Array.from(uniqueByDate.entries()).sort(([a], [b]) => a.localeCompare(b));
-              if (dateOptions.length === 0) return null;
-              const allSelected = dateOptions.every(([d]) => coverSelectedDates.includes(d));
+              const clientGroups = Array.from(byClient.entries()).sort(([a], [b]) => a.localeCompare(b));
+              if (clientGroups.length === 0) return null;
+              const allKeys = clientGroups.flatMap(([client, dates]) => Array.from(dates.keys()).map(d => shiftKey(d, client)));
+              const allSelected = allKeys.every(k => coverSelectedShifts.includes(k));
+              const selectedClients = new Set(coverSelectedShifts.map(k => parseShiftKey(k).client));
               return (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <Label>Dates to Cover</Label>
+                    <Label>Clients &amp; dates to cover</Label>
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
                       className="h-7 text-xs"
-                      onClick={() => setCoverSelectedDates(allSelected ? [] : dateOptions.map(([d]) => d))}
+                      onClick={() => setCoverSelectedShifts(allSelected ? [] : allKeys)}
                     >
                       {allSelected ? 'Clear all' : 'Select all'}
                     </Button>
                   </div>
-                  <div className="space-y-1 border rounded-md p-2 max-h-56 overflow-y-auto">
-                    {dateOptions.map(([dateKey, info]) => {
-                      const checked = coverSelectedDates.includes(dateKey);
+                  <div className="space-y-2 border rounded-md p-2 max-h-72 overflow-y-auto">
+                    {clientGroups.map(([client, dates]) => {
+                      const clientKeys = Array.from(dates.keys()).map(d => shiftKey(d, client));
+                      const selectedCount = clientKeys.filter(k => coverSelectedShifts.includes(k)).length;
+                      const clientAll = selectedCount === clientKeys.length;
                       return (
-                        <label key={dateKey} className="flex items-center gap-2 p-2 rounded hover:bg-muted cursor-pointer text-sm">
-                          <Checkbox
-                            checked={checked}
-                            onCheckedChange={(v) => {
-                              setCoverSelectedDates(prev =>
-                                v ? Array.from(new Set([...prev, dateKey])) : prev.filter(d => d !== dateKey)
+                        <div key={client} className="rounded-md border overflow-hidden">
+                          <label className="flex items-center gap-2 px-2 py-1.5 bg-muted/50 cursor-pointer">
+                            <Checkbox
+                              checked={clientAll ? true : selectedCount > 0 ? 'indeterminate' : false}
+                              onCheckedChange={(v) => {
+                                setCoverSelectedShifts(prev => v
+                                  ? Array.from(new Set([...prev, ...clientKeys]))
+                                  : prev.filter(k => !clientKeys.includes(k)));
+                              }}
+                            />
+                            <span className="text-sm font-semibold flex-1 truncate">{client}</span>
+                            <span className="text-[11px] text-muted-foreground">{selectedCount}/{clientKeys.length} day{clientKeys.length !== 1 ? 's' : ''}</span>
+                          </label>
+                          <div className="divide-y">
+                            {Array.from(dates.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([dateKey, info]) => {
+                              const key = shiftKey(dateKey, client);
+                              const checked = coverSelectedShifts.includes(key);
+                              return (
+                                <label key={key} className="flex items-center gap-2 pl-7 pr-2 py-1.5 hover:bg-muted/30 cursor-pointer text-sm">
+                                  <Checkbox
+                                    checked={checked}
+                                    onCheckedChange={(v) => {
+                                      setCoverSelectedShifts(prev =>
+                                        v ? Array.from(new Set([...prev, key])) : prev.filter(k => k !== key)
+                                      );
+                                    }}
+                                  />
+                                  <span className="flex-1">{format(info.date, 'EEE, dd MMM yyyy')}</span>
+                                  <span className="text-xs text-muted-foreground">{info.shiftTime}</span>
+                                </label>
                               );
-                            }}
-                          />
-                          <span className="font-medium flex-1">{format(info.date, 'EEE, dd MMM yyyy')}</span>
-                          <span className="text-xs text-muted-foreground">{info.shiftTime}</span>
-                          <span className="text-xs text-muted-foreground">({info.clientName})</span>
-                        </label>
+                            })}
+                          </div>
+                        </div>
                       );
                     })}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {coverSelectedDates.length} of {dateOptions.length} day{dateOptions.length !== 1 ? 's' : ''} selected
+                    {coverSelectedShifts.length} of {allKeys.length} shift{allKeys.length !== 1 ? 's' : ''} selected · {selectedClients.size} client{selectedClients.size !== 1 ? 's' : ''}
                   </p>
                 </div>
               );
@@ -1765,12 +1805,12 @@ Care Cuddle Team`;
                   assignCoverMutation.mutate({
                     coverUserId: coverAssignDialog.userId,
                     overtimeType: coverOvertimeType,
-                    selectedDates: coverSelectedDates,
+                    selectedShifts: coverSelectedShifts,
                   });
                   setCoverAssignDialog(null);
                 }
               }}
-              disabled={assignCoverMutation.isPending || coverSelectedDates.length === 0}
+              disabled={assignCoverMutation.isPending || coverSelectedShifts.length === 0}
             >
               Assign Cover
             </Button>

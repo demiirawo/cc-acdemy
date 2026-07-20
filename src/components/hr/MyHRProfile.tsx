@@ -26,7 +26,7 @@ import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItemsManager";
 import { allTrainingUpToDate } from "@/lib/trainingStatus";
-import { computeHolidayHandoverStatus, patternDatesInWindow, PATTERN_WINDOW_COLS, type PatternWindow } from "@/lib/handoverStatus";
+import { computeHolidayHandoverStatus, patternDatesInWindow, PATTERN_WINDOW_COLS, type PatternWindow, coverAppliesToClient } from "@/lib/handoverStatus";
 interface UserProfile {
   user_id: string;
   display_name: string | null;
@@ -817,14 +817,12 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         const clientsByCoveredUser = new Map<string, Set<string>>();
         (coverRequests || []).forEach(req => {
           if (!req.swap_with_user_id) return;
-          const meta = req.coverage_metadata as { covered_dates?: string[] } | null;
-          const coveredDates = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0
-            ? new Set(meta!.covered_dates!)
-            : null;
           for (const p of patternsByCoveredUser.get(req.swap_with_user_id) || []) {
             const shiftDates = patternDatesInWindow(p, req.start_date, req.end_date);
-            const covers = coveredDates ? shiftDates.some(d => coveredDates.has(d)) : shiftDates.length > 0;
-            if (!covers) continue;
+            if (shiftDates.length === 0) continue;
+            // Client-scoped: only the clients this cover request actually covers
+            // count — covering Andrew's client A must not surface client B here.
+            if (!coverAppliesToClient(req, p.client_name!, shiftDates)) continue;
             if (!clientsByCoveredUser.has(req.swap_with_user_id)) clientsByCoveredUser.set(req.swap_with_user_id, new Set());
             clientsByCoveredUser.get(req.swap_with_user_id)!.add(p.client_name!.trim());
           }

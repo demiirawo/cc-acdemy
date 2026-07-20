@@ -151,6 +151,9 @@ function LeaveBanner({ leave }: { leave: UpcomingClientLeave }) {
       <Plane className="h-4 w-4 shrink-0" />
       <span className="truncate">
         Linked to <span className="font-semibold">{leave.staffName}</span>'s leave · {fmt(leave.startDate)}–{fmt(leave.endDate)} · {timing}
+        {leave.coverNames && leave.coverNames.length > 0 && (
+          <> · this client covered by <span className="font-semibold">{leave.coverNames.join(" & ")}</span></>
+        )}
       </span>
     </div>
   );
