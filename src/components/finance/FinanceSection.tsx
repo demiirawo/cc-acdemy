@@ -264,14 +264,24 @@ export function FinanceSection() {
     const corpTax = Math.max(0, ukProfit) * settings.corporation_tax_rate;
     const afterTaxNet = revZoho + (ukProfit - corpTax);
 
-    // Per-client profit (cost allocated pro-rata to each client's ex-VAT revenue share).
-    const clientRows = withMrr.map(c => {
+    // Per-client rows for the Clients tab. Every priced client is listed — Pending
+    // and Inactive included so the pipeline/churn picture stays visible — but
+    // profit (cost allocated pro-rata to ex-VAT revenue share) is only computed
+    // for clients at the "Active" stage; the rest carry no revenue or profit.
+    const stageRank = (s: string | null) => ((s ?? "active") === "active" ? 0 : s === "pending" ? 1 : 2);
+    const clientRows = clients.filter(c => (c.mrr ?? 0) > 0).map(c => {
+      const isActive = (c.status ?? "active") === "active";
       const mrrGross = Number(c.mrr);
-      const netRevenue = netOf(c);
-      const share = revenue > 0 ? netRevenue / revenue : 0;
-      const profit = netRevenue - share * totalCost;
-      return { ...c, mrr: mrrGross, netRevenue, processor: processorOf(c.software), profit, margin: netRevenue > 0 ? profit / netRevenue : 0 };
-    }).sort((a, b) => b.profit - a.profit);
+      const netRevenue = isActive ? netOf(c) : null;
+      const share = isActive && revenue > 0 ? (netRevenue as number) / revenue : 0;
+      const profit = isActive ? (netRevenue as number) - share * totalCost : null;
+      return {
+        ...c, mrr: mrrGross, netRevenue, processor: processorOf(c.software), profit,
+        margin: isActive && (netRevenue as number) > 0 ? (profit as number) / (netRevenue as number) : null,
+      };
+    }).sort((a, b) =>
+      stageRank(a.status) - stageRank(b.status) || (b.profit ?? 0) - (a.profit ?? 0) || b.mrr - a.mrr
+    );
 
     // ---- Per-staff contribution, allocated by the schedule ------------------
     // How each admin's month splits across clients, in weighted "effort hours"
@@ -644,7 +654,7 @@ const PROCESSOR_META: Record<string, { label: string; cls: string; bar: string }
   freeagent: { label: "FREEAGENT", cls: "border-blue-300 text-blue-600 bg-blue-50", bar: "bg-blue-400" },
   other: { label: "OTHER", cls: "border-muted-foreground/30 text-muted-foreground", bar: "bg-muted-foreground/40" },
 };
-type ClientTableRow = ClientRow & { mrr: number; netRevenue: number; processor: "zoho" | "freeagent" | "other"; profit: number; margin: number };
+type ClientTableRow = ClientRow & { mrr: number; netRevenue: number | null; processor: "zoho" | "freeagent" | "other"; profit: number | null; margin: number | null };
 
 function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id: string, patch: Partial<ClientRow>) => void }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -669,7 +679,9 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
         </thead>
         {groups.map(g => {
           const isCollapsed = collapsed[g.key];
-          const sum = g.items.reduce((a, c) => a + c.mrr, 0);
+          // Group sum counts Active clients only, so totals keep matching the
+          // revenue figures even with Pending/Inactive clients listed below.
+          const sum = g.items.filter(c => (c.status ?? "active") === "active").reduce((a, c) => a + c.mrr, 0);
           return (
             <tbody key={g.key}>
               <tr
@@ -688,11 +700,12 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
               </tr>
               {!isCollapsed && g.items.map(c => {
                 const st = stageMeta(c.status);
+                const isActive = (c.status ?? "active") === "active";
                 return (
-                  <tr key={c.id} className="border-b last:border-0 hover:bg-muted/20 transition-colors">
+                  <tr key={c.id} className={cn("border-b last:border-0 hover:bg-muted/20 transition-colors", !isActive && "opacity-60")}>
                     <td className="px-4 py-3 font-medium">
                       <div className="flex items-center gap-2">
-                        <span className={cn("h-4 w-1 rounded-full flex-shrink-0", g.meta.bar)} />
+                        <span className={cn("h-4 w-1 rounded-full flex-shrink-0", isActive ? g.meta.bar : "bg-muted-foreground/30")} />
                         {c.name}
                       </div>
                     </td>
@@ -741,8 +754,8 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
                         />
                       ) : gbp2(c.mrr)}
                     </td>
-                    <td className={cn("px-4 py-3 text-right tabular-nums font-medium", c.profit >= 0 ? "text-emerald-600" : "text-red-600")}>{gbp2(c.profit)}</td>
-                    <td className={cn("px-4 py-3 text-right tabular-nums", c.margin >= 0 ? "text-muted-foreground" : "text-red-600")}>{pct(c.margin)}</td>
+                    <td className={cn("px-4 py-3 text-right tabular-nums font-medium", c.profit == null ? "text-muted-foreground/60" : c.profit >= 0 ? "text-emerald-600" : "text-red-600")}>{c.profit == null ? "—" : gbp2(c.profit)}</td>
+                    <td className={cn("px-4 py-3 text-right tabular-nums", c.margin == null ? "text-muted-foreground/60" : c.margin >= 0 ? "text-muted-foreground" : "text-red-600")}>{c.margin == null ? "—" : pct(c.margin)}</td>
                   </tr>
                 );
               })}
@@ -751,7 +764,7 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
         })}
       </table>
       <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
-        Only "Active" stage clients count toward revenue &amp; profit. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start date feeds the revenue trend chart above. Double-click MRR or contract start to edit · click the stage pill to change it · click a group header to collapse it.
+        Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start date feeds the revenue trend chart above. Double-click MRR or contract start to edit · click the stage pill to change it · click a group header to collapse it.
       </p>
     </div>
   );
