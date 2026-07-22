@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
@@ -18,9 +19,17 @@ interface NotificationSetting {
   send_time: string;
   days_before: number | null;
   recipient_emails: string[];
+  recipient_roles: string[] | null;
   created_at: string;
   updated_at: string;
 }
+
+// Roles that can be targeted by admin-side alerts.
+const RECIPIENT_ROLE_OPTIONS = [
+  { value: "admin", label: "Admin" },
+  { value: "human_resources", label: "HR" },
+];
+const DEFAULT_RECIPIENT_ROLES = ["admin", "human_resources"];
 
 const NOTIFICATION_CONFIG: Record<string, {
   title: string;
@@ -28,6 +37,8 @@ const NOTIFICATION_CONFIG: Record<string, {
   icon: React.ReactNode;
   color: string;
   showDaysBefore: boolean;
+  hideSendTime?: boolean;
+  hideTest?: boolean;
 }> = {
   birthday_today: {
     title: "Staff Birthdays",
@@ -65,11 +76,20 @@ const NOTIFICATION_CONFIG: Record<string, {
     showDaysBefore: true,
   },
   shift_change: {
-    title: "Shift Changes (Admins)",
-    description: "Real-time alert to admins when shifts or recurring patterns are created, modified, or deleted",
+    title: "Shift Changes",
+    description: "Real-time alert when shifts or recurring patterns are created, modified, or deleted — sent to the roles selected below",
     icon: <Bell className="h-5 w-5" />,
     color: "text-indigo-500",
     showDaysBefore: false,
+  },
+  new_request: {
+    title: "New Request Alerts",
+    description: "Immediate email when a staff member submits a holiday or shift request — sent to the roles selected below",
+    icon: <Calendar className="h-5 w-5" />,
+    color: "text-emerald-500",
+    showDaysBefore: false,
+    hideSendTime: true,
+    hideTest: true,
   },
   staff_shift_change: {
     title: "Schedule Changes (Staff)",
@@ -95,11 +115,11 @@ export function AdminNotificationSettings() {
   const { data: settings, isLoading } = useQuery({
     queryKey: ["notification-settings"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from("notification_settings")
         .select("*")
         .order("notification_type");
-      
+
       if (error) throw error;
       return data as NotificationSetting[];
     }
@@ -117,15 +137,16 @@ export function AdminNotificationSettings() {
 
   const updateMutation = useMutation({
     mutationFn: async (setting: Partial<NotificationSetting> & { id: string }) => {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from("notification_settings")
         .update({
           is_enabled: setting.is_enabled,
           send_time: setting.send_time,
           days_before: setting.days_before,
+          recipient_roles: setting.recipient_roles,
         })
         .eq("id", setting.id);
-      
+
       if (error) throw error;
     },
     onSuccess: () => {
@@ -144,8 +165,25 @@ export function AdminNotificationSettings() {
         ...prev,
         [type]: { ...prev[type], is_enabled: enabled }
       }));
-      updateMutation.mutate({ id: setting.id, is_enabled: enabled });
+      updateMutation.mutate({
+        id: setting.id,
+        is_enabled: enabled,
+        send_time: setting.send_time,
+        days_before: setting.days_before,
+        recipient_roles: setting.recipient_roles?.length ? setting.recipient_roles : DEFAULT_RECIPIENT_ROLES,
+      });
     }
+  };
+
+  const handleRoleToggle = (type: string, role: string, checked: boolean) => {
+    const setting = localSettings[type];
+    if (!setting) return;
+    const current = setting.recipient_roles?.length ? setting.recipient_roles : DEFAULT_RECIPIENT_ROLES;
+    const next = checked ? Array.from(new Set([...current, role])) : current.filter(r => r !== role);
+    setLocalSettings(prev => ({
+      ...prev,
+      [type]: { ...prev[type], recipient_roles: next }
+    }));
   };
 
   const handleDaysChange = (type: string, days: number) => {
@@ -176,6 +214,7 @@ export function AdminNotificationSettings() {
         is_enabled: setting.is_enabled,
         send_time: setting.send_time,
         days_before: setting.days_before,
+        recipient_roles: setting.recipient_roles?.length ? setting.recipient_roles : DEFAULT_RECIPIENT_ROLES,
       });
     }
   };
@@ -262,7 +301,7 @@ export function AdminNotificationSettings() {
           Admin Email Alerts
         </CardTitle>
         <CardDescription>
-          All enabled alerts below are combined into a <strong>single daily digest email</strong> sent to admins at <strong>9am UK time</strong>. Toggle a section off to remove it from the digest. Per-alert send times no longer apply — the digest goes out once a day.
+          All enabled alerts below are combined into a <strong>single daily digest email</strong> sent at <strong>9am UK time</strong>. Use <strong>Send to</strong> on each alert to choose which roles (Admin / HR) receive it — the digest goes to everyone selected on any enabled alert. Toggle a section off to remove it from the digest. Per-alert send times no longer apply — the digest goes out once a day.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -324,18 +363,20 @@ export function AdminNotificationSettings() {
                 {setting.is_enabled && (
                   <div className="ml-8 pl-3 border-l-2 border-muted space-y-3">
                     <div className="flex items-center gap-4 flex-wrap">
-                      <div className="flex items-center gap-2">
-                        <Label htmlFor={`time-${type}`} className="text-sm whitespace-nowrap">
-                          Send at:
-                        </Label>
-                        <Input
-                          id={`time-${type}`}
-                          type="time"
-                          value={setting.send_time?.slice(0, 5) || "07:00"}
-                          onChange={(e) => handleTimeChange(type, e.target.value + ":00")}
-                          className="w-28"
-                        />
-                      </div>
+                      {!config.hideSendTime && (
+                        <div className="flex items-center gap-2">
+                          <Label htmlFor={`time-${type}`} className="text-sm whitespace-nowrap">
+                            Send at:
+                          </Label>
+                          <Input
+                            id={`time-${type}`}
+                            type="time"
+                            value={setting.send_time?.slice(0, 5) || "07:00"}
+                            onChange={(e) => handleTimeChange(type, e.target.value + ":00")}
+                            className="w-28"
+                          />
+                        </div>
+                      )}
 
                       {config.showDaysBefore && (
                         <div className="flex items-center gap-2">
@@ -354,20 +395,39 @@ export function AdminNotificationSettings() {
                         </div>
                       )}
 
+                      <div className="flex items-center gap-2">
+                        <Label className="text-sm whitespace-nowrap">Send to:</Label>
+                        {RECIPIENT_ROLE_OPTIONS.map(opt => {
+                          const roles = setting.recipient_roles?.length ? setting.recipient_roles : DEFAULT_RECIPIENT_ROLES;
+                          const checked = roles.includes(opt.value);
+                          return (
+                            <label key={opt.value} className="flex items-center gap-1.5 text-sm cursor-pointer rounded-md border px-2 py-1 hover:bg-muted/50">
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(v) => handleRoleToggle(type, opt.value, v === true)}
+                              />
+                              {opt.label}
+                            </label>
+                          );
+                        })}
+                      </div>
+
                       <div className="flex items-center gap-2 ml-auto">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleTestNotification(type)}
-                          disabled={isTesting === type}
-                        >
-                          {isTesting === type ? (
-                            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                          ) : (
-                            <Play className="h-4 w-4 mr-1" />
-                          )}
-                          Test
-                        </Button>
+                        {!config.hideTest && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleTestNotification(type)}
+                            disabled={isTesting === type}
+                          >
+                            {isTesting === type ? (
+                              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                            ) : (
+                              <Play className="h-4 w-4 mr-1" />
+                            )}
+                            Test
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           onClick={() => handleSave(type)}
@@ -457,7 +517,7 @@ export function AdminNotificationSettings() {
         <Separator />
         
         <div className="text-sm text-muted-foreground bg-muted/50 p-3 rounded-lg">
-          <strong>Note:</strong> The enabled alerts above are combined into one daily admin digest sent at 9am UK time. The "New Request" alert (holiday, shift cover, etc.) is still sent immediately when a request is submitted. UK Clock Change reminders go directly to all staff and are also summarised in the digest.
+          <strong>Note:</strong> The enabled alerts above are combined into one daily digest sent at 9am UK time to the roles you've selected. "New Request Alerts" and "Shift Changes" are sent immediately when they happen, to their own selected roles. Alerts that also email staff directly (birthdays, staff schedule changes, onboarding reminders) continue to reach those staff regardless of the role selection. UK Clock Change reminders go directly to all staff and are also summarised in the digest.
         </div>
       </CardContent>
     </Card>

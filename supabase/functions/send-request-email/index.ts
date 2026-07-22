@@ -158,12 +158,30 @@ const handler = async (req: Request): Promise<Response> => {
     let emailResult;
 
     if (type === "new_request") {
-      // HR manages holiday/shift requests, so new-request notifications go to
-      // both admins and HR.
+      // Recipients are role-configured in notification_settings ("new_request"),
+      // defaulting to admins + HR who manage holiday/shift requests.
+      const { data: reqSetting } = await supabaseClient
+        .from("notification_settings")
+        .select("is_enabled, recipient_roles")
+        .eq("notification_type", "new_request")
+        .maybeSingle();
+
+      if (reqSetting && reqSetting.is_enabled === false) {
+        console.log("new_request notifications disabled — skipping admin email");
+        return new Response(
+          JSON.stringify({ success: true, message: "New request notifications disabled" }),
+          { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+
+      const recipientRoles: string[] = Array.isArray(reqSetting?.recipient_roles) && reqSetting.recipient_roles.length > 0
+        ? reqSetting.recipient_roles
+        : ["admin", "human_resources"];
+
       const { data: adminProfiles, error: adminError } = await supabaseClient
         .from("profiles")
         .select("email, display_name")
-        .in("role", ["admin", "human_resources"]);
+        .in("role", recipientRoles);
 
       if (adminError) {
         console.error("Error fetching admin profiles:", adminError);

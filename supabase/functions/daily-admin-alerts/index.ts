@@ -184,10 +184,19 @@ const handler = async (req: Request): Promise<Response> => {
       .from("notification_settings").select("*");
     const settingsMap = new Map(notificationSettings?.map(s => [s.notification_type, s]) || []);
 
-    // The daily digest covers holidays, cover gaps and schedule changes — HR
-    // manages those alongside admins, so both roles receive it.
+    // The digest is one email, so its recipients are the union of the
+    // role-configured recipients (notification_settings.recipient_roles) across
+    // every enabled alert. Defaults to admins + HR, who manage holidays, cover
+    // and schedule changes together.
+    const digestRoles = new Set<string>();
+    (notificationSettings || []).forEach(s => {
+      if (s.is_enabled === false) return;
+      const roles: string[] = Array.isArray(s.recipient_roles) ? s.recipient_roles : [];
+      roles.forEach(r => digestRoles.add(r));
+    });
+    if (digestRoles.size === 0) { digestRoles.add("admin"); digestRoles.add("human_resources"); }
     const { data: adminProfiles } = await supabaseClient
-      .from("profiles").select("email, display_name").in("role", ["admin", "human_resources"]);
+      .from("profiles").select("email, display_name").in("role", Array.from(digestRoles));
     const adminEmails = adminProfiles?.filter(p => p.email).map(p => p.email as string) || [];
 
     const { data: profiles } = await supabaseClient

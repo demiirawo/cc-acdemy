@@ -94,12 +94,15 @@ serve(async (req) => {
       });
     }
 
-    // HR shares responsibility for managing shift changes, so they get the same
-    // alerts as admins.
+    // Recipients are role-configured per alert in notification_settings
+    // (defaults to admins + HR, who share responsibility for shift changes).
+    const recipientRoles: string[] = Array.isArray(settings?.recipient_roles) && settings.recipient_roles.length > 0
+      ? settings.recipient_roles
+      : ["admin", "human_resources"];
     const { data: admins } = await supabase
       .from("profiles")
       .select("email")
-      .in("role", ["admin", "human_resources"]);
+      .in("role", recipientRoles);
 
     const adminEmails = admins?.map((a) => a.email).filter(Boolean) as string[];
     if (adminEmails.length === 0) {
