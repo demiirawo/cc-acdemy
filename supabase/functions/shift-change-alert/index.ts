@@ -94,10 +94,12 @@ serve(async (req) => {
       });
     }
 
+    // HR shares responsibility for managing shift changes, so they get the same
+    // alerts as admins.
     const { data: admins } = await supabase
       .from("profiles")
       .select("email")
-      .eq("role", "admin");
+      .in("role", ["admin", "human_resources"]);
 
     const adminEmails = admins?.map((a) => a.email).filter(Boolean) as string[];
     if (adminEmails.length === 0) {

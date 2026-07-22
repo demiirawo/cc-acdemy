@@ -184,8 +184,10 @@ const handler = async (req: Request): Promise<Response> => {
       .from("notification_settings").select("*");
     const settingsMap = new Map(notificationSettings?.map(s => [s.notification_type, s]) || []);
 
+    // The daily digest covers holidays, cover gaps and schedule changes — HR
+    // manages those alongside admins, so both roles receive it.
     const { data: adminProfiles } = await supabaseClient
-      .from("profiles").select("email, display_name").eq("role", "admin");
+      .from("profiles").select("email, display_name").in("role", ["admin", "human_resources"]);
     const adminEmails = adminProfiles?.filter(p => p.email).map(p => p.email as string) || [];
 
     const { data: profiles } = await supabaseClient

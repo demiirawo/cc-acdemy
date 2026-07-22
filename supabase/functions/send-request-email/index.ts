@@ -158,10 +158,12 @@ const handler = async (req: Request): Promise<Response> => {
     let emailResult;
 
     if (type === "new_request") {
+      // HR manages holiday/shift requests, so new-request notifications go to
+      // both admins and HR.
       const { data: adminProfiles, error: adminError } = await supabaseClient
         .from("profiles")
         .select("email, display_name")
-        .eq("role", "admin");
+        .in("role", ["admin", "human_resources"]);
 
       if (adminError) {
         console.error("Error fetching admin profiles:", adminError);
