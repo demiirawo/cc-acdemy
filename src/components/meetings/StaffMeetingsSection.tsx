@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { format, parseISO, differenceInCalendarDays, subMonths } from "date-fns";
 import {
   Presentation, Target, Sparkles, Rocket, Plus, Trash2, Pencil,
-  ChevronLeft, ChevronRight, X, CalendarDays, AlertCircle, Loader2, Check, Flag, Share2, Copy, Megaphone, ShieldAlert,
+  ChevronLeft, ChevronRight, X, CalendarDays, AlertCircle, Loader2, Check, Flag, Share2, Copy, Megaphone, ShieldAlert, Users,
 } from "lucide-react";
 import { RANK_ORDER, RANK_STYLES, tenureYears, type Rank } from "../hr/PerformanceRankBadge";
 
@@ -64,6 +64,7 @@ const INCIDENT_SEVERITY: Record<string, { label: string; cls: string }> = {
 
 const SECTIONS = [
   { key: "vision", title: "Our Vision", icon: Rocket },
+  { key: "team", title: "Our Team", icon: Users },
   { key: "updates", title: "Updates", icon: Megaphone },
   { key: "items", title: "Agenda", icon: Target },
   { key: "incidents", title: "Recent Incidents", icon: ShieldAlert },
@@ -96,6 +97,7 @@ export function StaffMeetingsSection() {
 
   const [spotlights, setSpotlights] = useState<Spotlight[]>([]);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
+  const [teamIds, setTeamIds] = useState<Set<string>>(new Set());
   const [perf, setPerf] = useState<Record<string, PerfInfo>>({});
   const [photos, setPhotos] = useState<Record<string, string>>({});
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -117,6 +119,14 @@ export function StaffMeetingsSection() {
   const nameOf = (uid: string | null) =>
     (uid && (staff.find(s => s.user_id === uid)?.display_name || staff.find(s => s.user_id === uid)?.email)) || "Unknown";
 
+  // Current team members (active staff), alphabetical.
+  const team = useMemo(
+    () => staff
+      .filter(s => teamIds.has(s.user_id))
+      .sort((a, b) => (a.display_name || a.email || "").localeCompare(b.display_name || b.email || "")),
+    [staff, teamIds]
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     const threeMonthsAgo = format(subMonths(new Date(), 3), "yyyy-MM-dd");
@@ -127,7 +137,7 @@ export function StaffMeetingsSection() {
       (supabase as any).from("meeting_spotlights").select("*").order("created_at", { ascending: false }),
       (supabase as any).from("meeting_updates").select("*").order("created_at", { ascending: false }),
       supabase.from("profiles").select("user_id, display_name, email").order("display_name"),
-      supabase.from("hr_profiles").select("user_id, performance_rating, start_date, created_at"),
+      supabase.from("hr_profiles").select("user_id, performance_rating, start_date, created_at, employment_end_date"),
       supabase.from("staff_onboarding_documents").select("user_id, photograph_path"),
       (supabase as any).from("incidents").select("id, title, description, client_name, incident_date, severity, category, status, on_meeting_agenda")
         .gte("incident_date", threeMonthsAgo).order("incident_date", { ascending: false }),
@@ -141,13 +151,18 @@ export function StaffMeetingsSection() {
     setIncidents((incRes.data as Incident[]) || []);
     setStaff((staffRes.data as StaffProfile[]) || []);
     const pmap: Record<string, PerfInfo> = {};
+    const today = format(new Date(), "yyyy-MM-dd");
+    const activeIds = new Set<string>();
     (hrRes.data || []).forEach((h: any) => {
       pmap[h.user_id] = {
         rank: (h.performance_rating && RANK_ORDER.includes(h.performance_rating) ? h.performance_rating : null) as Rank | null,
         years: tenureYears(h.start_date || h.created_at),
       };
+      // "Our Team" = current staff: has an HR profile and hasn't left.
+      if (!h.employment_end_date || h.employment_end_date >= today) activeIds.add(h.user_id);
     });
     setPerf(pmap);
+    setTeamIds(activeIds);
 
     // The onboarding-documents bucket is private, so use signed URLs. Only sign
     // browser-renderable images (skip HEIC/PDF, which fall back to initials).
@@ -736,8 +751,24 @@ export function StaffMeetingsSection() {
     </div>
   );
 
+  const renderTeam = (big: boolean) => (
+    team.length === 0 ? (
+      <p className="text-muted-foreground italic">No team members to show yet.</p>
+    ) : (
+      <div className={cn("grid gap-4", big ? "grid-cols-3 sm:grid-cols-4 md:grid-cols-6" : "grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8")}>
+        {team.map(m => (
+          <div key={m.user_id} className="flex flex-col items-center text-center gap-2">
+            <TeamAvatar photo={photos[m.user_id]} name={nameOf(m.user_id)} big={big} />
+            <p className={cn("font-medium leading-tight", big ? "text-sm md:text-base" : "text-xs")}>{m.display_name || m.email}</p>
+          </div>
+        ))}
+      </div>
+    )
+  );
+
   const renderBody = (key: string, big: boolean) =>
     key === "vision" ? renderVision(big)
+      : key === "team" ? renderTeam(big)
       : key === "updates" ? renderUpdates(big)
       : key === "items" ? renderItems(big)
       : key === "incidents" ? renderIncidents(big)
@@ -803,7 +834,12 @@ export function StaffMeetingsSection() {
         {SECTIONS.map(sec => (
           <Card key={sec.key}>
             <CardContent className="p-5 space-y-4">
-              <h2 className="text-lg font-semibold">{sec.title}</h2>
+              <h2 className="text-lg font-semibold">
+                {sec.title}
+                {sec.key === "team" && team.length > 0 && (
+                  <span className="ml-2 text-sm font-normal text-muted-foreground">{team.length} {team.length === 1 ? "member" : "members"}</span>
+                )}
+              </h2>
               {renderBody(sec.key, false)}
             </CardContent>
           </Card>
@@ -839,6 +875,18 @@ export function StaffMeetingsSection() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// ---- Team member photo (Our Team grid) ----
+function TeamAvatar({ photo, name, big }: { photo?: string; name: string; big: boolean }) {
+  const [err, setErr] = useState(false);
+  const initials = name.split(/\s+/).map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
+  const size = big ? "h-20 w-20 md:h-24 md:w-24" : "h-16 w-16 sm:h-20 sm:w-20";
+  return photo && !err ? (
+    <img src={photo} alt={name} onError={() => setErr(true)} className={cn("rounded-full object-cover ring-2 ring-border shadow-sm", size)} />
+  ) : (
+    <div className={cn("rounded-full bg-muted flex items-center justify-center font-bold text-muted-foreground ring-2 ring-border", size, big ? "text-2xl" : "text-xl")}>{initials}</div>
   );
 }
 
