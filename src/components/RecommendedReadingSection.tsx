@@ -85,20 +85,34 @@ export function RecommendedReadingSection({ items, onItemClick, orderedCategorie
     return null;
   }
 
+  // Open in a new tab via a real anchor click. Using window.open with a
+  // "noopener,noreferrer" features string opens files (esp. PDFs) in a
+  // popup-style context that renders blank until refreshed; a synthesized
+  // link click behaves like a genuine navigation and loads them first time.
+  const openInNewTab = (url: string) => {
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
   const handleItemClick = (item: RecommendedReadingItem, e: React.MouseEvent) => {
     e.preventDefault();
-    
+
     if (item.url) {
       // Add protocol if missing
       let url = item.url;
       if (!url.match(/^https?:\/\//i)) {
         url = 'https://' + url;
       }
-      window.open(url, '_blank', 'noopener,noreferrer');
+      openInNewTab(url);
     } else if (item.fileUrl) {
-      window.open(item.fileUrl, '_blank', 'noopener,noreferrer');
+      openInNewTab(item.fileUrl);
     }
-    
+
     onItemClick?.(item);
   };
 
