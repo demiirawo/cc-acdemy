@@ -442,13 +442,26 @@ serve(async (req) => {
       const events = teamEvents.filter((e) => e.client === client);
       if (events.length === 0) continue;
 
-      const added = [...new Set(events.filter((e) => e.kind === "added").map((e) => e.personId))];
-      const removed = [...new Set(events.filter((e) => e.kind === "removed").map((e) => e.personId))];
-      const involved = new Set([...added, ...removed]);
+      // Reconcile against ACTUAL current team membership so the summary reflects
+      // net changes, not per-shift churn. Editing/swapping a person's shift can
+      // produce both an "added" and a "removed" event for the same person even
+      // though they still work the client — which read as contradictory.
+      const onTeamNow = coworkerIdsByClient.get(client) || new Set<string>();
+      const addedEvents = new Set(events.filter((e) => e.kind === "added").map((e) => e.personId));
+      const removedEvents = new Set(events.filter((e) => e.kind === "removed").map((e) => e.personId));
+
+      // A person with BOTH an add and a remove event was just swapped between
+      // shifts — net no membership change, so show them in neither list.
+      const added = [...addedEvents].filter((id) => !removedEvents.has(id));
+      // Genuinely removed = wasn't also added, and no longer on the team at all
+      // after the change (still-present coworkers keep other shifts/assignments).
+      const removed = [...removedEvents].filter((id) => !addedEvents.has(id) && !onTeamNow.has(id));
+      const involved = new Set([...addedEvents, ...removedEvents]);
 
       const summaryItems: string[] = [];
-      for (const id of added) summaryItems.push(`<li style="margin:4px 0;color:#166534;"><strong>${escapeHtml(nameOf(id))}</strong> has been added to the team</li>`);
-      for (const id of removed) summaryItems.push(`<li style="margin:4px 0;color:#991b1b;"><strong>${escapeHtml(nameOf(id))}</strong> has been removed from the team</li>`);
+      for (const id of added) summaryItems.push(`<li style="margin:4px 0;color:#166534;"><strong>${escapeHtml(nameOf(id))}</strong> has joined the team</li>`);
+      for (const id of removed) summaryItems.push(`<li style="margin:4px 0;color:#991b1b;"><strong>${escapeHtml(nameOf(id))}</strong> has left the team</li>`);
+      // Nothing changed on balance (e.g. a shift was just moved) — no email.
       if (summaryItems.length === 0) continue;
 
       const recipients = [...(coworkerIdsByClient.get(client) || [])]
