@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, AlertTriangle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink, Handshake, Settings, Plus, Trash2, ThumbsUp } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay, differenceInCalendarDays } from "date-fns";
@@ -413,6 +414,12 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   const [allStaff, setAllStaff] = useState<UserProfile[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  // Performance-rating change dialog: pick a new rank + a mandatory reason that
+  // is emailed to the staff member explaining the change.
+  const [rankDialogOpen, setRankDialogOpen] = useState(false);
+  const [rankChoice, setRankChoice] = useState<Rank | null>(null);
+  const [rankReason, setRankReason] = useState("");
+  const [savingRank, setSavingRank] = useState(false);
   // Team-wide performance data (for the "how you compare" + bonus-points views).
   const [teamPerf, setTeamPerf] = useState<{ rank: Rank | null; years: number }[]>([]);
   // Admin-authored "how to improve your rating" note for the selected staff.
@@ -1419,20 +1426,34 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       return next;
     });
   };
-  // Cycle the performance rating S → A → B → C → D → S on click (admin only).
-  const cyclePerformanceRating = async () => {
+  // Open the performance-rating change dialog (admin only), preselecting the
+  // current rank so the admin explicitly chooses the new one.
+  const openRankDialog = () => {
     if (!hrProfile || !isAdmin) return;
+    setRankChoice(hrProfile.performance_rating as Rank | null);
+    setRankReason("");
+    setRankDialogOpen(true);
+  };
+
+  // Save a new performance rating with a mandatory reason, which is emailed to
+  // the staff member so they understand why their rank changed.
+  const saveRankChange = async () => {
+    if (!hrProfile || !isAdmin || !rankChoice || !rankReason.trim()) return;
     const cur = hrProfile.performance_rating as Rank | null;
-    const idx = RANK_ORDER.indexOf(cur as Rank);
-    const next = RANK_ORDER[(idx + 1) % RANK_ORDER.length];
+    if (rankChoice === cur) {
+      toast({ title: "Choose a different rating", description: "The rating hasn't changed.", variant: "destructive" });
+      return;
+    }
+    setSavingRank(true);
     const prev = hrProfile;
-    setHRProfile({ ...hrProfile, performance_rating: next }); // optimistic
+    setHRProfile({ ...hrProfile, performance_rating: rankChoice }); // optimistic
     const { error } = await supabase
       .from('hr_profiles')
-      .update({ performance_rating: next })
+      .update({ performance_rating: rankChoice })
       .eq('id', hrProfile.id);
     if (error) {
       setHRProfile(prev);
+      setSavingRank(false);
       toast({ title: "Couldn't update rating", description: error.message, variant: "destructive" });
       return;
     }
@@ -1443,13 +1464,20 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
           recipientEmail: recipient.email,
           recipientName: recipient.display_name,
           oldRank: cur,
-          newRank: next,
+          newRank: rankChoice,
+          reason: rankReason.trim(),
         },
       }).catch(() => {});
     }
     // A rating change alters bonus-pot eligibility/points — recompute any pots
     // already distributed so this person's share updates everywhere.
     recalcAllBonusPots(user?.id).catch(() => {});
+    setSavingRank(false);
+    setRankDialogOpen(false);
+    toast({
+      title: "Performance rating updated",
+      description: recipient?.email ? `${recipient.display_name || "The staff member"} has been emailed the reason.` : undefined,
+    });
   };
 
   // Save the admin's "how to improve your rating" note for this staff member.
@@ -1690,7 +1718,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
           const years = tenureYears(hrProfile.start_date);
           return (
             <Card
-              onClick={cyclePerformanceRating}
+              onClick={openRankDialog}
               title={isAdmin ? "Click to change performance rating" : undefined}
               className={cn(
                 "overflow-hidden transition-all duration-200",
@@ -1720,6 +1748,62 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
           );
         })()}
       </div>
+
+      {/* Change performance rating — pick a tier + mandatory reason emailed to the staff member */}
+      <Dialog open={rankDialogOpen} onOpenChange={o => { if (!savingRank) setRankDialogOpen(o); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Change performance rating</DialogTitle>
+            <DialogDescription>
+              Pick the new rating and explain why it changed. Your explanation is emailed to {allStaff.find(s => s.user_id === selectedUserId)?.display_name || "the staff member"}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">New rating</p>
+              <div className="grid grid-cols-5 gap-2">
+                {RANK_ORDER.map(r => {
+                  const st = RANK_STYLES[r];
+                  const selected = rankChoice === r;
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setRankChoice(r)}
+                      className={cn(
+                        "flex flex-col items-center gap-1 rounded-lg border-2 py-2 transition-all",
+                        selected ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
+                      )}
+                    >
+                      <span className={cn("flex h-8 w-8 items-center justify-center rounded-full text-sm font-extrabold", st.tile)}>{r}</span>
+                      <span className="text-[10px] text-muted-foreground">{st.label.split(" ")[0]}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="rank-reason" className="text-sm font-medium">Reason for the change <span className="text-destructive">*</span></label>
+              <Textarea
+                id="rank-reason"
+                value={rankReason}
+                onChange={e => setRankReason(e.target.value)}
+                rows={4}
+                placeholder="Explain why the rating is changing — this is sent to the staff member."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRankDialogOpen(false)} disabled={savingRank}>Cancel</Button>
+            <Button
+              onClick={saveRankChange}
+              disabled={savingRank || !rankReason.trim() || !rankChoice || rankChoice === (hrProfile.performance_rating as Rank | null)}
+            >
+              {savingRank ? "Saving…" : "Save & notify"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Performance Rating — explainer, team comparison, bonus effect, guidance */}
       {(() => {

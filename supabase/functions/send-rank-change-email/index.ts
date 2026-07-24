@@ -27,7 +27,12 @@ interface RankChangeEmailRequest {
   recipientName?: string | null;
   oldRank?: string | null;
   newRank: string;
+  reason?: string | null;
 }
+
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+   .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 const emailWrapper = (headerTitle: string, content: string) => `
 <!DOCTYPE html>
@@ -62,7 +67,7 @@ serve(async (req) => {
 
   try {
     const body: RankChangeEmailRequest = await req.json();
-    const { recipientEmail, recipientName, oldRank, newRank } = body;
+    const { recipientEmail, recipientName, oldRank, newRank, reason } = body;
 
     if (!recipientEmail) {
       return new Response(JSON.stringify({ skipped: "no recipient email" }), {
@@ -82,6 +87,11 @@ serve(async (req) => {
       <p style="text-align:center;margin:0 0 16px;">
         <span style="display:inline-block;padding:10px 20px;border-radius:8px;background-color:#f3f4f6;color:#111827;font-size:16px;font-weight:700;">${newLabel}</span>
       </p>
+      ${reason && reason.trim() ? `
+      <p style="color:#374151;font-size:14px;line-height:1.6;margin:0 0 6px;font-weight:600;">Why this changed</p>
+      <div style="border-left:4px solid ${BRAND_COLOR};background-color:#f9fafb;padding:12px 16px;border-radius:0 8px 8px 0;margin:0 0 16px;">
+        <p style="color:#374151;font-size:15px;line-height:1.6;margin:0;white-space:pre-wrap;">${escapeHtml(reason.trim())}</p>
+      </div>` : ""}
       <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 4px;">
         Your rating and tenure together determine your share of the monthly bonus pot — you can see the full breakdown on your HR profile.
       </p>
