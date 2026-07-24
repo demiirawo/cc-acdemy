@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useUserRole } from "@/hooks/useUserRole";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -110,6 +111,13 @@ export function StaffDocumentationMatrix() {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState<string>('');
   const { toast } = useToast();
+  const { isAdmin } = useUserRole();
+
+  // Base salary is only for super admins — HR managers must not see salaries.
+  const fields = useMemo(
+    () => (isAdmin ? DOCUMENTATION_FIELDS : DOCUMENTATION_FIELDS.filter(f => f.key !== 'base_salary')),
+    [isAdmin]
+  );
 
   useEffect(() => {
     fetchData();
@@ -266,12 +274,12 @@ export function StaffDocumentationMatrix() {
 
   const getCompletionStats = (userId: string): { completed: number; total: number } => {
     let completed = 0;
-    DOCUMENTATION_FIELDS.forEach(field => {
+    fields.forEach(field => {
       if (hasFieldValue(userId, field.key)) {
         completed++;
       }
     });
-    return { completed, total: DOCUMENTATION_FIELDS.length };
+    return { completed, total: fields.length };
   };
 
   const handleFileClick = (filePath: string | null, title: string) => {
@@ -284,7 +292,7 @@ export function StaffDocumentationMatrix() {
   };
 
   // Group fields by category
-  const fieldsByCategory = DOCUMENTATION_FIELDS.reduce((acc, field) => {
+  const fieldsByCategory = fields.reduce((acc, field) => {
     if (!acc[field.category]) acc[field.category] = [];
     acc[field.category].push(field);
     return acc;
@@ -426,8 +434,8 @@ export function StaffDocumentationMatrix() {
                     </td>
                     {userProfiles.map((member) => {
                       const stats = getCompletionStats(member.user_id);
-                      const progressPercent = DOCUMENTATION_FIELDS.length > 0 
-                        ? Math.round((stats.completed / stats.total) * 100) 
+                      const progressPercent = stats.total > 0
+                        ? Math.round((stats.completed / stats.total) * 100)
                         : 0;
 
                       return (
