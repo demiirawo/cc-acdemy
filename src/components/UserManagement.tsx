@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Users, Plus, Trash2, Edit, CheckCircle, Clock, Mail, BookOpen, Eye, TrendingUp } from "lucide-react";
+import { Users, Plus, Trash2, Edit, CheckCircle, Clock, Mail, BookOpen, Eye, TrendingUp, KeyRound, LogIn, LifeBuoy, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -212,6 +212,51 @@ export function UserManagement() {
         description: "Failed to update user role",
         variant: "destructive"
       });
+    }
+  };
+
+  // ---- Account support (non-destructive) ------------------------------------
+  // Neither action changes the user's existing password or sign-in — they just
+  // email the user a way back into their account.
+  const [supportBusy, setSupportBusy] = useState<string | null>(null);
+
+  // Emails a one-time passwordless sign-in link (works even if they've forgotten
+  // their password). Reuses the branded send-magic-link function.
+  const sendLoginLink = async (profile: Profile) => {
+    if (!profile.email) {
+      toast({ title: "No email on file", description: "This user has no email address to send a link to.", variant: "destructive" });
+      return;
+    }
+    setSupportBusy(`magic-${profile.user_id}`);
+    try {
+      const { error } = await supabase.functions.invoke('send-magic-link', { body: { email: profile.email } });
+      if (error) throw error;
+      toast({ title: "Login link sent", description: `A one-time sign-in link has been emailed to ${profile.email}. Their existing login is unchanged.` });
+    } catch (error: any) {
+      toast({ title: "Couldn't send login link", description: error.message, variant: "destructive" });
+    } finally {
+      setSupportBusy(null);
+    }
+  };
+
+  // Emails a password-reset link. The user's current password keeps working
+  // until they choose to set a new one from the email.
+  const sendPasswordReset = async (profile: Profile) => {
+    if (!profile.email) {
+      toast({ title: "No email on file", description: "This user has no email address to send a reset to.", variant: "destructive" });
+      return;
+    }
+    setSupportBusy(`reset-${profile.user_id}`);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(profile.email, {
+        redirectTo: `${window.location.origin}/`,
+      });
+      if (error) throw error;
+      toast({ title: "Password reset sent", description: `${profile.email} can set a new password from the email. Their current password still works until they do.` });
+    } catch (error: any) {
+      toast({ title: "Couldn't send reset email", description: error.message, variant: "destructive" });
+    } finally {
+      setSupportBusy(null);
     }
   };
 
@@ -531,6 +576,47 @@ export function UserManagement() {
                                 </SelectContent>
                               </Select>
                             </div>
+
+                            {/* Account support — help a user who can't log in. Non-destructive. */}
+                            <div className="rounded-lg border bg-muted/20 p-3 space-y-2.5">
+                              <div className="flex items-center gap-2">
+                                <LifeBuoy className="h-4 w-4 text-primary" />
+                                <p className="text-sm font-medium">Account support</p>
+                              </div>
+                              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                                {profile.email_confirmed_at ? (
+                                  <><CheckCircle className="h-3.5 w-3.5 text-green-600" /> Email confirmed — account active</>
+                                ) : (
+                                  <><Clock className="h-3.5 w-3.5 text-amber-500" /> Email not yet confirmed</>
+                                )}
+                              </p>
+                              <div className="flex flex-col sm:flex-row gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="flex-1"
+                                  disabled={supportBusy !== null || !profile.email}
+                                  onClick={() => sendLoginLink(profile)}
+                                >
+                                  {supportBusy === `magic-${profile.user_id}` ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <LogIn className="h-4 w-4 mr-1.5" />}
+                                  Send login link
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="flex-1"
+                                  disabled={supportBusy !== null || !profile.email}
+                                  onClick={() => sendPasswordReset(profile)}
+                                >
+                                  {supportBusy === `reset-${profile.user_id}` ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <KeyRound className="h-4 w-4 mr-1.5" />}
+                                  Send password reset
+                                </Button>
+                              </div>
+                              <p className="text-[11px] text-muted-foreground">
+                                Both options email {profile.email || "the user"} a way back into their account. Their existing password and sign-in are not changed.
+                              </p>
+                            </div>
+
                             <div className="flex justify-end gap-2">
                               <Button
                                 variant="outline"

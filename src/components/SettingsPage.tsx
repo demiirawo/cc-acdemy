@@ -11,13 +11,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { User, Mail, Shield, Bell, Palette, Download, Upload, Trash2, Key, Settings as SettingsIcon, Database, Globe, Eye, EyeOff, Save, X, SlidersHorizontal, GraduationCap, FileSignature, ClipboardList, Award } from "lucide-react";
+import { User, Mail, Shield, Bell, Palette, Download, Upload, Trash2, Key, Settings as SettingsIcon, Database, Globe, Eye, EyeOff, Save, X, SlidersHorizontal, GraduationCap, FileSignature, ClipboardList, Award, UsersRound } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { AdminNotificationSettings } from "./AdminNotificationSettings";
 import { HandoverTemplatesManager } from "./HandoverTemplatesManager";
 import { OnboardingManager } from "./hr/OnboardingManager";
+import { UserManagement } from "./UserManagement";
 import { ContractsAdmin } from "./hr/contracts/ContractsAdmin";
 import { TrainingItemsManager } from "./hr/training/TrainingItemsManager";
 import { EmailExceptionsManager } from "./hr/EmailExceptionsManager";
@@ -291,6 +292,10 @@ export function SettingsPage({
                         <Mail className="h-4 w-4" />
                         Email Exceptions
                       </TabsTrigger>
+                      <TabsTrigger value="team-access" className="flex items-center gap-2">
+                        <UsersRound className="h-4 w-4" />
+                        Team &amp; Access
+                      </TabsTrigger>
                     </TabsList>
                     <TabsContent value="onboarding-config" className="mt-0">
                       <OnboardingManager />
@@ -309,6 +314,9 @@ export function SettingsPage({
                     </TabsContent>
                     <TabsContent value="email-exceptions-config" className="mt-0">
                       <EmailExceptionsManager />
+                    </TabsContent>
+                    <TabsContent value="team-access" className="mt-0">
+                      <UserManagement />
                     </TabsContent>
                   </Tabs>
                 </CardContent>
