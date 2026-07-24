@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, AlertTriangle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink, Handshake, Settings, Plus, Trash2, ThumbsUp } from "lucide-react";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, AlertTriangle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink, Handshake, Settings, Plus, Trash2, ThumbsUp, Mail, Phone } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -1667,6 +1667,39 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
           onSaved={() => selectedUserId && fetchData(selectedUserId)}
         />
       )}
+
+      {/* Contact details */}
+      {(() => {
+        const contactEmail = allStaff.find(s => s.user_id === selectedUserId)?.email
+          || (selectedUserId === user?.id ? user?.email ?? null : null);
+        const contactPhone = onboardingData?.phone_number || null;
+        return (
+          <Card>
+            <CardContent className="p-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="p-2 bg-primary/10 rounded-lg flex-shrink-0"><Mail className="h-4 w-4 text-primary" /></div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">Email</p>
+                    {contactEmail
+                      ? <a href={`mailto:${contactEmail}`} className="font-medium text-primary hover:underline truncate block">{contactEmail}</a>
+                      : <p className="font-medium text-muted-foreground">Not provided</p>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="p-2 bg-primary/10 rounded-lg flex-shrink-0"><Phone className="h-4 w-4 text-primary" /></div>
+                  <div className="min-w-0">
+                    <p className="text-xs text-muted-foreground">Phone</p>
+                    {contactPhone
+                      ? <a href={`tel:${contactPhone}`} className="font-medium text-primary hover:underline truncate block">{contactPhone}</a>
+                      : <p className="font-medium text-muted-foreground">Not provided</p>}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Profile Overview */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
