@@ -64,11 +64,11 @@ const INCIDENT_SEVERITY: Record<string, { label: string; cls: string }> = {
 
 const SECTIONS = [
   { key: "vision", title: "Our Vision", icon: Rocket },
-  { key: "team", title: "Our Team", icon: Users },
   { key: "updates", title: "Updates", icon: Megaphone },
-  { key: "items", title: "Agenda", icon: Target },
+  { key: "items", title: "Actions", icon: Target },
   { key: "incidents", title: "Recent Incidents", icon: ShieldAlert },
   { key: "spotlight", title: "Staff Spotlight", icon: Sparkles },
+  { key: "team", title: "Our Team", icon: Users },
 ] as const;
 // The presentation walks the sections in reverse (spotlight → … → vision).
 const PRESENT_ORDER = [...SECTIONS].reverse();
@@ -719,12 +719,16 @@ export function StaffMeetingsSection() {
     </div>
   );
 
-  const renderIncidents = (big: boolean) => (
+  const renderIncidents = (big: boolean) => {
+    // In present mode (and the shared/read-only view) only surface incidents
+    // flagged for the meeting; in edit mode show all so they can be flagged.
+    const shown = big ? incidents.filter(i => i.on_meeting_agenda) : incidents;
+    return (
     <div className="space-y-2">
-      {incidents.length === 0 ? (
-        <p className="text-muted-foreground italic">No incidents logged in the last 3 months.</p>
+      {shown.length === 0 ? (
+        <p className="text-muted-foreground italic">{big ? "No incidents flagged for this meeting." : "No incidents logged in the last 3 months."}</p>
       ) : (
-        incidents.map(inc => (
+        shown.map(inc => (
           <div key={inc.id} className={cn("rounded-xl border bg-card p-3", inc.on_meeting_agenda && "border-amber-400/60 bg-amber-500/5")}>
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-center gap-2 min-w-0">
@@ -749,7 +753,8 @@ export function StaffMeetingsSection() {
         ))
       )}
     </div>
-  );
+    );
+  };
 
   const renderTeam = (big: boolean) => (
     team.length === 0 ? (
