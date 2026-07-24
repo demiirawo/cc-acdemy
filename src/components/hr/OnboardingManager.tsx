@@ -4,8 +4,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OnboardingStepsManager } from "./OnboardingStepsManager";
 import { OnboardingOwnersManager } from "./OnboardingOwnersManager";
 import { OnboardingMatrix } from "./OnboardingMatrix";
+import { StaffDocumentationMatrix } from "./StaffDocumentationMatrix";
 import { StaffOnboardingView } from "./StaffOnboardingView";
-import { Settings, Grid3X3, Users, ClipboardList } from "lucide-react";
+import { Settings, Grid3X3, Users, ClipboardList, FileCheck } from "lucide-react";
 
 export function OnboardingManager() {
   const { isAdmin } = useUserRole();
@@ -25,6 +26,10 @@ export function OnboardingManager() {
             <Grid3X3 className="h-4 w-4" />
             Onboarding Matrix
           </TabsTrigger>
+          <TabsTrigger value="documents" className="flex items-center gap-2">
+            <FileCheck className="h-4 w-4" />
+            Documents
+          </TabsTrigger>
           <TabsTrigger value="steps" className="flex items-center gap-2">
             <Settings className="h-4 w-4" />
             Configure Steps
@@ -37,6 +42,10 @@ export function OnboardingManager() {
 
         <TabsContent value="matrix" className="mt-4">
           <OnboardingMatrix />
+        </TabsContent>
+
+        <TabsContent value="documents" className="mt-4">
+          <StaffDocumentationMatrix />
         </TabsContent>
 
         <TabsContent value="steps" className="mt-4">

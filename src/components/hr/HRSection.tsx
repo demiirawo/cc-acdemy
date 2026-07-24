@@ -90,6 +90,8 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
 
   const adminTabs = [
     { value: "my-profile", label: "Staff Profile" },
+    { value: "onboarding", label: "Onboarding" },
+    { value: "onboarding-form", label: "My Details" },
     { value: "training", label: "Training" },
     { value: "staff-meetings", label: "Staff Meetings" },
     { value: "incidents", label: "Incidents" },
