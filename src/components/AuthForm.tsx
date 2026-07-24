@@ -214,14 +214,14 @@ export function AuthForm({ onAuthStateChange }: AuthFormProps) {
                   required
                 />
               </div>
-              <Button type="submit" className="w-full bg-gradient-primary" disabled={isLoading}>
+              <Button type="submit" variant="outline" className="w-full text-foreground" disabled={isLoading}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Admin Login
               </Button>
-              <Button 
-                type="button" 
-                variant="outline" 
-                className="w-full" 
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
                 onClick={() => setIsAdminLogin(false)}
                 disabled={isLoading}
               >
