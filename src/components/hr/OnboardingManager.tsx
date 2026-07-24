@@ -9,15 +9,18 @@ import { StaffOnboardingView } from "./StaffOnboardingView";
 import { Settings, Grid3X3, Users, ClipboardList, FileCheck } from "lucide-react";
 
 export function OnboardingManager() {
-  const { isAdmin } = useUserRole();
-  const [activeTab, setActiveTab] = useState(isAdmin ? "matrix" : "my-onboarding");
+  const { canManageHR } = useUserRole();
+  // Default to a tab that's valid in the management view. Role resolves async,
+  // so basing this on canManageHR at mount could leave it on a non-existent tab
+  // (blank content) once the role loads in.
+  const [activeTab, setActiveTab] = useState("matrix");
 
-  // Non-admin users see their personal onboarding view
-  if (!isAdmin) {
+  // Staff without HR-management rights see their personal onboarding view.
+  if (!canManageHR) {
     return <StaffOnboardingView />;
   }
 
-  // Admin users see the full management interface
+  // Admins & HR managers see the full management interface
   return (
     <div className="space-y-6">
       <Tabs value={activeTab} onValueChange={setActiveTab}>
