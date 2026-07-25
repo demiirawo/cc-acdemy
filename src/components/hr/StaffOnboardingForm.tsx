@@ -14,6 +14,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Upload, CheckCircle2, AlertCircle, FileText, User } from "lucide-react";
 import { format } from "date-fns";
 
+type FileField =
+  | "proof_of_id_1_path"
+  | "proof_of_id_2_path"
+  | "proof_of_address_path"
+  | "photograph_path";
+
 interface OnboardingFormData {
   id?: string;
   employment_start_date: string;
@@ -141,9 +147,10 @@ export function StaffOnboardingForm() {
 
   const handleFileUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    field: "proof_of_id_1_path" | "proof_of_id_2_path" | "proof_of_address_path" | "photograph_path"
+    field: FileField
   ) => {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file || !user) return;
 
     setUploading(field);
@@ -158,13 +165,55 @@ export function StaffOnboardingForm() {
 
       if (uploadError) throw uploadError;
 
-      setFormData((prev) => ({ ...prev, [field]: fileName }));
-      toast.success("File uploaded successfully");
+      // Record the path straight away. Holding it only in local state meant a tab
+      // switch, reload or navigation before pressing Save silently discarded it —
+      // the file sat in storage but the record showed nothing attached.
+      const { data: saved, error: saveError } = await supabase
+        .from("staff_onboarding_documents")
+        .upsert(
+          { user_id: user.id, [field]: fileName },
+          { onConflict: "user_id" }
+        )
+        .select("id")
+        .single();
+
+      if (saveError) throw saveError;
+
+      setFormData((prev) => ({
+        ...prev,
+        [field]: fileName,
+        id: prev.id || saved?.id,
+      }));
+      toast.success("File attached and saved");
     } catch (error) {
       console.error("Error uploading file:", error);
-      toast.error("Failed to upload file");
+      toast.error("Failed to attach file — please try again");
     } finally {
       setUploading(null);
+      // Let the same file be re-selected if the attempt failed.
+      input.value = "";
+    }
+  };
+
+  const viewFile = async (path: string) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from("onboarding-documents")
+        .createSignedUrl(path, 300);
+
+      if (error) throw error;
+      if (!data?.signedUrl) throw new Error("No signed URL returned");
+
+      const a = document.createElement("a");
+      a.href = data.signedUrl;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (error) {
+      console.error("Error opening file:", error);
+      toast.error("Could not open the file");
     }
   };
 
@@ -270,12 +319,11 @@ export function StaffOnboardingForm() {
     return <AlertCircle className="h-4 w-4 text-amber-500" />;
   };
 
-  const renderFileUpload = (
-    field: "proof_of_id_1_path" | "proof_of_id_2_path" | "proof_of_address_path" | "photograph_path",
-    label: string
-  ) => {
+  const renderFileUpload = (field: FileField, label: string) => {
     const isUploading = uploading === field;
-    const hasFile = !!formData[field];
+    const path = formData[field];
+    const hasFile = !!path;
+    const fileType = hasFile ? (path.split(".").pop() || "").toUpperCase() : "";
 
     return (
       <div className="space-y-2">
@@ -296,16 +344,27 @@ export function StaffOnboardingForm() {
           ) : hasFile ? (
             <div className="flex flex-col items-center gap-2">
               <FileText className="h-8 w-8 text-green-500" />
-              <span className="text-sm text-green-700">File uploaded</span>
-              <label className="cursor-pointer text-xs text-primary hover:underline">
-                <input
-                  type="file"
-                  className="hidden"
-                  accept="image/*,.pdf"
-                  onChange={(e) => handleFileUpload(e, field)}
-                />
-                Replace file
-              </label>
+              <span className="text-sm text-green-700">
+                {fileType ? `${fileType} attached` : "File attached"}
+              </span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => viewFile(path)}
+                  className="text-xs text-primary hover:underline"
+                >
+                  View file
+                </button>
+                <label className="cursor-pointer text-xs text-primary hover:underline">
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*,.pdf"
+                    onChange={(e) => handleFileUpload(e, field)}
+                  />
+                  Replace file
+                </label>
+              </div>
             </div>
           ) : (
             <label className="cursor-pointer flex flex-col items-center gap-2">
