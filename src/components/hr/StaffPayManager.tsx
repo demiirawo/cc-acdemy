@@ -210,6 +210,28 @@ export function StaffPayManager({ onSummaryComputed }: {
       setSortDir(key === 'displayName' ? 'asc' : 'desc');
     }
   };
+  // Rendered as a plain function, not an inline component. Declaring a component
+  // inside the render body gives it a new identity every pass, so React tears the
+  // header cells down and rebuilds them on each re-render — and a button that is
+  // replaced between mousedown and mouseup never fires a click, which is why
+  // sorting appeared to do nothing.
+  const renderSortHead = (k: SortKey, label: string, align: 'left' | 'right' = 'left') => {
+    const active = sortKey === k;
+    const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+    return (
+      <TableHead className={`text-[11px] uppercase tracking-wide text-muted-foreground font-medium ${align === 'right' ? 'text-right' : ''}`}>
+        <button
+          type="button"
+          onClick={() => handleSort(k)}
+          aria-label={`Sort by ${label}`}
+          className={`inline-flex items-center gap-1 hover:text-primary transition-colors ${align === 'right' ? 'ml-auto' : ''} ${active ? 'text-primary' : ''}`}
+        >
+          <span>{label}</span>
+          <Icon className="h-3 w-3 opacity-70" />
+        </button>
+      </TableHead>
+    );
+  };
   const sortItems = <T extends Record<string, any>>(items: T[]): T[] => {
     if (!sortKey) return items;
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -585,9 +607,13 @@ export function StaffPayManager({ onSummaryComputed }: {
     }
   };
 
-  // Get records for selected month
-  const monthStart = startOfMonth(selectedMonth);
-  const monthEnd = endOfMonth(selectedMonth);
+  // Get records for selected month. These must be memoised: they feed the
+  // monthRecords/payrollSummary memos, and a fresh Date each render invalidated
+  // both, which fired the onSummaryComputed effect, which set state in Finance,
+  // which re-rendered us — an endless render loop that also kept tearing the
+  // table's header buttons out from under the pointer.
+  const monthStart = useMemo(() => startOfMonth(selectedMonth), [selectedMonth]);
+  const monthEnd = useMemo(() => endOfMonth(selectedMonth), [selectedMonth]);
 
   const monthRecords = useMemo(() => {
     return payRecords.filter(r => {
@@ -2417,41 +2443,19 @@ export function StaffPayManager({ onSummaryComputed }: {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/40 hover:bg-muted/40 border-b">
-                {(() => {
-                  const SortableHead = ({ k, label, align = 'left' }: { k: SortKey; label: string; align?: 'left' | 'right' }) => {
-                    const active = sortKey === k;
-                    const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
-                    return (
-                      <TableHead className={`text-[11px] uppercase tracking-wide text-muted-foreground font-medium ${align === 'right' ? 'text-right' : ''}`}>
-                        <button
-                          type="button"
-                          onClick={() => handleSort(k)}
-                          className={`inline-flex items-center gap-1 hover:text-primary transition-colors ${align === 'right' ? 'ml-auto' : ''} ${active ? 'text-primary' : ''}`}
-                        >
-                          <span>{label}</span>
-                          <Icon className="h-3 w-3 opacity-70" />
-                        </button>
-                      </TableHead>
-                    );
-                  };
-                  return (
-                    <>
-                      <SortableHead k="displayName" label="Staff Member" />
-                      <SortableHead k="baseSalary" label="Base Salary" align="right" />
-                      <SortableHead k="bonuses" label="Bonuses" align="right" />
-                      <SortableHead k="overtime" label="Overtime" align="right" />
-                      <SortableHead k="holidayOvertimeBonus" label="Holiday OT" align="right" />
-                      <SortableHead k="unusedHolidayPayout" label="Unused Holiday" align="right" />
-                      <SortableHead k="unpaidHolidayDeduction" label="Unpaid Hol" align="right" />
-                      <SortableHead k="proRataDeduction" label="Pro-Rata" align="right" />
-                      <SortableHead k="deductions" label="Deductions" align="right" />
-                      <SortableHead k="totalPay" label="Total Pay" align="right" />
-                      <SortableHead k="totalPayInGBP" label="GBP Equiv." align="right" />
-                      <TableHead className="font-semibold">Actions</TableHead>
-                      <TableHead className="text-right font-semibold">Status</TableHead>
-                    </>
-                  );
-                })()}
+                {renderSortHead('displayName', 'Staff Member')}
+                {renderSortHead('baseSalary', 'Base Salary', 'right')}
+                {renderSortHead('bonuses', 'Bonuses', 'right')}
+                {renderSortHead('overtime', 'Overtime', 'right')}
+                {renderSortHead('holidayOvertimeBonus', 'Holiday OT', 'right')}
+                {renderSortHead('unusedHolidayPayout', 'Unused Holiday', 'right')}
+                {renderSortHead('unpaidHolidayDeduction', 'Unpaid Hol', 'right')}
+                {renderSortHead('proRataDeduction', 'Pro-Rata', 'right')}
+                {renderSortHead('deductions', 'Deductions', 'right')}
+                {renderSortHead('totalPay', 'Total Pay', 'right')}
+                {renderSortHead('totalPayInGBP', 'GBP Equiv.', 'right')}
+                <TableHead className="font-semibold">Actions</TableHead>
+                <TableHead className="text-right font-semibold">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
