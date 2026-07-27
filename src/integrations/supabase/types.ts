@@ -2825,6 +2825,15 @@ export type Database = {
         }
       }
       get_current_user_role: { Args: never; Returns: string }
+      get_staff_directory: {
+        Args: never
+        Returns: {
+          user_id: string
+          full_name: string
+          date_of_birth: string
+          photograph_path: string
+        }[]
+      }
       get_next_sort_order: {
         Args: { p_parent_page_id: string; p_space_id: string }
         Returns: number

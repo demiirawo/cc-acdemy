@@ -101,10 +101,7 @@ export function UpcomingStaffCards() {
       setAnniversaries(upcomingAnniversaries.slice(0, 5));
 
       // Fetch onboarding documents for birthdays
-      const { data: onboardingData } = await supabase
-        .from('staff_onboarding_documents')
-        .select('user_id, date_of_birth, full_name')
-        .not('date_of_birth', 'is', null);
+      const { data: onboardingData } = await supabase.rpc('get_staff_directory');
 
       // Filter and sort birthdays coming up in the next 30 days
       const upcomingBirthdays: Birthday[] = [];

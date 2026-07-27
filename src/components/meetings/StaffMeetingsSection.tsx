@@ -138,7 +138,7 @@ export function StaffMeetingsSection() {
       (supabase as any).from("meeting_updates").select("*").order("created_at", { ascending: false }),
       supabase.from("profiles").select("user_id, display_name, email").order("display_name"),
       supabase.from("hr_profiles").select("user_id, performance_rating, start_date, created_at, employment_end_date"),
-      supabase.from("staff_onboarding_documents").select("user_id, photograph_path"),
+      supabase.rpc("get_staff_directory"),
       (supabase as any).from("incidents").select("id, title, description, client_name, incident_date, severity, category, status, on_meeting_agenda")
         .gte("incident_date", threeMonthsAgo).order("incident_date", { ascending: false }),
     ]);

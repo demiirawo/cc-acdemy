@@ -28,9 +28,9 @@ export function UpcomingBirthdaysCard() {
       const {
         data,
         error
-      } = await supabase.from("staff_onboarding_documents").select("user_id, date_of_birth, full_name").not("date_of_birth", "is", null);
+      } = await supabase.rpc("get_staff_directory");
       if (error) throw error;
-      return data as StaffOnboarding[];
+      return ((data || []) as StaffOnboarding[]).filter(s => s.date_of_birth);
     }
   });
 
