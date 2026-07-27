@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { cn } from "@/lib/utils";
-import { format, parseISO, addMonths, differenceInCalendarDays } from "date-fns";
+import { format, parseISO, addMonths, differenceInCalendarDays, differenceInMonths } from "date-fns";
 import { trainingItemUpToDate } from "@/lib/trainingStatus";
 import { RANK_STYLES, RANK_ORDER, type Rank } from "@/components/hr/PerformanceRankBadge";
 import {
@@ -218,11 +218,40 @@ export function SupervisionsSection({ onViewProfile }: { onViewProfile?: (userId
 }
 
 // ---- Detail -----------------------------------------------------------------
+type TrainingState = "ok" | "expired" | "missing";
+interface TrainingCell {
+  id: string;
+  name: string;
+  category: string | null;
+  state: TrainingState;
+  completedDate: string | null;
+  expiresDate: string | null;
+  refreshMonths: number | null;
+}
 interface LiveContext {
   warnings: { id: string; kind: string; category: string | null; reason: string; severity: string; issued_at: string }[];
-  training: { total: number; upToDate: number; gaps: { name: string; category: string | null; reason: string }[] };
+  training: { total: number; upToDate: number; gaps: { name: string; category: string | null; reason: string }[]; cells: TrainingCell[] };
   incidents: { title: string; incident_date: string; severity: string; status: string; clientName: string | null; myStatementStatus: string }[];
   clients: string[];
+}
+
+const TRAINING_STATE_STYLE: Record<TrainingState, { dot: string; cell: string; label: string }> = {
+  ok: { dot: "bg-green-500", cell: "border-green-300/70 bg-green-500/5", label: "Up to date" },
+  expired: { dot: "bg-amber-500", cell: "border-amber-300/70 bg-amber-500/5", label: "Expired" },
+  missing: { dot: "bg-red-500", cell: "border-red-300/70 bg-red-500/5", label: "Not completed" },
+};
+
+/** "3 yrs 4 mos" from an ISO start date — null when we don't know when they started. */
+function tenureLabel(startDate: string | null | undefined): string | null {
+  if (!startDate) return null;
+  const months = differenceInMonths(new Date(), parseISO(startDate));
+  if (months < 0) return null;
+  const y = Math.floor(months / 12);
+  const m = months % 12;
+  const parts: string[] = [];
+  if (y) parts.push(`${y} ${y === 1 ? "yr" : "yrs"}`);
+  if (m || !y) parts.push(`${m} ${m === 1 ? "mo" : "mos"}`);
+  return parts.join(" ");
 }
 
 function SupervisionDetail({ userId, staff, hr, onBack, onViewProfile }: {
@@ -237,6 +266,7 @@ function SupervisionDetail({ userId, staff, hr, onBack, onViewProfile }: {
   const person = staff.find(s => s.user_id === userId);
   const name = person?.display_name || person?.email || "Staff member";
   const rating = (hr?.performance_rating && RANK_ORDER.includes(hr.performance_rating as Rank)) ? hr.performance_rating as Rank : null;
+  const tenure = tenureLabel(hr?.start_date);
 
   const [ctx, setCtx] = useState<LiveContext | null>(null);
   const [history, setHistory] = useState<Supervision[]>([]);
@@ -261,11 +291,23 @@ function SupervisionDetail({ userId, staff, hr, onBack, onViewProfile }: {
     const recByItem = new Map<string, string>(((recRes.data as any[]) || []).map(r => [r.training_item_id, r.completed_date]));
     let upToDate = 0;
     const gaps: LiveContext["training"]["gaps"] = [];
-    items.forEach(it => {
-      const done = recByItem.get(it.id);
+    const cells: TrainingCell[] = items.map(it => {
+      const done = recByItem.get(it.id) || null;
       const ok = trainingItemUpToDate(it.refresh_frequency_months, done);
+      const state: TrainingState = ok ? "ok" : done ? "expired" : "missing";
       if (ok) upToDate++;
       else gaps.push({ name: it.name, category: it.category, reason: done ? "Expired" : "Not completed" });
+      return {
+        id: it.id,
+        name: it.name,
+        category: it.category,
+        state,
+        completedDate: done,
+        expiresDate: done && it.refresh_frequency_months != null
+          ? format(addMonths(parseISO(done), it.refresh_frequency_months), "yyyy-MM-dd")
+          : null,
+        refreshMonths: it.refresh_frequency_months,
+      };
     });
 
     const incidents = (((incRes.data as any[]) || [])
@@ -282,7 +324,7 @@ function SupervisionDetail({ userId, staff, hr, onBack, onViewProfile }: {
 
     setCtx({
       warnings: (warnRes.data as any[]) || [],
-      training: { total: items.length, upToDate, gaps },
+      training: { total: items.length, upToDate, gaps, cells },
       incidents,
       clients: Array.from(new Set(((assignRes.data as any[]) || []).map(a => a.client_name).filter(Boolean))),
     });
@@ -354,12 +396,20 @@ function SupervisionDetail({ userId, staff, hr, onBack, onViewProfile }: {
                   </button>
                 ) : <h1 className="text-lg font-bold">{name}</h1>}
                 {rating && <Badge variant="outline" className="text-[10px]">{RANK_STYLES[rating].emoji} {RANK_STYLES[rating].label}</Badge>}
+                {tenure && (
+                  <Badge variant="outline" className="text-[10px] gap-1">
+                    <CalendarClock className="h-3 w-3" /> {tenure} at Care Cuddle
+                  </Badge>
+                )}
               </div>
-              {history[0] && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Last supervision {format(parseISO(history.find(h => h.status === "completed")?.supervision_date || history[0].supervision_date), "d MMM yyyy")}
-                </p>
-              )}
+              <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                {hr?.start_date && <p>Started {format(parseISO(hr.start_date), "d MMM yyyy")}</p>}
+                {history[0] && (
+                  <p>
+                    Last supervision {format(parseISO(history.find(h => h.status === "completed")?.supervision_date || history[0].supervision_date), "d MMM yyyy")}
+                  </p>
+                )}
+              </div>
             </div>
             {!draft && <Button size="sm" onClick={startNew}><Plus className="h-4 w-4 mr-1" /> New supervision</Button>}
           </CardContent>
@@ -396,16 +446,7 @@ function SupervisionDetail({ userId, staff, hr, onBack, onViewProfile }: {
                   badge={ctx.training.total === 0 ? "No items" : ctx.training.gaps.length ? `${ctx.training.gaps.length} outstanding` : "All up to date"}
                   badgeTone={ctx.training.gaps.length ? "warning" : "ok"}>
                   {ctx.training.total === 0 ? <p className="text-sm text-muted-foreground italic">No training items configured.</p> : (
-                    <>
-                      <p className="text-sm mb-2">{ctx.training.upToDate}/{ctx.training.total} up to date.</p>
-                      {ctx.training.gaps.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {ctx.training.gaps.map((g, i) => (
-                            <Badge key={i} variant="outline" className="text-[10px] border-amber-300 text-amber-600">{g.name} · {g.reason}</Badge>
-                          ))}
-                        </div>
-                      )}
-                    </>
+                    <TrainingMatrix cells={ctx.training.cells} upToDate={ctx.training.upToDate} total={ctx.training.total} />
                   )}
                 </ContextCard>
 
@@ -510,6 +551,78 @@ function SupervisionDetail({ userId, staff, hr, onBack, onViewProfile }: {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The full training picture as a grid — every item, grouped by category, colour-coded
+ * by state. Supervisions are where gaps get discussed, so showing what's already done
+ * matters as much as what's outstanding.
+ */
+function TrainingMatrix({ cells, upToDate, total }: { cells: TrainingCell[]; upToDate: number; total: number }) {
+  const counts = {
+    ok: cells.filter(c => c.state === "ok").length,
+    expired: cells.filter(c => c.state === "expired").length,
+    missing: cells.filter(c => c.state === "missing").length,
+  };
+  const pct = total ? Math.round((upToDate / total) * 100) : 0;
+
+  // Preserve the sort_order the items arrived in, grouping by category as we go.
+  const groups: { category: string; items: TrainingCell[] }[] = [];
+  cells.forEach(c => {
+    const key = c.category || "Other";
+    const existing = groups.find(g => g.category === key);
+    if (existing) existing.items.push(c);
+    else groups.push({ category: key, items: [c] });
+  });
+
+  return (
+    <div className="space-y-3">
+      {/* Summary + legend */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold tabular-nums">{upToDate}/{total}</span>
+          <span className="text-sm text-muted-foreground">up to date</span>
+        </div>
+        <div className="h-1.5 w-28 rounded-full bg-muted overflow-hidden">
+          <div className="h-full rounded-full bg-green-500 transition-all" style={{ width: `${pct}%` }} />
+        </div>
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground ml-auto">
+          {(["ok", "expired", "missing"] as TrainingState[]).map(s => (
+            <span key={s} className="inline-flex items-center gap-1">
+              <span className={cn("inline-block h-2 w-2 rounded-full", TRAINING_STATE_STYLE[s].dot)} />
+              {TRAINING_STATE_STYLE[s].label} ({counts[s]})
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {groups.map(group => (
+        <div key={group.category} className="space-y-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{group.category}</p>
+          <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+            {group.items.map(c => {
+              const style = TRAINING_STATE_STYLE[c.state];
+              return (
+                <div key={c.id} className={cn("rounded-md border p-2 flex items-start gap-2", style.cell)}>
+                  <span className={cn("mt-1 inline-block h-2 w-2 rounded-full flex-shrink-0", style.dot)} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium leading-snug break-words">{c.name}</p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      {c.state === "missing"
+                        ? "Never completed"
+                        : c.expiresDate
+                          ? `Done ${format(parseISO(c.completedDate!), "d MMM yy")} · ${c.state === "expired" ? "expired" : "renews"} ${format(parseISO(c.expiresDate), "d MMM yy")}`
+                          : `Done ${format(parseISO(c.completedDate!), "d MMM yy")} · no renewal`}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
