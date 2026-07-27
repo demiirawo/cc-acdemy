@@ -329,7 +329,9 @@ interface StaffWarning {
   reason: string;
   severity: string;
   issued_at: string;
+  client_id: string | null; // null = raised internally rather than by a client
 }
+const STAFF_WARNING_COLS = 'id, user_id, kind, category, reason, severity, issued_at, client_id';
 // An incident this staff member is a party to (via their incident_statements row).
 interface StaffIncident {
   statementId: string;
@@ -429,11 +431,21 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   const [fbKind, setFbKind] = useState<'praise' | 'warning'>('warning');
   const [warnCategory, setWarnCategory] = useState<string>('none');
   const [warnSeverity, setWarnSeverity] = useState<string>('minor');
+  const [warnClient, setWarnClient] = useState<string>('none');
   const [warnReason, setWarnReason] = useState("");
   const [savingWarning, setSavingWarning] = useState(false);
+  const [clientOptions, setClientOptions] = useState<{ id: string; name: string }[]>([]);
   const [staffIncidents, setStaffIncidents] = useState<StaffIncident[]>([]);
   const [feedbackTab, setFeedbackTab] = useState<'feedback' | 'incidents'>('feedback');
   const [gbpRates, setGbpRates] = useState<Record<string, number>>(FALLBACK_GBP_RATES);
+
+  // Client list for attributing feedback to the client it came from.
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from('clients').select('id, name').order('name');
+      setClientOptions((data as { id: string; name: string }[]) || []);
+    })();
+  }, []);
 
   // Load manual currency rates once (GBP per 1 unit) for the bonus-pot conversion.
   useEffect(() => {
@@ -526,7 +538,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       // Feedback (praise + warnings) on this staff member's record.
       const { data: warnData } = await (supabase as any)
         .from('staff_warnings')
-        .select('id, user_id, kind, category, reason, severity, issued_at')
+        .select(STAFF_WARNING_COLS)
         .eq('user_id', targetUserId)
         .order('issued_at', { ascending: false });
       setWarnings((warnData as StaffWarning[]) || []);
@@ -1497,9 +1509,10 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         category,
         reason: warnReason.trim(),
         severity,
+        client_id: warnClient === 'none' ? null : warnClient,
         issued_by: user?.id ?? null,
       })
-      .select('id, user_id, kind, category, reason, severity, issued_at')
+      .select(STAFF_WARNING_COLS)
       .single();
     setSavingWarning(false);
     if (error) {
@@ -1510,6 +1523,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     setWarnReason("");
     setWarnCategory('none');
     setWarnSeverity('minor');
+    setWarnClient('none');
     const recipient = allStaff.find(s => s.user_id === selectedUserId);
     if (recipient?.email) {
       supabase.functions.invoke("send-feedback-email", {
@@ -1527,6 +1541,51 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       title: isPraise ? "Positive feedback added" : "Warning added",
       description: recipient?.email ? "The staff member has been emailed." : "No email on file — not sent.",
     });
+  };
+
+  // Feedback split by where it came from, so a staff member can see at a glance
+  // what clients have said about them versus what we've raised internally.
+  const clientNameById = (id: string) => clientOptions.find(c => c.id === id)?.name || "Client";
+  const internalFeedback = warnings.filter(w => !w.client_id);
+  const clientFeedbackGroups = Array.from(
+    warnings.filter(w => w.client_id).reduce((map, w) => {
+      const key = w.client_id!;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(w);
+      return map;
+    }, new Map<string, StaffWarning[]>())
+  ).map(([clientId, items]) => ({ clientId, clientName: clientNameById(clientId), items }))
+   .sort((a, b) => a.clientName.localeCompare(b.clientName));
+
+  const renderFeedbackCard = (w: StaffWarning) => {
+    const praise = w.kind === 'praise';
+    const sev = WARNING_SEVERITIES[w.severity] || WARNING_SEVERITIES.minor;
+    return (
+      <div key={w.id} className={cn("rounded-lg border p-3 flex items-start gap-3 bg-card", praise ? "border-green-400/40 bg-green-500/5" : "")}>
+        {praise
+          ? <ThumbsUp className="h-4 w-4 mt-0.5 flex-shrink-0 text-green-600" />
+          : <AlertTriangle className={cn("h-4 w-4 mt-0.5 flex-shrink-0", sev.tone === "danger" ? "text-red-500" : "text-amber-500")} />}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            {praise ? (
+              <Badge variant="outline" className="text-[10px] border-green-300 text-green-600">Positive feedback</Badge>
+            ) : (
+              <Badge variant="outline" className={cn("text-[10px]", sev.tone === "danger" ? "border-red-300 text-red-600" : "border-amber-300 text-amber-600")}>
+                {sev.label} warning
+              </Badge>
+            )}
+            {w.category && <Badge variant="outline" className="text-[10px]">{w.category}</Badge>}
+            <span className="text-xs text-muted-foreground">{format(parseISO(w.issued_at), "d MMM yyyy")}</span>
+          </div>
+          <p className="text-sm mt-1 whitespace-pre-wrap break-words">{w.reason}</p>
+        </div>
+        {canManageHR && (
+          <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-destructive" onClick={() => deleteWarning(w.id)}>
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+    );
   };
 
   // Remove a feedback entry (HR/admin).
@@ -2104,6 +2163,13 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                           <AlertTriangle className="h-3.5 w-3.5" /> Warning
                         </button>
                       </div>
+                      <Select value={warnClient} onValueChange={setWarnClient}>
+                        <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Internal — raised by us</SelectItem>
+                          {clientOptions.map(c => <SelectItem key={c.id} value={c.id}>From {c.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
                       <div className={cn("grid gap-2", isPraise ? "sm:grid-cols-1" : "sm:grid-cols-2")}>
                         <Select value={warnCategory} onValueChange={setWarnCategory}>
                           <SelectTrigger className="h-9"><SelectValue placeholder="Area (optional)" /></SelectTrigger>
@@ -2147,37 +2213,35 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                       {isAdmin ? "No feedback on record yet." : "No feedback on your record yet."}
                     </p>
                   ) : (
-                    <div className="space-y-2">
-                      {warnings.map(w => {
-                        const praise = w.kind === 'praise';
-                        const sev = WARNING_SEVERITIES[w.severity] || WARNING_SEVERITIES.minor;
-                        return (
-                          <div key={w.id} className={cn("rounded-lg border p-3 flex items-start gap-3", praise ? "border-green-400/40 bg-green-500/5" : "")}>
-                            {praise
-                              ? <ThumbsUp className="h-4 w-4 mt-0.5 flex-shrink-0 text-green-600" />
-                              : <AlertTriangle className={cn("h-4 w-4 mt-0.5 flex-shrink-0", sev.tone === "danger" ? "text-red-500" : "text-amber-500")} />}
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {praise ? (
-                                  <Badge variant="outline" className="text-[10px] border-green-300 text-green-600">Positive feedback</Badge>
-                                ) : (
-                                  <Badge variant="outline" className={cn("text-[10px]", sev.tone === "danger" ? "border-red-300 text-red-600" : "border-amber-300 text-amber-600")}>
-                                    {sev.label} warning
-                                  </Badge>
-                                )}
-                                {w.category && <Badge variant="outline" className="text-[10px]">{w.category}</Badge>}
-                                <span className="text-xs text-muted-foreground">{format(parseISO(w.issued_at), "d MMM yyyy")}</span>
+                    <div className="space-y-4">
+                      {/* What clients have said, grouped by the client it came from. */}
+                      {clientFeedbackGroups.length > 0 && (
+                        <div className="space-y-2">
+                          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                            <Building2 className="h-3.5 w-3.5" /> From clients
+                          </h4>
+                          {clientFeedbackGroups.map(group => (
+                            <div key={group.clientId} className="rounded-lg border bg-blue-500/[0.03] p-3 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600">{group.clientName}</Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {group.items.length} {group.items.length === 1 ? "entry" : "entries"}
+                                </span>
                               </div>
-                              <p className="text-sm mt-1 whitespace-pre-wrap break-words">{w.reason}</p>
+                              {group.items.map(renderFeedbackCard)}
                             </div>
-                            {canManageHR && (
-                              <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-destructive" onClick={() => deleteWarning(w.id)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </div>
-                        );
-                      })}
+                          ))}
+                        </div>
+                      )}
+
+                      {internalFeedback.length > 0 && (
+                        <div className="space-y-2">
+                          {clientFeedbackGroups.length > 0 && (
+                            <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Internal</h4>
+                          )}
+                          {internalFeedback.map(renderFeedbackCard)}
+                        </div>
+                      )}
                     </div>
                   )}
                   </TabsContent>

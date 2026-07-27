@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
-import { Plus, Loader2, Trash2, ThumbsUp, AlertTriangle } from "lucide-react";
+import { Plus, Loader2, Trash2, ThumbsUp, AlertTriangle, Pencil } from "lucide-react";
 
 // Kept in sync with the staff profile's Feedback tab (same staff_warnings table).
 const CATEGORIES = ["Communication", "Attention to Detail", "Professionalism", "Learning"];
@@ -34,8 +34,13 @@ interface FeedbackRow {
   reason: string;
   severity: string;
   issued_at: string;
+  client_id: string | null;
 }
 interface StaffRow { user_id: string; display_name: string | null; email: string | null; }
+interface ClientRow { id: string; name: string; }
+
+const FEEDBACK_COLS = "id, user_id, kind, category, reason, severity, issued_at, client_id";
+const NO_CLIENT = "none";
 
 export function FeedbackLogSection() {
   const { user } = useAuth();
@@ -44,14 +49,17 @@ export function FeedbackLogSection() {
 
   const [rows, setRows] = useState<FeedbackRow[]>([]);
   const [staff, setStaff] = useState<StaffRow[]>([]);
+  const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Add-feedback dialog
+  // Add/edit feedback dialog — editing reuses the same fields, keyed by editingId.
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [fbUser, setFbUser] = useState("");
   const [fbKind, setFbKind] = useState<"praise" | "warning">("warning");
   const [fbCategory, setFbCategory] = useState("none");
   const [fbSeverity, setFbSeverity] = useState("minor");
+  const [fbClient, setFbClient] = useState(NO_CLIENT);
   const [fbReason, setFbReason] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -59,21 +67,62 @@ export function FeedbackLogSection() {
     const s = staff.find(x => x.user_id === uid);
     return s?.display_name || s?.email || "Staff member";
   };
+  const clientNameOf = (id: string | null) => (id ? clients.find(c => c.id === id)?.name ?? null : null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: fb }, { data: profs }] = await Promise.all([
-      (supabase as any).from("staff_warnings").select("id, user_id, kind, category, reason, severity, issued_at").order("issued_at", { ascending: false }),
+    const [{ data: fb }, { data: profs }, { data: cls }] = await Promise.all([
+      (supabase as any).from("staff_warnings").select(FEEDBACK_COLS).order("issued_at", { ascending: false }),
       supabase.from("profiles").select("user_id, display_name, email").order("display_name"),
+      supabase.from("clients").select("id, name").order("name"),
     ]);
     setRows((fb as FeedbackRow[]) || []);
     setStaff((profs as StaffRow[]) || []);
+    setClients((cls as ClientRow[]) || []);
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  const resetForm = () => { setFbUser(""); setFbKind("warning"); setFbCategory("none"); setFbSeverity("minor"); setFbReason(""); };
+  const resetForm = () => { setEditingId(null); setFbUser(""); setFbKind("warning"); setFbCategory("none"); setFbSeverity("minor"); setFbClient(NO_CLIENT); setFbReason(""); };
+
+  const openEdit = (r: FeedbackRow) => {
+    setEditingId(r.id);
+    setFbUser(r.user_id);
+    setFbKind(r.kind === "praise" ? "praise" : "warning");
+    setFbCategory(r.category || "none");
+    setFbSeverity(r.severity || "minor");
+    setFbClient(r.client_id || NO_CLIENT);
+    setFbReason(r.reason);
+    setOpen(true);
+  };
+
+  // Edits update the same row the staff profile reads, so both stay in sync.
+  // No email on edit — the staff member was already notified when it was raised.
+  const saveEdit = async () => {
+    if (!editingId || !fbUser || !fbReason.trim()) return;
+    setSaving(true);
+    const isPraise = fbKind === "praise";
+    const { data, error } = await (supabase as any)
+      .from("staff_warnings")
+      .update({
+        user_id: fbUser,
+        kind: fbKind,
+        category: fbCategory === "none" ? null : fbCategory,
+        reason: fbReason.trim(),
+        severity: isPraise ? "minor" : fbSeverity,
+        client_id: fbClient === NO_CLIENT ? null : fbClient,
+      })
+      .eq("id", editingId)
+      .select(FEEDBACK_COLS)
+      .single();
+    setSaving(false);
+    if (error) { toast({ title: "Couldn't save changes", description: error.message, variant: "destructive" }); return; }
+    setRows(prev => prev.map(r => (r.id === editingId ? (data as FeedbackRow) : r)));
+    toast({ title: "Feedback updated", description: "The staff member's profile shows the change too." });
+    setOpen(false);
+    resetForm();
+  };
 
   // Same insert + email as the staff profile's Feedback tab — so it appears there too.
   const addFeedback = async () => {
@@ -82,10 +131,11 @@ export function FeedbackLogSection() {
     const isPraise = fbKind === "praise";
     const category = fbCategory === "none" ? null : fbCategory;
     const severity = isPraise ? "minor" : fbSeverity;
+    const clientId = fbClient === NO_CLIENT ? null : fbClient;
     const { data, error } = await (supabase as any)
       .from("staff_warnings")
-      .insert({ user_id: fbUser, kind: fbKind, category, reason: fbReason.trim(), severity, issued_by: user?.id ?? null })
-      .select("id, user_id, kind, category, reason, severity, issued_at")
+      .insert({ user_id: fbUser, kind: fbKind, category, reason: fbReason.trim(), severity, client_id: clientId, issued_by: user?.id ?? null })
+      .select(FEEDBACK_COLS)
       .single();
     setSaving(false);
     if (error) { toast({ title: "Couldn't add feedback", description: error.message, variant: "destructive" }); return; }
@@ -146,10 +196,11 @@ export function FeedbackLogSection() {
                 <tr className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
                   <th className="text-left font-medium px-3 py-2 w-[180px]">Staff</th>
                   <th className="text-left font-medium px-3 py-2 w-[130px]">Type</th>
+                  <th className="text-left font-medium px-3 py-2 w-[160px]">From</th>
                   <th className="text-left font-medium px-3 py-2 w-[150px]">Area</th>
                   <th className="text-left font-medium px-3 py-2">Feedback</th>
                   <th className="text-left font-medium px-3 py-2 w-[110px]">Date</th>
-                  <th className="w-[44px]" />
+                  <th className="w-[80px]" />
                 </tr>
               </thead>
               <tbody>
@@ -157,10 +208,20 @@ export function FeedbackLogSection() {
                   <tr key={r.id} className="border-b last:border-0 hover:bg-muted/30 align-top">
                     <td className="px-3 py-2 font-medium">{nameOf(r.user_id)}</td>
                     <td className="px-3 py-2">{typeBadge(r)}</td>
+                    <td className="px-3 py-2">
+                      {clientNameOf(r.client_id)
+                        ? <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600">{clientNameOf(r.client_id)}</Badge>
+                        : <span className="text-muted-foreground text-xs">Internal</span>}
+                    </td>
                     <td className="px-3 py-2 text-muted-foreground">{r.category || "—"}</td>
                     <td className="px-3 py-2"><span className="whitespace-pre-wrap break-words">{r.reason}</span></td>
                     <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{format(parseISO(r.issued_at), "d MMM yyyy")}</td>
-                    <td className="px-2 py-2 text-right">
+                    <td className="px-2 py-2 text-right whitespace-nowrap">
+                      {canManageHR && (
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" title="Edit feedback" onClick={() => openEdit(r)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
                       {canManageHR && (
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
@@ -189,10 +250,10 @@ export function FeedbackLogSection() {
         )}
       </div>
 
-      {/* Add feedback dialog — mirrors the staff profile's Feedback composer */}
-      <Dialog open={open} onOpenChange={setOpen}>
+      {/* Add/edit feedback dialog — mirrors the staff profile's Feedback composer */}
+      <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) resetForm(); }}>
         <DialogContent className="max-w-lg">
-          <DialogHeader><DialogTitle>Add feedback</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editingId ? "Edit feedback" : "Add feedback"}</DialogTitle></DialogHeader>
           <div className="space-y-3 py-1">
             <div className="space-y-1.5">
               <Label>Staff member</Label>
@@ -213,6 +274,17 @@ export function FeedbackLogSection() {
                 className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition", fbKind === "warning" ? "bg-amber-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground")}>
                 <AlertTriangle className="h-3.5 w-3.5" /> Warning
               </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Where did this come from?</Label>
+              <Select value={fbClient} onValueChange={setFbClient}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_CLIENT}>Internal — raised by us</SelectItem>
+                  {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className={cn("grid gap-2", fbKind === "praise" ? "grid-cols-1" : "grid-cols-2")}>
@@ -236,8 +308,14 @@ export function FeedbackLogSection() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={addFeedback} disabled={saving || !fbUser || !fbReason.trim()} className={cn(fbKind === "praise" && "bg-green-600 hover:bg-green-700")}>
-              {saving ? "Adding…" : fbKind === "praise" ? "Add positive feedback & email" : "Add warning & email"}
+            <Button
+              onClick={editingId ? saveEdit : addFeedback}
+              disabled={saving || !fbUser || !fbReason.trim()}
+              className={cn(fbKind === "praise" && "bg-green-600 hover:bg-green-700")}
+            >
+              {editingId
+                ? (saving ? "Saving…" : "Save changes")
+                : (saving ? "Adding…" : fbKind === "praise" ? "Add positive feedback & email" : "Add warning & email")}
             </Button>
           </DialogFooter>
         </DialogContent>
