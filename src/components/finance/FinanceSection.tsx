@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Loader2, Plus, Trash2, ChevronDown, ChevronRight, Lock } from "lucide-react";
 import { ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { ExpenseTrendPanel } from "./ExpenseTrendPanel";
 
 // GBP per 1 unit of currency (fallbacks; overridden by manual_currency_rates).
 const FALLBACK_RATES: Record<string, number> = {
@@ -658,7 +659,10 @@ export function FinanceSection() {
           </TabsContent>
 
           {/* ---- Expenses ---- */}
-          <TabsContent value="expenses" className="mt-0">
+          <TabsContent value="expenses" className="mt-0 space-y-4">
+            {/* What we actually spend, from the accounting data — above the manually
+                maintained list, which is the plan rather than the record. */}
+            <ExpenseTrendPanel />
             <ExpensesTable expenses={expenses} setExpenses={setExpenses} reload={load} toast={toast} />
           </TabsContent>
         </Tabs>
