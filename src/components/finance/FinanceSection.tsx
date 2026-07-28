@@ -122,6 +122,11 @@ export function FinanceSection() {
   // includes holiday overtime, bonuses, deductions, pro-rata etc. Used as Cost /mo
   // so Finance matches the Payroll tab exactly.
   const [payrollFromTab, setPayrollFromTab] = useState<{ month: string; totals: Record<string, number> } | null>(null);
+  // Cash actually received per month from FreeAgent, keyed 'YYYY-MM' on the payment
+  // date. Lets the trend show money in the bank rather than back-projecting today's MRR.
+  const [paidByMonth, setPaidByMonth] = useState<Record<string, number>>({});
+  const [outstanding, setOutstanding] = useState(0);
+  const [revenueMode, setRevenueMode] = useState<"actual" | "runrate">("actual");
   const handlePayrollSummary = useCallback((data: { month: string; totals: Record<string, number> }) => setPayrollFromTab(data), []);
 
   const load = useCallback(async () => {
@@ -129,7 +134,7 @@ export function FinanceSection() {
     const now = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
-    const [cl, sp, hrp, pr, asg, rt, ex, st, pr2, pat] = await Promise.all([
+    const [cl, sp, hrp, pr, asg, rt, ex, st, pr2, pat, inv] = await Promise.all([
       supabase.from("clients").select("id, name, mrr, software, status, contract_start_date, contract_end_date"),
       (supabase as any).from("staff_salaries").select("user_id, base_salary, base_currency"),
       supabase.from("hr_profiles").select("user_id, pay_frequency, employment_end_date"),
@@ -148,8 +153,32 @@ export function FinanceSection() {
       (supabase as any).from("recurring_shift_patterns")
         .select("user_id, client_name, days_of_week, start_time, end_time, recurrence_interval, is_overtime")
         .lte("start_date", monthEnd).or(`end_date.is.null,end_date.gte.${monthStart}`),
+      // The real ledger behind the chart. Payment dates matter more than invoice
+      // dates here: the chart reports cash received, so a 30-day-terms client lands
+      // in the month the money actually arrived.
+      (supabase as any).from("client_invoices")
+        .select("invoice_date, paid_date, paid_amount, total_value, status")
+        .gte("invoice_date", `${now.getFullYear() - 2}-01-01`),
     ]);
     setClients((cl.data as ClientRow[]) || []);
+    // Cash received, bucketed by the month the payment landed rather than the month
+    // the invoice was raised. Unpaid invoices contribute nothing until they're paid.
+    const paidRows = ((inv.data as {
+      invoice_date: string; paid_date: string | null; paid_amount: number | null;
+      total_value: number; status: string | null;
+    }[]) || []).filter(r => !["Cancelled", "Draft"].includes(r.status ?? ""));
+
+    const byMonth: Record<string, number> = {};
+    paidRows.forEach(r => {
+      if (!r.paid_date) return;
+      const k = String(r.paid_date).slice(0, 7);
+      byMonth[k] = (byMonth[k] || 0) + Number(r.paid_amount ?? r.total_value ?? 0);
+    });
+    setPaidByMonth(byMonth);
+    setOutstanding(
+      paidRows.filter(r => !r.paid_date)
+        .reduce((a, r) => a + Number(r.total_value || 0), 0)
+    );
     setPay(((sp.data as StaffPay[]) || []).filter(s => (s.base_salary ?? 0) > 0));
     const hrMap: Record<string, HrRow> = {}; ((hrp.data as HrRow[]) || []).forEach(h => { hrMap[h.user_id] = h; }); setHr(hrMap);
     const pMap: Record<string, Profile> = {}; ((pr.data as Profile[]) || []).forEach(p => { pMap[p.user_id] = p; }); setProfiles(pMap);
@@ -387,12 +416,21 @@ export function FinanceSection() {
 
     const isZoho = (c: ClientRow) => processorOf(c.software) === "zoho";
 
-    const monthPoint = (d: Date, growth: number) => {
+    const monthPoint = (d: Date, growth: number, useActual = false) => {
       const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
       const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
       const live = billing.filter(c => billsIn(c, monthStart, monthEnd));
       const zoho = live.filter(isZoho).reduce((a, c) => a + grossOf(c), 0) * growth;
-      const other = live.filter(c => !isZoho(c)).reduce((a, c) => a + grossOf(c), 0) * growth;
+      // FreeAgent is the only stream we hold a ledger for. In paid mode its band is
+      // the cash that actually cleared that month — which carries the annual uplifts,
+      // discounts, add-ons and one-offs a flat MRR figure can't, and puts
+      // deferred-terms clients in the month they really paid. Zoho is billed outside
+      // FreeAgent, so that band stays run-rate derived either way.
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const paid = paidByMonth[key];
+      const other = useActual && paid != null
+        ? paid
+        : live.filter(c => !isZoho(c)).reduce((a, c) => a + grossOf(c), 0) * growth;
       const started = billing.filter(c => inMonth(c.contract_start_date, monthStart, monthEnd))
         .map(c => ({ name: c.name, amount: grossOf(c), zoho: isZoho(c) })).sort((a, b) => b.amount - a.amount);
       const ended = billing.filter(c => inMonth(c.contract_end_date, monthStart, monthEnd))
@@ -408,8 +446,9 @@ export function FinanceSection() {
     };
 
     const now = new Date();
+    const useActual = revenueMode === "actual";
     const actual = Array.from({ length: 12 }, (_, idx) =>
-      monthPoint(new Date(now.getFullYear(), now.getMonth() - (11 - idx), 1), 1));
+      monthPoint(new Date(now.getFullYear(), now.getMonth() - (11 - idx), 1), 1, useActual));
 
     // Growth compounds on top of the contracts known to be live that month, so a
     // contract ending in the future bends the projection down when it lapses.
@@ -433,7 +472,7 @@ export function FinanceSection() {
       ...actual.map((p, i) => shape(p, "actual", i === actual.length - 1)),
       ...projected.map(p => shape(p, "projected")),
     ];
-  }, [clients, settings]);
+  }, [clients, settings, paidByMonth, revenueMode]);
 
   const saveSetting = async (patch: Partial<Settings>) => {
     setSettings(s => ({ ...s, ...patch }));
@@ -503,7 +542,20 @@ export function FinanceSection() {
             <Card>
               <CardContent className="p-5">
                 <div className="flex items-center justify-between mb-1">
-                  <p className="font-semibold text-sm">Revenue trend — last 12 months &amp; next 6 projected <span className="font-normal text-muted-foreground">(incl. VAT)</span></p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-semibold text-sm">Revenue trend — last 12 months &amp; next 6 projected <span className="font-normal text-muted-foreground">(incl. VAT)</span></p>
+                    <div className="inline-flex rounded-md border bg-background p-0.5">
+                      {([["actual", "Paid"], ["runrate", "Run-rate"]] as const).map(([v, label]) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setRevenueMode(v)}
+                          className={cn("rounded px-2 py-0.5 text-[11px] font-medium transition",
+                            revenueMode === v ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
+                        >{label}</button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap justify-end">
                     <span className="inline-flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: ZOHO_COLOR }} /> Zoho</span>
                     <span className="inline-flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: FREEAGENT_COLOR }} /> FreeAgent</span>
@@ -514,7 +566,10 @@ export function FinanceSection() {
                 </div>
                 <RevenueChart data={revenueSeries} />
                 <p className="text-[11px] text-muted-foreground mt-2">
-                  Gross billings — the full amount invoiced, VAT included — so this runs higher than the ex-VAT revenue in the cards above and in the P&amp;L. Markers show months where contracts started or ended; hover one to see which clients and what each was worth. A contract end date removes that client's revenue from the month it lapses onward, in both the history and the projection — their last billed month is the last one their contract covers in full.
+                  {revenueMode === "actual"
+                    ? `Paid: the FreeAgent band is cash that actually cleared, counted in the month the payment landed — so it carries the annual uplifts, discounts, add-ons and one-offs a flat monthly figure can't, and puts clients on deferred terms in the month they really paid. The current month always understates, because invoices raised recently haven't been paid yet${outstanding > 0 ? ` (${gbp2(outstanding)} outstanding right now)` : ""}. Zoho is billed outside FreeAgent, so that band stays run-rate, as do all future months.`
+                    : "Run-rate: every month valued at each client's current monthly fee, so the line shows the shape of the book rather than money received. Switch to Paid for actual cash."}
+                  {" "}Gross — VAT included — so this runs higher than the ex-VAT revenue in the cards above and in the P&amp;L. Markers show months where contracts started or ended; hover one to see which clients and what each was worth. A contract end date removes that client from the month it lapses onward.
                 </p>
               </CardContent>
             </Card>
