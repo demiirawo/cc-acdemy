@@ -361,15 +361,23 @@ export function FinanceSection() {
     const billing = clients.filter(c => (c.mrr ?? 0) > 0);
     const dateOf = (s: string | null) => (s ? new Date(s) : null);
 
-    // A contract counts toward a month when its window overlaps that month. A client
-    // with no end date is only counted while they're still an active stage — we can't
-    // date a departure we were never told about; fill the end date in and they show up
-    // in the months they actually billed, then drop off.
+    // Does this client get invoiced in this month?
+    //
+    // They start billing in the month their contract starts, even part-way through it
+    // — the first recurring invoice goes out on the start date. They stop in the month
+    // their contract ends, because the recurring profile lapses before that month's
+    // invoice would go out; the end month must be covered in full to be billed. So a
+    // contract ending 20 Aug bills through July and drops off in August, while one
+    // ending 31 Aug still bills August.
+    //
+    // A client with no end date is only counted while they're still at an active stage
+    // — we can't date a departure we were never told about; fill the end date in and
+    // they show up across the months they actually billed, then drop off.
     const billsIn = (c: ClientRow, monthStart: Date, monthEnd: Date) => {
       const start = dateOf(c.contract_start_date);
       if (start && start > monthEnd) return false;
       const end = dateOf(c.contract_end_date);
-      if (end) return end >= monthStart;
+      if (end) return end >= monthEnd;
       return (c.status ?? "active") === "active";
     };
     const inMonth = (d: string | null, monthStart: Date, monthEnd: Date) => {
@@ -506,7 +514,7 @@ export function FinanceSection() {
                 </div>
                 <RevenueChart data={revenueSeries} />
                 <p className="text-[11px] text-muted-foreground mt-2">
-                  Gross billings — the full amount invoiced, VAT included — so this runs higher than the ex-VAT revenue in the cards above and in the P&amp;L. Markers show months where contracts started or ended; hover one to see which clients and what each was worth. A contract end date removes that client's revenue from the month after it lapses, in both the history and the projection.
+                  Gross billings — the full amount invoiced, VAT included — so this runs higher than the ex-VAT revenue in the cards above and in the P&amp;L. Markers show months where contracts started or ended; hover one to see which clients and what each was worth. A contract end date removes that client's revenue from the month it lapses onward, in both the history and the projection — their last billed month is the last one their contract covers in full.
                 </p>
               </CardContent>
             </Card>
@@ -941,7 +949,7 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
         })}
       </table>
       <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
-        Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the following month, in both the history and the projection. Double-click MRR or either contract date to edit · click the stage pill to change it · click a group header to collapse it.
+        Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the month it falls in, in both the history and the projection. Double-click MRR or either contract date to edit · click the stage pill to change it · click a group header to collapse it.
       </p>
     </div>
   );
