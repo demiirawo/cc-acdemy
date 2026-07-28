@@ -88,6 +88,7 @@ Deno.serve(async (req) => {
 
     const accounts = (await get(`${API_BASE}/v2/bank_accounts`, token))?.bank_accounts ?? [];
     const rows: any[] = [];
+    const txRows: any[] = [];
 
     for (const acct of accounts) {
       let page = 1;
@@ -116,6 +117,38 @@ Deno.serve(async (req) => {
         if (batch.length < 100) break;
         page += 1;
       }
+
+      // Bank transactions as the statement words them — the merchant-level feed the
+      // expenses tracker matches against. Explanations come inlined, so each
+      // transaction can carry its accounting category for exclusion filtering.
+      let txPage = 1;
+      while (txPage <= 40) {
+        const url = new URL(`${API_BASE}/v2/bank_transactions`);
+        url.searchParams.set("bank_account", acct.url);
+        url.searchParams.set("from_date", fromDate);
+        url.searchParams.set("to_date", toDate);
+        url.searchParams.set("per_page", "100");
+        url.searchParams.set("page", String(txPage));
+
+        const batch = (await get(url.toString(), token))?.bank_transactions ?? [];
+        for (const t of batch) {
+          if (!t?.url || !t?.dated_on) continue;
+          const expl = (t.bank_transaction_explanations ?? [])[0];
+          txRows.push({
+            source_url: t.url,
+            fit_id: t.transaction_id ?? null,
+            entry_date: t.dated_on,
+            amount: Number(t.amount ?? 0),
+            merchant: String(t.description ?? "").trim().slice(0, 200) || "(no description)",
+            full_description: (t.full_description ?? "").slice(0, 400) || null,
+            bank_account_name: acct.name ?? null,
+            category_name: expl?.category ? (catName[expl.category] ?? null) : null,
+            updated_at: new Date().toISOString(),
+          });
+        }
+        if (batch.length < 100) break;
+        txPage += 1;
+      }
     }
 
     for (let i = 0; i < rows.length; i += 200) {
@@ -123,15 +156,20 @@ Deno.serve(async (req) => {
         .upsert(rows.slice(i, i + 200), { onConflict: "source_url" });
       if (error) throw new Error(`Upsert failed: ${error.message}`);
     }
+    for (let i = 0; i < txRows.length; i += 200) {
+      const { error } = await admin.from("company_bank_transactions")
+        .upsert(txRows.slice(i, i + 200), { onConflict: "source_url" });
+      if (error) throw new Error(`Transaction upsert failed: ${error.message}`);
+    }
 
     await admin.from("freeagent_oauth").update({
       last_sync_at: new Date().toISOString(),
       last_sync_status: "ok",
-      last_sync_detail: `${rows.length} bank entries across ${accounts.length} accounts`,
+      last_sync_detail: `${rows.length} bank entries + ${txRows.length} transactions across ${accounts.length} accounts`,
       updated_at: new Date().toISOString(),
     }).eq("id", true);
 
-    return new Response(JSON.stringify({ synced: rows.length, accounts: accounts.length }), {
+    return new Response(JSON.stringify({ synced: rows.length, transactions: txRows.length, accounts: accounts.length }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
