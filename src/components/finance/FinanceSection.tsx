@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { Loader2, Plus, Trash2, ChevronDown, ChevronRight, Lock } from "lucide-react";
-import { ComposedChart, Area, Line as RLine, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 // GBP per 1 unit of currency (fallbacks; overridden by manual_currency_rates).
 const FALLBACK_RATES: Record<string, number> = {
@@ -42,7 +42,7 @@ const SALES_STAGES = [
 ];
 const stageMeta = (v: string | null) => SALES_STAGES.find(s => s.value === (v || "active")) ?? SALES_STAGES[0];
 
-interface ClientRow { id: string; name: string; mrr: number | null; software: string | null; status: string | null; contract_start_date: string | null; }
+interface ClientRow { id: string; name: string; mrr: number | null; software: string | null; status: string | null; contract_start_date: string | null; contract_end_date: string | null; }
 interface StaffPay { user_id: string; base_salary: number; base_currency: string; }
 interface HrRow { user_id: string; pay_frequency: string | null; employment_end_date: string | null; }
 interface Profile { user_id: string; display_name: string | null; email: string | null; }
@@ -130,7 +130,7 @@ export function FinanceSection() {
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
     const [cl, sp, hrp, pr, asg, rt, ex, st, pr2, pat] = await Promise.all([
-      supabase.from("clients").select("id, name, mrr, software, status, contract_start_date"),
+      supabase.from("clients").select("id, name, mrr, software, status, contract_start_date, contract_end_date"),
       (supabase as any).from("staff_salaries").select("user_id, base_salary, base_currency"),
       supabase.from("hr_profiles").select("user_id, pay_frequency, employment_end_date"),
       supabase.from("profiles").select("user_id, display_name, email"),
@@ -354,30 +354,77 @@ export function FinanceSection() {
 
   // Last 12 months of (reconstructed) revenue + next 6 months projected, for the trend chart.
   const revenueSeries = useMemo(() => {
-    const vatDivisor = 1 + settings.vat_rate;
-    const netOf = (c: ClientRow) => processorOf(c.software) === "freeagent" ? Number(c.mrr) / vatDivisor : Number(c.mrr);
-    const activeClients = clients.filter(c => (c.mrr ?? 0) > 0 && (c.status ?? "active") === "active");
-    const now = new Date();
-    const months = Array.from({ length: 12 }, (_, idx) => {
-      const i = 11 - idx;
-      return new Date(now.getFullYear(), now.getMonth() - i, 1);
-    });
-    const actual = months.map(d => {
+    // Gross — what clients are actually invoiced, VAT included. Deliberately different
+    // from the ex-VAT figures in the KPI cards and P&L above, so the chart is labelled
+    // "incl. VAT" to keep the two from being read as the same number.
+    const grossOf = (c: ClientRow) => Number(c.mrr);
+    const billing = clients.filter(c => (c.mrr ?? 0) > 0);
+    const dateOf = (s: string | null) => (s ? new Date(s) : null);
+
+    // A contract counts toward a month when its window overlaps that month. A client
+    // with no end date is only counted while they're still an active stage — we can't
+    // date a departure we were never told about; fill the end date in and they show up
+    // in the months they actually billed, then drop off.
+    const billsIn = (c: ClientRow, monthStart: Date, monthEnd: Date) => {
+      const start = dateOf(c.contract_start_date);
+      if (start && start > monthEnd) return false;
+      const end = dateOf(c.contract_end_date);
+      if (end) return end >= monthStart;
+      return (c.status ?? "active") === "active";
+    };
+    const inMonth = (d: string | null, monthStart: Date, monthEnd: Date) => {
+      const t = dateOf(d);
+      return !!t && t >= monthStart && t <= monthEnd;
+    };
+
+    const isZoho = (c: ClientRow) => processorOf(c.software) === "zoho";
+
+    const monthPoint = (d: Date, growth: number) => {
+      const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
       const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
-      const total = activeClients
-        .filter(c => !c.contract_start_date || new Date(c.contract_start_date) <= monthEnd)
-        .reduce((a, c) => a + netOf(c), 0);
-      return { label: d.toLocaleDateString(undefined, { month: "short", year: "2-digit" }), actual: total, projected: null as number | null };
-    });
+      const live = billing.filter(c => billsIn(c, monthStart, monthEnd));
+      const zoho = live.filter(isZoho).reduce((a, c) => a + grossOf(c), 0) * growth;
+      const other = live.filter(c => !isZoho(c)).reduce((a, c) => a + grossOf(c), 0) * growth;
+      const started = billing.filter(c => inMonth(c.contract_start_date, monthStart, monthEnd))
+        .map(c => ({ name: c.name, amount: grossOf(c), zoho: isZoho(c) })).sort((a, b) => b.amount - a.amount);
+      const ended = billing.filter(c => inMonth(c.contract_end_date, monthStart, monthEnd))
+        .map(c => ({ name: c.name, amount: grossOf(c), zoho: isZoho(c) })).sort((a, b) => b.amount - a.amount);
+      const won = started.reduce((a, c) => a + c.amount, 0);
+      const lost = ended.reduce((a, c) => a + c.amount, 0);
+      return {
+        label: d.toLocaleDateString(undefined, { month: "short", year: "2-digit" }),
+        monthLabel: d.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
+        zoho, other, total: zoho + other,
+        started, ended, won, lost, net: won - lost,
+      };
+    };
+
+    const now = new Date();
+    const actual = Array.from({ length: 12 }, (_, idx) =>
+      monthPoint(new Date(now.getFullYear(), now.getMonth() - (11 - idx), 1), 1));
+
+    // Growth compounds on top of the contracts known to be live that month, so a
+    // contract ending in the future bends the projection down when it lapses.
     const g = settings.monthly_growth_pct / 100;
-    const currentTotal = actual.length ? actual[actual.length - 1].actual : 0;
-    const projected = Array.from({ length: Math.max(1, settings.projection_months) }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() + i + 1, 1);
-      return { label: d.toLocaleDateString(undefined, { month: "short", year: "2-digit" }), actual: null as number | null, projected: currentTotal * Math.pow(1 + g, i + 1) };
+    const projected = Array.from({ length: Math.max(1, settings.projection_months) }, (_, i) =>
+      monthPoint(new Date(now.getFullYear(), now.getMonth() + i + 1, 1), Math.pow(1 + g, i + 1)));
+
+    // Split each month's two bands into actual vs projected keys so the solid and
+    // dashed halves of the chart stack independently. The last actual month carries
+    // both, bridging the two so the areas meet with no gap.
+    const shape = (p: ReturnType<typeof monthPoint>, kind: "actual" | "projected", bridge = false) => ({
+      ...p,
+      isProjected: kind === "projected",
+      zohoActual: kind === "actual" ? p.zoho : null,
+      otherActual: kind === "actual" ? p.other : null,
+      zohoProjected: kind === "projected" || bridge ? p.zoho : null,
+      otherProjected: kind === "projected" || bridge ? p.other : null,
     });
-    // Bridge point so the projected line visually connects onto the actual line's end.
-    if (actual.length) actual[actual.length - 1] = { ...actual[actual.length - 1], projected: actual[actual.length - 1].actual };
-    return [...actual, ...projected];
+
+    return [
+      ...actual.map((p, i) => shape(p, "actual", i === actual.length - 1)),
+      ...projected.map(p => shape(p, "projected")),
+    ];
   }, [clients, settings]);
 
   const saveSetting = async (patch: Partial<Settings>) => {
@@ -448,13 +495,19 @@ export function FinanceSection() {
             <Card>
               <CardContent className="p-5">
                 <div className="flex items-center justify-between mb-1">
-                  <p className="font-semibold text-sm">Revenue trend — last 12 months &amp; next 6 projected</p>
-                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                    <span className="inline-flex items-center gap-1.5"><span className="inline-block w-3 h-[2px] bg-primary rounded-full" /> Actual</span>
-                    <span className="inline-flex items-center gap-1.5"><span className="inline-block w-3 h-[2px] bg-primary/50 rounded-full" style={{ backgroundImage: "repeating-linear-gradient(90deg, hsl(var(--primary)) 0 3px, transparent 3px 6px)" }} /> Projected</span>
+                  <p className="font-semibold text-sm">Revenue trend — last 12 months &amp; next 6 projected <span className="font-normal text-muted-foreground">(incl. VAT)</span></p>
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap justify-end">
+                    <span className="inline-flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: ZOHO_COLOR }} /> Zoho</span>
+                    <span className="inline-flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: FREEAGENT_COLOR }} /> FreeAgent</span>
+                    <span className="inline-flex items-center gap-1.5"><span className="inline-block w-3 h-[2px] rounded-full" style={{ backgroundImage: "repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 6px)" }} /> Projected</span>
+                    <span className="inline-flex items-center gap-1" style={{ color: WON_COLOR }}>▲ Contract won</span>
+                    <span className="inline-flex items-center gap-1" style={{ color: LOST_COLOR }}>▼ Contract ended</span>
                   </div>
                 </div>
                 <RevenueChart data={revenueSeries} />
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  Gross billings — the full amount invoiced, VAT included — so this runs higher than the ex-VAT revenue in the cards above and in the P&amp;L. Markers show months where contracts started or ended; hover one to see which clients and what each was worth. A contract end date removes that client's revenue from the month after it lapses, in both the history and the projection.
+                </p>
               </CardContent>
             </Card>
 
@@ -601,27 +654,137 @@ function PasscodeGate({ onUnlock }: { onUnlock: () => void }) {
 }
 
 // ---- Revenue trend chart ----
-function RevenueChart({ data }: { data: { label: string; actual: number | null; projected: number | null }[] }) {
+// Contract wins/losses are annotations on the revenue line, not a second series —
+// the step in the line *is* the impact, the marker just says what caused it. Colours
+// are validated for colourblind separation, and every marker carries a ▲/▼ and a
+// signed amount so direction never rests on hue alone.
+// Series colours follow the entity (FreeAgent keeps its blue, Zoho its amber) and
+// stay clear of the marker colours. Validated for CVD separation in light and dark.
+const FREEAGENT_COLOR = "#2a78d6";
+const ZOHO_COLOR = "#eda100";
+const WON_COLOR = "#1baf7a";
+const LOST_COLOR = "#d03b3b";
+
+interface RevenueEvent { name: string; amount: number; zoho: boolean }
+interface RevenuePoint {
+  label: string; monthLabel: string;
+  zoho: number; other: number; total: number;
+  isProjected: boolean;
+  zohoActual: number | null; otherActual: number | null;
+  zohoProjected: number | null; otherProjected: number | null;
+  started: RevenueEvent[];
+  ended: RevenueEvent[];
+  won: number; lost: number; net: number;
+}
+
+/** Marker on the revenue line for a month where contracts started and/or ended. */
+function EventDot({ cx, cy, payload, index, labelled, count }: any) {
+  const p = payload as RevenuePoint;
+  if (cx == null || cy == null || (!p.started.length && !p.ended.length)) return null;
+  const gained = p.net >= 0;
+  const color = gained ? WON_COLOR : LOST_COLOR;
+  const show = labelled.has(p.label);
+  // Anchor labels inward at the edges so they don't overflow the axis or the card.
+  const anchor = index <= 0 ? "start" : index >= count - 1 ? "end" : "middle";
+  return (
+    <g>
+      {/* 2px surface ring keeps the marker legible where it overlaps the line */}
+      <circle cx={cx} cy={cy} r={5} fill="hsl(var(--card))" />
+      <circle cx={cx} cy={cy} r={3.5} fill={color} />
+      {show && (
+        <text
+          x={anchor === "start" ? cx - 4 : anchor === "end" ? cx + 4 : cx}
+          y={cy - 11} textAnchor={anchor} fontSize={10} fontWeight={600} fill={color}
+        >
+          {gained ? "▲" : "▼"} {gained ? "+" : "−"}£{Math.abs(Math.round(p.net)).toLocaleString()}
+        </text>
+      )}
+    </g>
+  );
+}
+
+function RevenueTooltip({ active, payload }: any) {
+  if (!active || !payload?.length) return null;
+  const p: RevenuePoint = payload[0].payload;
+  const evt = (s: RevenueEvent) => `${s.name} (${s.zoho ? "Zoho" : "FreeAgent"})`;
+  return (
+    <div className="rounded-lg border bg-popover px-3 py-2 text-xs shadow-md max-w-[280px]">
+      <p className="font-semibold text-foreground">
+        {p.monthLabel}{p.isProjected ? " · projected" : ""}
+      </p>
+      <div className="mt-1 space-y-0.5">
+        <p className="flex items-center justify-between gap-3">
+          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: ZOHO_COLOR }} /> Zoho
+          </span>
+          <span className="tabular-nums text-foreground">{gbp2(p.zoho)}</span>
+        </p>
+        <p className="flex items-center justify-between gap-3">
+          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+            <span className="inline-block h-2 w-2 rounded-sm" style={{ background: FREEAGENT_COLOR }} /> FreeAgent
+          </span>
+          <span className="tabular-nums text-foreground">{gbp2(p.other)}</span>
+        </p>
+        <p className="flex items-center justify-between gap-3 font-medium border-t pt-0.5 mt-0.5">
+          <span>Total</span><span className="tabular-nums">{gbp2(p.total)}</span>
+        </p>
+      </div>
+      {(p.started.length > 0 || p.ended.length > 0) && (
+        <div className="mt-1.5 pt-1.5 border-t space-y-1">
+          {p.started.length > 0 && (
+            <div>
+              <p className="font-medium" style={{ color: WON_COLOR }}>▲ Started · +{gbp2(p.won)}/mo</p>
+              {p.started.map(s => (
+                <p key={s.name} className="text-muted-foreground pl-3">{evt(s)} +{gbp2(s.amount)}</p>
+              ))}
+            </div>
+          )}
+          {p.ended.length > 0 && (
+            <div>
+              <p className="font-medium" style={{ color: LOST_COLOR }}>▼ Ended · −{gbp2(p.lost)}/mo</p>
+              {p.ended.map(s => (
+                <p key={s.name} className="text-muted-foreground pl-3">{evt(s)} −{gbp2(s.amount)}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RevenueChart({ data }: { data: RevenuePoint[] }) {
   const fmt = (v: number) => v >= 1000 ? `£${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : `£${v.toFixed(0)}`;
+  // Label only the months that moved the needle most — a number on every marker
+  // would be unreadable when most months have some churn. Take them biggest-first
+  // but never two neighbouring months, whose labels would sit on top of each other.
+  const labelled = useMemo(() => {
+    const picked: number[] = [];
+    data.map((d, i) => ({ d, i }))
+      .filter(({ d }) => d.started.length || d.ended.length)
+      .sort((a, b) => Math.abs(b.d.net) - Math.abs(a.d.net))
+      .forEach(({ i }) => {
+        if (picked.length < 3 && picked.every(p => Math.abs(p - i) >= 2)) picked.push(i);
+      });
+    return new Set(picked.map(i => data[i].label));
+  }, [data]);
+
   return (
     <ResponsiveContainer width="100%" height={230}>
-      <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-        <defs>
-          <linearGradient id="revFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.18} />
-            <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0} />
-          </linearGradient>
-        </defs>
+      <ComposedChart data={data} margin={{ top: 18, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.6} />
         <XAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={{ stroke: "hsl(var(--border))" }} tickLine={false} interval={2} />
         <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} tickFormatter={fmt} width={46} />
-        <Tooltip
-          formatter={(v: number) => gbp2(v)}
-          contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-          labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
-        />
-        <Area type="monotone" dataKey="actual" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#revFill)" connectNulls dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />
-        <RLine type="monotone" dataKey="projected" stroke="hsl(var(--primary))" strokeWidth={2} strokeDasharray="4 4" strokeOpacity={0.65} dot={false} connectNulls activeDot={{ r: 4 }} isAnimationActive={false} />
+        <Tooltip content={<RevenueTooltip />} cursor={{ stroke: "hsl(var(--border))" }} />
+
+        {/* Actual: the two revenue streams stacked, so the top edge stays the total.
+            A 1px surface stroke keeps the two fills from touching. */}
+        <Area type="monotone" stackId="actual" dataKey="otherActual" stroke={FREEAGENT_COLOR} strokeWidth={2} fill={FREEAGENT_COLOR} fillOpacity={0.22} isAnimationActive={false} dot={false} activeDot={false} />
+        <Area type="monotone" stackId="actual" dataKey="zohoActual" stroke={ZOHO_COLOR} strokeWidth={2} fill={ZOHO_COLOR} fillOpacity={0.22} isAnimationActive={false} dot={<EventDot labelled={labelled} count={data.length} />} activeDot={{ r: 4 }} />
+
+        {/* Projected: same stack, dashed and lighter. */}
+        <Area type="monotone" stackId="projected" dataKey="otherProjected" stroke={FREEAGENT_COLOR} strokeWidth={2} strokeDasharray="4 4" strokeOpacity={0.7} fill={FREEAGENT_COLOR} fillOpacity={0.08} isAnimationActive={false} dot={false} activeDot={false} />
+        <Area type="monotone" stackId="projected" dataKey="zohoProjected" stroke={ZOHO_COLOR} strokeWidth={2} strokeDasharray="4 4" strokeOpacity={0.7} fill={ZOHO_COLOR} fillOpacity={0.08} isAnimationActive={false} dot={<EventDot labelled={labelled} count={data.length} />} activeDot={{ r: 4 }} />
       </ComposedChart>
     </ResponsiveContainer>
   );
@@ -672,6 +835,7 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
             <th className="text-left font-medium px-4 py-2.5">Client</th>
             <th className="text-left font-medium px-4 py-2.5 w-[150px]">Sales Stage</th>
             <th className="text-left font-medium px-4 py-2.5 w-[120px]">Contract start</th>
+            <th className="text-left font-medium px-4 py-2.5 w-[120px]">Contract end</th>
             <th className="text-right font-medium px-4 py-2.5 w-[120px]">MRR (gross)</th>
             <th className="text-right font-medium px-4 py-2.5 w-[130px]">Est. profit</th>
             <th className="text-right font-medium px-4 py-2.5 w-[90px]">Margin</th>
@@ -688,7 +852,7 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
                 className="cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors border-b"
                 onClick={() => setCollapsed(prev => ({ ...prev, [g.key]: !isCollapsed }))}
               >
-                <td colSpan={6} className="px-4 py-2">
+                <td colSpan={7} className="px-4 py-2">
                   <div className="flex items-center gap-2">
                     {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
                     <span className={cn("h-3 w-1 rounded-full", g.meta.bar)} />
@@ -742,6 +906,19 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
                       ) : c.contract_start_date ? new Date(c.contract_start_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—"}
                     </td>
                     <td
+                      className="px-4 py-3 text-muted-foreground cursor-text"
+                      onDoubleClick={() => setEdit({ id: c.id, field: "contract_end_date" })}
+                      title="Double-click to edit — revenue stops counting after this date"
+                    >
+                      {edit?.id === c.id && edit.field === "contract_end_date" ? (
+                        <Input
+                          autoFocus type="date" defaultValue={c.contract_end_date ?? ""} className="h-8"
+                          onBlur={e => { onPatch(c.id, { contract_end_date: e.target.value || null }); setEdit(null); }}
+                          onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEdit(null); }}
+                        />
+                      ) : c.contract_end_date ? new Date(c.contract_end_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                    </td>
+                    <td
                       className="px-4 py-3 text-right tabular-nums cursor-text"
                       onDoubleClick={() => setEdit({ id: c.id, field: "mrr" })}
                       title="Double-click to edit"
@@ -764,7 +941,7 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
         })}
       </table>
       <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
-        Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start date feeds the revenue trend chart above. Double-click MRR or contract start to edit · click the stage pill to change it · click a group header to collapse it.
+        Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the following month, in both the history and the projection. Double-click MRR or either contract date to edit · click the stage pill to change it · click a group header to collapse it.
       </p>
     </div>
   );
