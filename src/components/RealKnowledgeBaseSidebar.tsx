@@ -950,7 +950,7 @@ export function RealKnowledgeBaseSidebar({
       <div className="p-4 border-b border-sidebar-border">
         <div className="space-y-1">
           {navigationItems
-            .filter(item => item.id !== 'chat' && (item.id !== 'clients' || isAdmin) && (item.id !== 'training' || canManageTraining) && (!('adminOnly' in item) || !item.adminOnly || isAdmin) && (!('hrOnly' in item) || !item.hrOnly || canManageHR))
+            .filter(item => item.id !== 'chat' && (item.id !== 'clients' || isAdmin || canManageHR) && (item.id !== 'training' || canManageTraining) && (!('adminOnly' in item) || !item.adminOnly || isAdmin) && (!('hrOnly' in item) || !item.hrOnly || canManageHR))
             .map((item) => {
             const isSelected = selectedId === item.id;
             const canSeeChildren = (item as any).adminOnly ? isAdmin : canManageHR;
