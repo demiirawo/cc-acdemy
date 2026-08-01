@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PerformanceRankBadge, RANK_ORDER, tenureYears, bonusTenureYears, employedFraction, bonusPoints, type Rank } from "./PerformanceRankBadge";
+import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusTenureYears, employedFraction, bonusPoints, type Rank } from "./PerformanceRankBadge";
 import { cn } from "@/lib/utils";
 import { recalcAllBonusPots, POT_DESC_TAG } from "@/lib/bonusPot";
 
@@ -197,6 +197,12 @@ export function StaffPayManager({ onSummaryComputed }: {
   // derived so the UI agrees with the database trigger that actually enforces it.
   const [monthLocked, setMonthLocked] = useState(false);
   const [lockedAt, setLockedAt] = useState<string | null>(null);
+  // Rating changes need a written reason — see openPayrollRankDialog.
+  const [rankDialogOpen, setRankDialogOpen] = useState(false);
+  const [rankUserId, setRankUserId] = useState<string | null>(null);
+  const [rankChoice, setRankChoice] = useState<Rank | null>(null);
+  const [rankReason, setRankReason] = useState("");
+  const [savingRank, setSavingRank] = useState(false);
   const [expandedOvertimeStaff, setExpandedOvertimeStaff] = useState<Set<string>>(new Set());
   const [bankDetailsDialog, setBankDetailsDialog] = useState<{
     open: boolean;
@@ -442,20 +448,39 @@ export function StaffPayManager({ onSummaryComputed }: {
     return rate > 0 ? amountGbp / rate : amountGbp;
   };
 
-  // Cycle a staff member's performance rating S→A→B→C→D→S by clicking their
-  // payroll badge (same behaviour as the staff-profile card). Optimistic.
-  const cyclePayrollRank = async (userId: string) => {
+  // Open the rating dialog for a staff member. Clicking the badge used to cycle
+  // the rating straight through S→A→B→C→D, which changed pay with no record of
+  // why — the rating drives bonus-pot share. Same reason-gated flow as the staff
+  // profile, so a change can't be made silently from either page.
+  const openPayrollRankDialog = (userId: string) => {
+    const hrFull = hrProfilesFull.find(h => h.user_id === userId);
+    setRankUserId(userId);
+    setRankChoice((hrFull?.performance_rating ?? null) as Rank | null);
+    setRankReason("");
+    setRankDialogOpen(true);
+  };
+
+  const savePayrollRankChange = async () => {
+    if (!rankUserId || !rankChoice || !rankReason.trim()) return;
+    const userId = rankUserId;
     const hrFull = hrProfilesFull.find(h => h.user_id === userId);
     const cur = (hrFull?.performance_rating ?? null) as Rank | null;
-    const idx = RANK_ORDER.indexOf(cur as Rank);
-    const next = RANK_ORDER[(idx + 1) % RANK_ORDER.length];
+    if (rankChoice === cur) {
+      toast({ title: "Choose a different rating", description: "The rating hasn't changed.", variant: "destructive" });
+      return;
+    }
+    const next = rankChoice;
+    setSavingRank(true);
     setHRProfilesFull(prev => prev.map(h => h.user_id === userId ? { ...h, performance_rating: next } : h));
     const { error } = await supabase.from('hr_profiles').update({ performance_rating: next }).eq('user_id', userId);
     if (error) {
       setHRProfilesFull(prev => prev.map(h => h.user_id === userId ? { ...h, performance_rating: cur } : h));
+      setSavingRank(false);
       toast({ title: "Couldn't update rating", description: error.message, variant: "destructive" });
       return;
     }
+    setSavingRank(false);
+    setRankDialogOpen(false);
     const recipient = userProfiles.find(u => u.user_id === userId);
     if (recipient?.email) {
       supabase.functions.invoke("send-rank-change-email", {
@@ -464,6 +489,7 @@ export function StaffPayManager({ onSummaryComputed }: {
           recipientName: recipient.display_name,
           oldRank: cur,
           newRank: next,
+          reason: rankReason.trim(),
         },
       }).catch(() => {});
     }
@@ -2585,7 +2611,7 @@ export function StaffPayManager({ onSummaryComputed }: {
                               <PerformanceRankBadge
                                 rank={b.rank}
                                 years={b.years}
-                                onClick={() => cyclePayrollRank(staff.userId)}
+                                onClick={() => openPayrollRankDialog(staff.userId)}
                                 className="cursor-pointer hover:opacity-80 active:scale-95 transition"
                                 title={`Click to change rating${b.rank ? ` (currently ${b.rank})` : " (unrated)"}`}
                               />
@@ -3418,6 +3444,71 @@ export function StaffPayManager({ onSummaryComputed }: {
           <DialogFooter>
             <Button variant="outline" onClick={() => setBankDetailsDialog(prev => ({ ...prev, open: false }))}>
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Performance rating — a change needs a written reason, since the rating
+          drives each person's share of the bonus pot. Mirrors the staff profile. */}
+      <Dialog open={rankDialogOpen} onOpenChange={o => { if (!savingRank) setRankDialogOpen(o); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Change performance rating</DialogTitle>
+            <DialogDescription>
+              Pick the new rating and explain why it changed. Your explanation is emailed to{" "}
+              {userProfiles.find(u => u.user_id === rankUserId)?.display_name || "the staff member"}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">New rating</p>
+              <div className="grid grid-cols-5 gap-2">
+                {RANK_ORDER.map(r => {
+                  const st = RANK_STYLES[r];
+                  const selected = rankChoice === r;
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setRankChoice(r)}
+                      className={`flex flex-col items-center gap-1 rounded-lg border-2 py-2 transition-all ${
+                        selected ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"
+                      }`}
+                    >
+                      <span className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-extrabold ${st.tile}`}>{r}</span>
+                      <span className="text-[10px] text-muted-foreground">{st.label.split(" ")[0]}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="payroll-rank-reason">
+                Reason for the change <span className="text-destructive">*</span>
+              </Label>
+              <Textarea
+                id="payroll-rank-reason"
+                value={rankReason}
+                onChange={e => setRankReason(e.target.value)}
+                rows={4}
+                placeholder="Explain why the rating is changing — this is sent to the staff member."
+              />
+              <p className="text-[11px] text-muted-foreground">
+                This also changes their share of the bonus pot, and any pots already distributed are recalculated.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRankDialogOpen(false)} disabled={savingRank}>Cancel</Button>
+            <Button
+              onClick={savePayrollRankChange}
+              disabled={
+                savingRank || !rankReason.trim() || !rankChoice ||
+                rankChoice === ((hrProfilesFull.find(h => h.user_id === rankUserId)?.performance_rating ?? null) as Rank | null)
+              }
+            >
+              {savingRank ? "Saving…" : "Save & notify"}
             </Button>
           </DialogFooter>
         </DialogContent>
