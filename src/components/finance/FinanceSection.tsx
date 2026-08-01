@@ -15,7 +15,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { Loader2, Plus, Trash2, ChevronDown, ChevronRight, Lock } from "lucide-react";
+import { Loader2, Plus, Trash2, ChevronDown, ChevronRight, Lock, RefreshCw } from "lucide-react";
 import { ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { ExpenseTrendPanel } from "./ExpenseTrendPanel";
 
@@ -128,6 +128,10 @@ export function FinanceSection() {
   const [paidByMonth, setPaidByMonth] = useState<Record<string, number>>({});
   const [outstanding, setOutstanding] = useState(0);
   const [revenueMode, setRevenueMode] = useState<"actual" | "runrate">("actual");
+  const [syncingInvoices, setSyncingInvoices] = useState(false);
+  const [invoiceSync, setInvoiceSync] = useState<{ at: string | null; status: string | null; detail: string | null }>({
+    at: null, status: null, detail: null,
+  });
   const handlePayrollSummary = useCallback((data: { month: string; totals: Record<string, number> }) => setPayrollFromTab(data), []);
 
   const load = useCallback(async () => {
@@ -135,7 +139,7 @@ export function FinanceSection() {
     const now = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
-    const [cl, sp, hrp, pr, asg, rt, ex, st, pr2, pat, inv] = await Promise.all([
+    const [cl, sp, hrp, pr, asg, rt, ex, st, pr2, pat, inv, fa] = await Promise.all([
       supabase.from("clients").select("id, name, mrr, software, status, contract_start_date, contract_end_date"),
       (supabase as any).from("staff_salaries").select("user_id, base_salary, base_currency"),
       supabase.from("hr_profiles").select("user_id, pay_frequency, employment_end_date"),
@@ -160,6 +164,9 @@ export function FinanceSection() {
       (supabase as any).from("client_invoices")
         .select("invoice_date, paid_date, paid_amount, total_value, status")
         .gte("invoice_date", `${now.getFullYear() - 2}-01-01`),
+      (supabase as any).from("freeagent_oauth")
+        .select("last_invoice_sync_at, last_invoice_sync_status, last_invoice_sync_detail")
+        .eq("id", true).maybeSingle(),
     ]);
     setClients((cl.data as ClientRow[]) || []);
     // Cash received, bucketed by the month the payment landed rather than the month
@@ -176,6 +183,11 @@ export function FinanceSection() {
       byMonth[k] = (byMonth[k] || 0) + Number(r.paid_amount ?? r.total_value ?? 0);
     });
     setPaidByMonth(byMonth);
+    setInvoiceSync({
+      at: fa.data?.last_invoice_sync_at ?? null,
+      status: fa.data?.last_invoice_sync_status ?? null,
+      detail: fa.data?.last_invoice_sync_detail ?? null,
+    });
     setOutstanding(
       paidRows.filter(r => !r.paid_date)
         .reduce((a, r) => a + Number(r.total_value || 0), 0)
@@ -475,6 +487,23 @@ export function FinanceSection() {
     ];
   }, [clients, settings, paidByMonth, revenueMode]);
 
+  // Pull invoices straight from FreeAgent. Writes to the same table the spreadsheet
+  // import fills, on the same key, so this refreshes rather than duplicates.
+  const syncInvoices = async () => {
+    setSyncingInvoices(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("freeagent-sync-invoices", { body: {} });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      toast({ title: "Invoices refreshed", description: `${(data as any)?.synced ?? 0} invoices pulled from FreeAgent.` });
+      await load();
+    } catch (e: any) {
+      toast({ title: "Couldn't refresh invoices", description: String(e?.message ?? e), variant: "destructive" });
+    } finally {
+      setSyncingInvoices(false);
+    }
+  };
+
   const saveSetting = async (patch: Partial<Settings>) => {
     setSettings(s => ({ ...s, ...patch }));
     await (supabase as any).from("finance_settings").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", true);
@@ -556,6 +585,17 @@ export function FinanceSection() {
                         >{label}</button>
                       ))}
                     </div>
+                    <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={syncInvoices} disabled={syncingInvoices}>
+                      {syncingInvoices ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+                      {syncingInvoices ? "Refreshing…" : "Refresh from FreeAgent"}
+                    </Button>
+                    {invoiceSync.at && (
+                      <span className="text-[11px] text-muted-foreground">
+                        {invoiceSync.status === "error" ? "Last sync failed" : `Synced ${invoiceSync.detail ?? ""}`}
+                        {" · "}
+                        {new Date(invoiceSync.at).toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap justify-end">
                     <span className="inline-flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: ZOHO_COLOR }} /> Zoho</span>

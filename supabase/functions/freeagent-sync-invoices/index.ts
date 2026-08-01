@@ -134,9 +134,9 @@ Deno.serve(async (req) => {
     await admin.rpc("link_client_invoices").catch(() => {});
 
     await admin.from("freeagent_oauth").update({
-      last_sync_at: new Date().toISOString(),
-      last_sync_status: "ok",
-      last_sync_detail: `${usable.length} invoices`,
+      last_invoice_sync_at: new Date().toISOString(),
+      last_invoice_sync_status: "ok",
+      last_invoice_sync_detail: `${usable.length} invoices`,
       updated_at: new Date().toISOString(),
     }).eq("id", true);
 
@@ -145,9 +145,9 @@ Deno.serve(async (req) => {
     });
   } catch (e) {
     await admin.from("freeagent_oauth").update({
-      last_sync_at: new Date().toISOString(),
-      last_sync_status: "error",
-      last_sync_detail: String(e).slice(0, 500),
+      last_invoice_sync_at: new Date().toISOString(),
+      last_invoice_sync_status: "error",
+      last_invoice_sync_detail: String(e).slice(0, 500),
       updated_at: new Date().toISOString(),
     }).eq("id", true);
 
