@@ -15,7 +15,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { Loader2, Plus, Trash2, ChevronDown, ChevronRight, Lock, RefreshCw } from "lucide-react";
+import { Loader2, Plus, Trash2, ChevronDown, ChevronRight, Lock, RefreshCw, ChevronLeft } from "lucide-react";
 import { ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { ExpenseTrendPanel } from "./ExpenseTrendPanel";
 
@@ -128,6 +128,8 @@ export function FinanceSection() {
   const [paidByMonth, setPaidByMonth] = useState<Record<string, number>>({});
   const [outstanding, setOutstanding] = useState(0);
   const [revenueMode, setRevenueMode] = useState<"actual" | "runrate">("actual");
+  // 0 = window ends at the current month; negative steps the chart back in time.
+  const [monthOffset, setMonthOffset] = useState(0);
   const [syncingInvoices, setSyncingInvoices] = useState(false);
   const [invoiceSync, setInvoiceSync] = useState<{ at: string | null; status: string | null; detail: string | null }>({
     at: null, status: null, detail: null,
@@ -462,32 +464,40 @@ export function FinanceSection() {
 
     const now = new Date();
     const useActual = revenueMode === "actual";
-    const actual = Array.from({ length: 12 }, (_, idx) =>
-      monthPoint(new Date(now.getFullYear(), now.getMonth() - (11 - idx), 1), 1, useActual));
+    const projMonths = Math.max(1, settings.projection_months);
+    const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    // Growth compounds on top of the contracts known to be live that month, so a
-    // contract ending in the future bends the projection down when it lapses.
+    // The window slides with monthOffset, but what counts as history is fixed by the
+    // real calendar: a month is actual once it has finished. So scrolling back turns
+    // the whole window solid rather than carrying a "projection" into the past, and
+    // the month in progress stays dashed because only part of its cash has arrived.
+    const anchor = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
     const g = settings.monthly_growth_pct / 100;
-    const projected = Array.from({ length: Math.max(1, settings.projection_months) }, (_, i) =>
-      monthPoint(new Date(now.getFullYear(), now.getMonth() + i + 1, 1), Math.pow(1 + g, i + 1)));
 
-    // Split each month's two bands into actual vs projected keys so the solid and
-    // dashed halves of the chart stack independently. The last actual month carries
-    // both, bridging the two so the areas meet with no gap.
-    const shape = (p: ReturnType<typeof monthPoint>, kind: "actual" | "projected", bridge = false) => ({
-      ...p,
-      isProjected: kind === "projected",
-      zohoActual: kind === "actual" ? p.zoho : null,
-      otherActual: kind === "actual" ? p.other : null,
-      zohoProjected: kind === "projected" || bridge ? p.zoho : null,
-      otherProjected: kind === "projected" || bridge ? p.other : null,
+    const points = Array.from({ length: 12 + projMonths }, (_, i) => {
+      const d = new Date(anchor.getFullYear(), anchor.getMonth() - 12 + i, 1);
+      const monthsAhead =
+        (d.getFullYear() - thisMonth.getFullYear()) * 12 + (d.getMonth() - thisMonth.getMonth());
+      const isFuture = monthsAhead >= 0;
+      // Growth only compounds beyond the current month; the current one is already here.
+      const growth = isFuture ? Math.pow(1 + g, monthsAhead) : 1;
+      return { p: monthPoint(d, growth, !isFuture && useActual), isFuture };
     });
 
-    return [
-      ...actual.map((p, i) => shape(p, "actual", i === actual.length - 1)),
-      ...projected.map(p => shape(p, "projected")),
-    ];
-  }, [clients, settings, paidByMonth, revenueMode]);
+    // Split each month's two bands into actual vs projected keys so the solid and
+    // dashed halves stack independently. The last finished month carries both,
+    // bridging them so the areas meet with no gap.
+    const lastActualIdx = points.reduce((last, pt, i) => (pt.isFuture ? last : i), -1);
+
+    return points.map(({ p, isFuture }, i) => ({
+      ...p,
+      isProjected: isFuture,
+      zohoActual: isFuture ? null : p.zoho,
+      otherActual: isFuture ? null : p.other,
+      zohoProjected: isFuture || i === lastActualIdx ? p.zoho : null,
+      otherProjected: isFuture || i === lastActualIdx ? p.other : null,
+    }));
+  }, [clients, settings, paidByMonth, revenueMode, monthOffset]);
 
   // Pull invoices straight from FreeAgent. Writes to the same table the spreadsheet
   // import fills, on the same key, so this refreshes rather than duplicates.
@@ -575,7 +585,10 @@ export function FinanceSection() {
               <CardContent className="p-5">
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-semibold text-sm">Revenue trend — last 12 months &amp; next 6 projected <span className="font-normal text-muted-foreground">(incl. VAT)</span></p>
+                    <p className="font-semibold text-sm">
+                      Revenue trend — last 12 months &amp; {Math.max(1, settings.projection_months)} projected{" "}
+                      <span className="font-normal text-muted-foreground">(incl. VAT)</span>
+                    </p>
                     <div className="inline-flex rounded-md border bg-background p-0.5">
                       {([["actual", "Paid"], ["runrate", "Run-rate"]] as const).map(([v, label]) => (
                         <button
@@ -586,6 +599,25 @@ export function FinanceSection() {
                             revenueMode === v ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}
                         >{label}</button>
                       ))}
+                    </div>
+                    {/* Step the window back through history. Forward stops at the
+                        present — there's nothing beyond the projection to show. */}
+                    <div className="inline-flex items-center gap-0.5">
+                      <Button size="icon" variant="ghost" className="h-7 w-7"
+                        title="Earlier months" onClick={() => setMonthOffset(o => o - 3)}>
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="h-7 w-7"
+                        title="Later months" disabled={monthOffset >= 0}
+                        onClick={() => setMonthOffset(o => Math.min(0, o + 3))}>
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                      {monthOffset !== 0 && (
+                        <Button size="sm" variant="ghost" className="h-7 text-[11px] px-2"
+                          onClick={() => setMonthOffset(0)}>
+                          Back to now
+                        </Button>
+                      )}
                     </div>
                     <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={syncInvoices} disabled={syncingInvoices}>
                       {syncingInvoices ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
@@ -610,7 +642,7 @@ export function FinanceSection() {
                 <RevenueChart data={revenueSeries} />
                 <p className="text-[11px] text-muted-foreground mt-2">
                   {revenueMode === "actual"
-                    ? `Paid: the FreeAgent band is cash that actually cleared, counted in the month the payment landed — so it carries the annual uplifts, discounts, add-ons and one-offs a flat monthly figure can't, and puts clients on deferred terms in the month they really paid. The month in progress starts at nothing and fills as payments arrive, so the last column is always partial and reads low until month end${outstanding > 0 ? ` — ${gbp2(outstanding)} is outstanding right now` : ""}. Zoho is billed outside FreeAgent, so that band stays run-rate, as do all future months.`
+                    ? `Paid: the solid FreeAgent band is cash that actually cleared, counted in the month the payment landed — so it carries the annual uplifts, discounts, add-ons and one-offs a flat monthly figure can't, and puts clients on deferred terms in the month they really paid. It ends at the last complete month; the month in progress is dashed, alongside the months ahead, because only part of its cash has arrived${outstanding > 0 ? ` — ${gbp2(outstanding)} is outstanding right now` : ""}. Projected months are valued at the current run-rate rather than collected cash, so expect a step where the two meet. Zoho is billed outside FreeAgent, so that band is run-rate throughout.`
                     : "Run-rate: every month valued at each client's current monthly fee, so the line shows the shape of the book rather than money received. Switch to Paid for actual cash."}
                   {" "}Gross — VAT included — so this runs higher than the ex-VAT revenue in the cards above and in the P&amp;L. Markers show months where contracts started or ended; hover one to see which clients and what each was worth. A contract end date removes that client from the month it lapses onward.
                 </p>
@@ -881,8 +913,17 @@ function RevenueChart({ data }: { data: RevenuePoint[] }) {
   return (
     <ResponsiveContainer width="100%" height={230}>
       <ComposedChart data={data} margin={{ top: 18, right: 8, left: 0, bottom: 0 }}>
-        <CartesianGrid vertical={false} stroke="hsl(var(--border))" strokeOpacity={0.6} />
-        <XAxis dataKey="label" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={{ stroke: "hsl(var(--border))" }} tickLine={false} interval={2} />
+        {/* Vertical lines mark every month boundary, so a reader can tell which
+            month a point belongs to without counting across from the axis. */}
+        <CartesianGrid vertical stroke="hsl(var(--border))" strokeOpacity={0.6} />
+        <XAxis
+          dataKey="label"
+          tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }}
+          axisLine={{ stroke: "hsl(var(--border))" }}
+          tickLine={{ stroke: "hsl(var(--border))" }}
+          interval={0}
+          tickMargin={6}
+        />
         <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} axisLine={false} tickLine={false} tickFormatter={fmt} width={46} />
         <Tooltip content={<RevenueTooltip />} cursor={{ stroke: "hsl(var(--border))" }} />
 
