@@ -22,8 +22,17 @@ const FALLBACK_RATES: Record<string, number> = {
 export async function recalcAllBonusPots(userId?: string): Promise<number> {
   const createdBy = userId ?? (await supabase.auth.getUser()).data.user?.id ?? null;
 
-  const { data: pots } = await (supabase as any).from("monthly_bonus_pots").select("month, amount_gbp");
-  if (!pots?.length) return 0;
+  const { data: allPots } = await (supabase as any).from("monthly_bonus_pots").select("month, amount_gbp");
+  if (!allPots?.length) return 0;
+
+  // A finalised month is closed to changes — the database trigger would reject
+  // these writes anyway, so skip those months rather than failing the whole
+  // recalculation and leaving the open months untouched.
+  const { data: locks } = await (supabase as any).from("payroll_locks").select("month");
+  const lockedMonths = new Set(((locks as { month: string }[]) || []).map(l => l.month));
+  const pots = (allPots as { month: string; amount_gbp: number }[])
+    .filter(p => !lockedMonths.has(format(startOfMonth(parseISO(p.month)), "yyyy-MM-dd")));
+  if (!pots.length) return 0;
 
   const [{ data: hr }, { data: rateRows }, { data: profs }, { data: salaries }] = await Promise.all([
     supabase.from("hr_profiles").select("user_id, performance_rating, start_date, created_at, employment_end_date, bonus_pot_eligible"),

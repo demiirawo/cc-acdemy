@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { StaffBonusEditor } from "./StaffBonusEditor";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { supabase } from "@/integrations/supabase/client";
@@ -23,7 +23,7 @@ import { recalcAllBonusPots, POT_DESC_TAG } from "@/lib/bonusPot";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat, FileBadge, ArrowUp, ArrowDown, ArrowUpDown, Landmark, Coins } from "lucide-react";
+import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Calculator, FileText, RefreshCw, Edit2, CheckCircle, Clock, RotateCcw, Sparkles, Repeat, FileBadge, ArrowUp, ArrowDown, ArrowUpDown, Landmark, Coins, Lock } from "lucide-react";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { downloadInvoicePdf, type InvoiceData } from "@/lib/invoice/generatePdf";
@@ -193,6 +193,10 @@ export function StaffPayManager({ onSummaryComputed }: {
   const [adjustmentDialogOpen, setAdjustmentDialogOpen] = useState(false);
   const [savingAdjustment, setSavingAdjustment] = useState(false);
   const [readyStaff, setReadyStaff] = useState<Set<string>>(new Set());
+  // A finalised month is frozen — see payroll_locks. Held as state rather than
+  // derived so the UI agrees with the database trigger that actually enforces it.
+  const [monthLocked, setMonthLocked] = useState(false);
+  const [lockedAt, setLockedAt] = useState<string | null>(null);
   const [expandedOvertimeStaff, setExpandedOvertimeStaff] = useState<Set<string>>(new Set());
   const [bankDetailsDialog, setBankDetailsDialog] = useState<{
     open: boolean;
@@ -312,6 +316,18 @@ export function StaffPayManager({ onSummaryComputed }: {
     };
     fetchReadyStatus();
   }, [selectedMonth]);
+
+  // Is this month finalised? The database refuses pay-record writes for locked
+  // months regardless, so this is only about showing the right thing.
+  const fetchLockStatus = useCallback(async () => {
+    const monthKey = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
+    const { data } = await (supabase as any)
+      .from('payroll_locks').select('locked_at').eq('month', monthKey).maybeSingle();
+    setMonthLocked(!!data);
+    setLockedAt(data?.locked_at ?? null);
+  }, [selectedMonth]);
+
+  useEffect(() => { fetchLockStatus(); }, [fetchLockStatus]);
 
   const fetchPublicHolidays = async (year: number) => {
     setLoadingHolidays(true);
@@ -1723,6 +1739,12 @@ export function StaffPayManager({ onSummaryComputed }: {
     const monthKey = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
 
     try {
+      // Reopening the month is the whole point of this action, so lift the lock
+      // first — otherwise the trigger would refuse to delete the salary record.
+      await (supabase as any).from('payroll_locks').delete().eq('month', monthKey);
+      setMonthLocked(false);
+      setLockedAt(null);
+
       const { error } = await supabase
         .from('staff_pay_records')
         .delete()
@@ -1802,7 +1824,25 @@ export function StaffPayManager({ onSummaryComputed }: {
         return newSet;
       });
 
-      toast({ title: "Success", description: `Payroll processed for ${staffToProcess.length} staff members` });
+      // Everyone paid means the month is done — freeze it, so no late edit can
+      // move a figure that's already gone out. Reverting anyone reopens it.
+      const stillUnpaid = payrollSummary.filter(
+        s => !s.hasSalaryRecord && !processedIds.includes(s.userId)
+      ).length;
+      if (stillUnpaid === 0 && payrollSummary.length > 0) {
+        const { error: lockError } = await (supabase as any)
+          .from('payroll_locks')
+          .upsert({ month: monthKey, locked_by: user?.id ?? null }, { onConflict: 'month' });
+        if (lockError) console.error('Failed to lock payroll month:', lockError);
+        else { setMonthLocked(true); setLockedAt(new Date().toISOString()); }
+      }
+
+      toast({
+        title: "Success",
+        description: stillUnpaid === 0 && payrollSummary.length > 0
+          ? `Payroll processed for ${staffToProcess.length} staff. ${format(selectedMonth, 'MMMM')} is now finalised and locked.`
+          : `Payroll processed for ${staffToProcess.length} staff members`,
+      });
       fetchData();
     } catch (error: any) {
       console.error('Error running payroll:', error);
@@ -2102,18 +2142,36 @@ export function StaffPayManager({ onSummaryComputed }: {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={handleOpenDialog} className="flex-1 md:flex-none">
+          <Button variant="outline" onClick={handleOpenDialog} disabled={monthLocked} className="flex-1 md:flex-none">
             <Plus className="h-4 w-4 mr-2" />
             Add Adjustment
           </Button>
           {readyStaffCount > 0 && (
-            <Button onClick={handleRunAllPayroll} className="flex-1 md:flex-none">
+            <Button onClick={handleRunAllPayroll} disabled={monthLocked} className="flex-1 md:flex-none">
               <Calculator className="h-4 w-4 mr-2" />
               Run Payroll ({readyStaffCount})
             </Button>
           )}
         </div>
       </div>
+
+      {/* A finalised month is read-only. Say so up front rather than letting the
+          first blocked edit be how anyone finds out. */}
+      {monthLocked && (
+        <div className="flex items-start gap-2 rounded-lg border border-blue-300/60 bg-blue-500/5 px-3 py-2 text-sm">
+          <Lock className="h-4 w-4 mt-0.5 text-blue-600 flex-shrink-0" />
+          <div className="min-w-0">
+            <p className="font-medium text-blue-700 dark:text-blue-300">
+              {format(selectedMonth, 'MMMM yyyy')} payroll is finalised and locked
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Everyone has been paid{lockedAt ? `, locked ${format(parseISO(lockedAt), "d MMM 'at' HH:mm")}` : ""}. Pay
+              figures for this month can't be changed. To reopen it, revert a staff member back to pending using the
+              status button on their row.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Exchange Rate Info */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
