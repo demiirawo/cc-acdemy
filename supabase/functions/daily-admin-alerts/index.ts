@@ -278,14 +278,33 @@ const handler = async (req: Request): Promise<Response> => {
       const { data: hrProfiles } = await supabaseClient
         .from("hr_profiles").select("user_id, start_date").not("start_date", "is", null);
 
-      const todayAnniversaries: { name: string; years: number }[] = [];
+      // An anniversary landing on a Saturday or Sunday is held until the next working
+      // day, so nobody's milestone is announced to an inbox no one is reading. That
+      // means a weekend run reports nothing, and Monday's run covers Saturday and
+      // Sunday alongside itself rather than letting them pass unmarked.
+      const isWeekend = (d: Date) => d.getDay() === 0 || d.getDay() === 6;
+      const datesToCover: Date[] = [];
+      if (!isWeekend(today)) {
+        datesToCover.push(new Date(today));
+        const back = new Date(today);
+        back.setDate(back.getDate() - 1);
+        while (isWeekend(back)) {
+          datesToCover.push(new Date(back));
+          back.setDate(back.getDate() - 1);
+        }
+      }
+
+      const todayAnniversaries: { name: string; years: number; on: Date }[] = [];
       for (const hr of hrProfiles || []) {
         if (!hr.start_date) continue;
         const startDate = new Date(hr.start_date);
-        if (startDate.getDate() === today.getDate() && startDate.getMonth() === today.getMonth()) {
-          const years = today.getFullYear() - startDate.getFullYear();
-          if (years > 0) {
-            todayAnniversaries.push({ name: profileMap.get(hr.user_id) || "Unknown", years });
+        for (const when of datesToCover) {
+          if (startDate.getDate() === when.getDate() && startDate.getMonth() === when.getMonth()) {
+            const years = when.getFullYear() - startDate.getFullYear();
+            if (years > 0) {
+              todayAnniversaries.push({ name: profileMap.get(hr.user_id) || "Unknown", years, on: when });
+            }
+            break;
           }
         }
       }
@@ -293,14 +312,22 @@ const handler = async (req: Request): Promise<Response> => {
       if (todayAnniversaries.length > 0 || testType === "anniversary_today") {
         const display = todayAnniversaries.length > 0
           ? todayAnniversaries
-          : [{ name: "[TEST] John Smith", years: 3 }];
+          : [{ name: "[TEST] John Smith", years: 3, on: new Date(today) }];
+        const deferred = display.filter(a => a.on.getTime() !== today.getTime() && isWeekend(a.on)).length;
         sections.push({
           type: "anniversary_today",
           title: "Work Anniversaries",
           icon: "🎉",
           accentColor: "#8b5cf6",
-          itemsHtml: display.map(a => `${a.name} — ${a.years} year${a.years > 1 ? "s" : ""} 🎉`),
-          summary: `${display.length} today`,
+          // Say which day it actually fell on when it wasn't today, so a Monday
+          // greeting doesn't read as though the date were wrong.
+          itemsHtml: display.map(a => {
+            const label = `${a.name} — ${a.years} year${a.years > 1 ? "s" : ""} 🎉`;
+            return isWeekend(a.on)
+              ? `${label} <span style="color:#6b7280">(was ${a.on.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })})</span>`
+              : label;
+          }),
+          summary: deferred > 0 ? `${display.length} (incl. ${deferred} from the weekend)` : `${display.length} today`,
         });
       }
     }
