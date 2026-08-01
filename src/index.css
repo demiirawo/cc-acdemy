@@ -160,12 +160,33 @@
     @apply border-border;
   }
 
+  /* Content is not selectable by default — the academy's material shouldn't be
+     copied out wholesale. Form fields stay usable, or nobody could edit anything. */
   body {
     @apply bg-background text-foreground;
     -webkit-user-select: none;
     -moz-user-select: none;
     -ms-user-select: none;
     user-select: none;
+  }
+
+  body input,
+  body textarea,
+  body [contenteditable="true"] {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+  }
+
+  /* Admins are exempt: they maintain this content, so lifting and reusing it is
+     part of the job. Set from the signed-in user's role — see useCopyPermission. */
+  body.allow-copy,
+  body.allow-copy * {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
   }
 
   /* Glossary term styling */

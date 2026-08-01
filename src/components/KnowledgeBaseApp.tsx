@@ -34,6 +34,7 @@ import { FinanceSection } from "./finance/FinanceSection";
 import { SchedulePage } from "./SchedulePage";
 import { useGlossary } from "@/hooks/useGlossary";
 import { useUserRole } from "@/hooks/useUserRole";
+import { useCopyPermission } from "@/hooks/useCopyPermission";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { PageAcknowledgement } from "./PageAcknowledgement";
 import { QuizManager } from "./QuizManager";
@@ -118,6 +119,8 @@ function PageView({
   const { toast } = useToast();
   const { terms: glossaryTerms, getAllMatchableTerms } = useGlossary();
   const { isAdmin, isEditor } = useUserRole();
+  // Selection is off for everyone but admins — see useCopyPermission.
+  useCopyPermission();
 
   // Function to make content read-only by removing contenteditable attributes
   const makeContentReadOnly = (content: string): string => {
