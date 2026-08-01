@@ -69,26 +69,41 @@ export function bonusTenureYears(startDate: string | null | undefined, payrollMo
 /**
  * How much of a payroll month someone was employed for, as a fraction of 0–1.
  *
- * A leaver's bonus share is scaled by this, so finishing a quarter of the way
- * through the month earns a quarter of what they'd otherwise have taken, and the
- * remainder stays in the pot for everyone else rather than being paid in full or
- * dropped on the floor.
+ * Bonus shares are scaled by this at both ends: join a quarter of the way through
+ * the month, or leave a quarter of the way in, and you take a quarter of what
+ * you'd otherwise have had. Whatever isn't earned stays in the pot for everyone
+ * else rather than being paid in full or dropped on the floor.
+ *
+ * A missing start date means "already here" rather than "started today" — some
+ * records simply never had one recorded, and guessing from when the row was
+ * created would dock long-standing staff for a data gap.
  */
-export function employedFraction(endDate: string | null | undefined, payrollMonth: Date): number {
-  if (!endDate) return 1;
-  const end = new Date(endDate);
-  if (isNaN(end.getTime())) return 1;
-
+export function employedFraction(
+  startDate: string | null | undefined,
+  endDate: string | null | undefined,
+  payrollMonth: Date,
+): number {
   const year = payrollMonth.getFullYear();
   const month = payrollMonth.getMonth();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthStart = new Date(year, month, 1);
+  const monthEnd = new Date(year, month, daysInMonth);
 
-  // Left before the month began — no share at all.
-  if (end < new Date(year, month, 1)) return 0;
-  // Still employed at month end — full share.
-  if (end >= new Date(year, month, daysInMonth)) return 1;
-  // Left partway through: count the days worked, their last day included.
-  return end.getDate() / daysInMonth;
+  const start = startDate ? new Date(startDate) : null;
+  const end = endDate ? new Date(endDate) : null;
+  const validStart = start && !isNaN(start.getTime()) ? start : null;
+  const validEnd = end && !isNaN(end.getTime()) ? end : null;
+
+  // Hadn't joined yet, or had already left, before this month ran.
+  if (validStart && validStart > monthEnd) return 0;
+  if (validEnd && validEnd < monthStart) return 0;
+
+  // Clamp both ends into the month; their first and last days both count.
+  const firstDay = validStart && validStart > monthStart ? validStart.getDate() : 1;
+  const lastDay = validEnd && validEnd < monthEnd ? validEnd.getDate() : daysInMonth;
+
+  if (lastDay < firstDay) return 0;
+  return (lastDay - firstDay + 1) / daysInMonth;
 }
 
 interface PerformanceRankBadgeProps {

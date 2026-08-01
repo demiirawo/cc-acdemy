@@ -66,7 +66,7 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
     const staff = candidates.map((h) => {
       const rating = (h.performance_rating && RANK_ORDER.includes(h.performance_rating) ? h.performance_rating : null) as Rank | null;
       const years = bonusTenureYears(h.start_date || h.created_at, d) ?? 0;
-      const worked = employedFraction(h.employment_end_date, d);
+      const worked = employedFraction(h.start_date, h.employment_end_date, d);
       const flagEligible = h.bonus_pot_eligible !== false;
       return {
         userId: h.user_id as string,

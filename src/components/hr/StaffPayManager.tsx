@@ -1368,8 +1368,9 @@ export function StaffPayManager({ onSummaryComputed }: {
         // Tenure as at the end of last month: an anniversary reached during this
         // month lifts the share from next month's run, not this one.
         years: bonusTenureYears(hrFull?.start_date || hrFull?.created_at, selectedMonth) ?? 0,
-        // A leaver shares only in proportion to the part of the month they worked.
-        worked: employedFraction(hrFull?.employment_end_date, selectedMonth),
+        // Joiners and leavers share only in proportion to the part of the month
+        // they were actually here for.
+        worked: employedFraction(hrFull?.start_date, hrFull?.employment_end_date, selectedMonth),
         // Explicit per-staff opt-out flag (default eligible).
         flagEligible: hrFull?.bonus_pot_eligible !== false,
       };
