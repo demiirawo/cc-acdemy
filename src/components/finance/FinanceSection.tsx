@@ -440,9 +440,11 @@ export function FinanceSection() {
       // deferred-terms clients in the month they really paid. Zoho is billed outside
       // FreeAgent, so that band stays run-rate derived either way.
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const paid = paidByMonth[key];
-      const other = useActual && paid != null
-        ? paid
+      // A month with no cash in it is worth nothing on this basis — don't fall back
+      // to the run-rate, which would draw a month nobody has paid yet as though it
+      // were complete. Only future months are run-rate, and they say so.
+      const other = useActual
+        ? (paidByMonth[key] ?? 0)
         : live.filter(c => !isZoho(c)).reduce((a, c) => a + grossOf(c), 0) * growth;
       const started = billing.filter(c => inMonth(c.contract_start_date, monthStart, monthEnd))
         .map(c => ({ name: c.name, amount: grossOf(c), zoho: isZoho(c) })).sort((a, b) => b.amount - a.amount);
@@ -608,7 +610,7 @@ export function FinanceSection() {
                 <RevenueChart data={revenueSeries} />
                 <p className="text-[11px] text-muted-foreground mt-2">
                   {revenueMode === "actual"
-                    ? `Paid: the FreeAgent band is cash that actually cleared, counted in the month the payment landed — so it carries the annual uplifts, discounts, add-ons and one-offs a flat monthly figure can't, and puts clients on deferred terms in the month they really paid. The current month always understates, because invoices raised recently haven't been paid yet${outstanding > 0 ? ` (${gbp2(outstanding)} outstanding right now)` : ""}. Zoho is billed outside FreeAgent, so that band stays run-rate, as do all future months.`
+                    ? `Paid: the FreeAgent band is cash that actually cleared, counted in the month the payment landed — so it carries the annual uplifts, discounts, add-ons and one-offs a flat monthly figure can't, and puts clients on deferred terms in the month they really paid. The month in progress starts at nothing and fills as payments arrive, so the last column is always partial and reads low until month end${outstanding > 0 ? ` — ${gbp2(outstanding)} is outstanding right now` : ""}. Zoho is billed outside FreeAgent, so that band stays run-rate, as do all future months.`
                     : "Run-rate: every month valued at each client's current monthly fee, so the line shows the shape of the book rather than money received. Switch to Paid for actual cash."}
                   {" "}Gross — VAT included — so this runs higher than the ex-VAT revenue in the cards above and in the P&amp;L. Markers show months where contracts started or ended; hover one to see which clients and what each was worth. A contract end date removes that client from the month it lapses onward.
                 </p>

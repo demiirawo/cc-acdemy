@@ -131,7 +131,14 @@ Deno.serve(async (req) => {
     }
 
     // Attach any newly-seen organisations to a portal client where the name matches.
-    await admin.rpc("link_client_invoices").catch(() => {});
+    // Wrapped in try/catch rather than .catch(): the Supabase query builder is a
+    // thenable, not a Promise, so it has no .catch until it's awaited — and failing
+    // to link names shouldn't discard a sync whose invoices are already written.
+    try {
+      await admin.rpc("link_client_invoices");
+    } catch (linkErr) {
+      console.error("link_client_invoices failed:", linkErr);
+    }
 
     await admin.from("freeagent_oauth").update({
       last_invoice_sync_at: new Date().toISOString(),
