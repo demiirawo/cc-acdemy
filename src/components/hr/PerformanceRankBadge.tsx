@@ -32,10 +32,63 @@ export const LOWEST_ELIGIBLE_RANK: Rank = 'C';
 export const bonusPoints = (rank: Rank | null, years: number): number =>
   bonusEligible(rank) ? (1 + Math.max(0, years)) * rankBonusMult(rank) : 0;
 
-/** Completed years of tenure from an ISO start date (null if unknown). */
-export function tenureYears(startDate: string | null | undefined): number | null {
+/**
+ * Completed years of tenure from an ISO start date (null if unknown), as at
+ * `asOf` — today unless stated. Counted on the calendar rather than by dividing
+ * elapsed milliseconds, because whether someone has *reached* an anniversary is
+ * exactly what this decides, and a 365.25-day average lands on the wrong side of
+ * that date in leap years.
+ */
+export function tenureYears(startDate: string | null | undefined, asOf: Date = new Date()): number | null {
   if (!startDate) return null;
-  return Math.max(0, Math.floor((Date.now() - new Date(startDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000)));
+  const start = new Date(startDate);
+  if (isNaN(start.getTime())) return null;
+  let years = asOf.getFullYear() - start.getFullYear();
+  const beforeAnniversary =
+    asOf.getMonth() < start.getMonth() ||
+    (asOf.getMonth() === start.getMonth() && asOf.getDate() < start.getDate());
+  if (beforeAnniversary) years -= 1;
+  return Math.max(0, years);
+}
+
+/**
+ * The tenure a given payroll month's bonus share is calculated on — measured at
+ * the end of the month before it.
+ *
+ * So an anniversary reached during a month doesn't raise that month's share; it
+ * takes effect from the next payroll run. That keeps shares from shifting under
+ * everyone else late in the month, as one person crossing a year boundary
+ * redistributes the whole pot.
+ */
+export function bonusTenureYears(startDate: string | null | undefined, payrollMonth: Date): number | null {
+  // Day 0 of the payroll month = the last day of the month before it.
+  const cutoff = new Date(payrollMonth.getFullYear(), payrollMonth.getMonth(), 0);
+  return tenureYears(startDate, cutoff);
+}
+
+/**
+ * How much of a payroll month someone was employed for, as a fraction of 0–1.
+ *
+ * A leaver's bonus share is scaled by this, so finishing a quarter of the way
+ * through the month earns a quarter of what they'd otherwise have taken, and the
+ * remainder stays in the pot for everyone else rather than being paid in full or
+ * dropped on the floor.
+ */
+export function employedFraction(endDate: string | null | undefined, payrollMonth: Date): number {
+  if (!endDate) return 1;
+  const end = new Date(endDate);
+  if (isNaN(end.getTime())) return 1;
+
+  const year = payrollMonth.getFullYear();
+  const month = payrollMonth.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  // Left before the month began — no share at all.
+  if (end < new Date(year, month, 1)) return 0;
+  // Still employed at month end — full share.
+  if (end >= new Date(year, month, daysInMonth)) return 1;
+  // Left partway through: count the days worked, their last day included.
+  return end.getDate() / daysInMonth;
 }
 
 interface PerformanceRankBadgeProps {

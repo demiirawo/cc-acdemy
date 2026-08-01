@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { format, startOfMonth, endOfMonth, parseISO } from "date-fns";
-import { RANK_ORDER, bonusPoints, tenureYears, type Rank } from "@/components/hr/PerformanceRankBadge";
+import { RANK_ORDER, bonusPoints, bonusTenureYears, employedFraction, type Rank } from "@/components/hr/PerformanceRankBadge";
 
 export const POT_DESC_TAG = "Bonus pot";
 
@@ -25,7 +25,6 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
   const { data: pots } = await (supabase as any).from("monthly_bonus_pots").select("month, amount_gbp");
   if (!pots?.length) return 0;
 
-  const today = new Date().toISOString().slice(0, 10);
   const [{ data: hr }, { data: rateRows }, { data: profs }, { data: salaries }] = await Promise.all([
     supabase.from("hr_profiles").select("user_id, performance_rating, start_date, created_at, employment_end_date, bonus_pot_eligible"),
     (supabase as any).from("manual_currency_rates").select("currency_code, rate_to_gbp"),
@@ -47,18 +46,11 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
     ((salaries as any[]) || []).map((s) => [s.user_id, { base_salary: s.base_salary, base_currency: s.base_currency }])
   );
 
-  // The pot is shared among actively-employed, salaried staff. Ineligible ranks
-  // (D) and opted-out staff (bonus_pot_eligible = false) get 0 points.
-  const staff = ((hr as any[]) || [])
+  // The pot is shared among salaried staff on the payroll. Ineligible ranks (D)
+  // and opted-out staff (bonus_pot_eligible = false) get 0 points.
+  const candidates = ((hr as any[]) || [])
     .map((h) => ({ ...h, base_salary: salaryByUser.get(h.user_id)?.base_salary ?? null, base_currency: salaryByUser.get(h.user_id)?.base_currency ?? "GBP" }))
-    .filter((h) => (h.base_salary ?? 0) > 0 && payrollUsers.has(h.user_id) && (!h.employment_end_date || h.employment_end_date >= today))
-    .map((h) => {
-      const rating = (h.performance_rating && RANK_ORDER.includes(h.performance_rating) ? h.performance_rating : null) as Rank | null;
-      const years = tenureYears(h.start_date || h.created_at) ?? 0;
-      const flagEligible = h.bonus_pot_eligible !== false;
-      return { userId: h.user_id as string, currency: (h.base_currency as string) || "GBP", rank: rating, years, points: flagEligible ? bonusPoints(rating, years) : 0 };
-    });
-  const totalPoints = staff.reduce((a, s) => a + s.points, 0);
+    .filter((h) => (h.base_salary ?? 0) > 0 && payrollUsers.has(h.user_id));
 
   for (const pot of pots as { month: string; amount_gbp: number }[]) {
     const d = parseISO(pot.month);
@@ -66,6 +58,24 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
     const mEnd = format(endOfMonth(d), "yyyy-MM-dd");
     const mLabel = format(d, "MMM yyyy");
     const amt = Number(pot.amount_gbp) || 0;
+
+    // Points are worked out per month, not once for all of them: tenure is taken
+    // as at the end of the previous month, and a leaver counts only for the part
+    // of the month they worked. Computing this once from today's date would have
+    // applied today's tenure to a pot from a year ago.
+    const staff = candidates.map((h) => {
+      const rating = (h.performance_rating && RANK_ORDER.includes(h.performance_rating) ? h.performance_rating : null) as Rank | null;
+      const years = bonusTenureYears(h.start_date || h.created_at, d) ?? 0;
+      const worked = employedFraction(h.employment_end_date, d);
+      const flagEligible = h.bonus_pot_eligible !== false;
+      return {
+        userId: h.user_id as string,
+        currency: (h.base_currency as string) || "GBP",
+        rank: rating, years, worked,
+        points: flagEligible ? bonusPoints(rating, years) * worked : 0,
+      };
+    }).filter((s) => s.worked > 0);
+    const totalPoints = staff.reduce((a, s) => a + s.points, 0);
 
     await supabase.from("staff_pay_records").delete()
       .eq("record_type", "bonus").eq("pay_period_start", mStart)
@@ -83,7 +93,7 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
         record_type: "bonus" as const,
         amount: Math.round(gbpToCurrency(shareGbp[i], s.currency) * 100) / 100,
         currency: s.currency,
-        description: `${POT_DESC_TAG} · ${mLabel} (${s.rank ?? "unrated"} · ${s.years}y · ${s.points.toFixed(2)} pts)`,
+        description: `${POT_DESC_TAG} · ${mLabel} (${s.rank ?? "unrated"} · ${s.years}y · ${s.points.toFixed(2)} pts${s.worked < 1 ? ` · ${Math.round(s.worked * 100)}% of month` : ""})`,
         pay_date: mEnd,
         pay_period_start: mStart,
         pay_period_end: mEnd,

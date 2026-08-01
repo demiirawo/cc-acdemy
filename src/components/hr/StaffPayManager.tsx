@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PerformanceRankBadge, RANK_ORDER, tenureYears, bonusPoints, type Rank } from "./PerformanceRankBadge";
+import { PerformanceRankBadge, RANK_ORDER, tenureYears, bonusTenureYears, employedFraction, bonusPoints, type Rank } from "./PerformanceRankBadge";
 import { cn } from "@/lib/utils";
 import { recalcAllBonusPots, POT_DESC_TAG } from "@/lib/bonusPot";
 
@@ -1365,12 +1365,16 @@ export function StaffPayManager({ onSummaryComputed }: {
         displayName: s.displayName,
         currency: s.currency,
         rank: rating && RANK_ORDER.includes(rating) ? rating : null,
-        years: tenureYears(hrFull?.start_date || hrFull?.created_at) ?? 0,
+        // Tenure as at the end of last month: an anniversary reached during this
+        // month lifts the share from next month's run, not this one.
+        years: bonusTenureYears(hrFull?.start_date || hrFull?.created_at, selectedMonth) ?? 0,
+        // A leaver shares only in proportion to the part of the month they worked.
+        worked: employedFraction(hrFull?.employment_end_date, selectedMonth),
         // Explicit per-staff opt-out flag (default eligible).
         flagEligible: hrFull?.bonus_pot_eligible !== false,
       };
-    });
-  }, [payrollSummary, hrProfilesFull]);
+    }).filter(s => s.worked > 0);
+  }, [payrollSummary, hrProfilesFull, selectedMonth]);
 
   // Monthly bonus pot input state (declared before the allocation memo/effects).
   const [bonusPotInput, setBonusPotInput] = useState("");
@@ -1380,7 +1384,7 @@ export function StaffPayManager({ onSummaryComputed }: {
   // Live allocation of the current pot across staff (largest-remainder in GBP).
   const potAllocation = useMemo(() => {
     const potGbp = Math.max(0, parseFloat(bonusPotInput) || 0);
-    const withPoints = potStaff.map(s => ({ ...s, points: s.flagEligible ? bonusPoints(s.rank, s.years) : 0 }));
+    const withPoints = potStaff.map(s => ({ ...s, points: s.flagEligible ? bonusPoints(s.rank, s.years) * s.worked : 0 }));
     const totalPoints = withPoints.reduce((a, s) => a + s.points, 0);
     if (potGbp <= 0 || totalPoints <= 0) {
       return { potGbp, totalPoints, items: [] as Array<typeof withPoints[number] & { shareGbp: number; shareLocal: number }> };
@@ -1439,7 +1443,7 @@ export function StaffPayManager({ onSummaryComputed }: {
         .ilike("description", `${POT_DESC_TAG} · ${monthLabel}%`);
 
       if (amountGbp > 0 && potStaff.length > 0) {
-        const withPoints = potStaff.map(s => ({ ...s, points: s.flagEligible ? bonusPoints(s.rank, s.years) : 0 }));
+        const withPoints = potStaff.map(s => ({ ...s, points: s.flagEligible ? bonusPoints(s.rank, s.years) * s.worked : 0 }));
         const totalPoints = withPoints.reduce((a, s) => a + s.points, 0);
         if (totalPoints > 0) {
           const raw = withPoints.map(s => (amountGbp * s.points) / totalPoints);
