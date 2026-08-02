@@ -3236,7 +3236,9 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                     // Honor recurrence interval (weekly/biweekly/monthly)
                     const interval = (pattern as any).recurrence_interval || 'weekly';
                     if (interval !== 'weekly') {
-                      const diffDays = Math.floor((currentDate.getTime() - patternStart.getTime()) / (1000 * 60 * 60 * 24));
+                      // Calendar days — see the note in StaffPayManager; elapsed-ms
+                      // division loses a day across a clock change.
+                      const diffDays = differenceInCalendarDays(currentDate, patternStart);
                       const diffWeeks = Math.floor(diffDays / 7);
                       if (interval === 'biweekly' && diffWeeks % 2 !== 0) return;
                       if (interval === 'monthly' && diffWeeks % 4 !== 0) return;

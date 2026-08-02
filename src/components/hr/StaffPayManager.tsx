@@ -27,7 +27,7 @@ import { Plus, DollarSign, TrendingUp, TrendingDown, Calendar, ChevronLeft, Chev
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { downloadInvoicePdf, type InvoiceData } from "@/lib/invoice/generatePdf";
-import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO, eachDayOfInterval } from "date-fns";
+import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO, eachDayOfInterval, differenceInCalendarDays } from "date-fns";
 import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 
 interface PublicHoliday {
@@ -707,8 +707,11 @@ export function StaffPayManager({ onSummaryComputed }: {
 
     const isDateOnRecurrenceSchedule = (currentDate: Date, patternStartDate: string, recurrenceInterval: string): boolean => {
       const start = parseISO(patternStartDate);
-      const msDiff = currentDate.getTime() - start.getTime();
-      const dayDiff = Math.floor(msDiff / (1000 * 60 * 60 * 24));
+      // Count calendar days, not elapsed milliseconds. Across a clock change the
+      // local-midnight-to-local-midnight gap is 23 or 25 hours, so dividing by 24
+      // loses a day — which flips the odd/even week a biweekly pattern depends on
+      // and silently drops every one of its shifts for half the year.
+      const dayDiff = differenceInCalendarDays(currentDate, start);
 
       switch (recurrenceInterval) {
         case 'daily':

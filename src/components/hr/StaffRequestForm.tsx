@@ -12,7 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { format, eachDayOfInterval, getDay, isWithinInterval, parseISO } from "date-fns";
+import { format, eachDayOfInterval, getDay, isWithinInterval, parseISO, differenceInCalendarDays } from "date-fns";
 import { CalendarIcon, Clock, Palmtree, RefreshCw, AlertCircle, Send, RotateCcw, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -467,7 +467,9 @@ export function StaffRequestForm() {
           if (!pattern.days_of_week?.includes(dayOfWeek)) return false;
           const interval = pattern.recurrence_interval || 'weekly';
           if (interval !== 'weekly') {
-            const diffDays = Math.floor((day.getTime() - patternStart.getTime()) / (1000 * 60 * 60 * 24));
+            // Calendar days: a clock change makes the local-midnight gap 23 or 25
+            // hours, and dividing by 24 would flip a biweekly pattern's week.
+            const diffDays = differenceInCalendarDays(day, patternStart);
             const diffWeeks = Math.floor(diffDays / 7);
             if (interval === 'biweekly' && diffWeeks % 2 !== 0) return false;
             if (interval === 'monthly' && diffWeeks % 4 !== 0) return false;

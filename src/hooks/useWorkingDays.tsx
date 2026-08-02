@@ -1,3 +1,4 @@
+import { differenceInCalendarDays } from "date-fns";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -26,8 +27,13 @@ const isDateOnRecurrenceSchedule = (
   if (recurrenceInterval === 'weekly') return true;
   
   const patternStart = new Date(patternStartDate);
-  const diffTime = currentDate.getTime() - patternStart.getTime();
-  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+  // Calendar days, not elapsed milliseconds: across a clock change the gap
+
+  // between two local midnights is 23 or 25 hours, so dividing by 24 loses a
+
+  // day and flips the odd/even week a biweekly pattern turns on.
+
+  const diffDays = differenceInCalendarDays(currentDate, patternStart);
   const diffWeeks = Math.floor(diffDays / 7);
   
   if (recurrenceInterval === 'biweekly') {
