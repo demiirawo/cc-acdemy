@@ -828,6 +828,16 @@ export function StaffPayManager({ onSummaryComputed }: {
       if (employmentEndDateForZero && employmentEndDateForZero < monthStart) {
         monthlyBaseSalary = 0;
       }
+
+      // Was this person employed on a given day? Pro-rating handles the salary for a
+      // part-month, but everything counted day by day below — bank-holiday premiums,
+      // pattern shifts, cover — has to stop at the leaving date too, or someone gets
+      // paid a premium for a holiday that falls after they've gone.
+      const employedFromStr = hrFullForEnd?.start_date ?? null;
+      const employedUntilStr = hrFullForEnd?.employment_end_date ?? null;
+      const employedOn = (dateStr: string) =>
+        (!employedFromStr || dateStr >= employedFromStr) &&
+        (!employedUntilStr || dateStr <= employedUntilStr);
       
       // Calculate hourly rate from monthly salary (assuming ~173 working hours/month)
       const estimatedHourlyRate = monthlyBaseSalary / 173;
@@ -835,11 +845,12 @@ export function StaffPayManager({ onSummaryComputed }: {
       // Get staff schedules for this user in the selected month
       const userSchedules = staffSchedules.filter(s => {
         const scheduleDate = new Date(s.start_datetime);
-        return s.user_id === hr.user_id && scheduleDate >= monthStart && scheduleDate <= monthEnd;
+        return s.user_id === hr.user_id && scheduleDate >= monthStart && scheduleDate <= monthEnd
+          && employedOn(getScheduleDate(s.start_datetime));
       });
       
       // Generate virtual schedules from recurring patterns
-      const virtualSchedules = generateVirtualSchedules(hr.user_id);
+      const virtualSchedules = generateVirtualSchedules(hr.user_id).filter(v => employedOn(v.date));
       
       // Create a set of dates that already have actual schedules (to avoid double counting)
       const actualScheduleDates = new Set(userSchedules.map(s => getScheduleDate(s.start_datetime)));
@@ -868,7 +879,7 @@ export function StaffPayManager({ onSummaryComputed }: {
       // Check actual schedules
       userSchedules.forEach(schedule => {
         const scheduleDate = getScheduleDate(schedule.start_datetime);
-        if (holidayDatesSet.has(scheduleDate) && !countedHolidayDates.has(scheduleDate) && !userLeaveDates.has(scheduleDate)) {
+        if (holidayDatesSet.has(scheduleDate) && employedOn(scheduleDate) && !countedHolidayDates.has(scheduleDate) && !userLeaveDates.has(scheduleDate)) {
           holidayOvertimeDays += 1;
           countedHolidayDates.add(scheduleDate);
           const holiday = publicHolidays.find(h => h.date === scheduleDate);
@@ -882,7 +893,7 @@ export function StaffPayManager({ onSummaryComputed }: {
       
       // Check virtual schedules from recurring patterns (only if no actual schedule exists for that date)
       virtualSchedules.forEach(virtual => {
-        if (holidayDatesSet.has(virtual.date) && !actualScheduleDates.has(virtual.date) && !countedHolidayDates.has(virtual.date) && !userLeaveDates.has(virtual.date)) {
+        if (holidayDatesSet.has(virtual.date) && employedOn(virtual.date) && !actualScheduleDates.has(virtual.date) && !countedHolidayDates.has(virtual.date) && !userLeaveDates.has(virtual.date)) {
           holidayOvertimeDays += 1;
           countedHolidayDates.add(virtual.date);
           const holiday = publicHolidays.find(h => h.date === virtual.date);
@@ -917,7 +928,7 @@ export function StaffPayManager({ onSummaryComputed }: {
               : []);
 
         coverDatesToCheck.forEach(coverDateStr => {
-          if (holidayDatesSet.has(coverDateStr) && !countedHolidayDates.has(coverDateStr) && !userLeaveDates.has(coverDateStr)) {
+          if (holidayDatesSet.has(coverDateStr) && employedOn(coverDateStr) && !countedHolidayDates.has(coverDateStr) && !userLeaveDates.has(coverDateStr)) {
             holidayOvertimeDays += 1;
             countedHolidayDates.add(coverDateStr);
             const holiday = publicHolidays.find(h => h.date === coverDateStr);
@@ -1045,7 +1056,11 @@ export function StaffPayManager({ onSummaryComputed }: {
         daysInRange.forEach(day => {
           const dStr = format(day, 'yyyy-MM-dd');
           const dayOfWeek = day.getDay();
-          
+
+          // Cover approved before someone's leaving date can still list days after
+          // it — those aren't payable.
+          if (!employedOn(dStr)) return;
+
           // Only count this day if it's a working day for the target user
           const hasActualSchedule = targetActualScheduleDates.has(dStr);
 
@@ -1109,7 +1124,7 @@ export function StaffPayManager({ onSummaryComputed }: {
         const coveredForName = req.swap_with_user_id
           ? (userProfiles.find(p => p.user_id === req.swap_with_user_id)?.display_name || 'Colleague')
           : 'Colleague';
-        dates.forEach(dStr => {
+        dates.filter(employedOn).forEach(dStr => {
           nonOvertimeCoverDayDetails.push({ date: dStr, coveredFor: coveredForName });
         });
       });
@@ -1121,7 +1136,7 @@ export function StaffPayManager({ onSummaryComputed }: {
         const dateStr = format(currentDate, 'yyyy-MM-dd');
         const dayOfWeek = currentDate.getDay();
         
-        if (!requestOTDates.has(dateStr)) {
+        if (!requestOTDates.has(dateStr) && employedOn(dateStr)) {
           for (const pattern of userPatterns) {
             const patternStart = parseISO(pattern.start_date);
             const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
