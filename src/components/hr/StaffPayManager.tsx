@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { StaffBonusEditor } from "./StaffBonusEditor";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { supabase } from "@/integrations/supabase/client";
@@ -267,6 +268,7 @@ export function StaffPayManager({ onSummaryComputed }: {
   const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string }[]>([]);
   const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<{ user_id: string; start_date: string; end_date: string }[]>([]);
   const { toast } = useToast();
+  const navigate = useNavigate();
   const { user } = useAuth();
 
   const [formData, setFormData] = useState({
@@ -2636,7 +2638,14 @@ export function StaffPayManager({ onSummaryComputed }: {
                             );
                           })()}
                           <div className="min-w-0">
-                            <div className="font-semibold">{staff.displayName}</div>
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/view/hr?tab=my-profile&user=${staff.userId}`)}
+                              className="font-semibold text-left hover:text-primary hover:underline transition-colors"
+                              title={`Open ${staff.displayName}'s HR profile`}
+                            >
+                              {staff.displayName}
+                            </button>
                             <div className="text-xs text-muted-foreground truncate">{staff.email}</div>
                           </div>
                         </div>

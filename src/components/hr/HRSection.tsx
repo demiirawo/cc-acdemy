@@ -57,14 +57,17 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
   // links + "view profile" jumps from other tabs preselect one).
   const [profileUserId, setProfileUserId] = useState<string | null>(initialUserId ?? null);
 
-  // Deep links with a target user (e.g. schedule "View profile") land on the
-  // Staff Profile tab, which preselects that user.
+  // Deep links with a target user land on the Staff Profile tab, which preselects
+  // that user. Either passed in by the app shell, or as ?user= — the latter works
+  // across pages (Payroll lives under Finance) and makes a profile linkable.
+  const userParam = searchParams.get("user");
   useEffect(() => {
-    if (initialUserId && canManageHR) {
-      setProfileUserId(initialUserId);
+    const target = initialUserId ?? userParam;
+    if (target && canManageHR) {
+      setProfileUserId(target);
       setActiveTab("my-profile");
     }
-  }, [initialUserId, canManageHR]);
+  }, [initialUserId, userParam, canManageHR]);
 
   // React to ?tab= param changes; old payroll links now redirect to its own page.
   useEffect(() => {

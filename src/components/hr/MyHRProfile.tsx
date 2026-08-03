@@ -439,6 +439,25 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   const [feedbackTab, setFeedbackTab] = useState<'feedback' | 'incidents'>('feedback');
   const [gbpRates, setGbpRates] = useState<Record<string, number>>(FALLBACK_GBP_RATES);
 
+  // Signed URL for the profile photo — the onboarding bucket is private, so the
+  // path alone won't render. Only sign formats a browser can actually paint;
+  // older records still hold PDFs and HEICs from before upload validation.
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState<string | null>(null);
+  const photoPath = onboardingData?.photograph_path ?? null;
+  useEffect(() => {
+    let cancelled = false;
+    if (!photoPath || !/\.(jpe?g|png|webp|gif)$/i.test(photoPath)) {
+      setProfilePhotoUrl(null);
+      return;
+    }
+    (async () => {
+      const { data } = await supabase.storage
+        .from("onboarding-documents").createSignedUrl(photoPath, 3600);
+      if (!cancelled) setProfilePhotoUrl(data?.signedUrl ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [photoPath]);
+
   // Client list for attributing feedback to the client it came from.
   useEffect(() => {
     (async () => {
@@ -1734,8 +1753,22 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         const contactPhone = onboardingData?.phone_number || null;
         return (
           <Card>
-            <CardContent className="p-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <CardContent className="p-4 flex items-center gap-4">
+              {/* Photo from the onboarding form, if they've uploaded a usable one. */}
+              <div className="flex-shrink-0">
+                {profilePhotoUrl ? (
+                  <img
+                    src={profilePhotoUrl}
+                    alt={`${selectedUserName}'s photo`}
+                    className="h-16 w-16 rounded-full object-cover border"
+                  />
+                ) : (
+                  <div className="h-16 w-16 rounded-full border bg-muted flex items-center justify-center text-lg font-semibold text-muted-foreground">
+                    {selectedUserName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 min-w-0">
                 <div className="flex items-center gap-2 min-w-0">
                   <div className="p-2 bg-primary/10 rounded-lg flex-shrink-0"><Mail className="h-4 w-4 text-primary" /></div>
                   <div className="min-w-0">

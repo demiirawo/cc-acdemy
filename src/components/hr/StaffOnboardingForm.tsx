@@ -62,6 +62,39 @@ const ADDRESS_PROOF_TYPES = [
   "Voter Registration Card",
 ];
 
+/** Formats the browser can actually paint into an <img>. HEIC is excluded on
+ *  purpose: iPhones produce it by default and no major browser renders it. */
+const DISPLAYABLE_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+/**
+ * Returns a human explanation if this file can't be used as a profile photo, or
+ * null if it's fine. The decode check is the important half — extension and MIME
+ * type can both be right on a file that's still corrupt, which is how a 0-byte
+ * "jpeg" got stored and rendered as a blank avatar.
+ */
+async function describePhotoProblem(file: File): Promise<string | null> {
+  const looksDisplayable = DISPLAYABLE_PHOTO_TYPES.includes(file.type.toLowerCase());
+  if (!looksDisplayable) {
+    const kind = /heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name)
+      ? "iPhone HEIC photos can't be shown by web browsers"
+      : file.type === "application/pdf" || /\.pdf$/i.test(file.name)
+        ? "PDFs can't be used as a profile photo"
+        : "That file type can't be used as a profile photo";
+    return `${kind}. Please upload a JPG or PNG — on an iPhone, Settings → Camera → Formats → Most Compatible saves photos as JPG.`;
+  }
+  if (file.size > 8 * 1024 * 1024) return "That image is over 8MB — please upload a smaller one.";
+
+  // Prove it actually decodes rather than trusting the file's own labelling.
+  const ok = await new Promise<boolean>(resolve => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img.naturalWidth > 0); };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(false); };
+    img.src = url;
+  });
+  return ok ? null : "That image couldn't be opened — it may be damaged. Please try another.";
+}
+
 export function StaffOnboardingForm() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -152,6 +185,23 @@ export function StaffOnboardingForm() {
     const input = e.target;
     const file = input.files?.[0];
     if (!file || !user) return;
+
+    // Reject anything unusable before it reaches storage. Photographs have to be
+    // displayable in a browser, and people were uploading PDFs and iPhone HEICs
+    // that saved cleanly and then showed as blank avatars with no clue why.
+    if (file.size === 0) {
+      toast.error("That file is empty — please choose another.");
+      input.value = "";
+      return;
+    }
+    if (field === "photograph_path") {
+      const problem = await describePhotoProblem(file);
+      if (problem) {
+        toast.error(problem);
+        input.value = "";
+        return;
+      }
+    }
 
     setUploading(field);
 
@@ -321,6 +371,9 @@ export function StaffOnboardingForm() {
 
   const renderFileUpload = (field: FileField, label: string) => {
     const isUploading = uploading === field;
+    // A photograph must be displayable; ID and proof-of-address docs are
+    // routinely PDFs, so only narrow the picker for the photo field.
+    const accept = field === "photograph_path" ? "image/jpeg,image/png,image/webp" : "image/*,.pdf";
     const path = formData[field];
     const hasFile = !!path;
     const fileType = hasFile ? (path.split(".").pop() || "").toUpperCase() : "";
@@ -359,7 +412,7 @@ export function StaffOnboardingForm() {
                   <input
                     type="file"
                     className="hidden"
-                    accept="image/*,.pdf"
+                    accept={accept}
                     onChange={(e) => handleFileUpload(e, field)}
                   />
                   Replace file
@@ -376,7 +429,7 @@ export function StaffOnboardingForm() {
               <input
                 type="file"
                 className="hidden"
-                accept="image/*,.pdf"
+                accept={accept}
                 onChange={(e) => handleFileUpload(e, field)}
               />
             </label>
