@@ -23,7 +23,7 @@ const SEVERITY_LABELS: Record<string, { label: string; color: string }> = {
 interface FeedbackEmailRequest {
   recipientEmail?: string | null;
   recipientName?: string | null;
-  kind?: "praise" | "warning" | null;
+  kind?: "praise" | "development" | "warning" | null;
   category?: string | null;
   reason: string;
   severity?: string | null;
@@ -71,14 +71,43 @@ serve(async (req) => {
       });
     }
 
-    const isPraise = kind === "praise";
-
     let subject: string;
     let headerTitle: string;
     let headerColor: string;
     let content: string;
 
-    if (isPraise) {
+    if (kind === "development") {
+      // Coaching, not a sanction — the wording matters, because this lands in the
+      // same inbox as warnings and shouldn't read like one.
+      subject = "A development point has been added to your record";
+      headerTitle = "Development point";
+      headerColor = "#2563eb";
+      content = `
+        <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 12px;">Hi ${recipientName || "there"},</p>
+        <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 16px;">
+          Your manager has noted something to work on. This isn't a warning and nothing has gone wrong —
+          it's here so you know what to focus on and what good looks like.
+        </p>
+        <table cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 16px;border-collapse:collapse;">
+          ${category ? `<tr>
+            <td style="padding:6px 0;color:#6b7280;font-size:13px;width:90px;vertical-align:top;">Area</td>
+            <td style="padding:6px 0;color:#111827;font-size:14px;font-weight:600;">${category}</td>
+          </tr>` : ""}
+          <tr>
+            <td style="padding:6px 0;color:#6b7280;font-size:13px;vertical-align:top;">Development point</td>
+            <td style="padding:6px 0;color:#374151;font-size:14px;line-height:1.5;">${reason}</td>
+          </tr>
+        </table>
+        <div style="border-left:3px solid #2563eb;background-color:#eff6ff;padding:12px 16px;border-radius:0 6px 6px 0;margin:0 0 8px;">
+          <p style="color:#374151;font-size:14px;line-height:1.6;margin:0;">
+            <strong>What this means for your rating:</strong> a development point doesn't count against you.
+            Acting on it${category ? ` in <strong>${category}</strong>` : ""} is what builds the record that lifts your
+            rating over time — and your rating drives your share of the monthly bonus pot.
+            If anything here isn't clear, ask your manager.
+          </p>
+        </div>
+        ${button("View my performance rating", `${APP_URL}/view/hr`)}`;
+    } else if (kind === "praise") {
       subject = "You've received positive feedback 🎉";
       headerTitle = "Positive feedback";
       headerColor = "#16a34a";

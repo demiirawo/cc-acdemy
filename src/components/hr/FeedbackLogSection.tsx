@@ -16,7 +16,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
-import { Plus, Loader2, Trash2, ThumbsUp, AlertTriangle, Pencil } from "lucide-react";
+import { Plus, Loader2, Trash2, ThumbsUp, Lightbulb, AlertTriangle, Pencil } from "lucide-react";
+import { FEEDBACK_KINDS, FEEDBACK_KIND_ORDER, asFeedbackKind, type FeedbackKind } from "@/lib/feedbackKinds";
 
 // Kept in sync with the staff profile's Feedback tab (same staff_warnings table).
 const CATEGORIES = ["Communication", "Attention to Detail", "Professionalism", "Learning"];
@@ -29,7 +30,7 @@ const SEVERITIES = [
 interface FeedbackRow {
   id: string;
   user_id: string;
-  kind: string; // 'praise' | 'warning'
+  kind: string; // FeedbackKind
   category: string | null;
   reason: string;
   severity: string;
@@ -56,7 +57,7 @@ export function FeedbackLogSection() {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [fbUser, setFbUser] = useState("");
-  const [fbKind, setFbKind] = useState<"praise" | "warning">("warning");
+  const [fbKind, setFbKind] = useState<FeedbackKind>("warning");
   const [fbCategory, setFbCategory] = useState("none");
   const [fbSeverity, setFbSeverity] = useState("minor");
   const [fbClient, setFbClient] = useState(NO_CLIENT);
@@ -89,7 +90,7 @@ export function FeedbackLogSection() {
   const openEdit = (r: FeedbackRow) => {
     setEditingId(r.id);
     setFbUser(r.user_id);
-    setFbKind(r.kind === "praise" ? "praise" : "warning");
+    setFbKind(asFeedbackKind(r.kind));
     setFbCategory(r.category || "none");
     setFbSeverity(r.severity || "minor");
     setFbClient(r.client_id || NO_CLIENT);
@@ -102,7 +103,7 @@ export function FeedbackLogSection() {
   const saveEdit = async () => {
     if (!editingId || !fbUser || !fbReason.trim()) return;
     setSaving(true);
-    const isPraise = fbKind === "praise";
+    const hasSeverity = FEEDBACK_KINDS[fbKind].hasSeverity;
     const { data, error } = await (supabase as any)
       .from("staff_warnings")
       .update({
@@ -110,7 +111,7 @@ export function FeedbackLogSection() {
         kind: fbKind,
         category: fbCategory === "none" ? null : fbCategory,
         reason: fbReason.trim(),
-        severity: isPraise ? "minor" : fbSeverity,
+        severity: hasSeverity ? fbSeverity : "minor",
         client_id: fbClient === NO_CLIENT ? null : fbClient,
       })
       .eq("id", editingId)
@@ -128,9 +129,9 @@ export function FeedbackLogSection() {
   const addFeedback = async () => {
     if (!fbUser || !fbReason.trim()) return;
     setSaving(true);
-    const isPraise = fbKind === "praise";
+    const kindStyle = FEEDBACK_KINDS[fbKind];
     const category = fbCategory === "none" ? null : fbCategory;
-    const severity = isPraise ? "minor" : fbSeverity;
+    const severity = kindStyle.hasSeverity ? fbSeverity : "minor";
     const clientId = fbClient === NO_CLIENT ? null : fbClient;
     const { data, error } = await (supabase as any)
       .from("staff_warnings")
@@ -147,7 +148,7 @@ export function FeedbackLogSection() {
       }).catch(() => {});
     }
     toast({
-      title: isPraise ? "Positive feedback added" : "Warning added",
+      title: kindStyle.addedTitle,
       description: recipient?.email ? "The staff member has been emailed — it's on their profile too." : "Added to their profile. No email on file.",
     });
     setOpen(false);
@@ -162,7 +163,10 @@ export function FeedbackLogSection() {
   };
 
   const typeBadge = (r: FeedbackRow) => {
-    if (r.kind === "praise") return <Badge variant="outline" className="text-[10px] border-green-300 text-green-600">Positive</Badge>;
+    const kind = asFeedbackKind(r.kind);
+    if (kind !== "warning") {
+      return <Badge variant="outline" className={cn("text-[10px]", FEEDBACK_KINDS[kind].badge)}>{FEEDBACK_KINDS[kind].short}</Badge>;
+    }
     const sev = SEVERITIES.find(s => s.value === r.severity)?.label || "Minor";
     const danger = r.severity === "major" || r.severity === "final";
     return <Badge variant="outline" className={cn("text-[10px]", danger ? "border-red-300 text-red-600" : "border-amber-300 text-amber-600")}>{sev} warning</Badge>;
@@ -266,14 +270,17 @@ export function FeedbackLogSection() {
             </div>
 
             <div className="inline-flex rounded-lg border bg-background p-0.5">
-              <button type="button" onClick={() => setFbKind("praise")}
-                className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition", fbKind === "praise" ? "bg-green-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-                <ThumbsUp className="h-3.5 w-3.5" /> Positive
-              </button>
-              <button type="button" onClick={() => setFbKind("warning")}
-                className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition", fbKind === "warning" ? "bg-amber-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-                <AlertTriangle className="h-3.5 w-3.5" /> Warning
-              </button>
+              {FEEDBACK_KIND_ORDER.map(k => {
+                const st = FEEDBACK_KINDS[k];
+                const Icon = k === "praise" ? ThumbsUp : k === "development" ? Lightbulb : AlertTriangle;
+                return (
+                  <button key={k} type="button" onClick={() => setFbKind(k)}
+                    className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition",
+                      fbKind === k ? st.activeButton : "text-muted-foreground hover:text-foreground")}>
+                    <Icon className="h-3.5 w-3.5" /> {st.short}
+                  </button>
+                );
+              })}
             </div>
 
             <div className="space-y-1.5">
@@ -287,7 +294,7 @@ export function FeedbackLogSection() {
               </Select>
             </div>
 
-            <div className={cn("grid gap-2", fbKind === "praise" ? "grid-cols-1" : "grid-cols-2")}>
+            <div className={cn("grid gap-2", FEEDBACK_KINDS[fbKind].hasSeverity ? "grid-cols-2" : "grid-cols-1")}>
               <Select value={fbCategory} onValueChange={setFbCategory}>
                 <SelectTrigger className="h-9"><SelectValue placeholder="Area (optional)" /></SelectTrigger>
                 <SelectContent>
@@ -295,7 +302,7 @@ export function FeedbackLogSection() {
                   {CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </SelectContent>
               </Select>
-              {fbKind === "warning" && (
+              {FEEDBACK_KINDS[fbKind].hasSeverity && (
                 <Select value={fbSeverity} onValueChange={setFbSeverity}>
                   <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                   <SelectContent>{SEVERITIES.map(s => <SelectItem key={s.value} value={s.value}>{s.label} warning</SelectItem>)}</SelectContent>
@@ -304,18 +311,19 @@ export function FeedbackLogSection() {
             </div>
 
             <Textarea value={fbReason} onChange={e => setFbReason(e.target.value)} rows={3}
-              placeholder={fbKind === "praise" ? "What did they do well?" : "What did they fall short on?"} />
+              placeholder={FEEDBACK_KINDS[fbKind].placeholder("they")} />
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
             <Button
               onClick={editingId ? saveEdit : addFeedback}
               disabled={saving || !fbUser || !fbReason.trim()}
-              className={cn(fbKind === "praise" && "bg-green-600 hover:bg-green-700")}
+              className={cn(fbKind === "praise" && "bg-green-600 hover:bg-green-700",
+                fbKind === "development" && "bg-blue-600 hover:bg-blue-700")}
             >
               {editingId
                 ? (saving ? "Saving…" : "Save changes")
-                : (saving ? "Adding…" : fbKind === "praise" ? "Add positive feedback & email" : "Add warning & email")}
+                : (saving ? "Adding…" : FEEDBACK_KINDS[fbKind].cta)}
             </Button>
           </DialogFooter>
         </DialogContent>

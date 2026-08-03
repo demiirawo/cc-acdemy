@@ -14,9 +14,10 @@ import { cn } from "@/lib/utils";
 import { format, parseISO, addMonths, differenceInCalendarDays, differenceInMonths } from "date-fns";
 import { trainingItemUpToDate } from "@/lib/trainingStatus";
 import { RANK_STYLES, RANK_ORDER, type Rank } from "@/components/hr/PerformanceRankBadge";
+import { asFeedbackKind } from "@/lib/feedbackKinds";
 import {
   ArrowLeft, ClipboardList, Loader2, Plus, CheckCircle2, AlertTriangle, GraduationCap,
-  Award, ShieldAlert, Users, ExternalLink, Star, CalendarClock, Trash2, MessageSquare,
+  Award, ShieldAlert, Users, ExternalLink, Star, Lightbulb, CalendarClock, Trash2, MessageSquare,
 } from "lucide-react";
 
 // ---- Types ------------------------------------------------------------------
@@ -429,12 +430,23 @@ function SupervisionDetail({ userId, staff, hr, onBack, onViewProfile }: {
                 </ContextCard>
 
                 <ContextCard value="feedback" icon={<MessageSquare className="h-4 w-4 text-primary" />} title="Manager feedback on record"
-                  badge={ctx.warnings.length ? `${ctx.warnings.filter(w => w.kind === "praise").length} positive · ${ctx.warnings.filter(w => w.kind !== "praise").length} warnings` : "None"}>
+                  badge={ctx.warnings.length
+                    ? [
+                        `${ctx.warnings.filter(w => asFeedbackKind(w.kind) === "praise").length} positive`,
+                        `${ctx.warnings.filter(w => asFeedbackKind(w.kind) === "development").length} development`,
+                        `${ctx.warnings.filter(w => asFeedbackKind(w.kind) === "warning").length} warnings`,
+                      ].join(" · ")
+                    : "None"}>
                   {ctx.warnings.length === 0 ? <p className="text-sm text-muted-foreground italic">No feedback recorded yet.</p> : (
                     <div className="space-y-1.5">
                       {ctx.warnings.slice(0, 6).map(w => (
                         <div key={w.id} className="flex items-start gap-2 text-sm">
-                          {w.kind === "praise" ? <Star className="h-3.5 w-3.5 mt-0.5 text-green-600 flex-shrink-0" /> : <AlertTriangle className="h-3.5 w-3.5 mt-0.5 text-amber-500 flex-shrink-0" />}
+                          {(() => {
+                            const k = asFeedbackKind(w.kind);
+                            if (k === "praise") return <Star className="h-3.5 w-3.5 mt-0.5 text-green-600 flex-shrink-0" />;
+                            if (k === "development") return <Lightbulb className="h-3.5 w-3.5 mt-0.5 text-blue-600 flex-shrink-0" />;
+                            return <AlertTriangle className="h-3.5 w-3.5 mt-0.5 text-amber-500 flex-shrink-0" />;
+                          })()}
                           <span><span className="text-xs text-muted-foreground">{format(parseISO(w.issued_at), "d MMM")} · </span>{w.reason}</span>
                         </div>
                       ))}

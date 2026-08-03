@@ -11,13 +11,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, AlertTriangle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink, Handshake, Settings, Plus, Trash2, ThumbsUp, Mail, Phone } from "lucide-react";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, AlertTriangle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink, Handshake, Settings, Plus, Trash2, ThumbsUp, Lightbulb, Mail, Phone } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterval, getDay, differenceInCalendarDays } from "date-fns";
+import { FEEDBACK_KINDS, FEEDBACK_KIND_ORDER, asFeedbackKind, type FeedbackKind } from "@/lib/feedbackKinds";
 import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
@@ -289,15 +290,17 @@ const REQUEST_TYPES: Record<string, {
 };
 
 // Unified high-level status pill used across the profile accordions.
-type StatusTone = 'success' | 'warning' | 'danger' | 'neutral';
+type StatusTone = 'success' | 'info' | 'warning' | 'danger' | 'neutral';
 const STATUS_TONE_CLASS: Record<StatusTone, string> = {
   success: 'bg-green-100 text-green-700 border-green-200',
+  info: 'bg-blue-100 text-blue-700 border-blue-200',
   warning: 'bg-amber-100 text-amber-700 border-amber-200',
   danger: 'bg-red-100 text-red-700 border-red-200',
   neutral: 'bg-muted text-muted-foreground border-border',
 };
 const STATUS_DOT_CLASS: Record<StatusTone, string> = {
   success: 'bg-green-500',
+  info: 'bg-blue-500',
   warning: 'bg-amber-500',
   danger: 'bg-red-500',
   neutral: 'bg-muted-foreground/60',
@@ -324,7 +327,7 @@ interface PerformanceCriterion {
 interface StaffWarning {
   id: string;
   user_id: string;
-  kind: string; // 'warning' (negative) | 'praise' (positive)
+  kind: string; // FeedbackKind — 'praise' | 'development' | 'warning'
   category: string | null;
   reason: string;
   severity: string;
@@ -428,7 +431,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   // Success criteria (team-wide) + feedback entries (per selected staff).
   const [criteria, setCriteria] = useState<PerformanceCriterion[]>([]);
   const [warnings, setWarnings] = useState<StaffWarning[]>([]);
-  const [fbKind, setFbKind] = useState<'praise' | 'warning'>('warning');
+  const [fbKind, setFbKind] = useState<FeedbackKind>('warning');
   const [warnCategory, setWarnCategory] = useState<string>('none');
   const [warnSeverity, setWarnSeverity] = useState<string>('minor');
   const [warnClient, setWarnClient] = useState<string>('none');
@@ -1516,10 +1519,11 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   const addFeedback = async () => {
     if (!canManageHR || !selectedUserId || !warnReason.trim()) return;
     setSavingWarning(true);
-    const isPraise = fbKind === 'praise';
+    const kindStyle = FEEDBACK_KINDS[fbKind];
     const category = warnCategory === 'none' ? null : warnCategory;
-    // Severity is only meaningful for warnings; store a neutral value for praise.
-    const severity = isPraise ? 'minor' : warnSeverity;
+    // Severity is only meaningful for warnings; praise and development points
+    // store a neutral value so nothing downstream reads them as graded.
+    const severity = kindStyle.hasSeverity ? warnSeverity : 'minor';
     const { data, error } = await (supabase as any)
       .from('staff_warnings')
       .insert({
@@ -1535,7 +1539,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       .single();
     setSavingWarning(false);
     if (error) {
-      toast({ title: `Couldn't add ${isPraise ? 'feedback' : 'warning'}`, description: error.message, variant: "destructive" });
+      toast({ title: `Couldn't add ${kindStyle.short.toLowerCase()} feedback`, description: error.message, variant: "destructive" });
       return;
     }
     setWarnings(prev => [data as StaffWarning, ...prev]);
@@ -1557,7 +1561,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       }).catch(() => {});
     }
     toast({
-      title: isPraise ? "Positive feedback added" : "Warning added",
+      title: kindStyle.addedTitle,
       description: recipient?.email ? "The staff member has been emailed." : "No email on file — not sent.",
     });
   };
@@ -1577,21 +1581,24 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
    .sort((a, b) => a.clientName.localeCompare(b.clientName));
 
   const renderFeedbackCard = (w: StaffWarning) => {
-    const praise = w.kind === 'praise';
+    const kind = asFeedbackKind(w.kind);
+    const st = FEEDBACK_KINDS[kind];
     const sev = WARNING_SEVERITIES[w.severity] || WARNING_SEVERITIES.minor;
+    const Icon = kind === 'praise' ? ThumbsUp : kind === 'development' ? Lightbulb : AlertTriangle;
     return (
-      <div key={w.id} className={cn("rounded-lg border p-3 flex items-start gap-3 bg-card", praise ? "border-green-400/40 bg-green-500/5" : "")}>
-        {praise
-          ? <ThumbsUp className="h-4 w-4 mt-0.5 flex-shrink-0 text-green-600" />
-          : <AlertTriangle className={cn("h-4 w-4 mt-0.5 flex-shrink-0", sev.tone === "danger" ? "text-red-500" : "text-amber-500")} />}
+      <div key={w.id} className={cn("rounded-lg border p-3 flex items-start gap-3 bg-card", st.card)}>
+        <Icon className={cn("h-4 w-4 mt-0.5 flex-shrink-0",
+          kind === 'praise' ? "text-green-600"
+            : kind === 'development' ? "text-blue-600"
+              : sev.tone === "danger" ? "text-red-500" : "text-amber-500")} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            {praise ? (
-              <Badge variant="outline" className="text-[10px] border-green-300 text-green-600">Positive feedback</Badge>
-            ) : (
+            {kind === 'warning' ? (
               <Badge variant="outline" className={cn("text-[10px]", sev.tone === "danger" ? "border-red-300 text-red-600" : "border-amber-300 text-amber-600")}>
                 {sev.label} warning
               </Badge>
+            ) : (
+              <Badge variant="outline" className={cn("text-[10px]", st.badge)}>{st.label}</Badge>
             )}
             {w.category && <Badge variant="outline" className="text-[10px]">{w.category}</Badge>}
             <span className="text-xs text-muted-foreground">{format(parseISO(w.issued_at), "d MMM yyyy")}</span>
@@ -2008,8 +2015,8 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                     {PERFORMANCE_CATEGORIES.map(cat => {
                       const items = criteria.filter(c => c.category === cat);
                       if (items.length === 0) return null;
-                      const catWarnings = warnings.filter(w => w.category === cat && w.kind !== 'praise').length;
-                      const catPraise = warnings.filter(w => w.category === cat && w.kind === 'praise').length;
+                      const catWarnings = warnings.filter(w => w.category === cat && asFeedbackKind(w.kind) === 'warning').length;
+                      const catPraise = warnings.filter(w => w.category === cat && asFeedbackKind(w.kind) === 'praise').length;
                       return (
                         <div key={cat} className="rounded-lg border bg-muted/20 p-3">
                           <p className="text-sm font-medium mb-1.5 flex items-center gap-1.5 flex-wrap">
@@ -2152,9 +2159,11 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
 
                 {/* 3b — Feedback on record (positive + warnings) + Incidents */}
                 {(() => {
-                  const praiseCount = warnings.filter(w => w.kind === 'praise').length;
-                  const warnCount = warnings.filter(w => w.kind !== 'praise').length;
-                  const isPraise = fbKind === 'praise';
+                  const countOf = (k: FeedbackKind) => warnings.filter(w => asFeedbackKind(w.kind) === k).length;
+                  const praiseCount = countOf('praise');
+                  const devCount = countOf('development');
+                  const warnCount = countOf('warning');
+                  const kindStyle = FEEDBACK_KINDS[fbKind];
                   return (
                 <Tabs value={feedbackTab} onValueChange={(v) => setFeedbackTab(v as 'feedback' | 'incidents')} className="space-y-2">
                   <TabsList className="h-8">
@@ -2171,30 +2180,33 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   <TabsContent value="feedback" className="space-y-2 mt-2">
                   <div className="flex items-center gap-2 flex-wrap">
                     {praiseCount > 0 && <StatusPill tone="success">{praiseCount} positive</StatusPill>}
+                    {devCount > 0 && <StatusPill tone="info">{devCount} development point{devCount === 1 ? "" : "s"}</StatusPill>}
                     {warnCount > 0 && <StatusPill tone="warning">{warnCount} warning{warnCount === 1 ? "" : "s"}</StatusPill>}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Feedback captures both what's going well and where expectations weren't met. It doesn't automatically change your rating, but a pattern of positive feedback supports a higher rating, while repeated or unaddressed warnings can pull it down — and your rating drives your bonus-pot share.
+                    Feedback captures what's going well, what to work on, and where expectations weren't met. A development point is coaching, not a mark against you — it's there so you know what good looks like. It doesn't automatically change your rating, but a pattern of positive feedback supports a higher rating, while repeated or unaddressed warnings can pull it down — and your rating drives your bonus-pot share.
                   </p>
 
                   {canManageHR && (
                     <div className="rounded-lg border bg-muted/10 p-3 space-y-2">
-                      {/* Positive vs warning toggle */}
                       <div className="inline-flex rounded-lg border bg-background p-0.5">
-                        <button
-                          type="button"
-                          onClick={() => setFbKind('praise')}
-                          className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition", isPraise ? "bg-green-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground")}
-                        >
-                          <ThumbsUp className="h-3.5 w-3.5" /> Positive
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setFbKind('warning')}
-                          className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition", !isPraise ? "bg-amber-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground")}
-                        >
-                          <AlertTriangle className="h-3.5 w-3.5" /> Warning
-                        </button>
+                        {FEEDBACK_KIND_ORDER.map(k => {
+                          const st = FEEDBACK_KINDS[k];
+                          const Icon = k === 'praise' ? ThumbsUp : k === 'development' ? Lightbulb : AlertTriangle;
+                          return (
+                            <button
+                              key={k}
+                              type="button"
+                              onClick={() => setFbKind(k)}
+                              className={cn(
+                                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition",
+                                fbKind === k ? st.activeButton : "text-muted-foreground hover:text-foreground"
+                              )}
+                            >
+                              <Icon className="h-3.5 w-3.5" /> {st.short}
+                            </button>
+                          );
+                        })}
                       </div>
                       <Select value={warnClient} onValueChange={setWarnClient}>
                         <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
@@ -2203,7 +2215,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                           {clientOptions.map(c => <SelectItem key={c.id} value={c.id}>From {c.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
-                      <div className={cn("grid gap-2", isPraise ? "sm:grid-cols-1" : "sm:grid-cols-2")}>
+                      <div className={cn("grid gap-2", kindStyle.hasSeverity ? "sm:grid-cols-2" : "sm:grid-cols-1")}>
                         <Select value={warnCategory} onValueChange={setWarnCategory}>
                           <SelectTrigger className="h-9"><SelectValue placeholder="Area (optional)" /></SelectTrigger>
                           <SelectContent>
@@ -2211,7 +2223,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                             {PERFORMANCE_CATEGORIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                           </SelectContent>
                         </Select>
-                        {!isPraise && (
+                        {kindStyle.hasSeverity && (
                           <Select value={warnSeverity} onValueChange={setWarnSeverity}>
                             <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
                             <SelectContent>
@@ -2225,7 +2237,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                       <Textarea
                         value={warnReason}
                         onChange={(e) => setWarnReason(e.target.value)}
-                        placeholder={isPraise ? `What did ${selectedUserName} do well?` : `What did ${selectedUserName} fall short on?`}
+                        placeholder={kindStyle.placeholder(selectedUserName)}
                         rows={2}
                       />
                       <div className="flex justify-end">
@@ -2233,9 +2245,12 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                           size="sm"
                           onClick={addFeedback}
                           disabled={savingWarning || !warnReason.trim()}
-                          className={cn(isPraise && "bg-green-600 hover:bg-green-700")}
+                          className={cn(
+                            fbKind === 'praise' && "bg-green-600 hover:bg-green-700",
+                            fbKind === 'development' && "bg-blue-600 hover:bg-blue-700",
+                          )}
                         >
-                          <Plus className="h-4 w-4 mr-1" /> {savingWarning ? "Adding…" : isPraise ? "Add positive feedback & email" : "Add warning & email"}
+                          <Plus className="h-4 w-4 mr-1" /> {savingWarning ? "Adding…" : kindStyle.cta}
                         </Button>
                       </div>
                     </div>
