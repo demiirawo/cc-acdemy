@@ -7,6 +7,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StaffPayManager } from "../hr/StaffPayManager";
@@ -15,7 +18,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { Loader2, Plus, Trash2, ChevronDown, ChevronRight, Lock, RefreshCw, ChevronLeft } from "lucide-react";
+import { Loader2, Plus, Trash2, ChevronDown, ChevronRight, Lock, RefreshCw, ChevronLeft, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { ExpenseTrendPanel } from "./ExpenseTrendPanel";
 
@@ -44,6 +47,7 @@ const SALES_STAGES = [
 const stageMeta = (v: string | null) => SALES_STAGES.find(s => s.value === (v || "active")) ?? SALES_STAGES[0];
 
 interface ClientRow { id: string; name: string; mrr: number | null; software: string | null; status: string | null; contract_start_date: string | null; contract_end_date: string | null; }
+interface PriceChange { id: string; client_id: string; previous_mrr: number | null; new_mrr: number; effective_date: string; reason: string | null; }
 interface StaffPay { user_id: string; base_salary: number; base_currency: string; }
 interface HrRow { user_id: string; pay_frequency: string | null; employment_end_date: string | null; }
 interface Profile { user_id: string; display_name: string | null; email: string | null; }
@@ -134,6 +138,7 @@ export function FinanceSection() {
   const [invoiceSync, setInvoiceSync] = useState<{ at: string | null; status: string | null; detail: string | null }>({
     at: null, status: null, detail: null,
   });
+  const [priceChanges, setPriceChanges] = useState<PriceChange[]>([]);
   const handlePayrollSummary = useCallback((data: { month: string; totals: Record<string, number> }) => setPayrollFromTab(data), []);
 
   const load = useCallback(async () => {
@@ -141,7 +146,7 @@ export function FinanceSection() {
     const now = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
-    const [cl, sp, hrp, pr, asg, rt, ex, st, pr2, pat, inv, fa] = await Promise.all([
+    const [cl, sp, hrp, pr, asg, rt, ex, st, pr2, pat, inv, fa, pc] = await Promise.all([
       supabase.from("clients").select("id, name, mrr, software, status, contract_start_date, contract_end_date"),
       (supabase as any).from("staff_salaries").select("user_id, base_salary, base_currency"),
       supabase.from("hr_profiles").select("user_id, pay_frequency, employment_end_date"),
@@ -169,6 +174,9 @@ export function FinanceSection() {
       (supabase as any).from("freeagent_oauth")
         .select("last_invoice_sync_at, last_invoice_sync_status, last_invoice_sync_detail")
         .eq("id", true).maybeSingle(),
+      (supabase as any).from("client_price_changes")
+        .select("id, client_id, previous_mrr, new_mrr, effective_date, reason")
+        .order("effective_date", { ascending: true }),
     ]);
     setClients((cl.data as ClientRow[]) || []);
     // Cash received, bucketed by the month the payment landed rather than the month
@@ -185,6 +193,7 @@ export function FinanceSection() {
       byMonth[k] = (byMonth[k] || 0) + Number(r.paid_amount ?? r.total_value ?? 0);
     });
     setPaidByMonth(byMonth);
+    setPriceChanges((pc.data as PriceChange[]) || []);
     setInvoiceSync({
       at: fa.data?.last_invoice_sync_at ?? null,
       status: fa.data?.last_invoice_sync_status ?? null,
@@ -401,7 +410,18 @@ export function FinanceSection() {
     // Gross — what clients are actually invoiced, VAT included. Deliberately different
     // from the ex-VAT figures in the KPI cards and P&L above, so the chart is labelled
     // "incl. VAT" to keep the two from being read as the same number.
-    const grossOf = (c: ClientRow) => Number(c.mrr);
+    // The fee in force for a client in a given month: the latest change effective
+    // on or before it, falling back to today's number. A rise scheduled for next
+    // month therefore lifts the projection from next month, not from now.
+    const grossOf = (c: ClientRow, monthEnd?: Date) => {
+      if (!monthEnd) return Number(c.mrr);
+      const cutoff = monthEnd.toISOString().slice(0, 10);
+      const applicable = priceChanges
+        .filter(pc => pc.client_id === c.id && pc.effective_date <= cutoff)
+        .sort((a, b) => a.effective_date.localeCompare(b.effective_date))
+        .pop();
+      return applicable ? Number(applicable.new_mrr) : Number(c.mrr);
+    };
     const billing = clients.filter(c => (c.mrr ?? 0) > 0);
     const dateOf = (s: string | null) => (s ? new Date(s) : null);
 
@@ -435,7 +455,7 @@ export function FinanceSection() {
       const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
       const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
       const live = billing.filter(c => billsIn(c, monthStart, monthEnd));
-      const zoho = live.filter(isZoho).reduce((a, c) => a + grossOf(c), 0) * growth;
+      const zoho = live.filter(isZoho).reduce((a, c) => a + grossOf(c, monthEnd), 0) * growth;
       // FreeAgent is the only stream we hold a ledger for. In paid mode its band is
       // the cash that actually cleared that month — which carries the annual uplifts,
       // discounts, add-ons and one-offs a flat MRR figure can't, and puts
@@ -447,18 +467,32 @@ export function FinanceSection() {
       // were complete. Only future months are run-rate, and they say so.
       const other = useActual
         ? (paidByMonth[key] ?? 0)
-        : live.filter(c => !isZoho(c)).reduce((a, c) => a + grossOf(c), 0) * growth;
+        : live.filter(c => !isZoho(c)).reduce((a, c) => a + grossOf(c, monthEnd), 0) * growth;
       const started = billing.filter(c => inMonth(c.contract_start_date, monthStart, monthEnd))
         .map(c => ({ name: c.name, amount: grossOf(c), zoho: isZoho(c) })).sort((a, b) => b.amount - a.amount);
       const ended = billing.filter(c => inMonth(c.contract_end_date, monthStart, monthEnd))
         .map(c => ({ name: c.name, amount: grossOf(c), zoho: isZoho(c) })).sort((a, b) => b.amount - a.amount);
+      // Fee changes taking effect this month, so a step in the line can be told
+      // apart from a client arriving or leaving.
+      const repriced = priceChanges
+        .filter(pc => inMonth(pc.effective_date, monthStart, monthEnd))
+        .map(pc => ({
+          name: clients.find(c => c.id === pc.client_id)?.name ?? "Client",
+          delta: Number(pc.new_mrr) - Number(pc.previous_mrr ?? pc.new_mrr),
+          reason: pc.reason,
+        }))
+        .filter(pc => pc.delta !== 0)
+        .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+      const repriceDelta = repriced.reduce((a, c) => a + c.delta, 0);
+
       const won = started.reduce((a, c) => a + c.amount, 0);
       const lost = ended.reduce((a, c) => a + c.amount, 0);
       return {
         label: d.toLocaleDateString(undefined, { month: "short", year: "2-digit" }),
         monthLabel: d.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
         zoho, other, total: zoho + other,
-        started, ended, won, lost, net: won - lost,
+        started, ended, repriced, repriceDelta,
+        won, lost, net: won - lost,
       };
     };
 
@@ -497,7 +531,7 @@ export function FinanceSection() {
       zohoProjected: isFuture || i === lastActualIdx ? p.zoho : null,
       otherProjected: isFuture || i === lastActualIdx ? p.other : null,
     }));
-  }, [clients, settings, paidByMonth, revenueMode, monthOffset]);
+  }, [clients, settings, paidByMonth, revenueMode, monthOffset, priceChanges]);
 
   // Pull invoices straight from FreeAgent. Writes to the same table the spreadsheet
   // import fills, on the same key, so this refreshes rather than duplicates.
@@ -514,6 +548,33 @@ export function FinanceSection() {
     } finally {
       setSyncingInvoices(false);
     }
+  };
+
+  // Record a fee change. The live mrr only moves once the effective date has
+  // arrived — a rise agreed today for next month must not restate this month's
+  // revenue, but it should still show in the projection, which reads the log.
+  const applyPriceChange = async (client: ClientTableRow, newMrr: number, effectiveDate: string, reason: string) => {
+    const { error } = await (supabase as any).from("client_price_changes").insert({
+      client_id: client.id,
+      previous_mrr: client.mrr,
+      new_mrr: newMrr,
+      effective_date: effectiveDate,
+      reason: reason || null,
+      created_by: (await supabase.auth.getUser()).data.user?.id ?? null,
+    });
+    if (error) {
+      toast({ title: "Couldn't record the fee change", description: error.message, variant: "destructive" });
+      return;
+    }
+    const startsToday = effectiveDate <= new Date().toISOString().slice(0, 10);
+    if (startsToday) await patchClient(client.id, { mrr: newMrr });
+    toast({
+      title: startsToday ? "Fee updated" : "Fee change scheduled",
+      description: startsToday
+        ? `${client.name} is now ${gbp2(newMrr)}/mo.`
+        : `${client.name} moves to ${gbp2(newMrr)}/mo from ${new Date(effectiveDate).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}.`,
+    });
+    await load();
   };
 
   const saveSetting = async (patch: Partial<Settings>) => {
@@ -637,6 +698,7 @@ export function FinanceSection() {
                     <span className="inline-flex items-center gap-1.5"><span className="inline-block w-3 h-[2px] rounded-full" style={{ backgroundImage: "repeating-linear-gradient(90deg, currentColor 0 3px, transparent 3px 6px)" }} /> Projected</span>
                     <span className="inline-flex items-center gap-1" style={{ color: WON_COLOR }}>▲ Contract won</span>
                     <span className="inline-flex items-center gap-1" style={{ color: LOST_COLOR }}>▼ Contract ended</span>
+                    <span className="inline-flex items-center gap-1.5"><span className="inline-block w-2 h-2 rounded-sm bg-muted-foreground" /> Fee change</span>
                   </div>
                 </div>
                 <RevenueChart data={revenueSeries} />
@@ -689,7 +751,7 @@ export function FinanceSection() {
 
           {/* ---- Clients ---- */}
           <TabsContent value="clients" className="mt-0">
-            <ClientsTable rows={model.clientRows} onPatch={patchClient} />
+            <ClientsTable rows={model.clientRows} onPatch={patchClient} onPriceChange={applyPriceChange} priceChanges={priceChanges} />
           </TabsContent>
 
           {/* ---- Staff ---- */}
@@ -815,14 +877,20 @@ interface RevenuePoint {
   zohoProjected: number | null; otherProjected: number | null;
   started: RevenueEvent[];
   ended: RevenueEvent[];
+  repriced: { name: string; delta: number; reason: string | null }[];
+  repriceDelta: number;
   won: number; lost: number; net: number;
 }
 
 /** Marker on the revenue line for a month where contracts started and/or ended. */
 function EventDot({ cx, cy, payload, index, labelled, count }: any) {
   const p = payload as RevenuePoint;
-  if (cx == null || cy == null || (!p.started.length && !p.ended.length)) return null;
-  const gained = p.net >= 0;
+  const hasEvent = p.started.length || p.ended.length || p.repriced.length;
+  if (cx == null || cy == null || !hasEvent) return null;
+  // A month with only a fee change gets its own mark — the line moves without
+  // anyone joining or leaving, which is otherwise unexplained.
+  const priceOnly = !p.started.length && !p.ended.length;
+  const gained = (priceOnly ? p.repriceDelta : p.net) >= 0;
   const color = gained ? WON_COLOR : LOST_COLOR;
   const show = labelled.has(p.label);
   // Anchor labels inward at the edges so they don't overflow the axis or the card.
@@ -831,13 +899,15 @@ function EventDot({ cx, cy, payload, index, labelled, count }: any) {
     <g>
       {/* 2px surface ring keeps the marker legible where it overlaps the line */}
       <circle cx={cx} cy={cy} r={5} fill="hsl(var(--card))" />
-      <circle cx={cx} cy={cy} r={3.5} fill={color} />
+      {priceOnly
+        ? <rect x={cx - 3} y={cy - 3} width={6} height={6} rx={1} fill={color} />
+        : <circle cx={cx} cy={cy} r={3.5} fill={color} />}
       {show && (
         <text
           x={anchor === "start" ? cx - 4 : anchor === "end" ? cx + 4 : cx}
           y={cy - 11} textAnchor={anchor} fontSize={10} fontWeight={600} fill={color}
         >
-          {gained ? "▲" : "▼"} {gained ? "+" : "−"}£{Math.abs(Math.round(p.net)).toLocaleString()}
+          {gained ? "▲" : "▼"} {gained ? "+" : "−"}£{Math.abs(Math.round(priceOnly ? p.repriceDelta : p.net)).toLocaleString()}
         </text>
       )}
     </g>
@@ -870,6 +940,17 @@ function RevenueTooltip({ active, payload }: any) {
           <span>Total</span><span className="tabular-nums">{gbp2(p.total)}</span>
         </p>
       </div>
+      {p.repriced.length > 0 && (
+        <div className="mt-1.5 pt-1.5 border-t">
+          <p className="font-medium text-foreground">■ Fee changes · {p.repriceDelta >= 0 ? "+" : "−"}{gbp2(Math.abs(p.repriceDelta))}/mo</p>
+          {p.repriced.map(r => (
+            <p key={r.name} className="text-muted-foreground pl-3">
+              {r.name} {r.delta >= 0 ? "+" : "−"}{gbp2(Math.abs(r.delta))}
+              {r.reason ? <span className="opacity-70"> · {r.reason}</span> : null}
+            </p>
+          ))}
+        </div>
+      )}
       {(p.started.length > 0 || p.ended.length > 0) && (
         <div className="mt-1.5 pt-1.5 border-t space-y-1">
           {p.started.length > 0 && (
@@ -902,8 +983,8 @@ function RevenueChart({ data }: { data: RevenuePoint[] }) {
   const labelled = useMemo(() => {
     const picked: number[] = [];
     data.map((d, i) => ({ d, i }))
-      .filter(({ d }) => d.started.length || d.ended.length)
-      .sort((a, b) => Math.abs(b.d.net) - Math.abs(a.d.net))
+      .filter(({ d }) => d.started.length || d.ended.length || d.repriced.length)
+      .sort((a, b) => Math.abs(b.d.net + b.d.repriceDelta) - Math.abs(a.d.net + a.d.repriceDelta))
       .forEach(({ i }) => {
         if (picked.length < 3 && picked.every(p => Math.abs(p - i) >= 2)) picked.push(i);
       });
@@ -967,14 +1048,131 @@ const PROCESSOR_META: Record<string, { label: string; cls: string; bar: string }
   freeagent: { label: "FREEAGENT", cls: "border-blue-300 text-blue-600 bg-blue-50", bar: "bg-blue-400" },
   other: { label: "OTHER", cls: "border-muted-foreground/30 text-muted-foreground", bar: "bg-muted-foreground/40" },
 };
+/**
+ * How long we've had a client, and whether their annual uplift is due.
+ *
+ * "Due" is measured from the last fee change rather than the contract start —
+ * once someone has had a rise, the next one is a year after that, not a year
+ * after they joined. With no recorded change, the contract start is the clock.
+ */
+function clientTenure(contractStart: string | null, lastUplift: string | null) {
+  if (!contractStart) return null;
+  const start = new Date(contractStart);
+  if (isNaN(start.getTime())) return null;
+  const now = new Date();
+  const months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth())
+    - (now.getDate() < start.getDate() ? 1 : 0);
+  if (months < 0) return { label: "Not started", upliftDue: false };
+  const y = Math.floor(months / 12), m = months % 12;
+  const label = y ? `${y} yr${y === 1 ? "" : "s"}${m ? ` ${m} mo` : ""}` : `${m} mo`;
+
+  const since = lastUplift ? new Date(lastUplift) : start;
+  const monthsSince = (now.getFullYear() - since.getFullYear()) * 12 + (now.getMonth() - since.getMonth())
+    - (now.getDate() < since.getDate() ? 1 : 0);
+  return { label, upliftDue: monthsSince >= 12 };
+}
+
 type ClientTableRow = ClientRow & { mrr: number; netRevenue: number | null; processor: "zoho" | "freeagent" | "other"; profit: number | null; margin: number | null };
 
-function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id: string, patch: Partial<ClientRow>) => void }) {
+function ClientsTable({ rows, onPatch, onPriceChange, priceChanges }: {
+  rows: ClientTableRow[];
+  onPatch: (id: string, patch: Partial<ClientRow>) => void;
+  onPriceChange: (client: ClientTableRow, newMrr: number, effectiveDate: string, reason: string) => Promise<void>;
+  priceChanges: PriceChange[];
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  // Latest change that has actually taken effect — a future-dated one hasn't
+  // restarted the uplift clock yet.
+  const lastUpliftOf = (clientId: string) =>
+    priceChanges.filter(p => p.client_id === clientId && p.effective_date <= today)
+      .map(p => p.effective_date).sort().pop() ?? null;
+  const pendingOf = (clientId: string) =>
+    priceChanges.filter(p => p.client_id === clientId && p.effective_date > today)
+      .sort((a, b) => a.effective_date.localeCompare(b.effective_date))[0] ?? null;
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [edit, setEdit] = useState<{ id: string; field: string } | null>(null);
+  // A fee change goes through a dialog rather than an inline edit: it needs a date
+  // it takes effect from, which an in-cell number box has nowhere to put.
+  const [priceEdit, setPriceEdit] = useState<ClientTableRow | null>(null);
+  const [priceValue, setPriceValue] = useState("");
+  const [priceDate, setPriceDate] = useState("");
+  const [priceReason, setPriceReason] = useState("");
+  const [savingPrice, setSavingPrice] = useState(false);
+
+  const openPriceDialog = (c: ClientTableRow) => {
+    setPriceEdit(c);
+    setPriceValue(String(c.mrr ?? ""));
+    // Default to the start of next month — the usual case is a rise agreed now
+    // that begins at the next billing cycle.
+    const d = new Date();
+    setPriceDate(new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString().slice(0, 10));
+    setPriceReason("");
+  };
+
+  const savePrice = async () => {
+    if (!priceEdit) return;
+    const v = parseFloat(priceValue);
+    if (isNaN(v) || !priceDate) return;
+    setSavingPrice(true);
+    await onPriceChange(priceEdit, v, priceDate, priceReason.trim());
+    setSavingPrice(false);
+    setPriceEdit(null);
+  };
+
+  // Sorting applies inside each processor group — the grouping is the point of
+  // this table, so sorting across it would destroy the thing it's showing.
+  type ClientSortKey = "name" | "status" | "contract_start_date" | "contract_end_date" | "mrr" | "profit" | "tenure";
+  const [sortKey, setSortKey] = useState<ClientSortKey>("mrr");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const toggleSort = (k: ClientSortKey) => {
+    if (sortKey === k) setSortDir(d => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(k); setSortDir(k === "name" ? "asc" : "desc"); }
+  };
+  const sortRows = (items: ClientTableRow[]) => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    return [...items].sort((a, b) => {
+      const pick = (r: ClientTableRow) => {
+        switch (sortKey) {
+          case "name": return r.name?.toLowerCase() ?? "";
+          case "status": return r.status ?? "";
+          case "contract_start_date":
+          case "tenure": return r.contract_start_date ?? "";
+          case "contract_end_date": return r.contract_end_date ?? "";
+          case "mrr": return Number(r.mrr) || 0;
+          case "profit": return r.profit ?? -Infinity;
+        }
+      };
+      const av = pick(a), bv = pick(b);
+      if (typeof av === "string" || typeof bv === "string") {
+        // Blank dates sort last whichever way the column is pointing, so an
+        // empty cell never looks like the oldest or newest value.
+        if (!av && bv) return 1;
+        if (av && !bv) return -1;
+        return String(av).localeCompare(String(bv)) * dir;
+      }
+      return ((av as number) - (bv as number)) * dir;
+    });
+  };
+
+  // Rendered as a function, not an inline component: a component defined in the
+  // render body gets a new identity every pass, and React then replaces the
+  // header cell instead of reconciling it — which loses clicks.
+  const sortHead = (k: ClientSortKey, label: string, extra = "", align: "left" | "right" = "left") => {
+    const active = sortKey === k;
+    const Icon = active ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+    return (
+      <th className={cn("font-medium px-4 py-2.5", align === "right" ? "text-right" : "text-left", extra)}>
+        <button type="button" onClick={() => toggleSort(k)} aria-label={`Sort by ${label}`}
+          className={cn("inline-flex items-center gap-1 hover:text-primary transition-colors",
+            align === "right" && "ml-auto", active && "text-primary")}>
+          <span>{label}</span><Icon className="h-3 w-3 opacity-70" />
+        </button>
+      </th>
+    );
+  };
 
   const groups = (["zoho", "freeagent", "other"] as const)
-    .map(key => ({ key, meta: PROCESSOR_META[key], items: rows.filter(r => r.processor === key) }))
+    .map(key => ({ key, meta: PROCESSOR_META[key], items: sortRows(rows.filter(r => r.processor === key)) }))
     .filter(g => g.items.length > 0);
 
   return (
@@ -982,12 +1180,13 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
-            <th className="text-left font-medium px-4 py-2.5">Client</th>
-            <th className="text-left font-medium px-4 py-2.5 w-[150px]">Sales Stage</th>
-            <th className="text-left font-medium px-4 py-2.5 w-[120px]">Contract start</th>
-            <th className="text-left font-medium px-4 py-2.5 w-[120px]">Contract end</th>
-            <th className="text-right font-medium px-4 py-2.5 w-[120px]">MRR (gross)</th>
-            <th className="text-right font-medium px-4 py-2.5 w-[130px]">Est. profit</th>
+            {sortHead("name", "Client")}
+            {sortHead("status", "Sales Stage", "w-[150px]")}
+            {sortHead("contract_start_date", "Contract start", "w-[120px]")}
+            {sortHead("tenure", "Tenure", "w-[150px]")}
+            {sortHead("contract_end_date", "Contract end", "w-[120px]")}
+            {sortHead("mrr", "MRR (gross)", "w-[130px]", "right")}
+            {sortHead("profit", "Est. profit", "w-[130px]", "right")}
             <th className="text-right font-medium px-4 py-2.5 w-[90px]">Margin</th>
           </tr>
         </thead>
@@ -1002,7 +1201,7 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
                 className="cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors border-b"
                 onClick={() => setCollapsed(prev => ({ ...prev, [g.key]: !isCollapsed }))}
               >
-                <td colSpan={7} className="px-4 py-2">
+                <td colSpan={8} className="px-4 py-2">
                   <div className="flex items-center gap-2">
                     {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
                     <span className={cn("h-3 w-1 rounded-full", g.meta.bar)} />
@@ -1055,6 +1254,22 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
                         />
                       ) : c.contract_start_date ? new Date(c.contract_start_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—"}
                     </td>
+                    <td className="px-4 py-3">
+                      {(() => {
+                        const t = clientTenure(c.contract_start_date, lastUpliftOf(c.id));
+                        if (!t) return <span className="text-muted-foreground">—</span>;
+                        return (
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground">{t.label}</span>
+                            {t.upliftDue && (
+                              <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600 whitespace-nowrap">
+                                Uplift due
+                              </Badge>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td
                       className="px-4 py-3 text-muted-foreground cursor-text"
                       onDoubleClick={() => setEdit({ id: c.id, field: "contract_end_date" })}
@@ -1069,17 +1284,21 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
                       ) : c.contract_end_date ? new Date(c.contract_end_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—"}
                     </td>
                     <td
-                      className="px-4 py-3 text-right tabular-nums cursor-text"
-                      onDoubleClick={() => setEdit({ id: c.id, field: "mrr" })}
-                      title="Double-click to edit"
+                      className="px-4 py-3 text-right tabular-nums cursor-pointer hover:text-primary"
+                      onClick={() => openPriceDialog(c)}
+                      title="Change fee — records when it takes effect"
                     >
-                      {edit?.id === c.id && edit.field === "mrr" ? (
-                        <Input
-                          autoFocus type="number" step="0.01" defaultValue={c.mrr} className="h-8 text-right"
-                          onBlur={e => { const v = parseFloat(e.target.value); onPatch(c.id, { mrr: isNaN(v) ? c.mrr : v }); setEdit(null); }}
-                          onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEdit(null); }}
-                        />
-                      ) : gbp2(c.mrr)}
+                      {gbp2(c.mrr)}
+                      {(() => {
+                        const p = pendingOf(c.id);
+                        if (!p) return null;
+                        return (
+                          <div className={cn("text-[10px] font-medium",
+                            Number(p.new_mrr) > Number(c.mrr) ? "text-emerald-600" : "text-amber-600")}>
+                            → {gbp2(p.new_mrr)} on {new Date(p.effective_date).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className={cn("px-4 py-3 text-right tabular-nums font-medium", c.profit == null ? "text-muted-foreground/60" : c.profit >= 0 ? "text-emerald-600" : "text-red-600")}>{c.profit == null ? "—" : gbp2(c.profit)}</td>
                     <td className={cn("px-4 py-3 text-right tabular-nums", c.margin == null ? "text-muted-foreground/60" : c.margin >= 0 ? "text-muted-foreground" : "text-red-600")}>{c.margin == null ? "—" : pct(c.margin)}</td>
@@ -1091,8 +1310,55 @@ function ClientsTable({ rows, onPatch }: { rows: ClientTableRow[]; onPatch: (id:
         })}
       </table>
       <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
-        Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the month it falls in, in both the history and the projection. Double-click MRR or either contract date to edit · click the stage pill to change it · click a group header to collapse it.
+        Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the month it falls in, in both the history and the projection. Click a fee to change it — you'll be asked when the new price takes effect, and the change is logged and marked on the chart. Double-click either contract date to edit · click the stage pill to change it · click a group header to collapse it.
       </p>
+
+      {/* Fee change — captures the effective date, so a rise agreed today but
+          starting next month is projected from next month, not applied to history. */}
+      <Dialog open={!!priceEdit} onOpenChange={o => { if (!o && !savingPrice) setPriceEdit(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Change fee — {priceEdit?.name}</DialogTitle>
+            <DialogDescription>
+              Currently {priceEdit ? gbp2(priceEdit.mrr) : ""}/mo. The new price applies from the date you set.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="new-fee">New monthly fee</Label>
+                <Input id="new-fee" type="number" step="0.01" value={priceValue}
+                  onChange={e => setPriceValue(e.target.value)} className="text-right" />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="fee-date">Effective from</Label>
+                <Input id="fee-date" type="date" value={priceDate} onChange={e => setPriceDate(e.target.value)} />
+              </div>
+            </div>
+            {priceEdit && !isNaN(parseFloat(priceValue)) && parseFloat(priceValue) !== Number(priceEdit.mrr) && (
+              <p className={cn("text-xs font-medium",
+                parseFloat(priceValue) > Number(priceEdit.mrr) ? "text-emerald-600" : "text-amber-600")}>
+                {parseFloat(priceValue) > Number(priceEdit.mrr) ? "Increase" : "Decrease"} of{" "}
+                {gbp2(Math.abs(parseFloat(priceValue) - Number(priceEdit.mrr)))}/mo
+                {Number(priceEdit.mrr) > 0 && ` (${((parseFloat(priceValue) - Number(priceEdit.mrr)) / Number(priceEdit.mrr) * 100).toFixed(1)}%)`}
+              </p>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="fee-reason">Reason</Label>
+              <Textarea id="fee-reason" rows={2} value={priceReason} onChange={e => setPriceReason(e.target.value)}
+                placeholder="e.g. annual 5% uplift, added Airtable, reduced to 2 days" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPriceEdit(null)} disabled={savingPrice}>Cancel</Button>
+            <Button onClick={savePrice}
+              disabled={savingPrice || !priceDate || isNaN(parseFloat(priceValue))
+                || parseFloat(priceValue) === Number(priceEdit?.mrr ?? NaN)}>
+              {savingPrice ? "Saving…" : "Save change"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
