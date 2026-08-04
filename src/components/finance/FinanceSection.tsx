@@ -48,6 +48,7 @@ const stageMeta = (v: string | null) => SALES_STAGES.find(s => s.value === (v ||
 
 interface ClientRow { id: string; name: string; mrr: number | null; software: string | null; status: string | null; contract_start_date: string | null; contract_end_date: string | null; }
 interface PriceChange { id: string; client_id: string; previous_mrr: number | null; new_mrr: number; effective_date: string; reason: string | null; }
+interface ClientChange { id: string; client_id: string; field: "status" | "contract_end_date"; previous_value: string | null; new_value: string | null; effective_date: string; reason: string | null; }
 interface StaffPay { user_id: string; base_salary: number; base_currency: string; }
 interface HrRow { user_id: string; pay_frequency: string | null; employment_end_date: string | null; }
 interface Profile { user_id: string; display_name: string | null; email: string | null; }
@@ -139,6 +140,7 @@ export function FinanceSection() {
     at: null, status: null, detail: null,
   });
   const [priceChanges, setPriceChanges] = useState<PriceChange[]>([]);
+  const [changeLog, setChangeLog] = useState<ClientChange[]>([]);
   const handlePayrollSummary = useCallback((data: { month: string; totals: Record<string, number> }) => setPayrollFromTab(data), []);
 
   const load = useCallback(async () => {
@@ -146,7 +148,7 @@ export function FinanceSection() {
     const now = new Date();
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
-    const [cl, sp, hrp, pr, asg, rt, ex, st, pr2, pat, inv, fa, pc] = await Promise.all([
+    const [cl, sp, hrp, pr, asg, rt, ex, st, pr2, pat, inv, fa, pc, ccl] = await Promise.all([
       supabase.from("clients").select("id, name, mrr, software, status, contract_start_date, contract_end_date"),
       (supabase as any).from("staff_salaries").select("user_id, base_salary, base_currency"),
       supabase.from("hr_profiles").select("user_id, pay_frequency, employment_end_date"),
@@ -177,6 +179,9 @@ export function FinanceSection() {
       (supabase as any).from("client_price_changes")
         .select("id, client_id, previous_mrr, new_mrr, effective_date, reason")
         .order("effective_date", { ascending: true }),
+      (supabase as any).from("client_change_log")
+        .select("id, client_id, field, previous_value, new_value, effective_date, reason")
+        .order("effective_date", { ascending: true }),
     ]);
     setClients((cl.data as ClientRow[]) || []);
     // Cash received, bucketed by the month the payment landed rather than the month
@@ -194,6 +199,7 @@ export function FinanceSection() {
     });
     setPaidByMonth(byMonth);
     setPriceChanges((pc.data as PriceChange[]) || []);
+    setChangeLog((ccl.data as ClientChange[]) || []);
     setInvoiceSync({
       at: fa.data?.last_invoice_sync_at ?? null,
       status: fa.data?.last_invoice_sync_status ?? null,
@@ -437,11 +443,32 @@ export function FinanceSection() {
     // A client with no end date is only counted while they're still at an active stage
     // — we can't date a departure we were never told about; fill the end date in and
     // they show up across the months they actually billed, then drop off.
+    // When a client stopped being active, if we know. A dated stage change is a
+    // better answer than the bare current status: it means a client who left in
+    // March counts for January and February instead of vanishing from the whole
+    // history, which is what happens when all you have is "inactive today".
+    const wentInactiveOn = (clientId: string): Date | null => {
+      const moves = changeLog
+        .filter(l => l.client_id === clientId && l.field === "status")
+        .sort((a, b) => a.effective_date.localeCompare(b.effective_date));
+      const last = moves[moves.length - 1];
+      if (!last || (last.new_value ?? "active") === "active") return null;
+      return dateOf(last.effective_date);
+    };
+
     const billsIn = (c: ClientRow, monthStart: Date, monthEnd: Date) => {
       const start = dateOf(c.contract_start_date);
       if (start && start > monthEnd) return false;
+
+      // Whichever came first ends the billing: the contract lapsing, or the
+      // client being moved out of Active.
       const end = dateOf(c.contract_end_date);
-      if (end) return end >= monthEnd;
+      const inactiveFrom = wentInactiveOn(c.id);
+      const stops = end && inactiveFrom ? (end < inactiveFrom ? end : inactiveFrom) : (end ?? inactiveFrom);
+      if (stops) return stops >= monthEnd;
+
+      // No dated end of any kind — fall back to the current stage, which can only
+      // speak for today, so an undated inactive client stays out of the history.
       return (c.status ?? "active") === "active";
     };
     const inMonth = (d: string | null, monthStart: Date, monthEnd: Date) => {
@@ -470,8 +497,15 @@ export function FinanceSection() {
         : live.filter(c => !isZoho(c)).reduce((a, c) => a + grossOf(c, monthEnd), 0) * growth;
       const started = billing.filter(c => inMonth(c.contract_start_date, monthStart, monthEnd))
         .map(c => ({ name: c.name, amount: grossOf(c), zoho: isZoho(c) })).sort((a, b) => b.amount - a.amount);
-      const ended = billing.filter(c => inMonth(c.contract_end_date, monthStart, monthEnd))
-        .map(c => ({ name: c.name, amount: grossOf(c), zoho: isZoho(c) })).sort((a, b) => b.amount - a.amount);
+      const endedIds = new Set<string>();
+      const ended = billing.filter(c => {
+        if (endedIds.has(c.id)) return false;
+        const byContract = inMonth(c.contract_end_date, monthStart, monthEnd);
+        const inactiveFrom = wentInactiveOn(c.id);
+        const byStage = !!inactiveFrom && inactiveFrom >= monthStart && inactiveFrom <= monthEnd;
+        if (byContract || byStage) { endedIds.add(c.id); return true; }
+        return false;
+      }).map(c => ({ name: c.name, amount: grossOf(c), zoho: isZoho(c) })).sort((a, b) => b.amount - a.amount);
       // Fee changes taking effect this month, so a step in the line can be told
       // apart from a client arriving or leaving.
       const repriced = priceChanges
@@ -531,7 +565,7 @@ export function FinanceSection() {
       zohoProjected: isFuture || i === lastActualIdx ? p.zoho : null,
       otherProjected: isFuture || i === lastActualIdx ? p.other : null,
     }));
-  }, [clients, settings, paidByMonth, revenueMode, monthOffset, priceChanges]);
+  }, [clients, settings, paidByMonth, revenueMode, monthOffset, priceChanges, changeLog]);
 
   // Pull invoices straight from FreeAgent. Writes to the same table the spreadsheet
   // import fills, on the same key, so this refreshes rather than duplicates.
@@ -573,6 +607,41 @@ export function FinanceSection() {
       description: startsToday
         ? `${client.name} is now ${gbp2(newMrr)}/mo.`
         : `${client.name} moves to ${gbp2(newMrr)}/mo from ${new Date(effectiveDate).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}.`,
+    });
+    await load();
+  };
+
+  // Record a stage or contract-end change with the date it took effect, then
+  // apply it. Both move revenue, and both were previously set with no record of
+  // when — which is why an inactive client had to be dropped from every past
+  // month rather than just the ones after they left.
+  const applyFieldChange = async (
+    client: ClientTableRow,
+    field: "status" | "contract_end_date",
+    newValue: string | null,
+    effectiveDate: string,
+    reason: string,
+  ) => {
+    const previous = field === "status" ? (client.status ?? "active") : client.contract_end_date;
+    if (String(previous ?? "") === String(newValue ?? "")) { toast({ title: "Nothing changed" }); return; }
+
+    const { error } = await (supabase as any).from("client_change_log").insert({
+      client_id: client.id,
+      field,
+      previous_value: previous,
+      new_value: newValue,
+      effective_date: effectiveDate,
+      reason: reason || null,
+      created_by: (await supabase.auth.getUser()).data.user?.id ?? null,
+    });
+    if (error) {
+      toast({ title: "Couldn't record the change", description: error.message, variant: "destructive" });
+      return;
+    }
+    await patchClient(client.id, field === "status" ? { status: newValue } : { contract_end_date: newValue });
+    toast({
+      title: field === "status" ? "Sales stage updated" : "Contract end updated",
+      description: `Recorded as effective ${new Date(effectiveDate).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}.`,
     });
     await load();
   };
@@ -751,7 +820,8 @@ export function FinanceSection() {
 
           {/* ---- Clients ---- */}
           <TabsContent value="clients" className="mt-0">
-            <ClientsTable rows={model.clientRows} onPatch={patchClient} onPriceChange={applyPriceChange} priceChanges={priceChanges} />
+            <ClientsTable rows={model.clientRows} onPatch={patchClient} onPriceChange={applyPriceChange}
+              onFieldChange={applyFieldChange} priceChanges={priceChanges} changeLog={changeLog} />
           </TabsContent>
 
           {/* ---- Staff ---- */}
@@ -1074,11 +1144,13 @@ function clientTenure(contractStart: string | null, lastUplift: string | null) {
 
 type ClientTableRow = ClientRow & { mrr: number; netRevenue: number | null; processor: "zoho" | "freeagent" | "other"; profit: number | null; margin: number | null };
 
-function ClientsTable({ rows, onPatch, onPriceChange, priceChanges }: {
+function ClientsTable({ rows, onPatch, onPriceChange, onFieldChange, priceChanges, changeLog }: {
   rows: ClientTableRow[];
   onPatch: (id: string, patch: Partial<ClientRow>) => void;
   onPriceChange: (client: ClientTableRow, newMrr: number, effectiveDate: string, reason: string) => Promise<void>;
+  onFieldChange: (client: ClientTableRow, field: "status" | "contract_end_date", newValue: string | null, effectiveDate: string, reason: string) => Promise<void>;
   priceChanges: PriceChange[];
+  changeLog: ClientChange[];
 }) {
   const today = new Date().toISOString().slice(0, 10);
   // Latest change that has actually taken effect — a future-dated one hasn't
@@ -1086,6 +1158,9 @@ function ClientsTable({ rows, onPatch, onPriceChange, priceChanges }: {
   const lastUpliftOf = (clientId: string) =>
     priceChanges.filter(p => p.client_id === clientId && p.effective_date <= today)
       .map(p => p.effective_date).sort().pop() ?? null;
+  const lastChangeOf = (clientId: string, field: "status" | "contract_end_date") =>
+    changeLog.filter(l => l.client_id === clientId && l.field === field)
+      .sort((a, b) => a.effective_date.localeCompare(b.effective_date)).pop() ?? null;
   const pendingOf = (clientId: string) =>
     priceChanges.filter(p => p.client_id === clientId && p.effective_date > today)
       .sort((a, b) => a.effective_date.localeCompare(b.effective_date))[0] ?? null;
@@ -1098,6 +1173,34 @@ function ClientsTable({ rows, onPatch, onPriceChange, priceChanges }: {
   const [priceDate, setPriceDate] = useState("");
   const [priceReason, setPriceReason] = useState("");
   const [savingPrice, setSavingPrice] = useState(false);
+
+  // Stage and contract-end changes carry a date the field itself can't hold —
+  // when it took effect, which is what revenue needs — so both go through a
+  // dialog rather than an inline control.
+  const [changeEdit, setChangeEdit] = useState<{ client: ClientTableRow; field: "status" | "contract_end_date" } | null>(null);
+  const [changeValue, setChangeValue] = useState("");
+  const [changeDate, setChangeDate] = useState("");
+  const [changeReason, setChangeReason] = useState("");
+  const [savingChange, setSavingChange] = useState(false);
+
+  const openChangeDialog = (client: ClientTableRow, field: "status" | "contract_end_date") => {
+    setChangeEdit({ client, field });
+    setChangeValue(field === "status" ? (client.status ?? "active") : (client.contract_end_date ?? ""));
+    setChangeDate(
+      field === "contract_end_date"
+        ? (client.contract_end_date ?? new Date().toISOString().slice(0, 10))
+        : new Date().toISOString().slice(0, 10),
+    );
+    setChangeReason("");
+  };
+
+  const saveChange = async () => {
+    if (!changeEdit || !changeDate) return;
+    setSavingChange(true);
+    await onFieldChange(changeEdit.client, changeEdit.field, changeValue || null, changeDate, changeReason.trim());
+    setSavingChange(false);
+    setChangeEdit(null);
+  };
 
   const openPriceDialog = (c: ClientTableRow) => {
     setPriceEdit(c);
@@ -1223,23 +1326,21 @@ function ClientsTable({ rows, onPatch, onPriceChange, priceChanges }: {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      {edit?.id === c.id && edit.field === "status" ? (
-                        <Select
-                          defaultOpen
-                          value={c.status ?? "active"}
-                          onValueChange={v => { onPatch(c.id, { status: v }); setEdit(null); }}
-                          onOpenChange={o => { if (!o) setEdit(null); }}
-                        >
-                          <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
-                          <SelectContent>{SALES_STAGES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}</SelectContent>
-                        </Select>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className={cn("text-[10px] cursor-pointer", st.cls)}
-                          onClick={() => setEdit({ id: c.id, field: "status" })}
-                        >{st.label}</Badge>
-                      )}
+                      <Badge
+                        variant="outline"
+                        className={cn("text-[10px] cursor-pointer", stageMeta(c.status).cls)}
+                        onClick={() => openChangeDialog(c, "status")}
+                        title="Change sales stage — records when it took effect"
+                      >{stageMeta(c.status).label}</Badge>
+                      {(() => {
+                        const last = lastChangeOf(c.id, "status");
+                        if (!last) return null;
+                        return (
+                          <div className="text-[10px] text-muted-foreground mt-0.5">
+                            since {new Date(last.effective_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "2-digit" })}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td
                       className="px-4 py-3 text-muted-foreground cursor-text"
@@ -1271,17 +1372,11 @@ function ClientsTable({ rows, onPatch, onPriceChange, priceChanges }: {
                       })()}
                     </td>
                     <td
-                      className="px-4 py-3 text-muted-foreground cursor-text"
-                      onDoubleClick={() => setEdit({ id: c.id, field: "contract_end_date" })}
-                      title="Double-click to edit — revenue stops counting after this date"
+                      className="px-4 py-3 text-muted-foreground cursor-pointer hover:text-primary"
+                      onClick={() => openChangeDialog(c, "contract_end_date")}
+                      title="Set or change the contract end date — recorded with a reason"
                     >
-                      {edit?.id === c.id && edit.field === "contract_end_date" ? (
-                        <Input
-                          autoFocus type="date" defaultValue={c.contract_end_date ?? ""} className="h-8"
-                          onBlur={e => { onPatch(c.id, { contract_end_date: e.target.value || null }); setEdit(null); }}
-                          onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEdit(null); }}
-                        />
-                      ) : c.contract_end_date ? new Date(c.contract_end_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                      {c.contract_end_date ? new Date(c.contract_end_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—"}
                     </td>
                     <td
                       className="px-4 py-3 text-right tabular-nums cursor-pointer hover:text-primary"
@@ -1312,6 +1407,54 @@ function ClientsTable({ rows, onPatch, onPriceChange, priceChanges }: {
       <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
         Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the month it falls in, in both the history and the projection. Click a fee to change it — you'll be asked when the new price takes effect, and the change is logged and marked on the chart. Double-click either contract date to edit · click the stage pill to change it · click a group header to collapse it.
       </p>
+
+      {/* Stage / contract-end change — the effective date is the point of it. */}
+      <Dialog open={!!changeEdit} onOpenChange={o => { if (!o && !savingChange) setChangeEdit(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {changeEdit?.field === "status" ? "Change sales stage" : "Contract end date"} — {changeEdit?.client.name}
+            </DialogTitle>
+            <DialogDescription>
+              {changeEdit?.field === "status"
+                ? "Moving a client out of Active stops them counting toward revenue from the date you set — not from today."
+                : "Revenue stops counting this client from the month their contract lapses."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            {changeEdit?.field === "status" ? (
+              <div className="space-y-1.5">
+                <Label>New stage</Label>
+                <Select value={changeValue} onValueChange={setChangeValue}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>{SALES_STAGES.map(st => <SelectItem key={st.value} value={st.value}>{st.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            ) : null}
+            <div className="space-y-1.5">
+              <Label htmlFor="change-date">
+                {changeEdit?.field === "status" ? "Effective from" : "Contract ends"}
+              </Label>
+              <Input id="change-date" type="date"
+                value={changeEdit?.field === "contract_end_date" ? changeValue : changeDate}
+                onChange={e => (changeEdit?.field === "contract_end_date" ? setChangeValue(e.target.value) : setChangeDate(e.target.value))} />
+              {changeEdit?.field === "contract_end_date" && (
+                <button type="button" onClick={() => setChangeValue("")}
+                  className="text-[11px] text-primary hover:underline">Clear end date (contract continues)</button>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="change-reason">Reason</Label>
+              <Textarea id="change-reason" rows={2} value={changeReason} onChange={e => setChangeReason(e.target.value)}
+                placeholder="e.g. gave notice, went in-house, agency closed, moved to annual contract" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setChangeEdit(null)} disabled={savingChange}>Cancel</Button>
+            <Button onClick={saveChange} disabled={savingChange}>{savingChange ? "Saving…" : "Save change"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Fee change — captures the effective date, so a rise agreed today but
           starting next month is projected from next month, not applied to history. */}
