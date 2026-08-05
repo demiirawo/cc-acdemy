@@ -10,7 +10,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Trash2, ClipboardList, Plane, MessageCircle, Mail, Loader2 } from "lucide-react";
+import { Trash2, ClipboardList, Plane, MessageCircle, Mail, Loader2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { ClientHandoverTracker } from "./ClientHandoverTracker";
 import { getUpcomingLeaveByAllClients, type UpcomingClientLeave } from "@/lib/handoverStatus";
@@ -145,14 +145,16 @@ export function HandoverTrackerSummaryCard() {
               rows.reduce((sum, r) => sum + (r.progress ?? 0), 0) / rows.length
             )
           : 0;
-        const latestTargetDate = activeRows
+        // Fall back to every row once nothing is outstanding, so a finished
+        // handover still reports the date it was working towards.
+        const datesFrom = activeRows.length ? activeRows : rows;
+        const latestTargetDate = datesFrom
           .map((r) => r.target_date)
           .filter((d): d is string => !!d)
           .sort()
           .pop() ?? null;
         return { client, count: activeCount, overallProgress, latestTargetDate, notStarted: false as const };
-      })
-      .filter((g) => g.count > 0);
+      });
     return { clientsWithAnyTasks: new Set(map.keys()), groupedBase: base };
   }, [tasks]);
 
@@ -168,7 +170,13 @@ export function HandoverTrackerSummaryCard() {
   const grouped = useMemo(() => {
     const leaveFor = (client: string) => leaveByAllClients.get(client.trim()) ?? null;
     const taskClientKeys = new Set(Array.from(clientsWithAnyTasks).map((c) => c.trim()));
-    const withTasks = groupedBase.map((g) => ({ ...g, leave: leaveFor(g.client) }));
+    // Keep a client while work is outstanding, and keep a finished one too as
+    // long as the leave it was for is still ahead — a completed handover is the
+    // reassurance you want before someone goes, not something to hide the moment
+    // the last box is ticked. Once the leave has passed there's nothing to watch.
+    const withTasks = groupedBase
+      .map((g) => ({ ...g, leave: leaveFor(g.client) }))
+      .filter((g) => g.count > 0 || g.leave);
     // Clients with staff on/approaching leave but no handover tasks recorded
     // at all yet — these never show up via client_handover_tasks grouping.
     const notStarted = Array.from(leaveByAllClients.entries())
@@ -274,11 +282,15 @@ export function HandoverTrackerSummaryCard() {
                             <Badge variant="secondary" className="font-normal">
                               {items.length} client{items.length === 1 ? "" : "s"}
                             </Badge>
-                            {notStartedCount > 0 && (
+                            {notStartedCount > 0 ? (
                               <Badge variant="outline" className="font-normal bg-destructive/10 text-destructive border-destructive/30">
                                 {notStartedCount} not started
                               </Badge>
-                            )}
+                            ) : avgProgress === 100 ? (
+                              <Badge variant="outline" className="font-normal bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30">
+                                <CheckCircle2 className="h-3 w-3 mr-1" /> Ready
+                              </Badge>
+                            ) : null}
                           </>
                         ) : (
                           <>
