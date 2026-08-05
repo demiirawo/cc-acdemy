@@ -21,6 +21,7 @@ import { format, startOfMonth, endOfMonth, parseISO, addMonths, eachDayOfInterva
 import { FEEDBACK_KINDS, FEEDBACK_KIND_ORDER, asFeedbackKind, type FeedbackKind } from "@/lib/feedbackKinds";
 import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
+import { StaffOnboardingView } from "./StaffOnboardingView";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { StaffSettingsDialog } from "./StaffSettingsDialog";
 import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusPoints, rankBonusMult, bonusEligible, LOWEST_ELIGIBLE_RANK, type Rank } from "./PerformanceRankBadge";
@@ -2533,74 +2534,16 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                 </div>
               </AccordionTrigger>
               <AccordionContent className="px-6 pb-6">
-                {/* Overall progress bar */}
-                <div className="mb-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-muted-foreground">Overall completion</span>
-                    <span className="text-sm font-semibold text-primary">{progressPct}%</span>
-                  </div>
-                  <Progress value={progressPct} className="h-2.5" />
-                  {allDone && (
-                    <p className="text-sm text-green-600 font-medium mt-2 flex items-center gap-1.5">
-                      <CheckCircle2 className="h-4 w-4" /> All onboarding steps complete!
-                    </p>
-                  )}
-                </div>
-
-                {/* Stages */}
-                <div className="space-y-5">
-                  {stages.map(stageName => {
-                    const stageSteps = stepsByStage[stageName];
-                    const stageDone = stageSteps.filter(s => onboardingCompletedIds.has(s.id)).length;
-                    const stageTotal = stageSteps.length;
-                    const stageComplete = stageDone === stageTotal;
-
-                    return (
-                      <div key={stageName}>
-                        <div className="flex items-center justify-between mb-2">
-                          <h4 className="text-sm font-semibold text-foreground">{stageName}</h4>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                            stageComplete
-                              ? "bg-green-100 text-green-700"
-                              : "bg-muted text-muted-foreground"
-                          }`}>
-                            {stageDone}/{stageTotal}
-                          </span>
-                        </div>
-                        <div className="space-y-2">
-                          {stageSteps.map(step => {
-                            const done = onboardingCompletedIds.has(step.id);
-                            return (
-                              <div
-                                key={step.id}
-                                className={`flex items-start gap-3 rounded-lg px-3 py-2.5 ${
-                                  done ? "bg-green-50 border border-green-200" : "bg-muted/40 border border-border"
-                                }`}
-                              >
-                                {done
-                                  ? <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0 mt-0.5" />
-                                  : <Circle className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />}
-                                <div className="min-w-0">
-                                  <p className={`text-sm font-medium leading-snug ${done ? "text-green-800" : "text-foreground"}`}>
-                                    {step.title}
-                                  </p>
-                                  {step.description && (
-                                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                                      {step.description.replace(/(https?:\/\/[^\s]+)/g, '[link]')}
-                                    </p>
-                                  )}
-                                </div>
-                                {done && (
-                                  <span className="ml-auto flex-shrink-0 text-xs text-green-700 font-medium">Done</span>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                {/* The person's actual onboarding view — the same component their
+                    own profile renders, so what a manager reads here is exactly
+                    what the new starter sees: descriptions, links, voice notes,
+                    owner contacts and buttons. Their own profile is interactive;
+                    someone else's is read-only, which mirrors who is allowed to
+                    tick a step off. */}
+                <StaffOnboardingView
+                  userId={selectedUserId ?? undefined}
+                  personName={selectedUserName}
+                />
               </AccordionContent>
             </AccordionItem>
           </Accordion>
