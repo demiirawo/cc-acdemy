@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useSchedulingRole } from "@/hooks/useSchedulingRole";
@@ -346,6 +346,40 @@ export function StaffScheduleManager() {
     }
   });
 
+  // Employment windows, so the timeline never shows a shift for a week someone
+  // hadn't joined yet or had already left. Recurring patterns and the generated
+  // bench shifts both run off the calendar rather than off anyone's dates, so
+  // without this a leaver keeps appearing rostered forever.
+  const { data: employmentDates = [] } = useQuery({
+    queryKey: ["staff-employment-dates"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("hr_profiles")
+        .select("user_id, start_date, employment_end_date");
+      if (error) throw error;
+      return data as { user_id: string; start_date: string | null; employment_end_date: string | null }[];
+    }
+  });
+
+  const employmentByUser = useMemo(
+    () => new Map(employmentDates.map(e => [e.user_id, e])),
+    [employmentDates]
+  );
+
+  /**
+   * Was this person employed on this day? Someone with no HR record at all is
+   * treated as employed — we have nothing to filter on, and silently hiding
+   * their shifts would be worse than showing them.
+   */
+  const isEmployedOn = useCallback((userId: string, day: Date) => {
+    const dates = employmentByUser.get(userId);
+    if (!dates) return true;
+    const d = startOfDay(day);
+    if (dates.start_date && isBefore(d, startOfDay(parseISO(dates.start_date)))) return false;
+    if (dates.employment_end_date && isAfter(d, startOfDay(parseISO(dates.employment_end_date)))) return false;
+    return true;
+  }, [employmentByUser]);
+
   // Fetch current user's client assignments (for non-admin filtering)
   const { data: myClientAssignments = [] } = useQuery({
     queryKey: ["my-client-assignments", user?.id],
@@ -606,6 +640,11 @@ export function StaffScheduleManager() {
     // Only proceed if we have a full Mon-Fri week
     if (weekdaysDates.length === 5) {
       for (const staff of staffMembers) {
+        // Don't invent bench shifts for days someone wasn't employed. Without
+        // this a new starter looks rostered for every week back to 2023.
+        const employedDays = weekdaysDates.filter(day => isEmployedOn(staff.user_id, day));
+        if (employedDays.length === 0) continue;
+
         // Check if staff has NO schedules at all for any weekday this week
         const hasAnyScheduleThisWeek = weekdaysDates.some(day => {
           const dateStr = format(day, "yyyy-MM-dd");
@@ -649,7 +688,7 @@ export function StaffScheduleManager() {
         
         // If no schedules, not on holiday, and not covering anyone, add bench schedules
         if (!hasAnyScheduleThisWeek && !isOnHolidayAnyDay && !isCoveringAnyDay) {
-          for (const day of weekdaysDates) {
+          for (const day of employedDays) {
             const dateStr = format(day, "yyyy-MM-dd");
             benchSchedules.push({
               id: `bench-${staff.user_id}-${dateStr}`,
@@ -667,8 +706,14 @@ export function StaffScheduleManager() {
       }
     }
     
-    return [...combinedSchedules, ...benchSchedules];
-  }, [schedules, virtualSchedulesFromPatterns, staffMembers, weekDays, holidays, staffRequests]);
+    // Final gate covering all three sources at once — real shifts, shifts
+    // expanded from a recurring pattern, and bench. A pattern honours its own
+    // start and end dates but knows nothing about the person's, so a pattern
+    // left running past someone's last day would otherwise keep rostering them.
+    return [...combinedSchedules, ...benchSchedules].filter(s =>
+      isEmployedOn(s.user_id, parseISO(s.start_datetime))
+    );
+  }, [schedules, virtualSchedulesFromPatterns, staffMembers, weekDays, holidays, staffRequests, isEmployedOn]);
 
   // Get unique clients - combine clients from database AND schedules (sorted alphabetically)
   const uniqueClients = useMemo(() => {

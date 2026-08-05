@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { isShiftCoveredByRequest } from "@/lib/coverageUtils";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -73,6 +73,8 @@ interface StaffMember {
   display_name: string;
   email: string;
   work_phone?: string | null;
+  start_date?: string | null;
+  employment_end_date?: string | null;
 }
 
 interface StaffHoliday {
@@ -273,19 +275,24 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
       
       if (error) throw error;
 
-      // Fetch work phone numbers from hr_profiles
+      // Work phone plus employment dates — a client should never see someone
+      // rostered for a week they hadn't joined yet or had already left.
       const { data: hrProfiles } = await supabase
         .from("hr_profiles")
-        .select("user_id, work_phone");
+        .select("user_id, work_phone, start_date, employment_end_date");
 
       const phoneMap = new Map<string, string | null>();
+      const datesMap = new Map<string, { start_date: string | null; employment_end_date: string | null }>();
       (hrProfiles || []).forEach((hr: any) => {
         if (hr.work_phone) phoneMap.set(hr.user_id, hr.work_phone);
+        datesMap.set(hr.user_id, { start_date: hr.start_date, employment_end_date: hr.employment_end_date });
       });
 
       return (profiles || []).map(p => ({
         ...p,
         work_phone: phoneMap.get(p.user_id) || null,
+        start_date: datesMap.get(p.user_id)?.start_date ?? null,
+        employment_end_date: datesMap.get(p.user_id)?.employment_end_date ?? null,
       })) as StaffMember[];
     },
   });
@@ -727,6 +734,22 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
     return virtualSchedules;
   }, [allPatterns, weekDays, allStaffSchedules]);
 
+  /**
+   * Was this person employed on this day? Someone with no HR record is treated
+   * as employed — there's nothing to filter on, and hiding their shifts from a
+   * client's schedule would be worse than showing them.
+   */
+  const isEmployedOn = useCallback((userId: string, day: Date) => {
+    const person = staffMembers.find(s => s.user_id === userId) as
+      | { start_date?: string | null; employment_end_date?: string | null }
+      | undefined;
+    if (!person) return true;
+    const d = startOfDay(day);
+    if (person.start_date && isBefore(d, startOfDay(parseISO(person.start_date)))) return false;
+    if (person.employment_end_date && isAfter(d, startOfDay(parseISO(person.employment_end_date)))) return false;
+    return true;
+  }, [staffMembers]);
+
   // Combine manual and virtual schedules and generate bench schedules
   const allSchedules = useMemo(() => {
     const combinedSchedules = [...schedules, ...virtualSchedulesFromPatterns];
@@ -734,7 +757,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
     
     // Only generate bench if viewing Care Cuddle
     if (decodedClientName !== "Care Cuddle") {
-      return combinedSchedules;
+      return combinedSchedules.filter(s => isEmployedOn(s.user_id, parseISO(s.start_datetime)));
     }
     
     // All schedules across all clients (manual + pattern-based)
@@ -792,7 +815,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
       
       // If no schedules, not on holiday, and not covering anyone, add bench schedules
       if (!hasAnyScheduleThisWeek && !isOnHolidayAnyDay && !isCoveringAnyDay) {
-        for (const day of weekdaysDates) {
+        for (const day of weekdaysDates.filter(d => isEmployedOn(staff.user_id, d))) {
           const dateStr = format(day, "yyyy-MM-dd");
           benchSchedules.push({
             id: `bench-${staff.user_id}-${dateStr}`,
@@ -807,8 +830,13 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
       }
     });
     
-    return [...combinedSchedules, ...benchSchedules];
-  }, [schedules, virtualSchedulesFromPatterns, decodedClientName, allStaffSchedules, allVirtualSchedulesFromPatterns, staffMembers, weekDays, holidays, staffRequests]);
+    // One gate over every source: real shifts, pattern-expanded shifts and
+    // bench. A recurring pattern honours its own end date but knows nothing
+    // about the person's, so a leaver would otherwise stay on a client's page.
+    return [...combinedSchedules, ...benchSchedules].filter(s =>
+      isEmployedOn(s.user_id, parseISO(s.start_datetime))
+    );
+  }, [schedules, virtualSchedulesFromPatterns, decodedClientName, allStaffSchedules, allVirtualSchedulesFromPatterns, staffMembers, weekDays, holidays, staffRequests, isEmployedOn]);
 
   const getSchedulesForDay = (day: Date) => {
     return allSchedules.filter(schedule => {
