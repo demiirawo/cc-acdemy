@@ -1063,6 +1063,10 @@ export function StaffPayManager({ onSummaryComputed }: {
           // it — those aren't payable.
           if (!employedOn(dStr)) return;
 
+          // Nor is cover on a day this person is themselves on approved leave:
+          // cover assigned across a holiday needs reassigning, not paying.
+          if (userLeaveDates.has(dStr)) return;
+
           // Only count this day if it's a working day for the target user
           const hasActualSchedule = targetActualScheduleDates.has(dStr);
 
@@ -1138,7 +1142,10 @@ export function StaffPayManager({ onSummaryComputed }: {
         const dateStr = format(currentDate, 'yyyy-MM-dd');
         const dayOfWeek = currentDate.getDay();
         
-        if (!requestOTDates.has(dateStr) && employedOn(dateStr)) {
+        // A recurring overtime pattern keeps firing through approved leave — the
+        // pattern only knows its own weekday rule. Someone on holiday didn't work
+        // the shift, so it isn't payable.
+        if (!requestOTDates.has(dateStr) && employedOn(dateStr) && !userLeaveDates.has(dateStr)) {
           for (const pattern of userPatterns) {
             const patternStart = parseISO(pattern.start_date);
             const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
