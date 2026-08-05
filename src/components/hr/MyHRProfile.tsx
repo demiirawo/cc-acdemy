@@ -539,9 +539,15 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         .catch(err => console.error("Failed to notify of photo change:", err));
     } catch (err) {
       console.error("Error uploading photo:", err);
+      // A permission refusal reads as a generic failure otherwise, which sends
+      // people back to retry the same upload that cannot succeed.
+      const raw = err instanceof Error ? err.message : String(err);
+      const denied = /row-level security|not authorized|permission|violates/i.test(raw);
       toast({
         title: "Upload failed",
-        description: err instanceof Error ? err.message : "Please try again",
+        description: denied
+          ? "You don't have permission to change this person's photo. Only they or an admin can."
+          : raw || "Please try again",
         variant: "destructive",
       });
     } finally {
