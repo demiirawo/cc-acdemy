@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, AlertTriangle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink, Handshake, Settings, Plus, Trash2, ThumbsUp, Lightbulb, Mail, Phone } from "lucide-react";
+import { Calendar, DollarSign, UserCircle, Briefcase, Clock, TrendingUp, CheckCircle, AlertCircle, AlertTriangle, ChevronDown, ChevronUp, FileText, RefreshCw, Users, User, Eye, FileBadge, Building2, CheckCircle2, Circle, ListChecks, Award, MapPin, ExternalLink, Handshake, Settings, Plus, Trash2, ThumbsUp, Lightbulb, Mail, Phone, Camera, Upload, Loader2 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -369,6 +369,38 @@ function StatusPill({ tone, children }: { tone: StatusTone; children: React.Reac
   );
 }
 
+
+/** Formats the browser can actually paint into an <img>. HEIC is excluded on
+ *  purpose: iPhones produce it by default and no major browser renders it. */
+const DISPLAYABLE_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+/**
+ * Returns a human explanation if this file can't be used as a profile photo, or
+ * null if it's fine. Mirrors the onboarding form's check — the decode step is
+ * the important half, since a 0-byte "jpeg" passes both extension and MIME
+ * checks and then renders as a blank avatar.
+ */
+async function describeProfilePhotoProblem(file: File): Promise<string | null> {
+  if (!DISPLAYABLE_PHOTO_TYPES.includes(file.type.toLowerCase())) {
+    const kind = /heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name)
+      ? "iPhone HEIC photos can't be shown by web browsers"
+      : file.type === "application/pdf" || /\.pdf$/i.test(file.name)
+        ? "PDFs can't be used as a profile photo"
+        : "That file type can't be used as a profile photo";
+    return `${kind}. Please upload a JPG or PNG — on an iPhone, Settings → Camera → Formats → Most Compatible saves photos as JPG.`;
+  }
+  if (file.size > 8 * 1024 * 1024) return "That image is over 8MB — please upload a smaller one.";
+
+  const ok = await new Promise<boolean>(resolve => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img.naturalWidth > 0); };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(false); };
+    img.src = url;
+  });
+  return ok ? null : "That image couldn't be opened — it may be damaged. Please try another.";
+}
+
 export function MyHRProfile({ initialUserId }: { initialUserId?: string | null } = {}) {
   const {
     user
@@ -460,6 +492,63 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     })();
     return () => { cancelled = true; };
   }, [photoPath]);
+
+  // Uploading a photo from the profile itself. It used to live only on the
+  // separate onboarding form — nobody looks for a profile picture inside a
+  // document checklist, so the tile below stayed empty with no way to fill it.
+  // Writes are limited to your own record or an admin's, matching the table's
+  // policies; HR can view everyone but not change them.
+  const canEditPhoto = isAdmin || selectedUserId === user?.id;
+  const [photoUploading, setPhotoUploading] = useState(false);
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const file = input.files?.[0];
+    if (!file || !selectedUserId) return;
+
+    const problem = await describeProfilePhotoProblem(file);
+    if (problem) {
+      toast({ title: "That photo can't be used", description: problem, variant: "destructive" });
+      input.value = "";
+      return;
+    }
+
+    setPhotoUploading(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const fileName = `${selectedUserId}/photograph_path_${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("onboarding-documents")
+        .upload(fileName, file);
+      if (upErr) throw upErr;
+
+      // Record the path immediately — holding it in state only would lose the
+      // file on a tab switch, which is how blank photos got stored before.
+      const { error: saveErr } = await supabase
+        .from("staff_onboarding_documents")
+        .upsert({ user_id: selectedUserId, photograph_path: fileName }, { onConflict: "user_id" });
+      if (saveErr) throw saveErr;
+
+      toast({ title: "Photo updated" });
+      fetchData(selectedUserId);
+
+      supabase.functions
+        .invoke("notify-personal-change", {
+          body: { kind: "profile_update", userId: selectedUserId, changedFields: ["photograph_path"] },
+        })
+        .catch(err => console.error("Failed to notify of photo change:", err));
+    } catch (err) {
+      console.error("Error uploading photo:", err);
+      toast({
+        title: "Upload failed",
+        description: err instanceof Error ? err.message : "Please try again",
+        variant: "destructive",
+      });
+    } finally {
+      setPhotoUploading(false);
+      input.value = "";
+    }
+  };
 
   // Client list for attributing feedback to the client it came from.
   useEffect(() => {
@@ -1761,19 +1850,53 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         return (
           <Card>
             <CardContent className="p-4 flex items-center gap-4">
-              {/* Photo from the onboarding form, if they've uploaded a usable one. */}
+              {/* The photo, and where you change it. Clicking the picture — or the
+                  initials standing in for one — is where people instinctively go,
+                  so the upload lives here rather than only on the onboarding form. */}
               <div className="flex-shrink-0">
-                {profilePhotoUrl ? (
-                  <img
-                    src={profilePhotoUrl}
-                    alt={`${selectedUserName}'s photo`}
-                    className="h-16 w-16 rounded-full object-cover border"
-                  />
-                ) : (
-                  <div className="h-16 w-16 rounded-full border bg-muted flex items-center justify-center text-lg font-semibold text-muted-foreground">
-                    {selectedUserName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
-                  </div>
-                )}
+                <label
+                  className={cn(
+                    "relative block h-16 w-16 rounded-full group",
+                    canEditPhoto ? "cursor-pointer" : "cursor-default"
+                  )}
+                  title={canEditPhoto ? "Click to change photo" : undefined}
+                >
+                  {profilePhotoUrl ? (
+                    <img
+                      src={profilePhotoUrl}
+                      alt={`${selectedUserName}'s photo`}
+                      className="h-16 w-16 rounded-full object-cover border"
+                    />
+                  ) : (
+                    <div className="h-16 w-16 rounded-full border bg-muted flex items-center justify-center text-lg font-semibold text-muted-foreground">
+                      {selectedUserName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
+                  {canEditPhoto && (
+                    <>
+                      <span className={cn(
+                        "absolute inset-0 rounded-full bg-black/55 text-white flex flex-col items-center justify-center gap-0.5 transition-opacity",
+                        photoUploading ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                      )}>
+                        {photoUploading ? (
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                        ) : (
+                          <>
+                            <Camera className="h-4 w-4" />
+                            <span className="text-[9px] font-medium leading-none">Change</span>
+                          </>
+                        )}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="sr-only"
+                        disabled={photoUploading}
+                        onChange={handlePhotoUpload}
+                      />
+                    </>
+                  )}
+                </label>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 min-w-0">
                 <div className="flex items-center gap-2 min-w-0">
@@ -2748,6 +2871,30 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                           </div>
                         </div>
                       </button>
+                    ) : canEditPhoto ? (
+                      // An empty tile that can't be filled is a dead end — this is
+                      // the other place people look for the photo, so it uploads too.
+                      <label className="border border-dashed border-muted-foreground/30 rounded-lg p-4 space-y-2 cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors block">
+                        <p className="text-xs text-muted-foreground">Photograph</p>
+                        <p className="font-medium text-sm text-muted-foreground">Staff photograph</p>
+                        <div className="h-20 flex flex-col items-center justify-center gap-1 bg-muted/30 rounded">
+                          {photoUploading ? (
+                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                          ) : (
+                            <>
+                              <Upload className="h-5 w-5 text-muted-foreground" />
+                              <p className="text-xs text-muted-foreground">Click to upload</p>
+                            </>
+                          )}
+                        </div>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          className="sr-only"
+                          disabled={photoUploading}
+                          onChange={handlePhotoUpload}
+                        />
+                      </label>
                     ) : (
                       <div className="border border-dashed border-muted-foreground/30 rounded-lg p-4 space-y-2 opacity-60">
                         <p className="text-xs text-muted-foreground">Photograph</p>
