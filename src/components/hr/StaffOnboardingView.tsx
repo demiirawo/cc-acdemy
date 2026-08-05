@@ -66,7 +66,21 @@ function renderDescriptionWithLinks(description: string) {
   });
 }
 
-export function StaffOnboardingView() {
+interface StaffOnboardingViewProps {
+  /** Whose onboarding to show. Defaults to the signed-in person. */
+  userId?: string;
+  /** Their name, used in headings when a manager is looking at someone else. */
+  personName?: string;
+}
+
+/**
+ * The onboarding checklist. Renders for the signed-in person by default, or for
+ * a named colleague when a manager passes their userId — same layout either way,
+ * so what HR sees is what the new starter sees. Someone else's checklist is
+ * always read-only: only the person doing the step can tick it off, which is
+ * what the database allows too.
+ */
+export function StaffOnboardingView({ userId, personName }: StaffOnboardingViewProps = {}) {
   const [steps, setSteps] = useState<OnboardingStep[]>([]);
   const [completions, setCompletions] = useState<Completion[]>([]);
   const [acknowledgements, setAcknowledgements] = useState<PageAcknowledgement[]>([]);
@@ -79,14 +93,18 @@ export function StaffOnboardingView() {
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  // Whose checklist this is, and whether the viewer is looking at their own.
+  const subjectId = userId ?? user?.id ?? null;
+  const isSelf = !userId || userId === user?.id;
+
   useEffect(() => {
-    if (user) {
+    if (subjectId) {
       fetchData();
     }
-  }, [user]);
+  }, [subjectId]);
 
   const fetchData = async () => {
-    if (!user) return;
+    if (!subjectId) return;
     
     try {
       // Fetch all onboarding steps with owner details
@@ -105,7 +123,7 @@ export function StaffOnboardingView() {
       const { data: completionsData, error: completionsError } = await supabase
         .from('onboarding_completions')
         .select('step_id, completed_at')
-        .eq('user_id', user.id);
+        .eq('user_id', subjectId);
 
       if (completionsError) throw completionsError;
 
@@ -119,7 +137,7 @@ export function StaffOnboardingView() {
         const { data, error: ackError } = await supabase
           .from('page_acknowledgements')
           .select('page_id, acknowledged_at')
-          .eq('user_id', user.id)
+          .eq('user_id', subjectId)
           .in('page_id', internalPageIds);
 
         if (ackError) throw ackError;
@@ -134,7 +152,7 @@ export function StaffOnboardingView() {
       const { data: tRecords } = await supabase
         .from('training_records')
         .select('training_item_id, completed_date')
-        .eq('user_id', user.id);
+        .eq('user_id', subjectId);
       const dateByItem = new Map((tRecords || []).map(r => [r.training_item_id, r.completed_date]));
       setTrainingComplete(allTrainingUpToDate(tItems || [], dateByItem));
 
@@ -142,7 +160,7 @@ export function StaffOnboardingView() {
       const { data: hrSelf } = await supabase
         .from('hr_profiles')
         .select('offer_email_sent_at, onboarding_contract_id')
-        .eq('user_id', user.id)
+        .eq('user_id', subjectId)
         .maybeSingle();
       setOfferRequested(!!(hrSelf?.offer_email_sent_at || hrSelf?.onboarding_contract_id));
 
@@ -278,7 +296,7 @@ export function StaffOnboardingView() {
   const progressPercent = totalSteps > 0 ? Math.round((completedCount / totalSteps) * 100) : 0;
 
   if (loading) {
-    return <div className="text-center py-8 text-muted-foreground">Loading your onboarding progress...</div>;
+    return <div className="text-center py-8 text-muted-foreground">Loading onboarding progress...</div>;
   }
 
   if (steps.length === 0) {
@@ -298,10 +316,12 @@ export function StaffOnboardingView() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <CheckCircle2 className="h-5 w-5 text-primary" />
-            Your Onboarding Progress
+            {isSelf ? "Your Onboarding Progress" : `${personName || "Their"} onboarding progress`}
           </CardTitle>
           <CardDescription>
-            Complete all steps below to finish your onboarding
+            {isSelf
+              ? "Complete all steps below to finish your onboarding"
+              : "This is exactly what they see on their own profile. Only they can tick a step off."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -315,26 +335,34 @@ export function StaffOnboardingView() {
         </CardContent>
       </Card>
 
-      {/* Offer letter & contract — staff-initiated */}
+      {/* Offer letter & contract — staff-initiated, so a viewer sees status only */}
       <Card className="border-primary/30 bg-primary/5">
         <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4">
           <div className="flex items-start gap-3">
             <Rocket className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
             <div>
               <p className="font-medium">
-                {offerRequested ? "Offer letter & contract sent" : "Get your offer letter & contract"}
+                {isSelf
+                  ? (offerRequested ? "Offer letter & contract sent" : "Get your offer letter & contract")
+                  : (offerRequested ? "Offer letter & contract sent" : "Offer letter & contract not requested yet")}
               </p>
               <p className="text-sm text-muted-foreground">
-                {offerRequested
-                  ? "Check your inbox, then review and sign your contract under My Contracts."
-                  : "Click to receive your offer letter and employment contract by email to begin."}
+                {isSelf
+                  ? (offerRequested
+                      ? "Check your inbox, then review and sign your contract under My Contracts."
+                      : "Click to receive your offer letter and employment contract by email to begin.")
+                  : (offerRequested
+                      ? "They've been emailed their offer and contract."
+                      : "They start this themselves from their own profile.")}
               </p>
             </div>
           </div>
-          <Button onClick={handleRequestOffer} disabled={requesting || offerRequested} className="flex-shrink-0">
-            {requesting && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-            {offerRequested ? "Sent ✓" : "Receive my offer & contract"}
-          </Button>
+          {isSelf && (
+            <Button onClick={handleRequestOffer} disabled={requesting || offerRequested} className="flex-shrink-0">
+              {requesting && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
+              {offerRequested ? "Sent ✓" : "Receive my offer & contract"}
+            </Button>
+          )}
         </CardContent>
       </Card>
 
@@ -501,6 +529,11 @@ export function StaffOnboardingView() {
                                         <span className="font-medium">Completed</span>
                                       </div>
                                     </div>
+                                  ) : !isSelf ? (
+                                    <div className="flex items-center gap-2 text-muted-foreground">
+                                      <Clock className="h-5 w-5" />
+                                      <span className="font-medium">Not done yet</span>
+                                    </div>
                                   ) : (
                                     <Button
                                       onClick={() => handleCompleteStep(step)}
@@ -545,10 +578,12 @@ export function StaffOnboardingView() {
           <CardContent className="py-6 text-center">
             <CheckCircle2 className="h-12 w-12 text-green-600 dark:text-green-400 mx-auto mb-3" />
             <h3 className="text-xl font-semibold text-green-700 dark:text-green-400">
-              Congratulations!
+              {isSelf ? "Congratulations!" : "All steps complete"}
             </h3>
             <p className="text-green-600 dark:text-green-500 mt-1">
-              You have completed all onboarding steps.
+              {isSelf
+                ? "You have completed all onboarding steps."
+                : `${personName || "They"} finished every onboarding step.`}
             </p>
           </CardContent>
         </Card>
