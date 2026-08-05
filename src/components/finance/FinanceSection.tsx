@@ -328,15 +328,21 @@ export function FinanceSection() {
     // profit (cost allocated pro-rata to ex-VAT revenue share) is only computed
     // for clients at the "Active" stage; the rest carry no revenue or profit.
     const stageRank = (s: string | null) => ((s ?? "active") === "active" ? 0 : s === "pending" ? 1 : 2);
-    const clientRows = clients.filter(c => (c.mrr ?? 0) > 0).map(c => {
+    // A client with no price yet still belongs on the list. Hiding them meant a
+    // client created moments ago simply wasn't there, with nothing to explain
+    // why — the row is how you get to the field that sets the price. Only the
+    // internal placeholders are excluded; they aren't customers.
+    const INTERNAL = new Set(["care cuddle", "unassigned"]);
+    const clientRows = clients.filter(c => !INTERNAL.has((c.name ?? "").trim().toLowerCase())).map(c => {
       const isActive = (c.status ?? "active") === "active";
-      const mrrGross = Number(c.mrr);
-      const netRevenue = isActive ? netOf(c) : null;
-      const share = isActive && revenue > 0 ? (netRevenue as number) / revenue : 0;
-      const profit = isActive ? (netRevenue as number) - share * totalCost : null;
+      const mrrGross = Number(c.mrr ?? 0);
+      const priced = mrrGross > 0;
+      const netRevenue = isActive && priced ? netOf(c) : null;
+      const share = isActive && priced && revenue > 0 ? (netRevenue as number) / revenue : 0;
+      const profit = isActive && priced ? (netRevenue as number) - share * totalCost : null;
       return {
         ...c, mrr: mrrGross, netRevenue, processor: processorOf(c.software), profit,
-        margin: isActive && (netRevenue as number) > 0 ? (profit as number) / (netRevenue as number) : null,
+        margin: isActive && priced && (netRevenue as number) > 0 ? (profit as number) / (netRevenue as number) : null,
       };
     }).sort((a, b) =>
       stageRank(a.status) - stageRank(b.status) || (b.profit ?? 0) - (a.profit ?? 0) || b.mrr - a.mrr
@@ -1383,7 +1389,9 @@ function ClientsTable({ rows, onPatch, onPriceChange, onFieldChange, priceChange
                       onClick={() => openPriceDialog(c)}
                       title="Change fee — records when it takes effect"
                     >
-                      {gbp2(c.mrr)}
+                      {c.mrr > 0 ? gbp2(c.mrr) : (
+                        <span className="text-amber-600 text-xs font-medium">No price set</span>
+                      )}
                       {(() => {
                         const p = pendingOf(c.id);
                         if (!p) return null;
