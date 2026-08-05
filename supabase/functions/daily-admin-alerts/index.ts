@@ -216,6 +216,19 @@ const handler = async (req: Request): Promise<Response> => {
       return isEnabled(type);
     };
 
+    // Who has actually left — celebrations and milestones skip them. The status
+    // field has proven unreliable (departed staff still marked "active"), so the
+    // end date is the test.
+    const { data: endedRows } = await supabaseClient
+      .from("hr_profiles")
+      .select("user_id, employment_end_date")
+      .not("employment_end_date", "is", null);
+    const leftUserIds = new Set(
+      (endedRows || [])
+        .filter((r) => new Date(r.employment_end_date) < today)
+        .map((r) => r.user_id)
+    );
+
     // ===== 1. BIRTHDAYS =====
     // Standalone email to ALL active staff (celebratory). Also add a line to the admin digest.
     if (shouldRun("birthday_today")) {
@@ -227,6 +240,7 @@ const handler = async (req: Request): Promise<Response> => {
       const todayBirthdays: string[] = [];
       for (const doc of onboardingDocs || []) {
         if (!doc.date_of_birth) continue;
+        if (leftUserIds.has(doc.user_id)) continue;
         const dob = new Date(doc.date_of_birth);
         if (dob.getDate() === today.getDate() && dob.getMonth() === today.getMonth()) {
           todayBirthdays.push(doc.full_name || profileMap.get(doc.user_id) || "Unknown");
@@ -276,7 +290,9 @@ const handler = async (req: Request): Promise<Response> => {
     // ===== 2. WORK ANNIVERSARIES =====
     if (shouldRun("anniversary_today")) {
       const { data: hrProfiles } = await supabaseClient
-        .from("hr_profiles").select("user_id, start_date").not("start_date", "is", null);
+        .from("hr_profiles")
+        .select("user_id, start_date, employment_end_date")
+        .not("start_date", "is", null);
 
       // An anniversary landing on a Saturday or Sunday is held until the next working
       // day, so nobody's milestone is announced to an inbox no one is reading. That
@@ -297,6 +313,11 @@ const handler = async (req: Request): Promise<Response> => {
       const todayAnniversaries: { name: string; years: number; on: Date }[] = [];
       for (const hr of hrProfiles || []) {
         if (!hr.start_date) continue;
+        // Only people still employed get celebrated: no anniversary once an end
+        // date has passed, and none for records whose account no longer exists —
+        // a nameless "Unknown — 2 years" is worse than no line at all.
+        if (hr.employment_end_date && new Date(hr.employment_end_date) < today) continue;
+        if (!profileMap.has(hr.user_id)) continue;
         const startDate = new Date(hr.start_date);
         for (const when of datesToCover) {
           if (startDate.getDate() === when.getDate() && startDate.getMonth() === when.getMonth()) {
