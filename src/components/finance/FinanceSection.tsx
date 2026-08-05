@@ -143,11 +143,23 @@ export function FinanceSection() {
   const [changeLog, setChangeLog] = useState<ClientChange[]>([]);
   const handlePayrollSummary = useCallback((data: { month: string; totals: Record<string, number> }) => setPayrollFromTab(data), []);
 
+  // Which month the headline cards, split cards and P&L describe. Everything
+  // month-shaped below reads from this; the trend chart keeps its own window.
+  const [finMonthKey, setFinMonthKey] = useState(() => new Date().toISOString().slice(0, 7));
+  const currentMonthKey = new Date().toISOString().slice(0, 7);
+  const shiftFinMonth = (delta: number) => setFinMonthKey(k => {
+    const [y, m] = k.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+
   const load = useCallback(async () => {
     setLoading(true);
     const now = new Date();
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
+    const [fy, fm] = finMonthKey.split("-").map(Number);
+    const monthStart = `${finMonthKey}-01`;
+    const nextM = new Date(fy, fm, 1);
+    const monthEnd = `${nextM.getFullYear()}-${String(nextM.getMonth() + 1).padStart(2, "0")}-01`;
     const [cl, sp, hrp, pr, asg, rt, ex, st, pr2, pat, inv, fa, pc, ccl] = await Promise.all([
       supabase.from("clients").select("id, name, mrr, software, status, contract_start_date, contract_end_date"),
       (supabase as any).from("staff_salaries").select("user_id, base_salary, base_currency"),
@@ -224,20 +236,21 @@ export function FinanceSection() {
     setPayAdjustments((pr2.data as PayAdjustment[]) || []);
     setPatterns((pat.data as ShiftPattern[]) || []);
     setLoading(false);
-  }, []);
+  }, [finMonthKey]);
   useEffect(() => { load(); }, [load]);
 
   // Keep the P&L's payroll line live: StaffPayManager (Payroll tab) writes every
   // bonus pot recalc, manual bonus/overtime/deduction straight to staff_pay_records,
   // so a realtime subscription here means edits made there don't need a page reload.
   const refreshPayAdjustments = useCallback(async () => {
-    const now = new Date();
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
+    const [fy, fm] = finMonthKey.split("-").map(Number);
+    const monthStart = `${finMonthKey}-01`;
+    const nextM = new Date(fy, fm, 1);
+    const monthEnd = `${nextM.getFullYear()}-${String(nextM.getMonth() + 1).padStart(2, "0")}-01`;
     const { data } = await (supabase as any).from("staff_pay_records").select("user_id, record_type, amount, currency")
       .gte("pay_period_start", monthStart).lt("pay_period_start", monthEnd);
     setPayAdjustments((data as PayAdjustment[]) || []);
-  }, []);
+  }, [finMonthKey]);
   useEffect(() => {
     const channel = supabase
       .channel("finance-payroll-sync")
@@ -254,38 +267,60 @@ export function FinanceSection() {
 
   // ---- Core computations -----------------------------------------------------
   const model = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
+    const [fy, fm] = finMonthKey.split("-").map(Number);
+    const mStartStr = `${finMonthKey}-01`;
+    const mStartDate = new Date(fy, fm - 1, 1);
+    const mEndDate = new Date(fy, fm, 0);
+    const mEndStr = `${finMonthKey}-${String(mEndDate.getDate()).padStart(2, "0")}`;
+
+    // Employed at any point in the selected month — not "employed today", which
+    // wrongly costs a leaver into later months and a joiner into earlier ones.
     const activeStaff = pay.filter(s => {
       const h = hr[s.user_id];
-      return !h?.employment_end_date || h.employment_end_date >= today;
+      return !h?.employment_end_date || h.employment_end_date >= mStartStr;
     });
-    // The Payroll tab's fully-computed monthly total (GBP) is the source of truth for
-    // cost — it already folds in holiday overtime, bonuses, deductions and pro-rata.
-    // Use it whenever it's available for the current month; otherwise fall back to
-    // base salary + this month's logged bonus/overtime/deduction records so the page
-    // still shows sensible numbers before the Payroll tab has finished computing.
-    const nowD = new Date();
-    const currentMonthKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, "0")}`;
-    const tabTotals = payrollFromTab && payrollFromTab.month === currentMonthKey ? payrollFromTab.totals : null;
+    // The Payroll tab publishes fully-computed totals for whichever month it is
+    // showing — holiday overtime, bonuses, deductions and pro-rata included. When
+    // that's the month selected here, they're authoritative.
+    const tabTotals = payrollFromTab && payrollFromTab.month === finMonthKey ? payrollFromTab.totals : null;
+
+    // What was actually recorded for this month, per person. A salary record
+    // means their pay run happened — that snapshot IS the month's truth, and
+    // adding live base salary on top would double-count it.
+    const recordsByUser: Record<string, { hasSalary: boolean; total: number }> = {};
+    payAdjustments.forEach(a => {
+      const rate = rates[a.currency] ?? 1;
+      const gbpAmount = Number(a.amount) * (rate > 0 ? rate : 1);
+      const signed = a.record_type === "deduction" ? -gbpAmount : gbpAmount;
+      const r = (recordsByUser[a.user_id] ??= { hasSalary: false, total: 0 });
+      r.total += signed;
+      if (a.record_type === "salary") r.hasSalary = true;
+    });
 
     const staffCostByUser: Record<string, number> = {};
+    let usedRecords = false;
     activeStaff.forEach(s => {
       if (tabTotals && tabTotals[s.user_id] != null) {
         staffCostByUser[s.user_id] = tabTotals[s.user_id]; // authoritative, all-in
         return;
       }
+      const rec = recordsByUser[s.user_id];
+      if (rec?.hasSalary) {
+        staffCostByUser[s.user_id] = rec.total; // the month's run, as paid
+        usedRecords = true;
+        return;
+      }
+      // No run yet for this person: project base salary + any logged adjustments.
       const monthlyNative = monthlyFromFreq(s.base_salary, hr[s.user_id]?.pay_frequency ?? "monthly");
       const rate = rates[s.base_currency] ?? 1;
-      staffCostByUser[s.user_id] = monthlyNative * (rate > 0 ? rate : 1);
+      staffCostByUser[s.user_id] = monthlyNative * (rate > 0 ? rate : 1) + (rec?.total ?? 0);
     });
-    // Fallback path only: fold in this month's bonus pot / manual bonuses / overtime /
-    // deductions for staff the Payroll tab hasn't provided an all-in total for yet.
-    payAdjustments.forEach(a => {
-      if (tabTotals && tabTotals[a.user_id] != null) return; // already included in the all-in total
-      const rate = rates[a.currency] ?? 1;
-      const gbpAmount = Number(a.amount) * (rate > 0 ? rate : 1);
-      const signed = a.record_type === "deduction" ? -gbpAmount : gbpAmount;
-      staffCostByUser[a.user_id] = (staffCostByUser[a.user_id] || 0) + signed;
+    // Someone paid that month but gone since still cost money that month.
+    Object.entries(recordsByUser).forEach(([uid, rec]) => {
+      if (staffCostByUser[uid] == null && rec.hasSalary && !(tabTotals && tabTotals[uid] != null)) {
+        staffCostByUser[uid] = rec.total;
+        usedRecords = true;
+      }
     });
     // When the Payroll tab has published its figures, the P&L payroll line is its
     // exact "Total Payroll" (sum of every staff member's all-in total); otherwise
@@ -294,19 +329,46 @@ export function FinanceSection() {
       ? Object.values(tabTotals).reduce((a, b) => a + b, 0)
       : Object.values(staffCostByUser).reduce((a, b) => a + b, 0);
 
-    // Only clients at the "Active" sales stage count toward revenue — Pending /
-    // Inactive stages are tracked but excluded from every figure below.
-    const withMrr = clients.filter(c => (c.mrr ?? 0) > 0 && (c.status ?? "active") === "active");
+    // Revenue for the SELECTED month: which clients billed in it, at the fee in
+    // force then. Same rules the trend chart uses — contract windows and dated
+    // stage changes decide membership, the price-change log decides the fee — so
+    // the cards and the chart tell one story.
+    const dateOfS = (v: string | null) => (v ? new Date(v) : null);
+    const wentInactiveOn = (clientId: string): Date | null => {
+      const moves = changeLog
+        .filter(l => l.client_id === clientId && l.field === "status")
+        .sort((a, b) => a.effective_date.localeCompare(b.effective_date));
+      const last = moves[moves.length - 1];
+      if (!last || (last.new_value ?? "active") === "active") return null;
+      return dateOfS(last.effective_date);
+    };
+    const billsInMonth = (c: ClientRow) => {
+      const start = dateOfS(c.contract_start_date);
+      if (start && start > mEndDate) return false;
+      const end = dateOfS(c.contract_end_date);
+      const inactiveFrom = wentInactiveOn(c.id);
+      const stops = end && inactiveFrom ? (end < inactiveFrom ? end : inactiveFrom) : (end ?? inactiveFrom);
+      if (stops) return stops >= mEndDate;
+      return (c.status ?? "active") === "active";
+    };
+    const feeInForce = (c: ClientRow) => {
+      const applicable = priceChanges
+        .filter(pc => pc.client_id === c.id && pc.effective_date <= mEndStr)
+        .sort((a, b) => a.effective_date.localeCompare(b.effective_date))
+        .pop();
+      return applicable ? Number(applicable.new_mrr) : Number(c.mrr ?? 0);
+    };
+    const withMrr = clients.filter(c => feeInForce(c) > 0 && billsInMonth(c));
     const vatDivisor = 1 + settings.vat_rate;
     // FreeAgent MRR is what the client is invoiced — VAT-inclusive. Back the VAT out
     // to get real revenue. Zoho is a personal Dubai account, outside the UK VAT
     // scheme, so it needs no adjustment.
-    const netOf = (c: ClientRow) => processorOf(c.software) === "freeagent" ? Number(c.mrr) / vatDivisor : Number(c.mrr);
-    const revZoho = withMrr.filter(c => processorOf(c.software) === "zoho").reduce((a, c) => a + Number(c.mrr), 0);
-    const revFreeGross = withMrr.filter(c => processorOf(c.software) === "freeagent").reduce((a, c) => a + Number(c.mrr), 0);
+    const netOf = (c: ClientRow) => processorOf(c.software) === "freeagent" ? feeInForce(c) / vatDivisor : feeInForce(c);
+    const revZoho = withMrr.filter(c => processorOf(c.software) === "zoho").reduce((a, c) => a + feeInForce(c), 0);
+    const revFreeGross = withMrr.filter(c => processorOf(c.software) === "freeagent").reduce((a, c) => a + feeInForce(c), 0);
     const revFree = revFreeGross / vatDivisor; // ex-VAT — the real revenue figure
     const revFreeVat = revFreeGross - revFree;
-    const revOther = withMrr.filter(c => processorOf(c.software) === "other").reduce((a, c) => a + Number(c.mrr), 0);
+    const revOther = withMrr.filter(c => processorOf(c.software) === "other").reduce((a, c) => a + feeInForce(c), 0);
     const revenue = revZoho + revFree + revOther;
 
     const businessExp = expenses.filter(e => e.active && e.category === "Business Cost").reduce((a, e) => a + Number(e.amount_gbp), 0);
@@ -411,11 +473,13 @@ export function FinanceSection() {
       totalCost, netProfit, margin, corpTax, afterTaxNet, ukProfit,
       zohoCount: withMrr.filter(c => processorOf(c.software) === "zoho").length,
       freeCount: withMrr.filter(c => processorOf(c.software) === "freeagent").length,
-      clientRows, staffRows, activeStaffCount: activeStaff.length,
+      clientRows, staffRows,
+      activeStaffCount: tabTotals ? Object.keys(tabTotals).length : Object.keys(staffCostByUser).length,
       scheduledStaffCount: Object.keys(hoursStaffTotal).length,
       payrollFromTabLive: !!tabTotals,
+      payrollFromRecords: !tabTotals && usedRecords,
     };
-  }, [clients, pay, hr, profiles, assignments, rates, expenses, settings, payAdjustments, patterns, payrollFromTab]);
+  }, [clients, pay, hr, profiles, assignments, rates, expenses, settings, payAdjustments, patterns, payrollFromTab, priceChanges, changeLog, finMonthKey]);
 
   // Last 12 months of (reconstructed) revenue + next 6 months projected, for the trend chart.
   const revenueSeries = useMemo(() => {
@@ -675,18 +739,56 @@ export function FinanceSection() {
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6">
       <div className={cn("max-w-7xl mx-auto space-y-4")}>
-        <div>
-          <h1 className="text-2xl font-bold">Finance</h1>
-          <p className="text-muted-foreground text-sm">Profitability, revenue by processor, per-client & per-staff contribution, expenses and projections.</p>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold">Finance</h1>
+            <p className="text-muted-foreground text-sm">Profitability, revenue by processor, per-client & per-staff contribution, expenses and projections.</p>
+          </div>
+          {(() => {
+            const [fy, fm] = finMonthKey.split("-").map(Number);
+            const [cy, cm] = currentMonthKey.split("-").map(Number);
+            const monthDelta = (fy - cy) * 12 + (fm - cm);
+            const monthLabel = new Date(fy, fm - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+            return (
+              <div className="flex items-center gap-1">
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => shiftFinMonth(-1)}
+                  disabled={monthDelta <= -24} aria-label="Previous month">
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <div className="w-[150px] text-center">
+                  <div className="text-sm font-semibold leading-tight">{monthLabel}</div>
+                  {monthDelta === 0 ? (
+                    <div className="text-[10px] text-muted-foreground">current month</div>
+                  ) : (
+                    <button type="button" className="text-[10px] text-primary hover:underline"
+                      onClick={() => setFinMonthKey(currentMonthKey)}>
+                      back to current month
+                    </button>
+                  )}
+                </div>
+                <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => shiftFinMonth(1)}
+                  disabled={monthDelta >= 3} aria-label="Next month">
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            );
+          })()}
         </div>
 
-        {/* KPI row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Monthly revenue (ex. VAT)</p><p className="text-2xl font-bold tabular-nums">{gbp(model.revenue)}</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Monthly costs</p><p className="text-2xl font-bold tabular-nums">{gbp(model.totalCost)}</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Net profit / mo</p><p className={cn("text-2xl font-bold tabular-nums", netTone)}>{gbp(model.netProfit)}</p></CardContent></Card>
-          <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Margin</p><p className={cn("text-2xl font-bold tabular-nums", netTone)}>{pct(model.margin)}</p></CardContent></Card>
-        </div>
+        {/* KPI row — describes the selected month */}
+        {(() => {
+          const [fy, fm] = finMonthKey.split("-").map(Number);
+          const isCur = finMonthKey === currentMonthKey;
+          const ml = new Date(fy, fm - 1, 1).toLocaleDateString(undefined, { month: "short", year: "numeric" });
+          return (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{isCur ? "Monthly revenue (ex. VAT)" : `${ml} revenue (ex. VAT)`}</p><p className="text-2xl font-bold tabular-nums">{gbp(model.revenue)}</p></CardContent></Card>
+              <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{isCur ? "Monthly costs" : `${ml} costs`}</p><p className="text-2xl font-bold tabular-nums">{gbp(model.totalCost)}</p></CardContent></Card>
+              <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">{isCur ? "Net profit / mo" : `Net profit — ${ml}`}</p><p className={cn("text-2xl font-bold tabular-nums", netTone)}>{gbp(model.netProfit)}</p></CardContent></Card>
+              <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Margin</p><p className={cn("text-2xl font-bold tabular-nums", netTone)}>{pct(model.margin)}</p></CardContent></Card>
+            </div>
+          );
+        })()}
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
           <TabsList className="grid w-full grid-cols-5 mb-4">
@@ -798,12 +900,12 @@ export function FinanceSection() {
             {/* Monthly P&L */}
             <Card>
               <CardContent className="p-5 space-y-1.5 text-sm">
-                <p className="font-semibold mb-1">Monthly profit &amp; loss (UK company — FreeAgent only, ex. VAT)</p>
+                <p className="font-semibold mb-1">Profit &amp; loss — {new Date(Number(finMonthKey.slice(0, 4)), Number(finMonthKey.slice(5, 7)) - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" })} (UK company — FreeAgent only, ex. VAT)</p>
                 <Line label="Revenue — FreeAgent (ex. VAT)" value={model.revFree} />
                 {model.revOther > 0 && <Line label="Revenue — other" value={model.revOther} />}
                 <Line label="Total revenue" value={model.revFree + model.revOther} strong />
                 <div className="border-t my-1.5" />
-                <Line label={`Payroll — ${model.activeStaffCount} staff, full pay${model.payrollFromTabLive ? " (live from Payroll)" : ""}`} value={-model.payrollCost} />
+                <Line label={`Payroll — ${model.activeStaffCount} staff, full pay${model.payrollFromTabLive ? " (live from Payroll)" : model.payrollFromRecords ? " (as paid, from records)" : " (projected)"}`} value={-model.payrollCost} />
                 <Line label="Business expenses" value={-model.opExpenses} />
                 <Line label="Beneficial costs (owner salary, dividends, pension…)" value={-model.beneficialExp} />
                 <Line label="Total costs" value={-model.totalCost} strong />
