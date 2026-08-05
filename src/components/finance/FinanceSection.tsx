@@ -663,6 +663,27 @@ export function FinanceSection() {
     await load();
   };
 
+  // Cancel a scheduled fee change, or undo one that already applied. The chart
+  // derives each month's fee from this log, so an entry that is currently
+  // setting the price has to take the live fee back with it — otherwise the
+  // table would show one number and the chart another.
+  const removePriceChange = async (client: ClientTableRow, change: PriceChange, revertFee: boolean) => {
+    const { error } = await (supabase as any).from("client_price_changes").delete().eq("id", change.id);
+    if (error) {
+      toast({ title: "Couldn't remove the fee change", description: error.message, variant: "destructive" });
+      return;
+    }
+    const scheduled = change.effective_date > new Date().toISOString().slice(0, 10);
+    if (revertFee) await patchClient(client.id, { mrr: Number(change.previous_mrr ?? 0) });
+    toast({
+      title: scheduled ? "Scheduled change cancelled" : "Fee change undone",
+      description: revertFee
+        ? `${client.name} is back to ${gbp2(Number(change.previous_mrr ?? 0))}/mo.`
+        : `${client.name} stays at ${gbp2(Number(client.mrr))}/mo.`,
+    });
+    await load();
+  };
+
   // Record a fee change. The live mrr only moves once the effective date has
   // arrived — a rise agreed today for next month must not restate this month's
   // revenue, but it should still show in the projection, which reads the log.
@@ -937,7 +958,7 @@ export function FinanceSection() {
 
           {/* ---- Clients ---- */}
           <TabsContent value="clients" className="mt-0">
-            <ClientsTable rows={model.clientRows} onPatch={patchClient} onPriceChange={applyPriceChange} onSetInitialPrice={setInitialPrice}
+            <ClientsTable rows={model.clientRows} onPatch={patchClient} onPriceChange={applyPriceChange} onSetInitialPrice={setInitialPrice} onRemovePriceChange={removePriceChange}
               onFieldChange={applyFieldChange} priceChanges={priceChanges} changeLog={changeLog} />
           </TabsContent>
 
@@ -1264,10 +1285,11 @@ function clientTenure(contractStart: string | null, lastUplift: string | null) {
 
 type ClientTableRow = ClientRow & { mrr: number; netRevenue: number | null; processor: "zoho" | "freeagent" | "other"; profit: number | null; margin: number | null };
 
-function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onFieldChange, priceChanges, changeLog }: {
+function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemovePriceChange, onFieldChange, priceChanges, changeLog }: {
   rows: ClientTableRow[];
   onPatch: (id: string, patch: Partial<ClientRow>) => void;
   onSetInitialPrice: (client: ClientTableRow, mrr: number) => Promise<void>;
+  onRemovePriceChange: (client: ClientTableRow, change: PriceChange, revertFee: boolean) => Promise<void>;
   onPriceChange: (client: ClientTableRow, newMrr: number, effectiveDate: string, reason: string) => Promise<void>;
   onFieldChange: (client: ClientTableRow, field: "status" | "contract_end_date", newValue: string | null, effectiveDate: string, reason: string) => Promise<void>;
   priceChanges: PriceChange[];
@@ -1290,6 +1312,9 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onField
   // A fee change goes through a dialog rather than an inline edit: it needs a date
   // it takes effect from, which an in-cell number box has nowhere to put.
   const [priceEdit, setPriceEdit] = useState<ClientTableRow | null>(null);
+  // Fee history for one client, where a change can be cancelled or undone.
+  const [historyFor, setHistoryFor] = useState<ClientTableRow | null>(null);
+  const [removingChange, setRemovingChange] = useState<string | null>(null);
   const [priceValue, setPriceValue] = useState("");
   const [priceDate, setPriceDate] = useState("");
   const [priceReason, setPriceReason] = useState("");
@@ -1532,14 +1557,26 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onField
                       {c.mrr > 0 ? gbp2(c.mrr) : (
                         <span className="text-amber-600 text-xs font-medium">No price set</span>
                       )}
+                      {/* Only offered when there's something to undo. */}
+                      {priceChanges.some(pc => pc.client_id === c.id) && !pendingOf(c.id) && (
+                        <button type="button" onClick={e => { e.stopPropagation(); setHistoryFor(c); }}
+                          className="block ml-auto text-[10px] text-muted-foreground hover:text-primary hover:underline">
+                          fee history
+                        </button>
+                      )}
                       {(() => {
                         const p = pendingOf(c.id);
                         if (!p) return null;
                         return (
-                          <div className={cn("text-[10px] font-medium",
-                            Number(p.new_mrr) > Number(c.mrr) ? "text-emerald-600" : "text-amber-600")}>
+                          <button
+                            type="button"
+                            onClick={e => { e.stopPropagation(); setHistoryFor(c); }}
+                            title="Scheduled fee change — click to cancel it"
+                            className={cn("text-[10px] font-medium hover:underline",
+                              Number(p.new_mrr) > Number(c.mrr) ? "text-emerald-600" : "text-amber-600")}
+                          >
                             → {gbp2(p.new_mrr)} on {new Date(p.effective_date).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
-                          </div>
+                          </button>
                         );
                       })()}
                     </td>
@@ -1553,8 +1590,85 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onField
         })}
       </table>
       <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
-        Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the month it falls in, in both the history and the projection. Inactive clients are grouped separately from the billing systems. Click a fee to set or change it — an existing fee asks when the new price takes effect and is logged on the chart; a first fee is just recorded. Click the billing pill to say whether Zoho or FreeAgent invoices them · double-click either contract date to edit · click the stage pill to change it · click a group header to collapse it.
+        Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the month it falls in, in both the history and the projection. Inactive clients are grouped separately from the billing systems. Click a fee to set or change it — an existing fee asks when the new price takes effect and is logged on the chart; a first fee is just recorded. Click a scheduled change or "fee history" to cancel or undo one. Click the billing pill to say whether Zoho or FreeAgent invoices them · double-click either contract date to edit · click the stage pill to change it · click a group header to collapse it.
       </p>
+
+      {/* Fee history — where a scheduled change is cancelled and an applied one
+          is undone. The chart reads this log, so removing an entry that is
+          currently setting the price has to move the live fee back with it,
+          otherwise the table and the chart would disagree. */}
+      <Dialog open={!!historyFor} onOpenChange={o => { if (!o && !removingChange) setHistoryFor(null); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Fee history — {historyFor?.name}</DialogTitle>
+            <DialogDescription>
+              Cancel a change that hasn't happened yet, or undo one that has.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-1 max-h-[50vh] overflow-y-auto">
+            {(() => {
+              if (!historyFor) return null;
+              const mine = priceChanges
+                .filter(pc => pc.client_id === historyFor.id)
+                .sort((a, b) => b.effective_date.localeCompare(a.effective_date));
+              if (mine.length === 0) {
+                return <p className="text-sm text-muted-foreground">No fee changes recorded.</p>;
+              }
+              // The one setting the price right now: the most recent that has
+              // taken effect. Undoing it is what has to move the live fee.
+              const inForce = mine.filter(pc => pc.effective_date <= today)[0] ?? null;
+              return mine.map(pc => {
+                const scheduled = pc.effective_date > today;
+                const isInForce = inForce?.id === pc.id;
+                const up = Number(pc.new_mrr) > Number(pc.previous_mrr ?? 0);
+                return (
+                  <div key={pc.id} className="flex items-start gap-3 rounded-lg border px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium tabular-nums">
+                          {gbp2(Number(pc.previous_mrr ?? 0))} → {gbp2(Number(pc.new_mrr))}
+                        </span>
+                        <Badge variant="outline" className={cn("text-[10px]",
+                          up ? "border-emerald-300 text-emerald-600" : "border-amber-300 text-amber-600")}>
+                          {up ? "increase" : "decrease"}
+                        </Badge>
+                        {scheduled && (
+                          <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600">scheduled</Badge>
+                        )}
+                        {isInForce && (
+                          <Badge variant="outline" className="text-[10px]">currently in force</Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {scheduled ? "Takes effect " : "Took effect "}
+                        {new Date(pc.effective_date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}
+                        {pc.reason ? ` · ${pc.reason}` : ""}
+                      </p>
+                      {isInForce && (
+                        <p className="text-[11px] text-amber-600 mt-1">
+                          Undoing this puts the fee back to {gbp2(Number(pc.previous_mrr ?? 0))}/mo.
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline" size="sm" className="flex-shrink-0"
+                      disabled={removingChange === pc.id}
+                      onClick={async () => {
+                        setRemovingChange(pc.id);
+                        await onRemovePriceChange(historyFor, pc, isInForce);
+                        setRemovingChange(null);
+                        setHistoryFor(null);
+                      }}
+                    >
+                      {removingChange === pc.id ? "Removing…" : scheduled ? "Cancel" : "Undo"}
+                    </Button>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Which system invoices this client. A plain attribute, not a dated change:
           moving a client between Zoho and FreeAgent doesn't alter what they pay. */}
