@@ -20,6 +20,7 @@ import {
   AuditLogEntry, 
   ContentSnapshot 
 } from "@/hooks/useRecommendedReadingAudit";
+import { normalizeAppUrl } from "@/lib/appDomain";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -118,7 +119,11 @@ export function RecommendedReadingManager({
   ) => {
     const oldItem = { ...items[index] };
     const updatedItems = [...items];
-    (updatedItems[index] as any)[field] = value;
+    // A link to one of the academy's retired hosts is already broken, and they
+    // keep resurfacing from old emails and bookmarks. Repair it as it's typed
+    // rather than storing it and finding out when someone clicks.
+    const nextValue = field === "url" ? normalizeAppUrl(value) : value;
+    (updatedItems[index] as any)[field] = nextValue;
     onItemsChange(updatedItems);
     
     // Log the update with specific field change
