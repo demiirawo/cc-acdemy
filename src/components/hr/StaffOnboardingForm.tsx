@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -100,6 +100,8 @@ export function StaffOnboardingForm() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
+  // Snapshot of the stored row, used to work out which details a save changed.
+  const savedRef = useRef<Record<string, unknown>>({});
   const [formData, setFormData] = useState<OnboardingFormData>({
     employment_start_date: "",
     full_name: "",
@@ -142,6 +144,9 @@ export function StaffOnboardingForm() {
       if (error) throw error;
 
       if (data) {
+        // Remember what was on file, so a save can report which details actually
+        // moved rather than listing every field on the form.
+        savedRef.current = data as Record<string, unknown>;
         setFormData({
           id: data.id,
           employment_start_date: data.employment_start_date || "",
@@ -350,6 +355,26 @@ export function StaffOnboardingForm() {
           setFormData((prev) => ({ ...prev, id: data.id, form_status: formStatus }));
         }
       }
+
+      // Confirm the change to whoever's record it is, and alert admins if the
+      // pay account moved. Bank details live here as well as in the contractor
+      // invoice form, so this copy needs the same fraud control. Fire-and-forget:
+      // a mail problem must never make a successful save look failed.
+      const before = savedRef.current;
+      const changedFields = Object.keys(dataToSave).filter((key) => {
+        if (key === "user_id" || key === "form_status" || key === "submitted_at") return false;
+        const was = before?.[key] ?? null;
+        const now = (dataToSave as Record<string, unknown>)[key] ?? null;
+        return (was ?? "") !== (now ?? "");
+      });
+      if (changedFields.length > 0) {
+        supabase.functions
+          .invoke("notify-personal-change", {
+            body: { kind: "profile_update", userId: user.id, changedFields },
+          })
+          .catch((err) => console.error("Failed to notify of profile update:", err));
+      }
+      savedRef.current = { ...before, ...dataToSave };
 
       setFormData((prev) => ({ ...prev, form_status: formStatus }));
       toast.success(progress === 100 ? "Onboarding form submitted!" : "Progress saved");

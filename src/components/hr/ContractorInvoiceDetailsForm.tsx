@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -58,6 +58,9 @@ export function ContractorInvoiceDetailsForm({
   const [data, setData] = useState<ContractorDetails>(empty(userId));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // What was on file when the form loaded, so a save only alerts admins about
+  // payment fields that genuinely moved.
+  const savedRef = useRef<ContractorDetails>(empty(userId));
 
   useEffect(() => {
     let active = true;
@@ -71,13 +74,16 @@ export function ContractorInvoiceDetailsForm({
       if (!active) return;
       if (row) {
         setData(row as ContractorDetails);
+        savedRef.current = row as ContractorDetails;
       } else {
-        setData({
+        const seeded = {
           ...empty(userId),
           contact_name: defaultContactName ?? "",
           email: defaultEmail ?? "",
           phone: defaultPhone ?? "",
-        });
+        };
+        setData(seeded);
+        savedRef.current = seeded;
       }
       setLoading(false);
     })();
@@ -99,8 +105,28 @@ export function ContractorInvoiceDetailsForm({
         .select()
         .single();
       if (error) throw error;
+
+      // Where wages land is the one edit worth waking admins for: if an account
+      // is hijacked and pay redirected, the loss is gone once the run completes.
+      // Fire-and-forget — an email problem must never fail the save.
+      const BANK_FIELDS: (keyof ContractorDetails)[] = [
+        "bank_account_name", "bank_account_number", "bank_name", "sort_code", "iban", "swift",
+      ];
+      const before = savedRef.current;
+      const changedBankFields = BANK_FIELDS.filter(
+        (f) => (before?.[f] ?? "") !== ((saved as ContractorDetails)?.[f] ?? "")
+      );
+      if (changedBankFields.length > 0) {
+        supabase.functions
+          .invoke("notify-personal-change", {
+            body: { kind: "bank_details", userId, changedFields: changedBankFields },
+          })
+          .catch((e) => console.error("Failed to notify of bank detail change:", e));
+      }
+
       toast({ title: "Saved", description: "Contractor invoice details updated." });
       setData(saved as ContractorDetails);
+      savedRef.current = saved as ContractorDetails;
       onSaved?.(saved as ContractorDetails);
     } catch (e: any) {
       toast({
