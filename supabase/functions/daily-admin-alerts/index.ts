@@ -3,34 +3,196 @@ import { Resend } from "npm:resend@2.0.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 
-const LOGO_URL = "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
-const HANDOVER_VIDEO_URL = "https://www.youtube.com/watch?v=VGzR7cR1npA";
+// ============================================================================
+// CARE CUDDLE — CANONICAL EMAIL HELPERS (shared across all email functions)
+// ============================================================================
+
+const EMAIL_SENDER = "Care Cuddle <hello@care-cuddle-academy.co.uk>";
 const BRAND_COLOR = "#5F17EB";
 const APP_URL = "https://www.care-cuddle-academy.co.uk";
+// Existing hosted logo — keep until a first-party asset exists.
+const LOGO_URL = "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
+
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+/** "Monday 11 August" — year only when it isn't this year. */
+function niceDate(input: string | Date): string {
+  const d = typeof input === "string" ? new Date(input) : input;
+  if (isNaN(d.getTime())) return "";
+  const year = d.getFullYear() === new Date().getFullYear() ? "" : ` ${d.getFullYear()}`;
+  return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}${year}`;
+}
+
+/** "Monday 11 to Friday 15 August" (same date in and out → single niceDate). */
+function niceDateRange(start: string, end: string): string {
+  if (!start || !end || start === end) return niceDate(start || end);
+  const s = new Date(start), e = new Date(end);
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return "";
+  if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
+    const year = e.getFullYear() === new Date().getFullYear() ? "" : ` ${e.getFullYear()}`;
+    return `${DAYS[s.getDay()]} ${s.getDate()} to ${DAYS[e.getDay()]} ${e.getDate()} ${MONTHS[e.getMonth()]}${year}`;
+  }
+  return `${niceDate(s)} to ${niceDate(e)}`;
+}
+
+/** A readable list of dates: "Tuesday 11, Wednesday 12 and Thursday 13 August". */
+function niceDateList(dates: string[]): string {
+  const ds = dates.map((x) => new Date(x)).filter((d) => !isNaN(d.getTime()));
+  if (ds.length === 0) return "";
+  if (ds.length === 1) return niceDate(ds[0]);
+  const sameMonth = ds.every((d) => d.getMonth() === ds[0].getMonth() && d.getFullYear() === ds[0].getFullYear());
+  if (sameMonth) {
+    const parts = ds.map((d) => `${DAYS[d.getDay()]} ${d.getDate()}`);
+    const last = parts.pop();
+    return `${parts.join(", ")} and ${last} ${MONTHS[ds[0].getMonth()]}`;
+  }
+  const parts = ds.map((d) => niceDate(d));
+  const last = parts.pop();
+  return `${parts.join(", ")} and ${last}`;
+}
+
+/** First name for greetings. Never returns "there". */
+function firstName(name?: string | null): string {
+  const n = (name ?? "").trim();
+  if (!n || n.includes("@")) return "";
+  return n.split(/\s+/)[0];
+}
+
+/** "Hi Sarah," — or just "Hi," when no usable name exists. */
+function greeting(name?: string | null): string {
+  const f = firstName(name);
+  return `<p style="color:#374151;font-size:16px;line-height:1.6;margin:0 0 16px;">Hi${f ? ` ${f}` : ""},</p>`;
+}
+
+function paragraph(html: string): string {
+  return `<p style="color:#374151;font-size:16px;line-height:1.6;margin:0 0 16px;">${html}</p>`;
+}
+
+function mutedParagraph(html: string): string {
+  return `<p style="color:#6b7280;font-size:14px;line-height:1.6;margin:0 0 16px;">${html}</p>`;
+}
+
+/** One button per email. label = verb + what you'll see. url must be a real route. */
+function button(label: string, url: string): string {
+  return `<div style="text-align:center;margin:24px 0 8px;">
+    <a href="${url}" style="display:inline-block;background-color:${BRAND_COLOR};color:#ffffff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">${label}</a>
+  </div>`;
+}
+
+/**
+ * The shared shell. headerTitle is the outcome in plain words ("Your holiday is
+ * approved"); reason is one line saying why the reader got this email.
+ */
+function emailShell(headerTitle: string, bodyHtml: string, reason: string, accent: string = BRAND_COLOR): string {
+  return `<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background-color:#f4f4f5;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;padding:24px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
+        <tr><td style="background-color:${accent};padding:28px 32px;text-align:center;">
+          <img src="${LOGO_URL}" alt="Care Cuddle" width="120" style="margin-bottom:12px;" />
+          <h1 style="color:#ffffff;font-size:22px;margin:0;font-weight:700;">${headerTitle}</h1>
+        </td></tr>
+        <tr><td style="padding:32px;">
+          ${bodyHtml}
+          <p style="color:#374151;font-size:16px;line-height:1.6;margin:24px 0 0;">Best wishes,<br/>The Care Cuddle team</p>
+        </td></tr>
+        <tr><td style="padding:20px 32px;background-color:#f9fafb;border-top:1px solid #e5e7eb;">
+          <p style="color:#9ca3af;font-size:12px;line-height:1.6;margin:0;">${reason}</p>
+          <p style="color:#9ca3af;font-size:12px;line-height:1.6;margin:6px 0 0;">Care Cuddle · Questions? Email <a href="mailto:hello@care-cuddle.co.uk" style="color:#9ca3af;">hello@care-cuddle.co.uk</a> · © ${new Date().getFullYear()} Care Cuddle</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+/**
+ * When an email can't be sent to someone who needed it (missing address, lookup
+ * failure), tell the admins instead of returning success-shaped silence.
+ */
+async function alertAdminsOfFailure(
+  resendApiKey: string,
+  what: string,      // "Cover assignment for Peace Jimoh"
+  whoMissed: string, // "Oluwatosin (no email address on file)"
+): Promise<void> {
+  try {
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data: admins } = await admin.from("profiles").select("email").eq("role", "admin").not("email", "is", null);
+    const emails: string[] = (admins ?? []).map((a: { email: string }) => a.email);
+    if (emails.length === 0) return;
+    const body =
+      greeting(null) +
+      paragraph(`We couldn't email <strong>${whoMissed}</strong> about: <strong>${what}</strong>.`) +
+      paragraph(`They don't know about this yet — please tell them another way, or fix their email address and resend.`) +
+      button("Open Care Cuddle", APP_URL);
+    await Promise.all(emails.map((to) =>
+      fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${resendApiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: EMAIL_SENDER,
+          to: [to],
+          subject: `We couldn't notify ${whoMissed.split("(")[0].trim()} — action needed`,
+          html: emailShell("Someone wasn't notified", body, "You're receiving this because you're an admin at Care Cuddle.", "#d97706"),
+        }),
+      }).catch(() => {})
+    ));
+  } catch (_) { /* alerting must never break the main send */ }
+}
+
+// ============================================================================
+// Function-specific constants and helpers
+// ============================================================================
+
+const HANDOVER_VIDEO_URL = "https://www.youtube.com/watch?v=VGzR7cR1npA";
 const BIRTHDAY_IMAGE_URL = "https://www.care-cuddle-academy.co.uk/images/birthday-celebration.png";
+const BIRTHDAY_PINK = "#ec4899";
+const AMBER = "#d97706";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const formatDate = (dateStr: string): string => {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+/** "today" / "tomorrow" / "in 5 days" */
+const inDays = (n: number): string => (n <= 0 ? "today" : n === 1 ? "tomorrow" : `in ${n} days`);
+
+/** "Ada", "Ada and Tunde", "Ada, Tunde and Kemi" */
+const joinNames = (names: string[]): string => {
+  const ns = names.filter(Boolean);
+  if (ns.length === 0) return "";
+  if (ns.length === 1) return ns[0];
+  return `${ns.slice(0, -1).join(", ")} and ${ns[ns.length - 1]}`;
 };
 
-const formatShortDate = (dateStr: string): string => {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-  });
+/** A short readable list inside an email body. */
+const listHtml = (items: string[]): string =>
+  `<ul style="color:#374151;font-size:16px;line-height:1.6;margin:0 0 16px;padding-left:20px;">${items.map(i => `<li style="margin-bottom:8px;">${i}</li>`).join("")}</ul>`;
+
+/** Send one email to one person through the shared shell. */
+const sendOne = async (
+  to: string,
+  subject: string,
+  headerTitle: string,
+  bodyHtml: string,
+  reason: string,
+  accent: string = BRAND_COLOR
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    await resend.emails.send({
+      from: EMAIL_SENDER,
+      to: [to],
+      subject,
+      html: emailShell(headerTitle, bodyHtml, reason, accent),
+    });
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+  }
 };
 
 interface DigestSection {
@@ -41,108 +203,6 @@ interface DigestSection {
   itemsHtml: string[];
   summary: string;
 }
-
-const sendStandaloneAlert = async (
-  recipients: string[],
-  subject: string,
-  title: string,
-  color: string,
-  items: string[],
-  todayStr: string,
-  options?: { showCelebrationImage?: boolean }
-): Promise<{ success: boolean; error?: string }> => {
-  if (recipients.length === 0) return { success: false, error: "no recipients" };
-  const itemsHtml = items.map(item => `<li style="margin-bottom: 8px; font-size: 14px;">${item}</li>`).join("");
-
-  const footerContent = options?.showCelebrationImage
-    ? `<div style="text-align: center; margin-top: 24px;">
-        <img src="${BIRTHDAY_IMAGE_URL}" alt="Celebration" width="150" height="150" style="display: inline-block;" />
-      </div>`
-    : '';
-
-  try {
-    await resend.emails.send({
-      from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
-      to: recipients,
-      subject,
-      html: `
-<!DOCTYPE html>
-<html><head><meta charset="utf-8"></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 20px;">
-    <tr><td align="center">
-      <table width="500" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-        <tr><td style="background:${BRAND_COLOR};padding:24px 40px;text-align:center;">
-          <img src="${LOGO_URL}" alt="Care Cuddle Academy" width="140" style="display:block;margin:0 auto 16px;" />
-          <h1 style="margin:0;color:#fff;font-size:20px;font-weight:600;">${title}</h1>
-          <p style="color:rgba(255,255,255,0.9);margin:6px 0 0;font-size:13px;">${formatDate(todayStr)}</p>
-          <div style="width:60px;height:3px;background:${color};margin:12px auto 0;border-radius:2px;"></div>
-        </td></tr>
-        <tr><td style="padding:32px 40px;">
-          <ul style="margin:0;padding-left:20px;color:#374151;">${itemsHtml}</ul>
-          ${footerContent}
-        </td></tr>
-        <tr><td style="padding:20px 40px;background:#f9fafb;text-align:center;border-top:1px solid #e5e7eb;">
-          <p style="margin:0;color:#9ca3af;font-size:12px;">© ${new Date().getFullYear()} Care Cuddle Academy. All rights reserved.</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`,
-    });
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
-  }
-};
-
-const buildDigestHtml = (sections: DigestSection[], todayStr: string): string => {
-  const tocHtml = sections.length > 1
-    ? `<div style="background:#f9fafb;padding:16px 20px;border-radius:8px;margin-bottom:24px;border:1px solid #e5e7eb;">
-        <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">In this digest</p>
-        <ul style="margin:0;padding-left:18px;color:#374151;">
-          ${sections.map(s => `<li style="margin-bottom:4px;font-size:14px;">${s.icon} ${s.title} <span style="color:#9ca3af;">— ${s.summary}</span></li>`).join("")}
-        </ul>
-      </div>`
-    : '';
-
-  const sectionsHtml = sections.map(s => `
-    <div style="margin-bottom:28px;border-left:4px solid ${s.accentColor};padding:12px 16px;background:#fafafa;border-radius:0 8px 8px 0;">
-      <h2 style="margin:0 0 12px;font-size:16px;color:#111827;">${s.icon} ${s.title}</h2>
-      <ul style="margin:0;padding-left:20px;color:#374151;">
-        ${s.itemsHtml.map(i => `<li style="margin-bottom:8px;font-size:14px;">${i}</li>`).join("")}
-      </ul>
-    </div>
-  `).join("");
-
-  return `
-<!DOCTYPE html>
-<html><head><meta charset="utf-8"></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 20px;">
-    <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-        <tr><td style="background:${BRAND_COLOR};padding:24px 40px;text-align:center;">
-          <img src="${LOGO_URL}" alt="Care Cuddle Academy" width="140" style="display:block;margin:0 auto 16px;" />
-          <h1 style="margin:0;color:#fff;font-size:22px;font-weight:600;">📬 Daily Admin Digest</h1>
-          <p style="color:rgba(255,255,255,0.9);margin:6px 0 0;font-size:13px;">${formatDate(todayStr)}</p>
-        </td></tr>
-        <tr><td style="padding:32px 40px;">
-          ${tocHtml}
-          ${sectionsHtml}
-          <div style="text-align:center;margin-top:24px;">
-            <a href="https://www.care-cuddle-academy.co.uk" style="display:inline-block;background:${BRAND_COLOR};color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Go to Dashboard</a>
-          </div>
-        </td></tr>
-        <tr><td style="padding:20px 40px;background:#f9fafb;text-align:center;border-top:1px solid #e5e7eb;">
-          <p style="margin:0;color:#9ca3af;font-size:12px;">© ${new Date().getFullYear()} Care Cuddle Academy. All rights reserved.</p>
-          <p style="margin:6px 0 0;color:#9ca3af;font-size:11px;">You can manage which sections appear in this digest from the Admin Notification Settings.</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`;
-};
 
 const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
@@ -197,11 +257,12 @@ const handler = async (req: Request): Promise<Response> => {
     if (digestRoles.size === 0) { digestRoles.add("admin"); digestRoles.add("human_resources"); }
     const { data: adminProfiles } = await supabaseClient
       .from("profiles").select("email, display_name").in("role", Array.from(digestRoles));
-    const adminEmails = adminProfiles?.filter(p => p.email).map(p => p.email as string) || [];
+    const adminRecipients = (adminProfiles || []).filter(p => p.email) as { email: string; display_name: string | null }[];
 
     const { data: profiles } = await supabaseClient
-      .from("profiles").select("user_id, display_name");
+      .from("profiles").select("user_id, display_name, email");
     const profileMap = new Map(profiles?.map(p => [p.user_id, p.display_name]) || []);
+    const emailByUser = new Map(profiles?.filter(p => p.email).map(p => [p.user_id, p.email as string]) || []);
 
     const sections: DigestSection[] = [];
     const standaloneResults: Array<{ type: string; emailSent: boolean; error?: string; title: string }> = [];
@@ -230,59 +291,100 @@ const handler = async (req: Request): Promise<Response> => {
     );
 
     // ===== 1. BIRTHDAYS =====
-    // Standalone email to ALL active staff (celebratory). Also add a line to the admin digest.
+    // Personal email to every current staff member (celebratory, one send per
+    // person so nobody sees anyone else's address). Also a line in the digest.
     if (shouldRun("birthday_today")) {
       const { data: onboardingDocs } = await supabaseClient
         .from("staff_onboarding_documents")
         .select("user_id, date_of_birth, full_name")
         .not("date_of_birth", "is", null);
 
-      const todayBirthdays: string[] = [];
+      const todayBirthdays: { userId: string; name: string }[] = [];
       for (const doc of onboardingDocs || []) {
         if (!doc.date_of_birth) continue;
         if (leftUserIds.has(doc.user_id)) continue;
         const dob = new Date(doc.date_of_birth);
         if (dob.getDate() === today.getDate() && dob.getMonth() === today.getMonth()) {
-          todayBirthdays.push(doc.full_name || profileMap.get(doc.user_id) || "Unknown");
+          const name = doc.full_name || profileMap.get(doc.user_id) || null;
+          if (!name) {
+            // Never announce a nameless "Unknown" — tell an admin instead.
+            await alertAdminsOfFailure(RESEND_API_KEY, "Today's birthday announcement", "a staff member whose profile has no name");
+            continue;
+          }
+          todayBirthdays.push({ userId: doc.user_id, name });
         }
       }
 
       if (todayBirthdays.length > 0 || testType === "birthday_today") {
-        const displayItems = todayBirthdays.length > 0 ? todayBirthdays : ["[TEST] John Smith", "[TEST] Jane Doe"];
+        const displayItems = todayBirthdays.length > 0
+          ? todayBirthdays
+          : [{ userId: "test-1", name: "[TEST] John Smith" }, { userId: "test-2", name: "[TEST] Jane Doe" }];
+        const names = displayItems.map(b => b.name);
+        const birthdayIds = new Set(displayItems.map(b => b.userId));
 
-        // Send celebratory email to all active staff
+        // Everyone still employed hears about a birthday — including colleagues
+        // on maternity, sick or other leave; only people who have left are skipped.
         const { data: allStaffProfiles } = await supabaseClient
-          .from("profiles").select("user_id, email").neq("role", "client");
-        const { data: activeHr } = await supabaseClient
-          .from("hr_profiles").select("user_id")
-          .in("employment_status", ["active", "onboarding_probation", "onboarding_passed"]);
-        const activeIds = new Set(activeHr?.map(h => h.user_id) || []);
-        const staffEmails = allStaffProfiles?.filter(p => p.email && activeIds.has(p.user_id)).map(p => p.email as string) || [];
-        const birthdayRecipients = staffEmails.length > 0 ? staffEmails : adminEmails;
+          .from("profiles").select("user_id, email, display_name").neq("role", "client");
+        let recipients = (allStaffProfiles || [])
+          .filter(p => p.email && !leftUserIds.has(p.user_id)) as { user_id: string; email: string; display_name: string | null }[];
+        if (recipients.length === 0) {
+          recipients = adminRecipients.map(a => ({ user_id: "", email: a.email, display_name: a.display_name }));
+        }
 
-        const message = displayItems.length === 1
-          ? `🎂 ${displayItems[0]} has a birthday today!`
-          : `🎂 ${displayItems.join(", ")} have birthdays today!`;
-        const namesForSubject = displayItems.length <= 3
-          ? displayItems.join(", ")
-          : `${displayItems.slice(0, 2).join(", ")} + ${displayItems.length - 2} more`;
+        // Keep subjects around 60 characters — long names fall back to a count.
+        const twoNameSubject = names.length === 2 ? `🎂 It's ${names[0]} and ${names[1]}'s birthdays today` : "";
+        const teamSubject = names.length === 1
+          ? `🎂 It's ${names[0]}'s birthday today`
+          : names.length === 2 && twoNameSubject.length <= 60
+            ? twoNameSubject
+            : `🎂 ${names.length} birthdays at Care Cuddle today`;
 
-        const r = await sendStandaloneAlert(
-          birthdayRecipients,
-          `🎂 Birthday: ${namesForSubject}`,
-          "🎂 Happy Birthday!", "#ec4899",
-          [message], todayStr, { showCelebrationImage: true }
-        );
-        standaloneResults.push({ type: "birthday_today", emailSent: r.success, error: r.error, title: "Birthdays (all staff)" });
+        const celebrationImage = `<div style="text-align:center;margin:8px 0 16px;">
+          <img src="${BIRTHDAY_IMAGE_URL}" alt="Celebration" width="150" height="150" style="display:inline-block;max-width:100%;" />
+        </div>`;
+
+        let anySent = false;
+        let lastError: string | undefined;
+        if (recipients.length === 0) {
+          await alertAdminsOfFailure(RESEND_API_KEY, "Today's birthday announcement", "the team (no staff email addresses were found)");
+          lastError = "no recipients";
+        }
+        for (const p of recipients) {
+          const isBirthdayPerson = birthdayIds.has(p.user_id);
+          const others = displayItems.filter(b => b.userId !== p.user_id).map(b => b.name);
+          const subject = isBirthdayPerson ? "🎂 Happy birthday from Care Cuddle" : teamSubject;
+          const headerTitle = isBirthdayPerson ? "Happy birthday! 🎂" : "A birthday to celebrate 🎂";
+          const bodyHtml =
+            greeting(p.display_name) +
+            (isBirthdayPerson
+              ? paragraph(`Happy birthday! Everyone at Care Cuddle hopes you have a lovely day.`)
+              : paragraph(others.length === 1
+                  ? `It's <strong>${others[0]}</strong>'s birthday today — if you get a moment, drop them a message to help them celebrate.`
+                  : `It's <strong>${joinNames(others)}</strong>'s birthdays today — if you get a moment, drop them a message to help them celebrate.`)) +
+            (isBirthdayPerson && others.length > 0
+              ? paragraph(`You share the day with ${joinNames(others)} — happy birthday to them too!`)
+              : "") +
+            celebrationImage +
+            button("Open Care Cuddle", APP_URL);
+          const r = await sendOne(
+            p.email, subject, headerTitle, bodyHtml,
+            "You're receiving this because you're part of the team at Care Cuddle.",
+            BIRTHDAY_PINK
+          );
+          if (r.success) anySent = true;
+          else lastError = r.error;
+        }
+        standaloneResults.push({ type: "birthday_today", emailSent: anySent, error: lastError, title: "Birthdays (all staff)" });
 
         // Also add to admin digest
         sections.push({
           type: "birthday_today",
-          title: "Birthdays Today",
+          title: "Birthdays today",
           icon: "🎂",
-          accentColor: "#ec4899",
-          itemsHtml: displayItems.map(n => `${n}`),
-          summary: `${displayItems.length} today`,
+          accentColor: BIRTHDAY_PINK,
+          itemsHtml: displayItems.map(b => `It's <strong>${b.name}</strong>'s birthday today.`),
+          summary: `${displayItems.length === 1 ? "one" : displayItems.length} today`,
         });
       }
     }
@@ -310,12 +412,12 @@ const handler = async (req: Request): Promise<Response> => {
         }
       }
 
-      const todayAnniversaries: { name: string; years: number; on: Date }[] = [];
+      const todayAnniversaries: { userId: string; name: string; years: number; on: Date }[] = [];
       for (const hr of hrProfiles || []) {
         if (!hr.start_date) continue;
         // Only people still employed get celebrated: no anniversary once an end
         // date has passed, and none for records whose account no longer exists —
-        // a nameless "Unknown — 2 years" is worse than no line at all.
+        // a nameless line is worse than no line at all.
         if (hr.employment_end_date && new Date(hr.employment_end_date) < today) continue;
         if (!profileMap.has(hr.user_id)) continue;
         const startDate = new Date(hr.start_date);
@@ -323,32 +425,77 @@ const handler = async (req: Request): Promise<Response> => {
           if (startDate.getDate() === when.getDate() && startDate.getMonth() === when.getMonth()) {
             const years = when.getFullYear() - startDate.getFullYear();
             if (years > 0) {
-              todayAnniversaries.push({ name: profileMap.get(hr.user_id) || "Unknown", years, on: when });
+              const name = profileMap.get(hr.user_id);
+              if (!name) {
+                await alertAdminsOfFailure(RESEND_API_KEY, "A work anniversary announcement", "a staff member whose profile has no name");
+                break;
+              }
+              todayAnniversaries.push({ userId: hr.user_id, name, years, on: when });
             }
             break;
           }
         }
       }
 
+      // Personal congratulations to each person on their anniversary — they were
+      // previously never told directly, only mentioned in the admin digest.
+      let anniversarySent = false;
+      let anniversaryError: string | undefined;
+      const congratulatedIds = new Set<string>();
+      for (const a of todayAnniversaries) {
+        const yearsPhrase = a.years === 1 ? "one year" : `${a.years} years`;
+        const email = emailByUser.get(a.userId);
+        if (!email) {
+          await alertAdminsOfFailure(RESEND_API_KEY, `Work anniversary congratulations — ${yearsPhrase} at Care Cuddle`, `${a.name} (no email address on file)`);
+          continue;
+        }
+        const sameDay = a.on.getTime() === today.getTime();
+        const bodyHtml =
+          greeting(a.name) +
+          paragraph(sameDay
+            ? `Congratulations — today you've been with Care Cuddle for <strong>${yearsPhrase}</strong>! Thank you for everything you do. 🎉`
+            : `Congratulations — on ${niceDate(a.on)} you reached <strong>${yearsPhrase}</strong> with Care Cuddle! Thank you for everything you do. 🎉`) +
+          (sameDay ? "" : paragraph(`Sorry this note arrives a little after the day — we don't send emails over the weekend.`)) +
+          button("Open Care Cuddle", APP_URL);
+        const r = await sendOne(
+          email,
+          `Happy work anniversary — ${yearsPhrase} at Care Cuddle`,
+          "Happy work anniversary!",
+          bodyHtml,
+          "You're receiving this because it's your work anniversary at Care Cuddle."
+        );
+        if (r.success) { anniversarySent = true; congratulatedIds.add(a.userId); }
+        else anniversaryError = r.error;
+      }
+      if (todayAnniversaries.length > 0) {
+        standaloneResults.push({ type: "anniversary_today", emailSent: anniversarySent, error: anniversaryError, title: "Work anniversaries (personal)" });
+      }
+
       if (todayAnniversaries.length > 0 || testType === "anniversary_today") {
         const display = todayAnniversaries.length > 0
           ? todayAnniversaries
-          : [{ name: "[TEST] John Smith", years: 3, on: new Date(today) }];
+          : [{ userId: "", name: "[TEST] John Smith", years: 3, on: new Date(today) }];
         const deferred = display.filter(a => a.on.getTime() !== today.getTime() && isWeekend(a.on)).length;
         sections.push({
           type: "anniversary_today",
-          title: "Work Anniversaries",
+          title: "Work anniversaries",
           icon: "🎉",
           accentColor: "#8b5cf6",
           // Say which day it actually fell on when it wasn't today, so a Monday
-          // greeting doesn't read as though the date were wrong.
+          // greeting doesn't read as though the date were wrong. Only claim the
+          // person has been emailed when their congratulations actually sent —
+          // otherwise ask the admins to pass it on themselves.
           itemsHtml: display.map(a => {
-            const label = `${a.name} — ${a.years} year${a.years > 1 ? "s" : ""} 🎉`;
+            const yearsPhrase = a.years === 1 ? "one year" : `${a.years} years`;
+            const congratulated = todayAnniversaries.length === 0 || congratulatedIds.has(a.userId);
+            const tail = congratulated
+              ? "They've been congratulated by email."
+              : `<span style="color:#ef4444;font-weight:600;">We couldn't email them their congratulations</span> — please pass them on another way.`;
             return isWeekend(a.on)
-              ? `${label} <span style="color:#6b7280">(was ${a.on.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })})</span>`
-              : label;
+              ? `<strong>${a.name}</strong> reached ${yearsPhrase} with Care Cuddle on ${niceDate(a.on)}, over the weekend. ${tail}`
+              : `<strong>${a.name}</strong> has been with Care Cuddle for ${yearsPhrase} today. ${tail}`;
           }),
-          summary: deferred > 0 ? `${display.length} (incl. ${deferred} from the weekend)` : `${display.length} today`,
+          summary: deferred > 0 ? `${display.length} (including ${deferred} from the weekend)` : `${display.length === 1 ? "one" : display.length} today`,
         });
       }
     }
@@ -390,7 +537,7 @@ const handler = async (req: Request): Promise<Response> => {
 
         const items = has
           ? upcomingHolidays.map(h => {
-              const name = profileMap.get(h.user_id) || "Unknown";
+              const name = profileMap.get(h.user_id) || "A staff member with no name on their profile";
               const allDates = enumerateDates(h.start_date, h.end_date);
               const noCoverDates = new Set<string>((h.no_cover_dates as string[] | null) || []);
               const datesNeedingCover = allDates.filter(d => !noCoverDates.has(d));
@@ -406,33 +553,31 @@ const handler = async (req: Request): Promise<Response> => {
               }
               const total = datesNeedingCover.length;
               const covered = coveredSet.size;
-              let status: string;
-              if ((h as any).no_cover_required === true || total === 0) status = `<span style="color:#10b981;font-weight:600;">No cover needed</span>`;
-              else if (covered === 0) status = `<span style="color:#ef4444;font-weight:600;">Not covered</span>`;
-              else if (covered >= total) status = `<span style="color:#10b981;font-weight:600;">Fully covered</span>`;
-              else status = `<span style="color:#f59e0b;font-weight:600;">Partially covered (${covered}/${total} days)</span>`;
-              const dateRange = h.start_date === h.end_date
-                ? formatShortDate(h.start_date)
-                : `${formatShortDate(h.start_date)} – ${formatShortDate(h.end_date)}`;
+              let coverSentence: string;
+              if ((h as any).no_cover_required === true || total === 0) coverSentence = `<span style="color:#10b981;font-weight:600;">No cover is needed.</span>`;
+              else if (covered === 0) coverSentence = `<span style="color:#ef4444;font-weight:600;">No cover has been arranged yet.</span>`;
+              else if (covered >= total) coverSentence = `<span style="color:#10b981;font-weight:600;">Cover is fully arranged.</span>`;
+              else coverSentence = `<span style="color:#f59e0b;font-weight:600;">Cover is arranged for ${covered} of the ${total} days.</span>`;
+              const when = niceDateRange(h.start_date, h.end_date);
               const daysUntil = Math.ceil((new Date(h.start_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-              return { sortKey: h.start_date, html: `<strong>${name}</strong> — ${dateRange} (in ${daysUntil} day${daysUntil === 1 ? "" : "s"}) — ${status}` };
+              return { sortKey: h.start_date, html: `<strong>${name}</strong> is on holiday ${when}, starting ${inDays(daysUntil)}. ${coverSentence}` };
             })
-          : [{ sortKey: "0", html: `<strong>[TEST] John Smith</strong> — 25 Jan – 28 Jan (in 5 days) — <span style="color:#f59e0b;font-weight:600;">Partially covered (2/4 days)</span>` }];
+          : [{ sortKey: "0", html: `<strong>[TEST] John Smith</strong> is on holiday Monday 25 to Thursday 28 January, starting in 5 days. <span style="color:#f59e0b;font-weight:600;">Cover is arranged for 2 of the 4 days.</span>` }];
 
         items.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
         sections.push({
           type: "upcoming_holidays",
-          title: "Upcoming Holidays (next 3 months)",
+          title: "Holidays in the next three months",
           icon: "📅",
           accentColor: "#3b82f6",
           itemsHtml: items.map(i => i.html),
-          summary: `${items.length} upcoming`,
+          summary: `${items.length === 1 ? "one" : items.length} coming up`,
         });
       }
     }
 
-    // ===== 4. SHIFT PATTERNS EXPIRING =====
+    // ===== 4. REGULAR SHIFTS ENDING SOON (shift patterns expiring) =====
     if (shouldRun("pattern_expiring")) {
       const patternDays = settingsMap.get("pattern_expiring")?.days_before || 14;
       const futureDate = new Date(today);
@@ -448,21 +593,65 @@ const handler = async (req: Request): Promise<Response> => {
         .order("end_date");
 
       if (expiringPatterns && expiringPatterns.length > 0) {
+        // Tell the staff member directly — until now only admins heard, as a
+        // digest line, while the person kept planning around shifts that were
+        // about to stop. One email as the end date enters the window, then
+        // reminders a week and a day before.
+        const notifyOffsets = new Set([patternDays, 7, 1]);
+        let patternSent = false;
+        let patternError: string | undefined;
+        for (const p of expiringPatterns) {
+          const daysUntil = Math.ceil((new Date(p.end_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          if (!notifyOffsets.has(daysUntil)) continue;
+          const name = profileMap.get(p.user_id) || null;
+          const email = emailByUser.get(p.user_id);
+          const atClient = p.client_name ? ` at ${p.client_name}` : "";
+          if (!email) {
+            await alertAdminsOfFailure(
+              RESEND_API_KEY,
+              `Their regular shifts${atClient} end on ${niceDate(p.end_date)}`,
+              `${name || "a staff member with no name on their profile"} (no email address on file)`
+            );
+            continue;
+          }
+          const bodyHtml =
+            greeting(name) +
+            paragraph(`Your regular shifts${atClient} are due to end on <strong>${niceDate(p.end_date)}</strong> — after that date you won't be scheduled for them.`) +
+            paragraph(`If you expected these shifts to carry on, please contact the admin team so they can look into it.`) +
+            button("See your schedule", `${APP_URL}/view/schedule`);
+          // "in 7 days" keeps the subject short; the exact date is in the body.
+          // A very long client name falls back to the plain form.
+          const patternSubject = `Your regular shifts${atClient} end ${inDays(daysUntil)}`;
+          const r = await sendOne(
+            email,
+            patternSubject.length <= 60 ? patternSubject : `Your regular shifts end ${inDays(daysUntil)}`,
+            "Your regular shifts are ending",
+            bodyHtml,
+            "You're receiving this because these shifts are on your Care Cuddle schedule."
+          );
+          if (r.success) patternSent = true;
+          else patternError = r.error;
+        }
+        if (patternSent || patternError) {
+          standaloneResults.push({ type: "pattern_expiring", emailSent: patternSent, error: patternError, title: "Regular shifts ending (personal)" });
+        }
+
         sections.push({
           type: "pattern_expiring",
-          title: `Shift Patterns Expiring (next ${patternDays} days)`,
+          title: `Regular shifts ending in the next ${patternDays} days`,
           icon: "⚠️",
           accentColor: "#f59e0b",
           itemsHtml: expiringPatterns.map(p => {
-            const name = profileMap.get(p.user_id) || "Unknown";
-            return `<strong>${name}</strong> at ${p.client_name || "Unknown client"} — expires ${formatShortDate(p.end_date)}`;
+            const name = profileMap.get(p.user_id) || "A staff member with no name on their profile";
+            const atClient = p.client_name ? ` at ${p.client_name}` : "";
+            return `<strong>${name}</strong>'s regular shifts${atClient} end on ${niceDate(p.end_date)}.`;
           }),
-          summary: `${expiringPatterns.length} expiring`,
+          summary: `${expiringPatterns.length === 1 ? "one" : expiringPatterns.length} ending`,
         });
       }
     }
 
-    // ===== 5. HOLIDAYS WITHOUT CLIENT NOTIFICATION =====
+    // ===== 5. HOLIDAYS WHERE THE CLIENT HASN'T BEEN TOLD =====
     if (shouldRun("holiday_no_client_notification")) {
       const days = settingsMap.get("holiday_no_client_notification")?.days_before || 14;
       const futureDate = new Date(today);
@@ -481,21 +670,21 @@ const handler = async (req: Request): Promise<Response> => {
 
       const has = pending && pending.length > 0;
       if (has || testType === "holiday_no_client_notification") {
-        const data = has
+        const items = has
           ? pending.map(r => {
-              const name = profileMap.get(r.user_id) || "Unknown";
+              const name = profileMap.get(r.user_id) || "A staff member with no name on their profile";
               const daysUntil = Math.ceil((new Date(r.start_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-              return { name, daysUntil, date: formatShortDate(r.start_date) };
+              return `<strong>${name}</strong> starts holiday on ${niceDate(r.start_date)} (${inDays(daysUntil)}) and <span style="color:#ef4444;font-weight:600;">the client hasn't been told yet</span> — please let them know.`;
             })
-          : [{ name: "[TEST] John Smith", daysUntil: 3, date: "27 Jan" }];
+          : [`<strong>[TEST] John Smith</strong> starts holiday in 3 days and <span style="color:#ef4444;font-weight:600;">the client hasn't been told yet</span> — please let them know.`];
 
         sections.push({
           type: "holiday_no_client_notification",
-          title: "Client Notification Missing",
+          title: "Clients not yet told about holidays",
           icon: "🚨",
           accentColor: "#ef4444",
-          itemsHtml: data.map(r => `<strong>${r.name}</strong> — holiday in ${r.daysUntil} day${r.daysUntil !== 1 ? "s" : ""} (${r.date}) — <span style="color:#ef4444;font-weight:600;">CLIENT NOT NOTIFIED</span>`),
-          summary: `${data.length} action needed`,
+          itemsHtml: items,
+          summary: `${items.length === 1 ? "one" : items.length} to action`,
         });
       }
     }
@@ -556,11 +745,10 @@ const handler = async (req: Request): Promise<Response> => {
         for (const h of holidays) {
           const daysUntil = Math.round((new Date(h.start_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
           const takerInfo = emailMap.get(h.user_id);
-          const takerName = takerInfo?.name || "Unknown";
-          const dayWord = daysUntil === 1 ? "day" : "days";
-          const dateRange = h.start_date === h.end_date
-            ? formatShortDate(h.start_date)
-            : `${formatShortDate(h.start_date)} – ${formatShortDate(h.end_date)}`;
+          const takerName = takerInfo?.name || profileMap.get(h.user_id) || "";
+          const takerLabel = takerName || "the person going on holiday";
+          const when = niceDateRange(h.start_date, h.end_date);
+          const timePhrase = inDays(daysUntil);
 
           const noCoverInfo = noCoverInfoMap.get(`${h.user_id}|${h.start_date}|${h.end_date}`)
             || { noCoverDates: new Set<string>(), noCoverRequired: false };
@@ -577,10 +765,20 @@ const handler = async (req: Request): Promise<Response> => {
             if (dates.length === 0) return !(c.end_date < h.start_date || c.start_date > h.end_date);
             return dates.some(d => d >= h.start_date && d <= h.end_date);
           });
-          const coverPeople = matchingCovers
-            .map(c => ({ id: c.user_id, ...emailMap.get(c.user_id) }))
-            .filter(c => c.email);
-          const coverNames = coverPeople.map(c => c.name || "Unknown");
+          // Keep every cover person — including those without an email address,
+          // so the digest doesn't wrongly claim "no cover" and so we can alert
+          // admins about the ones we couldn't reach.
+          const coverPeople = matchingCovers.map(c => {
+            const info = emailMap.get(c.user_id);
+            const metaDates: string[] = (c.coverage_metadata as any)?.covered_dates || [];
+            return {
+              id: c.user_id,
+              email: info?.email as string | undefined,
+              name: (info?.name as string | undefined) || null,
+              dates: metaDates.filter(d => d >= h.start_date && d <= h.end_date),
+            };
+          });
+          const coverNames = coverPeople.map(c => c.name).filter(Boolean) as string[];
 
           // Clients impacted by this person's leave, with REAL handover completion
           // status (not just links) — this is what "must be complete before annual
@@ -639,127 +837,183 @@ const handler = async (req: Request): Promise<Response> => {
           const handoverComplete = handoverClientStatuses.length > 0
             && handoverClientStatuses.every(c => c.taskCount > 0 && c.avgProgress >= 100);
           const handoverReadyCount = handoverClientStatuses.filter(c => c.taskCount > 0 && c.avgProgress >= 100).length;
-          const handoverCountLabel = handoverClientStatuses.length > 1
-            ? ` (${handoverReadyCount}/${handoverClientStatuses.length} clients ready)`
-            : "";
-          // Per-client status bullets, matching the dashboard's WhatsApp-nudge
-          // format: "Client — not started · Open handover tracker".
+          const multiClient = handoverClientStatuses.length > 1;
+          // Per-client status lines with a link to each client's Handover Tracker.
           const handoverLinkItems = handoverClientStatuses.map(c => {
-            const label = c.taskCount > 0 && c.avgProgress > 0 ? `${c.avgProgress}% complete` : "not started";
-            return `<strong>${c.client}</strong> — ${label} · <a href="${APP_URL}/public/schedule/${encodeURIComponent(c.client)}" style="color:${BRAND_COLOR};font-weight:600;text-decoration:none;">Open handover tracker</a>`;
+            const label = c.taskCount > 0 && c.avgProgress >= 100
+              ? "ready"
+              : c.taskCount > 0 && c.avgProgress > 0
+                ? `about ${c.avgProgress}% done`
+                : "not started yet";
+            return `<strong>${c.client}</strong> — ${label}. <a href="${APP_URL}/public/schedule/${encodeURIComponent(c.client)}" style="color:${BRAND_COLOR};font-weight:600;text-decoration:none;">Open the Handover Tracker for ${c.client}</a>`;
           });
 
-          // Admin digest line — now flags real handover status, not just a link.
+          // Admin digest line — plain sentences, no field notation.
+          const coverSentence = coverPeople.length > 0
+            ? coverNames.length > 0
+              ? `${joinNames(coverNames)} ${coverNames.length > 1 ? "are" : "is"} covering.`
+              : `Cover has been arranged.`
+            : coverNotNeeded
+              ? `<span style="color:#10b981;font-weight:600;">No cover is needed.</span>`
+              : `<span style="color:#ef4444;font-weight:600;">No cover has been arranged yet.</span>`;
+          const handoverSentence = coverNotNeeded
+            ? `No handover is needed.`
+            : handoverClientStatuses.length > 0
+              ? handoverComplete
+                ? `<span style="color:#10b981;font-weight:600;">The handover is ready.</span>`
+                : multiClient
+                  ? `<span style="color:#ef4444;font-weight:600;">The handover is ready for ${handoverReadyCount} of their ${handoverClientStatuses.length} clients.</span>`
+                  : `<span style="color:#ef4444;font-weight:600;">The handover isn't ready yet.</span>`
+              : "";
           adminCountdownItems.push(
-            `<strong>${takerName}</strong> on holiday in <strong>${daysUntil} ${dayWord}</strong> (${dateRange}) — ${
-              coverNames.length > 0
-                ? `cover: ${coverNames.join(", ")}`
-                : coverNotNeeded
-                  ? `<span style="color:#10b981;font-weight:600;">no cover needed</span>`
-                  : `<span style="color:#ef4444;font-weight:600;">no cover assigned</span>`
-            }${
-              coverNotNeeded
-                ? ` — handover: <span style="color:#6b7280;">not required (no cover)</span>`
-                : handoverClientStatuses.length > 0
-                  ? ` — handover: ${handoverComplete ? `<span style="color:#10b981;font-weight:600;">complete</span>` : `<span style="color:#ef4444;font-weight:600;">not ready${handoverCountLabel}</span>`}`
-                  : ""
-            }`
+            `<strong>${takerLabel}</strong> starts holiday ${timePhrase}, ${when}. ${coverSentence}${handoverSentence ? ` ${handoverSentence}` : ""}`
           );
 
           // Escalate to admins when leave is imminent (≤3 days) and handover isn't
           // done. Never fires for no-cover-required holidays (statuses are empty).
           if (handoverClientStatuses.length > 0 && !handoverComplete && daysUntil <= 3) {
             const notStarted = handoverClientStatuses.filter(c => c.taskCount === 0).map(c => c.client);
-            const inProgress = handoverClientStatuses.filter(c => c.taskCount > 0 && c.avgProgress < 100).map(c => `${c.client} (${c.avgProgress}%)`);
+            const inProgressList = handoverClientStatuses.filter(c => c.taskCount > 0 && c.avgProgress < 100);
+            const chunks: string[] = [];
+            if (notStarted.length > 0) chunks.push(`the handover for ${joinNames(notStarted)} hasn't been started yet`);
+            for (const c of inProgressList) chunks.push(`the handover for ${c.client} is about ${c.avgProgress}% done`);
             handoverEscalationItems.push(
-              `<strong>${takerName}</strong> — leave in <strong>${daysUntil} ${dayWord}</strong> (${dateRange})${
-                handoverClientStatuses.length > 1
-                  ? ` — needs <strong>${handoverClientStatuses.length} handovers</strong> (one per client), ${handoverReadyCount} ready`
-                  : ""
-              }: ` +
-              [
-                notStarted.length > 0 ? `not started: ${notStarted.join(", ")}` : null,
-                inProgress.length > 0 ? `in progress: ${inProgress.join(", ")}` : null,
-              ].filter(Boolean).join(" · ")
+              `<strong>${takerLabel}</strong> starts holiday ${timePhrase} (${when}) and ${chunks.length > 0 ? chunks.join(", and ") : "their handover isn't finished"}.`
             );
           }
 
-          // Personal email to the staff member on holiday — mirrors the
-          // dashboard's WhatsApp nudge: greeting by first name, leave timing,
-          // per-client status bullets with tracker links, and an ask that
-          // switches between "start" and "finish" based on progress. Urgency
-          // still escalates the intro line; no-cover-required holidays get a
-          // clear "none needed".
+          // NEW: when leave is imminent and no cover exists (and cover is needed),
+          // email the admins directly — until now the only person told was the
+          // holiday taker, who can't fix it.
+          if (!coverNotNeeded && coverPeople.length === 0 && daysUntil <= 3) {
+            for (const admin of adminRecipients) {
+              const bodyHtml =
+                greeting(admin.display_name) +
+                paragraph(`<strong>${takerLabel}</strong> starts holiday <strong>${timePhrase}</strong> (${when}) and no cover has been arranged yet.`) +
+                paragraph(`Please arrange cover for their shifts, or mark the holiday as not needing cover if that's right.`) +
+                button("Open the schedule", `${APP_URL}/view/schedule`);
+              await sendOne(
+                admin.email,
+                `No cover for ${takerLabel}'s holiday — starts ${timePhrase}`,
+                "Cover still needed",
+                bodyHtml,
+                "You're receiving this because you're an admin at Care Cuddle.",
+                AMBER
+              );
+            }
+          }
+
+          // Personal email to the staff member on holiday: greeting first, the
+          // whole story in one sentence, then cover and handover in plain words.
           if (takerInfo?.email) {
-            const firstName = takerName.trim().split(/\s+/)[0];
-            const plural = handoverClientStatuses.length > 1;
             const anyStarted = handoverClientStatuses.some(c => c.taskCount > 0 && c.avgProgress > 0);
-            const timing = daysUntil <= 0
-              ? "your leave has already started"
-              : daysUntil === 1
-                ? "your leave starts tomorrow"
-                : `your leave starts in ${daysUntil} ${dayWord}`;
-            const intro = `Hi ${firstName}, ${timing} (${dateRange}) and your client handover${plural ? "s aren't" : " isn't"} complete yet.`;
-            const ask = anyStarted
-              ? `Please complete the outstanding handover tasks before your leave begins${plural ? " — each client needs its own handover finished" : ""}. Thank you! 🙏`
-              : `Please start your handover${plural ? "s" : ""} as soon as you can so everything is covered before you go. Thank you! 🙏`;
-            const handoverLines: string[] = coverNotNeeded
-              ? [`✅ This holiday is marked as <strong>no cover required</strong> — no handover is needed.`]
-              : handoverClientStatuses.length === 0
-                ? []
-                : handoverComplete
-                  ? [`✅ <strong>Your handover${plural ? "s are" : " is"} complete</strong> — thank you!`]
-                  : [
-                      daysUntil <= 1
-                        ? `🚨 <strong>${intro}</strong>`
-                        : daysUntil <= 3
-                          ? `⚠️ <strong>${intro}</strong>`
-                          : `📋 ${intro}`,
-                      ...handoverLinkItems,
-                      `📺 Not sure how the Handover Tracker works? <a href="${HANDOVER_VIDEO_URL}" style="color:${BRAND_COLOR};font-weight:600;text-decoration:none;">Watch this short guide</a>.`,
-                      ask,
-                    ];
-            await sendStandaloneAlert(
-              [takerInfo.email as string],
-              `📅 Your holiday starts in ${daysUntil} ${dayWord}${!handoverComplete && handoverClientStatuses.length > 0 && daysUntil <= 3 ? " — handover needed" : ""}`,
-              "📅 Your Holiday is Coming Up", "#0ea5e9",
-              [
-                `Your holiday starts in ${daysUntil} ${dayWord}.`,
-                `🗓️ ${dateRange}`,
-                coverNames.length > 0
-                  ? `🤝 Your cover: ${coverNames.join(", ")}`
-                  : coverNotNeeded
-                    ? `✅ No cover is needed for this holiday.`
-                    : `⚠️ No cover has been assigned yet — please check with the admin team.`,
-                ...handoverLines,
-                `Have a great break! 🌴`,
-              ],
-              todayStr
+            const handoverOutstanding = handoverClientStatuses.length > 0 && !handoverComplete && !coverNotNeeded;
+
+            const bodyParts: string[] = [];
+            bodyParts.push(greeting(takerName));
+            bodyParts.push(paragraph(`Your holiday starts <strong>${timePhrase}</strong> — ${when}.`));
+
+            if (coverNames.length > 0) {
+              bodyParts.push(paragraph(`${joinNames(coverNames)} will cover your shifts while you're away.`));
+            } else if (coverPeople.length > 0) {
+              bodyParts.push(paragraph(`Cover has been arranged for your shifts while you're away.`));
+            } else if (coverNotNeeded) {
+              bodyParts.push(paragraph(`No one needs to cover your shifts for this holiday.`));
+            } else if (daysUntil <= 3) {
+              bodyParts.push(paragraph(`Cover hasn't been arranged yet. We've flagged this to the admin team today — they're sorting it, so you don't need to chase it.`));
+            } else {
+              bodyParts.push(paragraph(`Cover hasn't been arranged yet. The admin team is arranging it and will confirm who is covering you.`));
+            }
+
+            if (coverNotNeeded) {
+              bodyParts.push(paragraph(`You don't need to prepare a handover for this holiday.`));
+            } else if (handoverClientStatuses.length > 0) {
+              if (handoverComplete) {
+                bodyParts.push(paragraph(`Your handover is complete — thank you, you're all set.`));
+              } else {
+                bodyParts.push(paragraph(
+                  daysUntil <= 1
+                    ? `Your handover still needs finishing before you go — please make it your priority today.`
+                    : daysUntil <= 3
+                      ? anyStarted
+                        ? `Your handover isn't finished yet — please complete it before your holiday starts.`
+                        : `Your handover hasn't been started yet — please start it today so everything is covered before you go.`
+                      : `Please make sure your handover is finished before your holiday starts.`
+                ));
+                if (multiClient) {
+                  bodyParts.push(paragraph(`Each client needs their own handover. Here's where each one stands:`));
+                }
+                bodyParts.push(listHtml(handoverLinkItems));
+                bodyParts.push(mutedParagraph(`Not sure how the Handover Tracker works? <a href="${HANDOVER_VIDEO_URL}" style="color:${BRAND_COLOR};font-weight:600;">Watch this short video guide</a>.`));
+              }
+            }
+
+            if (!handoverOutstanding) {
+              bodyParts.push(paragraph(`Have a lovely break! 🌴`));
+            }
+
+            const takerButton = handoverOutstanding && handoverClientStatuses.length === 1
+              ? button("Open the Handover Tracker", `${APP_URL}/public/schedule/${encodeURIComponent(handoverClientStatuses[0].client)}`)
+              : button("See your schedule", `${APP_URL}/view/schedule`);
+            bodyParts.push(takerButton);
+
+            await sendOne(
+              takerInfo.email as string,
+              handoverOutstanding && daysUntil <= 3
+                ? `Your holiday starts ${timePhrase} — please finish your handover`
+                : `Your holiday starts ${timePhrase}`,
+              "Your holiday is coming up",
+              bodyParts.join(""),
+              "You're receiving this because you have a holiday booked at Care Cuddle."
+            );
+          } else {
+            // The holiday taker has no email — an admin must know, or the
+            // handover chase never reaches them.
+            await alertAdminsOfFailure(
+              RESEND_API_KEY,
+              `Their holiday starts ${timePhrase} (${when}) and they may still have a handover to finish`,
+              `${takerName || "a staff member with no name on their profile"} (no email address on file)`
             );
           }
 
-          // Personal emails to each cover person — mention the taker's actual handover status.
+          // Personal emails to each cover person — with their actual covering
+          // days when we know them, and the taker's real handover status.
           for (const cover of coverPeople) {
-            await sendStandaloneAlert(
-              [cover.email as string],
-              `🤝 Covering ${takerName} in ${daysUntil} ${dayWord}`,
-              "🤝 Upcoming Cover Reminder", "#0ea5e9",
-              [
-                `You're covering ${takerName}'s holiday in ${daysUntil} ${dayWord}.`,
-                `🗓️ Holiday dates: ${dateRange}`,
-                `Please review your schedule for the covered shifts.`,
-                handoverComplete
-                  ? `✅ ${takerName}'s handover${handoverClientStatuses.length > 1 ? "s are" : " is"} complete — you're good to go.`
-                  : `💬 <strong>Reach out to ${takerName}</strong> — their handover isn't finished yet${handoverCountLabel}.`,
-                ...(handoverLinkItems.length > 0
-                  ? [
-                      `📋 Open the handover tracker for each client:`,
-                      ...handoverLinkItems,
-                      `📺 New to the Handover Tracker? <a href="${HANDOVER_VIDEO_URL}" style="color:${BRAND_COLOR};font-weight:600;text-decoration:none;">Watch this short guide</a>.`,
-                    ]
-                  : []),
-              ],
-              todayStr
+            if (!cover.email) {
+              await alertAdminsOfFailure(
+                RESEND_API_KEY,
+                `They're covering ${takerLabel}'s holiday, ${when}`,
+                `${cover.name || "a staff member with no name on their profile"} (no email address on file)`
+              );
+              continue;
+            }
+            const coverBodyParts: string[] = [];
+            coverBodyParts.push(greeting(cover.name));
+            coverBodyParts.push(paragraph(`You're covering <strong>${takerLabel}</strong>'s shifts while they're on holiday ${when} — starting <strong>${timePhrase}</strong>.`));
+            if (cover.dates.length > 0) {
+              coverBodyParts.push(paragraph(`Your covering days are ${niceDateList(cover.dates)}.`));
+            }
+            if (handoverClientStatuses.length > 0) {
+              if (handoverComplete) {
+                coverBodyParts.push(paragraph(`${takerLabel}'s handover is complete — you'll have everything you need.`));
+              } else {
+                coverBodyParts.push(paragraph(`${takerLabel} is still finishing their handover. It's worth checking in with them before the holiday starts, so nothing is missed.`));
+                coverBodyParts.push(listHtml(handoverLinkItems));
+                coverBodyParts.push(mutedParagraph(`New to the Handover Tracker? <a href="${HANDOVER_VIDEO_URL}" style="color:${BRAND_COLOR};font-weight:600;">Watch this short video guide</a>.`));
+              }
+            }
+            coverBodyParts.push(button("See your schedule", `${APP_URL}/view/schedule`));
+            // A very long taker name would push the subject past ~60 characters,
+            // so fall back to the generic form — the body has the full name.
+            const namedCoverSubject = `You're covering ${takerName}'s holiday — starts ${timePhrase}`;
+            await sendOne(
+              cover.email,
+              takerName && namedCoverSubject.length <= 60
+                ? namedCoverSubject
+                : `You're covering a holiday — starts ${timePhrase}`,
+              takerName ? `You're covering ${takerName}` : "You're covering a holiday",
+              coverBodyParts.join(""),
+              "You're receiving this because you're covering a colleague's holiday at Care Cuddle."
             );
           }
         }
@@ -767,38 +1021,38 @@ const handler = async (req: Request): Promise<Response> => {
         if (adminCountdownItems.length > 0) {
           sections.push({
             type: "holiday_countdown",
-            title: "Holidays Starting Soon",
+            title: "Holidays starting soon",
             icon: "📅",
             accentColor: "#0ea5e9",
             itemsHtml: adminCountdownItems,
-            summary: `${adminCountdownItems.length} imminent`,
+            summary: `${adminCountdownItems.length === 1 ? "one" : adminCountdownItems.length} starting soon`,
           });
         }
 
         if (handoverEscalationItems.length > 0) {
           sections.push({
             type: "handover_not_ready",
-            title: "Handovers Not Ready for Upcoming Leave",
+            title: "Handovers not ready for upcoming holidays",
             icon: "🚨",
             accentColor: "#ef4444",
             itemsHtml: handoverEscalationItems,
-            summary: `${handoverEscalationItems.length} need attention`,
+            summary: `${handoverEscalationItems.length === 1 ? "one needs" : `${handoverEscalationItems.length} need`} attention`,
           });
         }
       } else if (testType === "holiday_countdown") {
         sections.push({
           type: "holiday_countdown",
-          title: "Holidays Starting Soon",
+          title: "Holidays starting soon",
           icon: "📅",
           accentColor: "#0ea5e9",
-          itemsHtml: [`<strong>[TEST] John Smith</strong> on holiday in <strong>1 day</strong> (${formatShortDate(targetDates[0])}) — cover: [TEST] Jane Doe`],
-          summary: "1 imminent",
+          itemsHtml: [`<strong>[TEST] John Smith</strong> starts holiday tomorrow, ${niceDate(targetDates[0])}. [TEST] Jane Doe is covering.`],
+          summary: "one starting soon",
         });
       }
     }
 
     // ===== 7. UK CLOCK CHANGE REMINDERS =====
-    // Always sent as standalone to all staff (educational personal email).
+    // Personal email to every current staff member (one send per person).
     if (!testType || testType === "clock_change" || testType === "digest") {
       const getLastSundayOfMonth = (year: number, month: number): Date => {
         const lastDay = new Date(year, month + 1, 0);
@@ -820,15 +1074,17 @@ const handler = async (req: Request): Promise<Response> => {
       for (const clockChange of clockChangeDates) {
         const daysUntil = Math.round((clockChange.date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
         if (daysUntil === 7 || daysUntil === 1 || testType === "clock_change") {
+          // Everyone still employed needs this — including staff on leave that
+          // week, who would otherwise come back to a shifted schedule unwarned.
           const { data: allProfiles } = await supabaseClient
-            .from("profiles").select("user_id, email").neq("role", "client");
-          const { data: activeHr } = await supabaseClient
-            .from("hr_profiles").select("user_id")
-            .in("employment_status", ["active", "onboarding_probation", "onboarding_passed"]);
-          const activeIds = new Set(activeHr?.map(h => h.user_id) || []);
-          const staffEmails = allProfiles?.filter(p => p.email && activeIds.has(p.user_id)).map(p => p.email as string) || [];
+            .from("profiles").select("user_id, email, display_name").neq("role", "client");
+          const staffRecipients = (allProfiles || [])
+            .filter(p => p.email && !leftUserIds.has(p.user_id)) as { user_id: string; email: string; display_name: string | null }[];
 
-          if (staffEmails.length === 0 && testType !== "clock_change") break;
+          if (staffRecipients.length === 0 && testType !== "clock_change") {
+            await alertAdminsOfFailure(RESEND_API_KEY, "The UK clock change reminder", "the team (no staff email addresses were found)");
+            break;
+          }
 
           let actualDaysUntil = daysUntil;
           let changeType = clockChange.type;
@@ -845,36 +1101,51 @@ const handler = async (req: Request): Promise<Response> => {
           }
 
           const direction = changeType === "spring_forward" ? "forward" : "back";
-          const emoji = changeType === "spring_forward" ? "⏰🌸" : "⏰🍂";
-          const urgency = actualDaysUntil === 1 ? "TOMORROW" : `in ${actualDaysUntil} days`;
-          const targets = staffEmails.length > 0 ? staffEmails : adminEmails;
+          const shift = changeType === "spring_forward" ? "earlier" : "later";
+          const exampleTime = changeType === "spring_forward" ? "09:00" : "11:00";
+          const dayAfter = new Date(changeDate);
+          dayAfter.setDate(dayAfter.getDate() + 1);
+          const whenWord = actualDaysUntil === 1 ? "tomorrow" : actualDaysUntil <= 7 ? "this Sunday" : `on ${niceDate(changeDate)}`;
+          const targets = staffRecipients.length > 0
+            ? staffRecipients
+            : adminRecipients.map(a => ({ user_id: "", email: a.email, display_name: a.display_name }));
 
-          await sendStandaloneAlert(
-            targets,
-            `${emoji} UK Clock Change ${urgency} - Clocks go ${direction}`,
-            `${emoji} UK Clock Change Reminder`, "#6366f1",
-            [
-              `On ${formatDate(changeDate.toISOString().split("T")[0])}, UK clocks go <strong>${direction} by 1 hour</strong>.`,
-              changeType === "spring_forward"
-                ? `UK moves from GMT to BST. After the change, UK 9am = Nigeria 9am (currently 10am Nigeria). Your day starts <strong>1 hour earlier</strong> in Nigeria time.`
-                : `UK moves from BST to GMT. After the change, UK 9am = Nigeria 10am (currently 9am Nigeria). Your day starts <strong>1 hour later</strong> in Nigeria time.`,
-            ],
-            todayStr
-          );
+          let anyClockSent = false;
+          let clockError: string | undefined;
+          for (const p of targets) {
+            const bodyHtml =
+              greeting(p.display_name) +
+              paragraph(`UK clocks go <strong>${direction} by one hour</strong> on ${niceDate(changeDate)}.`) +
+              paragraph(`If you work UK hours from another country, your working day will start <strong>one hour ${shift} by your local time</strong> from ${niceDate(dayAfter)}. For example, if you normally start at 10:00 your local time, you'll start at ${exampleTime} instead.`) +
+              paragraph(`Your UK shift times themselves don't change — a shift at 09:00 UK time is still at 09:00 UK time.`) +
+              button("See your schedule", `${APP_URL}/view/schedule`);
+            const r = await sendOne(
+              p.email,
+              `UK clocks go ${direction} ${whenWord} — start one hour ${shift}`,
+              "The clocks are changing in the UK",
+              bodyHtml,
+              "You're receiving this because you're part of the team at Care Cuddle."
+            );
+            if (r.success) anyClockSent = true;
+            else clockError = r.error;
+          }
 
-          standaloneResults.push({ type: "clock_change", emailSent: true, title: `Clock change ${direction}` });
+          standaloneResults.push({ type: "clock_change", emailSent: anyClockSent, error: clockError, title: `Clock change ${direction}` });
 
           // Also add admin reference line to digest
           sections.push({
             type: "clock_change",
-            title: "UK Clock Change Reminder",
-            icon: emoji,
+            title: "UK clock change",
+            icon: changeType === "spring_forward" ? "⏰🌸" : "⏰🍂",
             accentColor: "#6366f1",
-            itemsHtml: [`UK clocks go <strong>${direction}</strong> on ${formatDate(changeDate.toISOString().split("T")[0])} (${urgency}). Staff have been notified directly.`],
-            summary: urgency,
+            itemsHtml: [`UK clocks go <strong>${direction}</strong> by one hour on ${niceDate(changeDate)} (${inDays(actualDaysUntil)}). All staff have been emailed about it.`],
+            summary: inDays(actualDaysUntil),
           });
 
-          if (testType !== "clock_change") break;
+          // One send is enough on every kind of run. Without this, a test run
+          // would match all four clock-change dates and email every member of
+          // staff the identical broadcast four times.
+          break;
         }
       }
     }
@@ -922,21 +1193,24 @@ const handler = async (req: Request): Promise<Response> => {
         });
 
         const items = clients.map(c => {
-          const dateLabel = c.latestTarget ? formatShortDate(c.latestTarget) : "no due date";
-          const overdue = c.latestTarget && c.latestTarget <= todayStr;
-          const dateHtml = overdue
-            ? `<span style="color:#ef4444;font-weight:600;">due ${dateLabel}</span>`
-            : `due ${dateLabel}`;
-          return `<strong>${c.client}</strong> — ${c.avgProgress}% complete · ${dateHtml}`;
+          const progressLabel = c.avgProgress > 0 ? `about ${c.avgProgress}% done` : "not started yet";
+          let dueSentence = "";
+          if (c.latestTarget) {
+            const overdue = c.latestTarget <= todayStr;
+            dueSentence = overdue
+              ? ` and <span style="color:#ef4444;font-weight:600;">was due by ${niceDate(c.latestTarget)}</span>`
+              : ` and is due by ${niceDate(c.latestTarget)}`;
+          }
+          return `The handover for <strong>${c.client}</strong> is ${progressLabel}${dueSentence}.`;
         });
 
         sections.push({
           type: "outstanding_handovers",
-          title: "Outstanding Handovers",
+          title: "Handovers still in progress",
           icon: "📋",
           accentColor: "#f59e0b",
           itemsHtml: items,
-          summary: `${clients.length} client${clients.length === 1 ? "" : "s"}`,
+          summary: `${clients.length === 1 ? "one client" : `${clients.length} clients`}`,
         });
       }
     }
@@ -1043,7 +1317,7 @@ const handler = async (req: Request): Promise<Response> => {
         if (orderedSteps.length > 0) {
           for (const userId of onboardingUserIds) {
             const profile = cohortMap.get(userId);
-            const name = profile?.display_name || profileMap.get(userId) || "Unknown";
+            const name = profile?.display_name || profileMap.get(userId) || "A staff member with no name on their profile";
             const total = orderedSteps.length;
             const completed = orderedSteps.filter(s => isStepDone(s, userId)).length;
             const nextStep = orderedSteps.find(s => !isStepDone(s, userId));
@@ -1052,84 +1326,101 @@ const handler = async (req: Request): Promise<Response> => {
             if (nextStep) {
               adminItems.push({
                 sortKey: completed / total,
-                html: `<strong>${name}</strong> — ${completed}/${total} steps · next: <em>${nextStep.title}</em> <span style="color:#9ca3af;">(${nextStep.stage})</span>`,
+                html: `<strong>${name}</strong> has finished ${completed} of ${total} onboarding steps — next is <em>${nextStep.title}</em>.`,
               });
             } else {
               adminItems.push({
                 sortKey: 1,
-                html: `<strong>${name}</strong> — <span style="color:#10b981;font-weight:600;">all ${total} steps complete 🎉</span>`,
+                html: `<strong>${name}</strong> has finished <span style="color:#10b981;font-weight:600;">all ${total} onboarding steps</span>. 🎉`,
               });
             }
 
             // Personal daily reminder to the onboarding staff member (only if steps remain).
-            if (nextStep && profile?.email) {
-              const remaining = total - completed;
-              await sendStandaloneAlert(
-                [profile.email as string],
-                `📚 Your next onboarding step: ${nextStep.title}`,
-                "📚 Onboarding Reminder", BRAND_COLOR,
-                [
-                  `Hi ${name.split(" ")[0] || name}, here's your next onboarding step:`,
-                  `👉 <strong>${nextStep.title}</strong> <span style="color:#6b7280;">(${nextStep.stage})</span>`,
-                  `You've completed <strong>${completed} of ${total}</strong> steps — ${remaining} to go. Keep it up!`,
-                  `Open the Academy and head to <strong>HR → Onboarding Steps</strong> to complete it.`,
-                ],
-                todayStr
-              );
+            if (nextStep) {
+              if (profile?.email) {
+                const bodyHtml =
+                  greeting(profile.display_name) +
+                  paragraph(`Your next onboarding step is <strong>${nextStep.title}</strong>.`) +
+                  paragraph(completed > 0
+                    ? `You've finished ${completed === 1 ? "one" : completed} of the ${total} steps so far — you're getting there!`
+                    : `This is the first of ${total} steps — a great place to start.`) +
+                  mutedParagraph(`This is an automatic daily reminder. It stops as soon as the step is done.`) +
+                  button("Open your onboarding steps", `${APP_URL}/view/hr`);
+                await sendOne(
+                  profile.email as string,
+                  `Your next onboarding step — ${nextStep.title}`,
+                  "Your next onboarding step",
+                  bodyHtml,
+                  "You're receiving this because you're completing your onboarding at Care Cuddle."
+                );
+              } else {
+                await alertAdminsOfFailure(
+                  RESEND_API_KEY,
+                  `Their next onboarding step (${nextStep.title})`,
+                  `${profile?.display_name || profileMap.get(userId) || "a staff member in onboarding"} (no email address on file)`
+                );
+              }
             }
           }
         }
 
         const digestItems = isTest && adminItems.length === 0
-          ? [`<strong>[TEST] John Smith</strong> — 3/12 steps · next: <em>Read Health &amp; Safety Policy</em> <span style="color:#9ca3af;">(Company Policies)</span>`]
+          ? [`<strong>[TEST] John Smith</strong> has finished 3 of 12 onboarding steps — next is <em>Read the Health &amp; Safety Policy</em>.`]
           : adminItems.sort((a, b) => a.sortKey - b.sortKey).map(i => i.html);
 
         if (digestItems.length > 0) {
           sections.push({
             type: "onboarding_pending",
-            title: "Staff in Onboarding",
+            title: "Staff in onboarding",
             icon: "📚",
             accentColor: BRAND_COLOR,
             itemsHtml: digestItems,
-            summary: `${digestItems.length} onboarding`,
+            summary: `${digestItems.length === 1 ? "one person" : `${digestItems.length} people`} onboarding`,
           });
         }
       }
     }
 
     // ===== SEND THE DIGEST =====
+    // One email per admin recipient — never one email with every address in to:.
     let digestSent = false;
     let digestError: string | undefined;
-    if (sections.length > 0 && adminEmails.length > 0) {
-      // If a specific test was requested, prefix subject
+    if (sections.length > 0 && adminRecipients.length === 0) {
+      // Silent failure is banned: the digest had content but nobody to send to.
+      await alertAdminsOfFailure(RESEND_API_KEY, "The daily admin digest", "the admin team (no admin email addresses were found)");
+      digestError = "no admin recipients";
+    }
+    if (sections.length > 0 && adminRecipients.length > 0) {
       const isTestRun = !!testType;
       const subjectCount = sections.length;
+      const subject = `${isTestRun ? "[TEST] " : ""}Daily admin digest — ${subjectCount === 1 ? "one update" : `${subjectCount} updates`}`;
 
-      // Surface birthdays / work anniversaries in the subject line.
-      const birthdaySection = sections.find(s => s.type === "birthday_today");
-      const anniversarySection = sections.find(s => s.type === "anniversary_today");
-      const celebratoryBits: string[] = [];
-      if (birthdaySection) {
-        celebratoryBits.push(`🎂 ${birthdaySection.itemsHtml.join(", ")}'s birthday`);
-      }
-      if (anniversarySection) {
-        // itemsHtml look like "Name — 3 years 🎉"; take just the names.
-        const names = anniversarySection.itemsHtml.map(h => h.split(" — ")[0]).join(", ");
-        celebratoryBits.push(`🎉 ${names}'s work anniversary`);
-      }
-      const celebratoryPrefix = celebratoryBits.length ? celebratoryBits.join(" · ") + " · " : "";
+      const sectionsHtml = sections.map(s => `
+        <div style="margin:0 0 24px;border-left:4px solid ${s.accentColor};padding:4px 0 4px 16px;">
+          <h2 style="margin:0 0 8px;font-size:16px;color:#111827;">${s.icon} ${s.title}</h2>
+          <ul style="margin:0;padding-left:20px;color:#374151;font-size:15px;line-height:1.6;">
+            ${s.itemsHtml.map(i => `<li style="margin-bottom:8px;">${i}</li>`).join("")}
+          </ul>
+        </div>`).join("");
 
-      const subject = `${isTestRun ? "[TEST] " : ""}${celebratoryPrefix}📬 Daily Admin Digest — ${subjectCount} update${subjectCount === 1 ? "" : "s"} (${formatShortDate(todayStr)})`;
-      try {
-        await resend.emails.send({
-          from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
-          to: adminEmails,
+      for (const admin of adminRecipients) {
+        const bodyHtml =
+          greeting(admin.display_name) +
+          paragraph(`Here's the Care Cuddle admin digest for ${niceDate(today)} — ${sections.length === 1 ? "one update" : `${sections.length} updates`} to look over.`) +
+          sectionsHtml +
+          button("Open Care Cuddle", APP_URL);
+        const r = await sendOne(
+          admin.email,
           subject,
-          html: buildDigestHtml(sections, todayStr),
-        });
-        digestSent = true;
-      } catch (e) {
-        digestError = e instanceof Error ? e.message : "Unknown error";
+          "Your daily admin digest",
+          bodyHtml,
+          "You're receiving this daily digest because your role at Care Cuddle is set to receive admin alerts. Admins can change what it includes in the notification settings."
+        );
+        if (r.success) digestSent = true;
+        else digestError = r.error;
+      }
+      if (!digestSent && digestError) {
+        await alertAdminsOfFailure(RESEND_API_KEY, "The daily admin digest", `the admin team (sending failed: ${digestError})`);
       }
     }
 

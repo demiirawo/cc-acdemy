@@ -7,8 +7,124 @@ const corsHeaders = {
 };
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
-const LOGO_URL = "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
+
+// ============================================================================
+// CARE CUDDLE — CANONICAL EMAIL HELPERS
+// ============================================================================
+
+const EMAIL_SENDER = "Care Cuddle <hello@care-cuddle-academy.co.uk>";
 const BRAND_COLOR = "#5F17EB";
+const APP_URL = "https://www.care-cuddle-academy.co.uk";
+// Existing hosted logo — keep until a first-party asset exists.
+const LOGO_URL =
+  "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
+
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+/** "Monday 11 August" — year only when it isn't this year. */
+function niceDate(input: string | Date): string {
+  const d = typeof input === "string" ? new Date(input) : input;
+  if (isNaN(d.getTime())) return "";
+  const year = d.getFullYear() === new Date().getFullYear() ? "" : ` ${d.getFullYear()}`;
+  return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}${year}`;
+}
+
+/** First name for greetings. Never returns "there". */
+function firstName(name?: string | null): string {
+  const n = (name ?? "").trim();
+  if (!n || n.includes("@")) return "";
+  return n.split(/\s+/)[0];
+}
+
+/** "Hi Sarah," — or just "Hi," when no usable name exists. */
+function greeting(name?: string | null): string {
+  const f = firstName(name);
+  return `<p style="color:#374151;font-size:16px;line-height:1.6;margin:0 0 16px;">Hi${f ? ` ${f}` : ""},</p>`;
+}
+
+function paragraph(html: string): string {
+  return `<p style="color:#374151;font-size:16px;line-height:1.6;margin:0 0 16px;">${html}</p>`;
+}
+
+function mutedParagraph(html: string): string {
+  return `<p style="color:#6b7280;font-size:14px;line-height:1.6;margin:0 0 16px;">${html}</p>`;
+}
+
+/** One button per email. label = verb + what you'll see. url must be a real route. */
+function button(label: string, url: string): string {
+  return `<div style="text-align:center;margin:24px 0 8px;">
+    <a href="${url}" style="display:inline-block;background-color:${BRAND_COLOR};color:#ffffff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">${label}</a>
+  </div>`;
+}
+
+/**
+ * The shared shell. headerTitle is the outcome in plain words ("Your holiday is
+ * approved"); reason is one line saying why the reader got this email.
+ */
+function emailShell(headerTitle: string, bodyHtml: string, reason: string, accent: string = BRAND_COLOR): string {
+  return `<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background-color:#f4f4f5;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;padding:24px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
+        <tr><td style="background-color:${accent};padding:28px 32px;text-align:center;">
+          <img src="${LOGO_URL}" alt="Care Cuddle" width="120" style="margin-bottom:12px;" />
+          <h1 style="color:#ffffff;font-size:22px;margin:0;font-weight:700;">${headerTitle}</h1>
+        </td></tr>
+        <tr><td style="padding:32px;">
+          ${bodyHtml}
+          <p style="color:#374151;font-size:16px;line-height:1.6;margin:24px 0 0;">Best wishes,<br/>The Care Cuddle team</p>
+        </td></tr>
+        <tr><td style="padding:20px 32px;background-color:#f9fafb;border-top:1px solid #e5e7eb;">
+          <p style="color:#9ca3af;font-size:12px;line-height:1.6;margin:0;">${reason}</p>
+          <p style="color:#9ca3af;font-size:12px;line-height:1.6;margin:6px 0 0;">Care Cuddle · Questions? Email <a href="mailto:hello@care-cuddle.co.uk" style="color:#9ca3af;">hello@care-cuddle.co.uk</a> · © ${new Date().getFullYear()} Care Cuddle</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+/**
+ * When an email can't be sent to someone who needed it (missing address, lookup
+ * failure), tell the admins instead of returning success-shaped silence. Creates
+ * its own service-role client so any function can call it.
+ */
+async function alertAdminsOfFailure(
+  resendApiKey: string,
+  what: string,      // "Cover assignment for Peace Jimoh"
+  whoMissed: string, // "Oluwatosin (no email address on file)"
+): Promise<void> {
+  try {
+    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.57.4");
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data: admins } = await admin.from("profiles").select("email").eq("role", "admin").not("email", "is", null);
+    const emails: string[] = (admins ?? []).map((a: { email: string }) => a.email);
+    if (emails.length === 0) return;
+    const body =
+      greeting(null) +
+      paragraph(`We couldn't email <strong>${whoMissed}</strong> about: <strong>${what}</strong>.`) +
+      paragraph(`They don't know about this yet — please tell them another way, or fix their email address and resend.`) +
+      button("Open Care Cuddle", APP_URL);
+    await Promise.all(emails.map((to) =>
+      fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${resendApiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: EMAIL_SENDER,
+          to: [to],
+          subject: `We couldn't notify ${whoMissed.split("(")[0].trim()} — action needed`,
+          html: emailShell("Someone wasn't notified", body, "You're receiving this because you're an admin at Care Cuddle.", "#d97706"),
+        }),
+      }).catch(() => {})
+    ));
+  } catch (_) { /* alerting must never break the main send */ }
+}
+
+// ============================================================================
+// Shift-change alert
+// ============================================================================
 
 interface ShiftAuditLog {
   id: string;
@@ -21,42 +137,176 @@ interface ShiftAuditLog {
   changed_at: string;
 }
 
-const formatTime = (time: string | null): string => {
-  if (!time) return "N/A";
-  const [hours, minutes] = time.split(":");
-  const hour = parseInt(hours);
-  const ampm = hour >= 12 ? "PM" : "AM";
-  const hour12 = hour % 12 || 12;
-  return `${hour12}:${minutes} ${ampm}`;
+/** Written counts: "one", "two" … "ten", then numerals. */
+const countWord = (n: number): string =>
+  ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"][n] ?? String(n);
+
+const capitalise = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+/** "HH:MM" from a "HH:MM:SS" time column, or "" when missing. */
+const clockFromTime = (v: unknown): string =>
+  typeof v === "string" && /^\d{2}:\d{2}/.test(v) ? v.slice(0, 5) : "";
+
+/** "HH:MM" in UK time from an ISO timestamp, or "" when missing/invalid. */
+const clockFromTimestamp = (v: unknown): string => {
+  if (typeof v !== "string" || !v) return "";
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit" });
 };
 
-const formatDate = (dateStr: string | null): string => {
-  if (!dateStr) return "N/A";
-  return new Date(dateStr).toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
+/** niceDate of an ISO timestamp, using the UK calendar day. */
+const ukNiceDate = (v: unknown): string => {
+  if (typeof v !== "string" || !v) return "";
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return "";
+  return niceDate(new Date(d.toLocaleString("en-US", { timeZone: "Europe/London" })));
 };
 
-const getActionColor = (action: string): string => {
-  switch (action) {
-    case "INSERT": return "#22c55e";
-    case "UPDATE": return "#f59e0b";
-    case "DELETE": return "#ef4444";
-    default: return "#6b7280";
+/** "09:00 to 17:00", or "" when either half is missing (never "N/A"). */
+const timeRange = (start: string, end: string): string =>
+  start && end ? `${start} to ${end}` : "";
+
+/**
+ * One plain-English sentence (sometimes two) describing an audit row.
+ * Never leaks table names, SQL actions, "System", "N/A" or "Unknown":
+ * missing values restructure the sentence instead.
+ */
+function describeChange(log: ShiftAuditLog, nameOf: (id: unknown) => string | null): string {
+  const data = (log.action === "DELETE" ? log.old_data : log.new_data) ?? {};
+  const oldData = log.old_data ?? {};
+  const actor = log.changed_by ? nameOf(log.changed_by) : null;
+  const staff = nameOf(data.user_id);
+
+  const whose = staff ? `${staff}'s` : "a staff member's";
+  const forWhom = staff ? ` for ${staff}` : "";
+  const client = typeof data.client_name === "string" && data.client_name.trim() ? data.client_name.trim() : "";
+  const atClient = client ? ` at ${client}` : "";
+
+  // Named actor → active voice. No actor at all → "this happened automatically".
+  // Actor we can't name → just state the fact. Never "Changed by: System".
+  const tell = (active: string, plain: string): string => {
+    if (actor) return `${actor} ${active}`;
+    if (!log.changed_by) return `${capitalise(plain)} This happened automatically.`;
+    return capitalise(plain);
+  };
+
+  if (log.table_name === "staff_schedules") {
+    const day = ukNiceDate(data.start_datetime);
+    const times = timeRange(clockFromTimestamp(data.start_datetime), clockFromTimestamp(data.end_datetime));
+    const when = [day ? ` on ${day}` : "", times ? `, ${times}` : ""].join("");
+
+    if (log.action === "INSERT") {
+      return tell(
+        `added a shift${forWhom}${atClient}${when}.`,
+        `a shift${forWhom}${atClient}${when} was added.`,
+      );
+    }
+    if (log.action === "DELETE") {
+      return tell(
+        `cancelled ${whose} shift${atClient}${when}.`,
+        `${whose} shift${atClient}${when} was cancelled.`,
+      );
+    }
+    // UPDATE: new reality first, then the old as context.
+    const oldDay = ukNiceDate(oldData.start_datetime);
+    const oldTimes = timeRange(clockFromTimestamp(oldData.start_datetime), clockFromTimestamp(oldData.end_datetime));
+    let context = "";
+    if (oldDay && day && oldDay !== day) {
+      context = ` It was previously on ${oldDay}${oldTimes ? `, ${oldTimes}` : ""}.`;
+    } else if (oldTimes && times && oldTimes !== times) {
+      context = ` It previously ran ${oldTimes}.`;
+    }
+    // Guard against a dangling "— it is now." if both halves ever come back empty.
+    const newReality = [day ? ` on ${day}` : "", times ? `, ${times}` : ""].join("");
+    const isNow = newReality ? ` — it is now${newReality}` : "";
+    return tell(
+      `changed ${whose} shift${atClient}${isNow}.${context}`,
+      `${whose} shift${atClient} was changed${isNow}.${context}`,
+    );
   }
-};
 
-const getActionLabel = (action: string): string => {
-  switch (action) {
-    case "INSERT": return "Created";
-    case "UPDATE": return "Modified";
-    case "DELETE": return "Deleted";
-    default: return action;
+  if (log.table_name === "shift_pattern_exceptions") {
+    const day = typeof data.exception_date === "string" ? niceDate(data.exception_date) : "";
+    const onDay = day ? ` on ${day}` : "";
+    const kind = data.exception_type;
+
+    if (log.action === "DELETE") {
+      // The one-day change was undone.
+      if (kind === "deleted") {
+        return tell(
+          `put ${whose} shift${atClient}${onDay} back on the rota.`,
+          `${whose} shift${atClient}${onDay} was put back on the rota.`,
+        );
+      }
+      return tell(
+        `undid a change to ${whose} shift${atClient}${onDay}.`,
+        `a change to ${whose} shift${atClient}${onDay} was undone.`,
+      );
+    }
+    if (kind === "deleted") {
+      return tell(
+        `cancelled ${whose} shift${atClient}${onDay}.`,
+        `${whose} shift${atClient}${onDay} was cancelled.`,
+      );
+    }
+    if (kind === "overtime") {
+      return tell(
+        `marked ${whose} shift${atClient}${onDay} as overtime.`,
+        `${whose} shift${atClient}${onDay} was marked as overtime.`,
+      );
+    }
+    if (kind === "not_overtime") {
+      return tell(
+        `marked ${whose} shift${atClient}${onDay} as a normal shift instead of overtime.`,
+        `${whose} shift${atClient}${onDay} was marked as a normal shift instead of overtime.`,
+      );
+    }
+    return tell(
+      `changed ${whose} shift${atClient}${onDay}.`,
+      `${whose} shift${atClient}${onDay} was changed.`,
+    );
   }
-};
+
+  // recurring_shift_patterns — someone's regular weekly shifts.
+  const times = timeRange(clockFromTime(data.start_time), clockFromTime(data.end_time));
+  const from = typeof data.start_date === "string" ? niceDate(data.start_date) : "";
+  const until = typeof data.end_date === "string" && data.end_date ? niceDate(data.end_date) : "";
+
+  if (log.action === "INSERT") {
+    const detail = [times ? `, ${times}` : "", from ? `, starting ${from}` : "", until ? ` and finishing on ${until}` : ""].join("");
+    return tell(
+      `set up regular shifts${forWhom}${atClient}${detail}.`,
+      `regular shifts${forWhom}${atClient}${detail} were set up.`,
+    );
+  }
+  if (log.action === "DELETE") {
+    return tell(
+      `took ${whose} regular shifts${atClient} off the rota.`,
+      `${whose} regular shifts${atClient} were taken off the rota.`,
+    );
+  }
+  // UPDATE: say what they look like now, then what changed.
+  const oldTimes = timeRange(clockFromTime(oldData.start_time), clockFromTime(oldData.end_time));
+  const oldUntil = typeof oldData.end_date === "string" && oldData.end_date ? niceDate(oldData.end_date) : "";
+  const hadOld = log.old_data !== null;
+  let context = "";
+  if (oldTimes && times && oldTimes !== times) {
+    context += ` They previously ran ${oldTimes}.`;
+  }
+  if (until && hadOld && !oldUntil) {
+    context += ` Until now they had no finish date.`;
+  } else if (until && oldUntil && until !== oldUntil) {
+    context += ` The finish date was previously ${oldUntil}.`;
+  } else if (!until && oldUntil) {
+    context += ` They were previously due to finish on ${oldUntil}.`;
+  }
+  const nowDetail = [times ? ` now run ${times}` : " were updated", until ? ` and finish on ${until}` : ""].join("");
+  return tell(
+    `updated ${whose} regular shifts${atClient} — they${nowDetail}.${context}`,
+    `${whose} regular shifts${atClient}${nowDetail === " were updated" ? " were updated" : ` ${nowDetail.trim()}`}.${context}`,
+  );
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -94,6 +344,9 @@ serve(async (req) => {
       });
     }
 
+    const changeCount = auditLogs.length;
+    const changesPhrase = changeCount === 1 ? "one change" : `${countWord(changeCount)} changes`;
+
     // Recipients are role-configured per alert in notification_settings
     // (defaults to admins + HR, who share responsibility for shift changes).
     const recipientRoles: string[] = Array.isArray(settings?.recipient_roles) && settings.recipient_roles.length > 0
@@ -101,127 +354,103 @@ serve(async (req) => {
       : ["admin", "human_resources"];
     const { data: admins } = await supabase
       .from("profiles")
-      .select("email")
+      .select("email, display_name")
       .in("role", recipientRoles);
 
-    const adminEmails = admins?.map((a) => a.email).filter(Boolean) as string[];
-    if (adminEmails.length === 0) {
+    const recipients = (admins ?? []).filter((a): a is { email: string; display_name: string | null } => Boolean(a.email));
+    if (recipients.length === 0) {
+      // Silent failure is banned: nobody in the configured roles has an email
+      // address, so fall back to alerting the admins directly.
+      await alertAdminsOfFailure(
+        RESEND_API_KEY!,
+        `${capitalise(changesPhrase)} to the staff rota in the last few minutes`,
+        "the rota-alert recipients (nobody in the configured roles has an email address on file)",
+      );
       return new Response(JSON.stringify({ success: false, error: "No admin emails found" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const userIds = [...new Set(auditLogs.map((log: ShiftAuditLog) => log.changed_by).filter(Boolean))];
+    // Resolve real names for everyone mentioned: the people who made the
+    // changes AND the staff whose shifts changed (so the email can say whose
+    // rota moved, not just which client).
+    const changerIds = auditLogs.map((log: ShiftAuditLog) => log.changed_by);
+    const staffIds = auditLogs.flatMap((log: ShiftAuditLog) => [
+      (log.new_data as Record<string, unknown> | null)?.user_id,
+      (log.old_data as Record<string, unknown> | null)?.user_id,
+    ]);
+    const userIds = [...new Set([...changerIds, ...staffIds].filter(Boolean))] as string[];
     const { data: profiles } = await supabase
       .from("profiles")
-      .select("user_id, display_name, email")
+      .select("user_id, display_name")
       .in("user_id", userIds);
 
-    const profileMap = new Map(profiles?.map((p) => [p.user_id, p.display_name || p.email || "Unknown"]) || []);
+    // No usable display name → leave them out of the map; describeChange then
+    // restructures the sentence rather than showing an email-derived name.
+    const profileMap = new Map<string, string>();
+    for (const p of profiles ?? []) {
+      const name = (p.display_name ?? "").trim();
+      if (p.user_id && name) profileMap.set(p.user_id, name);
+    }
+    const nameOf = (id: unknown): string | null =>
+      typeof id === "string" && id ? profileMap.get(id) ?? null : null;
 
-    const changes = auditLogs.map((log: ShiftAuditLog) => {
-      const changedBy = log.changed_by ? profileMap.get(log.changed_by) || "Unknown" : "System";
-      const data = log.action === "DELETE" ? log.old_data : log.new_data;
-      const tableLabel = log.table_name === "staff_schedules" ? "Shift" : "Recurring Pattern";
-      
-      let details = "";
-      if (data) {
-        const clientName = data.client_name || "N/A";
-        const startTime = formatTime(data.start_time as string);
-        const endTime = formatTime(data.end_time as string);
-        const date = data.shift_date ? formatDate(data.shift_date as string) : 
-                     data.start_date ? formatDate(data.start_date as string) : "N/A";
-        
-        details = `
-          <div style="margin-left: 20px; color: #4b5563;">
-            <p style="margin: 4px 0;"><strong>Client:</strong> ${clientName}</p>
-            <p style="margin: 4px 0;"><strong>Date:</strong> ${date}</p>
-            <p style="margin: 4px 0;"><strong>Time:</strong> ${startTime} - ${endTime}</p>
-          </div>
-        `;
+    const changeParagraphs = auditLogs
+      .map((log: ShiftAuditLog) => paragraph(describeChange(log, nameOf)))
+      .join("");
+
+    const now = new Date();
+    const nowClock = now.toLocaleTimeString("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit" });
+    const nowDay = niceDate(new Date(now.toLocaleString("en-US", { timeZone: "Europe/London" })));
+
+    const subject = changeCount === 1
+      ? "One rota change in the last few minutes"
+      : `${capitalise(countWord(changeCount))} rota changes in the last few minutes`;
+    const headerTitle = changeCount === 1
+      ? "A change to the rota"
+      : `${capitalise(countWord(changeCount))} changes to the rota`;
+    const intro = paragraph(
+      `There ${changeCount === 1 ? "has been one change" : `have been ${changesPhrase}`} to the staff rota in the few minutes before ${nowClock} on ${nowDay}.`
+    );
+    const sharedBody =
+      intro +
+      changeParagraphs +
+      button("Open the rota", `${APP_URL}/view/schedule`) +
+      mutedParagraph(`If the button doesn't work, copy this link into your browser: ${APP_URL}/view/schedule`);
+    const reason = "You're receiving this because shift-change alerts are turned on for your role at Care Cuddle.";
+
+    // One email per person — never every address in a single visible to: field.
+    const results = await Promise.all(recipients.map(async (recipient) => {
+      const html = emailShell(headerTitle, greeting(recipient.display_name) + sharedBody, reason);
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: EMAIL_SENDER,
+          to: [recipient.email],
+          subject,
+          html,
+        }),
+      });
+      if (!res.ok) {
+        console.error(`Resend error for ${recipient.email}:`, await res.text());
+        return false;
       }
+      return true;
+    }));
 
-      return `
-        <div style="border-left: 4px solid ${getActionColor(log.action)}; padding: 12px; margin: 12px 0; background: #f9fafb; border-radius: 4px;">
-          <div>
-            <span style="font-weight: bold; color: ${getActionColor(log.action)};">${getActionLabel(log.action)} ${tableLabel}</span>
-            <span style="color: #6b7280; font-size: 12px; float: right;">${new Date(log.changed_at).toLocaleTimeString("en-GB")}</span>
-          </div>
-          <p style="color: #374151; margin: 8px 0;">Changed by: <strong>${changedBy}</strong></p>
-          ${details}
-        </div>
-      `;
-    }).join("");
-
-    const emailHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
-<body style="margin: 0; padding: 0; background-color: #f4f4f5; font-family: Arial, sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f5; padding: 40px 20px;">
-    <tr>
-      <td align="center">
-        <table width="500" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-          <!-- Logo Header -->
-          <tr>
-            <td style="background-color: ${BRAND_COLOR}; padding: 24px 40px; text-align: center;">
-              <img src="${LOGO_URL}" alt="Care Cuddle Academy" width="140" style="display: block; margin: 0 auto; margin-bottom: 16px;" />
-              <h1 style="margin: 0; color: #ffffff; font-size: 20px; font-weight: 600;">🔔 Shift Change Alert</h1>
-              <p style="color: rgba(255,255,255,0.9); margin: 6px 0 0 0; font-size: 13px;">${auditLogs.length} change(s) detected</p>
-            </td>
-          </tr>
-          <!-- Body -->
-          <tr>
-            <td style="padding: 32px 40px;">
-              ${changes}
-              <div style="text-align: center; margin-top: 24px;">
-                <a href="https://www.care-cuddle-academy.co.uk" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
-                  Go to Dashboard
-                </a>
-              </div>
-            </td>
-          </tr>
-          <!-- Footer -->
-          <tr>
-            <td style="padding: 20px 40px; background-color: #f9fafb; text-align: center; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0; color: #9ca3af; font-size: 12px;">
-                © ${new Date().getFullYear()} Care Cuddle Academy. All rights reserved.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
-
-    const resendResponse = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
-        to: adminEmails,
-        subject: `🔔 Shift Change Alert: ${auditLogs.length} change(s)`,
-        html: emailHtml,
-      }),
-    });
-
-    if (!resendResponse.ok) {
-      const errorText = await resendResponse.text();
-      throw new Error(`Resend error: ${errorText}`);
+    const sentCount = results.filter(Boolean).length;
+    if (sentCount === 0) {
+      throw new Error("Resend error: every shift-change alert send failed");
     }
 
-    return new Response(JSON.stringify({ 
-      success: true, 
-      changeCount: auditLogs.length,
-      emailsSent: adminEmails.length 
+    return new Response(JSON.stringify({
+      success: true,
+      changeCount,
+      emailsSent: sentCount
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -3,17 +3,159 @@ import { Resend } from "npm:resend@2.0.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
+const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const LOGO_URL =
-  "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
+// ============================================================================
+// CARE CUDDLE — CANONICAL EMAIL HELPERS
+// Shared across every email-sending edge function so the whole inbox looks
+// like it came from the same company on the same day. Do not restyle locally.
+// ============================================================================
+
+const EMAIL_SENDER = "Care Cuddle <hello@care-cuddle-academy.co.uk>";
 const BRAND_COLOR = "#5F17EB";
 const APP_URL = Deno.env.get("APP_URL") || "https://www.care-cuddle-academy.co.uk";
-const FROM = "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>";
+const LOGO_URL =
+  "https://care-cuddle.co.uk/wp-content/uploads/2023/03/Green-and-Beige-Bold-Typographic-Coffee-Products-Coffee-Logo-e1689542108718.png";
+
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+/** "Monday 11 August" — year only when it isn't this year. */
+function niceDate(input: string | Date): string {
+  const d = typeof input === "string" ? new Date(input) : input;
+  if (isNaN(d.getTime())) return "";
+  const year = d.getFullYear() === new Date().getFullYear() ? "" : ` ${d.getFullYear()}`;
+  return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}${year}`;
+}
+
+/** "Monday 11 to Friday 15 August" (same date in and out → single niceDate). */
+function niceDateRange(start: string, end: string): string {
+  if (!start || !end || start === end) return niceDate(start || end);
+  const s = new Date(start), e = new Date(end);
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return "";
+  if (s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear()) {
+    const year = e.getFullYear() === new Date().getFullYear() ? "" : ` ${e.getFullYear()}`;
+    return `${DAYS[s.getDay()]} ${s.getDate()} to ${DAYS[e.getDay()]} ${e.getDate()} ${MONTHS[e.getMonth()]}${year}`;
+  }
+  return `${niceDate(s)} to ${niceDate(e)}`;
+}
+
+/** A readable list of dates: "Tuesday 11, Wednesday 12 and Thursday 13 August". */
+function niceDateList(dates: string[]): string {
+  const ds = dates.map((x) => new Date(x)).filter((d) => !isNaN(d.getTime()));
+  if (ds.length === 0) return "";
+  if (ds.length === 1) return niceDate(ds[0]);
+  const sameMonth = ds.every((d) => d.getMonth() === ds[0].getMonth() && d.getFullYear() === ds[0].getFullYear());
+  if (sameMonth) {
+    const parts = ds.map((d) => `${DAYS[d.getDay()]} ${d.getDate()}`);
+    const last = parts.pop();
+    return `${parts.join(", ")} and ${last} ${MONTHS[ds[0].getMonth()]}`;
+  }
+  const parts = ds.map((d) => niceDate(d));
+  const last = parts.pop();
+  return `${parts.join(", ")} and ${last}`;
+}
+
+/** First name for greetings. Never returns "there". */
+function firstName(name?: string | null): string {
+  const n = (name ?? "").trim();
+  if (!n || n.includes("@")) return "";
+  return n.split(/\s+/)[0];
+}
+
+/** "Hi Sarah," — or just "Hi," when no usable name exists. */
+function greeting(name?: string | null): string {
+  const f = firstName(name);
+  return `<p style="color:#374151;font-size:16px;line-height:1.6;margin:0 0 16px;">Hi${f ? ` ${f}` : ""},</p>`;
+}
+
+function paragraph(html: string): string {
+  return `<p style="color:#374151;font-size:16px;line-height:1.6;margin:0 0 16px;">${html}</p>`;
+}
+
+function mutedParagraph(html: string): string {
+  return `<p style="color:#6b7280;font-size:14px;line-height:1.6;margin:0 0 16px;">${html}</p>`;
+}
+
+/** One button per email. label = verb + what you'll see. url must be a real route. */
+function button(label: string, url: string): string {
+  return `<div style="text-align:center;margin:24px 0 8px;">
+    <a href="${url}" style="display:inline-block;background-color:${BRAND_COLOR};color:#ffffff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">${label}</a>
+  </div>`;
+}
+
+/**
+ * The shared shell. headerTitle is the outcome in plain words ("Your holiday is
+ * approved"); reason is one line saying why the reader got this email.
+ */
+function emailShell(headerTitle: string, bodyHtml: string, reason: string, accent: string = BRAND_COLOR): string {
+  return `<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background-color:#f4f4f5;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;padding:24px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;">
+        <tr><td style="background-color:${accent};padding:28px 32px;text-align:center;">
+          <img src="${LOGO_URL}" alt="Care Cuddle" width="120" style="margin-bottom:12px;" />
+          <h1 style="color:#ffffff;font-size:22px;margin:0;font-weight:700;">${headerTitle}</h1>
+        </td></tr>
+        <tr><td style="padding:32px;">
+          ${bodyHtml}
+          <p style="color:#374151;font-size:16px;line-height:1.6;margin:24px 0 0;">Best wishes,<br/>The Care Cuddle team</p>
+        </td></tr>
+        <tr><td style="padding:20px 32px;background-color:#f9fafb;border-top:1px solid #e5e7eb;">
+          <p style="color:#9ca3af;font-size:12px;line-height:1.6;margin:0;">${reason}</p>
+          <p style="color:#9ca3af;font-size:12px;line-height:1.6;margin:6px 0 0;">Care Cuddle · Questions? Email <a href="mailto:hello@care-cuddle.co.uk" style="color:#9ca3af;">hello@care-cuddle.co.uk</a> · © ${new Date().getFullYear()} Care Cuddle</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+/**
+ * When an email can't be sent to someone who needed it (missing address, lookup
+ * failure), tell the admins instead of returning success-shaped silence. Creates
+ * its own service-role client so any function can call it.
+ */
+async function alertAdminsOfFailure(
+  resendApiKey: string,
+  what: string,      // "Cover assignment for Peace Jimoh"
+  whoMissed: string, // "Oluwatosin (no email address on file)"
+): Promise<void> {
+  try {
+    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.57.4");
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data: admins } = await admin.from("profiles").select("email").eq("role", "admin").not("email", "is", null);
+    const emails: string[] = (admins ?? []).map((a: { email: string }) => a.email);
+    if (emails.length === 0) return;
+    const body =
+      greeting(null) +
+      paragraph(`We couldn't email <strong>${whoMissed}</strong> about: <strong>${what}</strong>.`) +
+      paragraph(`They don't know about this yet — please tell them another way, or fix their email address and resend.`) +
+      button("Open Care Cuddle", APP_URL);
+    await Promise.all(emails.map((to) =>
+      fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${resendApiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: EMAIL_SENDER,
+          to: [to],
+          subject: `We couldn't notify ${whoMissed.split("(")[0].trim()} — action needed`,
+          html: emailShell("Someone wasn't notified", body, "You're receiving this because you're an admin at Care Cuddle.", "#d97706"),
+        }),
+      }).catch(() => {})
+    ));
+  } catch (_) { /* alerting must never break the main send */ }
+}
+
+// ============================================================================
+// Contract emails
+// ============================================================================
 
 interface ContractEmailRequest {
   type: "contract_sent" | "contract_signed";
@@ -23,31 +165,7 @@ interface ContractEmailRequest {
   recipientEmail?: string | null;
 }
 
-const emailWrapper = (headerTitle: string, content: string) => `
-<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:#f4f4f5;font-family:Arial,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f5;padding:40px 20px;">
-    <tr><td align="center">
-      <table width="500" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
-        <tr><td style="background-color:${BRAND_COLOR};padding:24px 40px;text-align:center;">
-          <img src="${LOGO_URL}" alt="Care Cuddle Academy" width="140" style="display:block;margin:0 auto 16px;" />
-          <h1 style="margin:0;color:#ffffff;font-size:20px;font-weight:600;">${headerTitle}</h1>
-        </td></tr>
-        <tr><td style="padding:32px 40px;">${content}</td></tr>
-        <tr><td style="padding:20px 40px;background-color:#f9fafb;text-align:center;border-top:1px solid #e5e7eb;">
-          <p style="margin:0;color:#9ca3af;font-size:12px;">© ${new Date().getFullYear()} Care Cuddle Academy. All rights reserved.</p>
-        </td></tr>
-      </table>
-    </td></tr>
-  </table>
-</body></html>`;
-
-const button = (label: string, href: string) => `
-  <table cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr><td style="border-radius:8px;background-color:${BRAND_COLOR};">
-    <a href="${href}" style="display:inline-block;padding:12px 28px;color:#ffffff;font-size:14px;font-weight:600;text-decoration:none;">${label}</a>
-  </td></tr></table>`;
+const CONTRACTS_LINK = `${APP_URL}/view/hr?tab=my-contracts`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -66,56 +184,176 @@ serve(async (req) => {
     if (type === "contract_sent") {
       const to = body.recipientEmail;
       if (!to) {
-        return new Response(JSON.stringify({ skipped: "no recipient email" }), {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        // The staff member can never learn a contract is waiting for them —
+        // tell the admins instead of failing silently.
+        await alertAdminsOfFailure(
+          RESEND_API_KEY,
+          `A new contract to read and sign — ${contractTitle}`,
+          `${recipientName || "the contract recipient"} (no email address on file)`,
+        );
+        return new Response(
+          JSON.stringify({ skipped: "no recipient email", adminsAlerted: true }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
       }
-      const content = `
-        <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 12px;">Hi ${recipientName || "there"},</p>
-        <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 12px;">
-          A new contract — <strong>${contractTitle}</strong> — is ready for you to review and sign.
-        </p>
-        <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 4px;">
-          Please log in, then open <strong>HR &rarr; My Contracts</strong> to read and sign it.
-        </p>
-        ${button("Review & sign your contract", `${APP_URL}/view/hr?tab=my-contracts`)}
-        <p style="color:#9ca3af;font-size:13px;line-height:1.5;margin:0;">
-          If the button doesn't work, copy this link into your browser:<br/>${APP_URL}/view/hr?tab=my-contracts
-        </p>`;
+
+      const content =
+        greeting(recipientName) +
+        paragraph(
+          `The Care Cuddle team has sent you a new contract to read and sign — <strong>${contractTitle}</strong>.`
+        ) +
+        paragraph(
+          `Once you log in, you'll find it on your My Contracts page. Please read it carefully, and sign it when you're happy with everything.`
+        ) +
+        button("Read and sign your contract", CONTRACTS_LINK) +
+        mutedParagraph(
+          `If the button doesn't work, copy this link into your browser:<br/>${CONTRACTS_LINK}`
+        );
+
       const { error } = await resend.emails.send({
-        from: FROM,
+        from: EMAIL_SENDER,
         to: [to],
-        subject: `Action needed: please sign "${contractTitle}"`,
-        html: emailWrapper("Contract ready to sign", content),
+        subject: "Your new contract is ready to sign",
+        html: emailShell(
+          "Your contract is ready to sign",
+          content,
+          "You're receiving this because a contract was sent to you to sign at Care Cuddle.",
+        ),
       });
       if (error) throw error;
     }
 
     if (type === "contract_signed") {
-      // Notify all admins.
-      const { data: admins } = await supabase
-        .from("profiles")
-        .select("email")
-        .eq("role", "admin");
-      const recipients = (admins ?? [])
-        .map((a: { email: string | null }) => a.email)
-        .filter((e: string | null): e is string => !!e);
+      // Look up the contract so the signer gets their own confirmation copy.
+      const { data: contract, error: contractError } = await supabase
+        .from("contracts")
+        .select("recipient_email, recipient_name")
+        .eq("id", body.contractId)
+        .maybeSingle();
 
-      if (recipients.length > 0) {
-        const content = `
-          <p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 12px;">
-            <strong>${recipientName || "A staff member"}</strong> has signed the contract
-            <strong>${contractTitle}</strong>.
-          </p>
-          ${button("View in HR", `${APP_URL}/view/hr?tab=contracts`)}`;
-        const { error } = await resend.emails.send({
-          from: FROM,
-          to: recipients,
-          subject: `Contract signed: ${contractTitle}`,
-          html: emailWrapper("Contract signed", content),
+      const signerName = contract?.recipient_name || recipientName || "";
+      const signerEmail = contract?.recipient_email || null;
+
+      // 1) Confirm to the signer — they just signed a legally binding document.
+      if (signerEmail) {
+        const signerContent =
+          greeting(signerName) +
+          paragraph(
+            `Thank you — you've signed your contract, <strong>${contractTitle}</strong>, and your signed copy is safely saved.`
+          ) +
+          paragraph(`You can read it again any time on your My Contracts page.`) +
+          button("See your signed contract", CONTRACTS_LINK);
+
+        const { error: signerError } = await resend.emails.send({
+          from: EMAIL_SENDER,
+          to: [signerEmail],
+          subject: "Your contract is signed and saved",
+          html: emailShell(
+            "Your contract is signed",
+            signerContent,
+            "You're receiving this because you signed a contract at Care Cuddle.",
+          ),
         });
-        if (error) throw error;
+        if (signerError) {
+          console.error("send-contract-email: signer confirmation failed", signerError);
+          await alertAdminsOfFailure(
+            RESEND_API_KEY,
+            `Confirmation of the signed contract — ${contractTitle}`,
+            `${signerName || "the person who signed"} (their confirmation email failed to send)`,
+          );
+        }
+      } else {
+        if (contractError) {
+          console.error("send-contract-email: contract lookup failed", contractError);
+        }
+        // Word the alert honestly: a lookup failure doesn't mean the address is missing.
+        await alertAdminsOfFailure(
+          RESEND_API_KEY,
+          `Confirmation of the signed contract — ${contractTitle}`,
+          `${signerName || "the person who signed"} (${
+            contractError
+              ? "we couldn't look up their email address — please check and resend"
+              : "no email address on file"
+          })`,
+        );
+      }
+
+      // 2) Tell the admins — one email each, never a shared visible to: list.
+      const { data: admins, error: adminsError } = await supabase
+        .from("profiles")
+        .select("email, display_name")
+        .eq("role", "admin")
+        .not("email", "is", null);
+
+      const allAdmins = (admins ?? []).filter(
+        (a: { email: string | null }): a is { email: string; display_name: string | null } => !!a.email
+      );
+
+      // The signer already got their own confirmation above — don't send them
+      // a second "nothing is waiting on you" copy if they're also an admin.
+      const adminRecipients = signerEmail
+        ? allAdmins.filter((a) => a.email !== signerEmail)
+        : allAdmins;
+
+      if (allAdmins.length === 0) {
+        if (adminsError) {
+          console.error("send-contract-email: admin lookup failed", adminsError);
+        } else {
+          console.error("send-contract-email: no admin email addresses on file — nobody to notify of the signature");
+        }
+        // Nobody in the office would hear about the signature — raise it rather
+        // than reporting success in silence. (If the lookup only failed
+        // transiently, the helper retries with a fresh client and may still
+        // reach the admins; if there truly are none, nothing more we can do.)
+        await alertAdminsOfFailure(
+          RESEND_API_KEY,
+          `A signed contract — ${contractTitle}`,
+          "the admin team (no admin email addresses on file)",
+        );
+      } else if (adminRecipients.length > 0) {
+        const subject = signerName
+          ? `${signerName} has signed their contract`
+          : "A contract has been signed";
+        const sendResults = await Promise.all(
+          adminRecipients.map(async (adminRecipient) => {
+            const adminContent =
+              greeting(adminRecipient.display_name) +
+              paragraph(
+                signerName
+                  ? `<strong>${signerName}</strong> has just signed their contract, <strong>${contractTitle}</strong> — nothing is waiting on you.`
+                  : `The contract <strong>${contractTitle}</strong> has just been signed — nothing is waiting on you.`
+              ) +
+              paragraph(`The signed copy is saved in Care Cuddle if you'd like to read it.`) +
+              button("See the signed contract", `${APP_URL}/view/hr?tab=contracts`);
+
+            const { error: adminError } = await resend.emails.send({
+              from: EMAIL_SENDER,
+              to: [adminRecipient.email],
+              subject,
+              html: emailShell(
+                "A contract has been signed",
+                adminContent,
+                "You're receiving this because you're an admin at Care Cuddle.",
+              ),
+            });
+            if (adminError) {
+              console.error("send-contract-email: admin copy failed", adminRecipient.email, adminError);
+              return false;
+            }
+            return true;
+          }),
+        );
+
+        // Every admin copy failed — don't let the signature pass in silence.
+        // The helper sends via raw fetch with a fresh client, so it can still
+        // get through when the SDK path above hit a transient fault.
+        if (sendResults.every((ok) => !ok)) {
+          await alertAdminsOfFailure(
+            RESEND_API_KEY,
+            `A signed contract — ${contractTitle}`,
+            "the admin team (every admin notification email failed to send)",
+          );
+        }
       }
     }
 
