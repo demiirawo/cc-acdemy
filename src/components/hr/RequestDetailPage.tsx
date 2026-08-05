@@ -109,7 +109,9 @@ export function RequestDetailPage({
   const queryClient = useQueryClient();
   const {
     sendReviewEmail,
-    sendCoverAssignmentEmail
+    sendCoverAssignmentEmail,
+    sendCoverConfirmedEmail,
+    sendCoverRemovedEmail
   } = useRequestEmailNotification();
   const [reviewNotes, setReviewNotes] = useState("");
   const [emailCopied, setEmailCopied] = useState(false);
@@ -652,6 +654,18 @@ export function RequestDetailPage({
             impactedClients: coverResult.impactedClients,
           }).catch(err => console.error("Failed to send cover assignment email:", err));
         }
+        // The person being covered had no way of knowing this was arranged — the
+        // only email used to go to the colleague picking their shifts up.
+        if (coveredForProfile?.email && coverProfile) {
+          sendCoverConfirmedEmail({
+            assigneeName: coverProfile.display_name || coverProfile.email,
+            assigneeEmail: coverProfile.email || undefined,
+            coveredForName: getStaffName(request.user_id),
+            coveredForEmail: coveredForProfile.email,
+            coveredDates: coverResult.coveredDates,
+            impactedClients: coverResult.impactedClients,
+          }).catch(err => console.error("Failed to send cover confirmation email:", err));
+        }
       }
     },
     onError: error => {
@@ -687,10 +701,25 @@ export function RequestDetailPage({
 
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_data, coverUserId) => {
       refetchCoveringStaff();
       invalidateAllCoverageQueries(queryClient);
       toast.success("Cover unassigned");
+      // Tell the removed cover to stand down, and the person being covered that
+      // their cover has gone — silence here is how someone works a shift they're
+      // no longer assigned to, or flies believing they're covered when they're not.
+      if (request) {
+        const removedProfile = userProfiles.find(p => p.user_id === coverUserId);
+        const coveredForProfile = userProfiles.find(p => p.user_id === request.user_id);
+        if (removedProfile?.email) {
+          sendCoverRemovedEmail({
+            assigneeName: removedProfile.display_name || removedProfile.email,
+            assigneeEmail: removedProfile.email,
+            coveredForName: getStaffName(request.user_id),
+            coveredForEmail: coveredForProfile?.email || undefined,
+          }).catch(err => console.error("Failed to send cover removed email:", err));
+        }
+      }
     },
     onError: (error) => {
       toast.error("Failed to unassign cover: " + error.message);

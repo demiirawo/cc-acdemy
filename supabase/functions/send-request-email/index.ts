@@ -32,6 +32,9 @@ interface EmailRequest {
   coveredForName?: string;
   coveredForEmail?: string;
   coveredDates?: string[];
+  /** Set when cover moves between people, so the wording says "changed". */
+  previousAssigneeName?: string;
+  newAssigneeName?: string;
 }
 
 const isHolidayType = (rt: string | undefined): boolean =>
@@ -146,6 +149,8 @@ const handler = async (req: Request): Promise<Response> => {
       coveredForName,
       coveredForEmail,
       coveredDates,
+      previousAssigneeName,
+      newAssigneeName,
     } = emailRequest;
 
     const requestTypeLabel = getRequestTypeLabel(requestType);
@@ -354,6 +359,113 @@ const handler = async (req: Request): Promise<Response> => {
         subject: `You're covering ${coveredFor}${dates.length ? ` — ${dates.length} day${dates.length !== 1 ? "s" : ""}` : ""}`,
         html: emailWrapper("You've been assigned cover", coveredFor, bodyContent, BRAND_COLOR),
       });
+    } else if (type === "cover_confirmed") {
+      // To the person going on leave. They were the one who asked for the time
+      // off and had no way of knowing it had been arranged — the only email went
+      // to the colleague picking it up.
+      if (!coveredForEmail) {
+        return new Response(
+          JSON.stringify({ success: true, message: "No covered-for email to notify" }),
+          { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+      const clients = impactedClients || [];
+      const dates = coveredDates || [];
+      const datesLabel = dates.length > 0 ? dates.map(formatDate).join(", ") : "";
+      const cover = assigneeName || "a colleague";
+      const changed = !!previousAssigneeName && previousAssigneeName !== assigneeName;
+
+      const bodyContent = `
+        <p style="color: #374151; font-size: 16px; margin: 0 0 20px;">Hi ${coveredForName || "there"},</p>
+        <p style="color: #374151; font-size: 16px; margin: 0 0 20px;">
+          ${changed
+            ? `Your cover has changed. <strong>${cover}</strong> will now be covering your shifts${datesLabel ? ` on <strong>${datesLabel}</strong>` : ""}, instead of ${previousAssigneeName}.`
+            : `<strong>${cover}</strong> has been assigned to cover your shifts${datesLabel ? ` on <strong>${datesLabel}</strong>` : ""}.`}
+        </p>
+        <p style="color: #374151; font-size: 15px; margin: 0 0 20px;">
+          Please complete the handover with ${cover}${assigneeEmail ? ` (<a href="mailto:${assigneeEmail}" style="color:${BRAND_COLOR};">${assigneeEmail}</a>)` : ""} before you go, so they have what they need for your client(s).
+        </p>
+        ${handoverBlock(
+          "Handover tracker",
+          "Work through the handover for each client:",
+          clients
+        )}
+        <div style="text-align: center;">
+          <a href="${APP_URL}" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+            Open My Handover
+          </a>
+        </div>
+      `;
+
+      emailResult = await resend.emails.send({
+        from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
+        to: [coveredForEmail],
+        subject: changed
+          ? `Your cover has changed — ${cover} is now covering`
+          : `${cover} is covering your shifts${dates.length ? ` — ${dates.length} day${dates.length !== 1 ? "s" : ""}` : ""}`,
+        html: emailWrapper(changed ? "Your cover has changed" : "Your cover is arranged", cover, bodyContent, BRAND_COLOR),
+      });
+    } else if (type === "cover_removed") {
+      // To whoever was covering before. Without this they keep believing they're
+      // on those shifts, which is the worst of the three ways to get this wrong.
+      if (!assigneeEmail) {
+        return new Response(
+          JSON.stringify({ success: true, message: "No previous assignee email to notify" }),
+          { status: 200, headers: { "Content-Type": "application/json", ...corsHeaders } }
+        );
+      }
+      const dates = coveredDates || [];
+      const datesLabel = dates.length > 0 ? dates.map(formatDate).join(", ") : "";
+      const coveredFor = coveredForName || "a colleague";
+      const replacement = newAssigneeName || "someone else";
+
+      const bodyContent = `
+        <p style="color: #374151; font-size: 16px; margin: 0 0 20px;">Hi ${assigneeName || "there"},</p>
+        <p style="color: #374151; font-size: 16px; margin: 0 0 20px;">
+          You're <strong>no longer covering</strong> ${coveredFor}${datesLabel ? ` on <strong>${datesLabel}</strong>` : ""}.
+          ${replacement !== "someone else" ? `<strong>${replacement}</strong> is covering instead.` : ""}
+        </p>
+        <p style="color: #374151; font-size: 15px; margin: 0 0 20px;">
+          Please don't work these shifts. Your own schedule is unchanged — check it below if you're unsure.
+        </p>
+        <div style="text-align: center;">
+          <a href="${APP_URL}" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+            View My Schedule
+          </a>
+        </div>
+      `;
+
+      emailResult = await resend.emails.send({
+        from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
+        to: [assigneeEmail],
+        subject: `You're no longer covering ${coveredFor}`,
+        html: emailWrapper("Cover reassigned", coveredFor, bodyContent, "#d97706"),
+      });
+
+      // The person going on leave needs to know their cover has gone too —
+      // otherwise they believe they're covered when they're not.
+      if (coveredForEmail) {
+        const coveredBody = `
+          <p style="color: #374151; font-size: 16px; margin: 0 0 20px;">Hi ${coveredForName || "there"},</p>
+          <p style="color: #374151; font-size: 16px; margin: 0 0 20px;">
+            <strong>${assigneeName || "Your cover"}</strong> is no longer covering your shifts${datesLabel ? ` on <strong>${datesLabel}</strong>` : ""}.
+            ${replacement !== "someone else"
+              ? `<strong>${replacement}</strong> will cover instead — they'll get set up with your handover.`
+              : `Replacement cover is being arranged. If your leave is soon and you haven't heard, please check with your manager.`}
+          </p>
+          <div style="text-align: center;">
+            <a href="${APP_URL}" style="display: inline-block; background-color: ${BRAND_COLOR}; color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+              View My Requests
+            </a>
+          </div>
+        `;
+        await resend.emails.send({
+          from: "Care Cuddle Academy <hello@care-cuddle-academy.co.uk>",
+          to: [coveredForEmail],
+          subject: `Change to your cover — ${assigneeName || "your cover"} is no longer covering`,
+          html: emailWrapper("Change to your cover", assigneeName || "Cover", coveredBody, "#d97706"),
+        });
+      }
     } else {
       throw new Error(`Unknown email type: ${type}`);
     }
