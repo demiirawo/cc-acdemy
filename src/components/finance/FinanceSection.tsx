@@ -590,6 +590,15 @@ export function FinanceSection() {
     }
   };
 
+  // A client's first price. Deliberately not a change-log entry: recording
+  // "£0 → £909.50" would draw a fake price rise on the revenue chart and start
+  // the annual-uplift clock from the day someone got round to typing the fee in.
+  const setInitialPrice = async (client: ClientTableRow, mrr: number) => {
+    await patchClient(client.id, { mrr });
+    toast({ title: "Fee set", description: `${client.name} is ${gbp2(mrr)}/mo.` });
+    await load();
+  };
+
   // Record a fee change. The live mrr only moves once the effective date has
   // arrived — a rise agreed today for next month must not restate this month's
   // revenue, but it should still show in the projection, which reads the log.
@@ -826,7 +835,7 @@ export function FinanceSection() {
 
           {/* ---- Clients ---- */}
           <TabsContent value="clients" className="mt-0">
-            <ClientsTable rows={model.clientRows} onPatch={patchClient} onPriceChange={applyPriceChange}
+            <ClientsTable rows={model.clientRows} onPatch={patchClient} onPriceChange={applyPriceChange} onSetInitialPrice={setInitialPrice}
               onFieldChange={applyFieldChange} priceChanges={priceChanges} changeLog={changeLog} />
           </TabsContent>
 
@@ -1122,7 +1131,10 @@ function SettingField({ label, value, onSave, step }: { label: string; value: nu
 const PROCESSOR_META: Record<string, { label: string; cls: string; bar: string }> = {
   zoho: { label: "ZOHO", cls: "border-emerald-300 text-emerald-600 bg-emerald-50", bar: "bg-emerald-400" },
   freeagent: { label: "FREEAGENT", cls: "border-blue-300 text-blue-600 bg-blue-50", bar: "bg-blue-400" },
-  other: { label: "OTHER", cls: "border-muted-foreground/30 text-muted-foreground", bar: "bg-muted-foreground/40" },
+  other: { label: "NO BILLING SET", cls: "border-amber-300 text-amber-600 bg-amber-50", bar: "bg-amber-400" },
+  // Churned clients sit apart from the billing groups: which system used to
+  // invoice them stops being the useful fact once they've left.
+  inactive: { label: "INACTIVE / CHURNED", cls: "border-muted-foreground/30 text-muted-foreground", bar: "bg-muted-foreground/40" },
 };
 /**
  * How long we've had a client, and whether their annual uplift is due.
@@ -1150,9 +1162,10 @@ function clientTenure(contractStart: string | null, lastUplift: string | null) {
 
 type ClientTableRow = ClientRow & { mrr: number; netRevenue: number | null; processor: "zoho" | "freeagent" | "other"; profit: number | null; margin: number | null };
 
-function ClientsTable({ rows, onPatch, onPriceChange, onFieldChange, priceChanges, changeLog }: {
+function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onFieldChange, priceChanges, changeLog }: {
   rows: ClientTableRow[];
   onPatch: (id: string, patch: Partial<ClientRow>) => void;
+  onSetInitialPrice: (client: ClientTableRow, mrr: number) => Promise<void>;
   onPriceChange: (client: ClientTableRow, newMrr: number, effectiveDate: string, reason: string) => Promise<void>;
   onFieldChange: (client: ClientTableRow, field: "status" | "contract_end_date", newValue: string | null, effectiveDate: string, reason: string) => Promise<void>;
   priceChanges: PriceChange[];
@@ -1183,6 +1196,7 @@ function ClientsTable({ rows, onPatch, onPriceChange, onFieldChange, priceChange
   // Stage and contract-end changes carry a date the field itself can't hold —
   // when it took effect, which is what revenue needs — so both go through a
   // dialog rather than an inline control.
+  const [billingEdit, setBillingEdit] = useState<ClientTableRow | null>(null);
   const [changeEdit, setChangeEdit] = useState<{ client: ClientTableRow; field: "status" | "contract_end_date" } | null>(null);
   const [changeValue, setChangeValue] = useState("");
   const [changeDate, setChangeDate] = useState("");
@@ -1210,20 +1224,28 @@ function ClientsTable({ rows, onPatch, onPriceChange, onFieldChange, priceChange
 
   const openPriceDialog = (c: ClientTableRow) => {
     setPriceEdit(c);
-    setPriceValue(String(c.mrr ?? ""));
-    // Default to the start of next month — the usual case is a rise agreed now
-    // that begins at the next billing cycle.
+    setPriceValue(c.mrr > 0 ? String(c.mrr) : "");
+    // A client with no fee yet is being priced for the first time, not repriced:
+    // it starts when their contract does (or today for one already running), and
+    // nothing is logged, because "£0 → £909.50" is not a price rise.
     const d = new Date();
-    setPriceDate(new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString().slice(0, 10));
+    setPriceDate(
+      c.mrr > 0
+        ? new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString().slice(0, 10)
+        : (c.contract_start_date ?? d.toISOString().slice(0, 10)),
+    );
     setPriceReason("");
   };
 
   const savePrice = async () => {
     if (!priceEdit) return;
     const v = parseFloat(priceValue);
-    if (isNaN(v) || !priceDate) return;
+    if (isNaN(v)) return;
+    const isFirstPrice = Number(priceEdit.mrr) <= 0;
+    if (!isFirstPrice && !priceDate) return;
     setSavingPrice(true);
-    await onPriceChange(priceEdit, v, priceDate, priceReason.trim());
+    if (isFirstPrice) await onSetInitialPrice(priceEdit, v);
+    else await onPriceChange(priceEdit, v, priceDate, priceReason.trim());
     setSavingPrice(false);
     setPriceEdit(null);
   };
@@ -1280,8 +1302,15 @@ function ClientsTable({ rows, onPatch, onPriceChange, onFieldChange, priceChange
     );
   };
 
-  const groups = (["zoho", "freeagent", "other"] as const)
-    .map(key => ({ key, meta: PROCESSOR_META[key], items: sortRows(rows.filter(r => r.processor === key)) }))
+  // Inactive clients group together regardless of who used to bill them, so the
+  // Zoho and FreeAgent sums read as live books rather than history.
+  const isChurned = (r: ClientTableRow) => (r.status ?? "active") === "inactive";
+  const groups = (["zoho", "freeagent", "other", "inactive"] as const)
+    .map(key => ({
+      key,
+      meta: PROCESSOR_META[key],
+      items: sortRows(rows.filter(r => (key === "inactive" ? isChurned(r) : !isChurned(r) && r.processor === key))),
+    }))
     .filter(g => g.items.length > 0);
 
   return (
@@ -1291,6 +1320,7 @@ function ClientsTable({ rows, onPatch, onPriceChange, onFieldChange, priceChange
           <tr className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
             {sortHead("name", "Client")}
             {sortHead("status", "Sales Stage", "w-[150px]")}
+            <th className="text-left font-medium px-4 py-2.5 w-[110px]">Billing</th>
             {sortHead("contract_start_date", "Contract start", "w-[120px]")}
             {sortHead("tenure", "Tenure", "w-[150px]")}
             {sortHead("contract_end_date", "Contract end", "w-[120px]")}
@@ -1310,7 +1340,7 @@ function ClientsTable({ rows, onPatch, onPriceChange, onFieldChange, priceChange
                 className="cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors border-b"
                 onClick={() => setCollapsed(prev => ({ ...prev, [g.key]: !isCollapsed }))}
               >
-                <td colSpan={8} className="px-4 py-2">
+                <td colSpan={9} className="px-4 py-2">
                   <div className="flex items-center gap-2">
                     {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
                     <span className={cn("h-3 w-1 rounded-full", g.meta.bar)} />
@@ -1347,6 +1377,14 @@ function ClientsTable({ rows, onPatch, onPriceChange, onFieldChange, priceChange
                           </div>
                         );
                       })()}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge
+                        variant="outline"
+                        className={cn("text-[10px] cursor-pointer", PROCESSOR_META[c.processor].cls)}
+                        onClick={() => setBillingEdit(c)}
+                        title="Which system invoices this client"
+                      >{c.processor === "other" ? "Set billing" : PROCESSOR_META[c.processor].label}</Badge>
                     </td>
                     <td
                       className="px-4 py-3 text-muted-foreground cursor-text"
@@ -1413,8 +1451,42 @@ function ClientsTable({ rows, onPatch, onPriceChange, onFieldChange, priceChange
         })}
       </table>
       <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
-        Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the month it falls in, in both the history and the projection. Click a fee to change it — you'll be asked when the new price takes effect, and the change is logged and marked on the chart. Double-click either contract date to edit · click the stage pill to change it · click a group header to collapse it.
+        Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the month it falls in, in both the history and the projection. Inactive clients are grouped separately from the billing systems. Click a fee to set or change it — an existing fee asks when the new price takes effect and is logged on the chart; a first fee is just recorded. Click the billing pill to say whether Zoho or FreeAgent invoices them · double-click either contract date to edit · click the stage pill to change it · click a group header to collapse it.
       </p>
+
+      {/* Which system invoices this client. A plain attribute, not a dated change:
+          moving a client between Zoho and FreeAgent doesn't alter what they pay. */}
+      <Dialog open={!!billingEdit} onOpenChange={o => { if (!o) setBillingEdit(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Billing system — {billingEdit?.name}</DialogTitle>
+            <DialogDescription>Which system raises this client's invoices.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2 py-1">
+            {[
+              { value: "Zoho", label: "Zoho" },
+              { value: "FreeAgent", label: "FreeAgent" },
+              { value: null, label: "Not set" },
+            ].map(opt => {
+              const current = processorOf(billingEdit?.software ?? null);
+              const selected = opt.value ? processorOf(opt.value) === current : current === "other";
+              return (
+                <Button
+                  key={opt.label}
+                  variant={selected ? "default" : "outline"}
+                  className="justify-start"
+                  onClick={() => {
+                    if (billingEdit) onPatch(billingEdit.id, { software: opt.value } as Partial<ClientRow>);
+                    setBillingEdit(null);
+                  }}
+                >
+                  {opt.label}{selected && " ✓"}
+                </Button>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Stage / contract-end change — the effective date is the point of it. */}
       <Dialog open={!!changeEdit} onOpenChange={o => { if (!o && !savingChange) setChangeEdit(null); }}>
@@ -1469,22 +1541,28 @@ function ClientsTable({ rows, onPatch, onPriceChange, onFieldChange, priceChange
       <Dialog open={!!priceEdit} onOpenChange={o => { if (!o && !savingPrice) setPriceEdit(null); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Change fee — {priceEdit?.name}</DialogTitle>
+            <DialogTitle>
+              {priceEdit && Number(priceEdit.mrr) > 0 ? "Change fee" : "Set fee"} — {priceEdit?.name}
+            </DialogTitle>
             <DialogDescription>
-              Currently {priceEdit ? gbp2(priceEdit.mrr) : ""}/mo. The new price applies from the date you set.
+              {priceEdit && Number(priceEdit.mrr) > 0
+                ? `Currently ${gbp2(priceEdit.mrr)}/mo. The new price applies from the date you set.`
+                : "Their agreed monthly fee. Revenue starts counting from their contract start date."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-1">
-            <div className="grid grid-cols-2 gap-3">
+            <div className={cn("grid gap-3", priceEdit && Number(priceEdit.mrr) > 0 ? "grid-cols-2" : "grid-cols-1")}>
               <div className="space-y-1.5">
-                <Label htmlFor="new-fee">New monthly fee</Label>
+                <Label htmlFor="new-fee">Monthly fee</Label>
                 <Input id="new-fee" type="number" step="0.01" value={priceValue}
                   onChange={e => setPriceValue(e.target.value)} className="text-right" />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="fee-date">Effective from</Label>
-                <Input id="fee-date" type="date" value={priceDate} onChange={e => setPriceDate(e.target.value)} />
-              </div>
+              {priceEdit && Number(priceEdit.mrr) > 0 && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="fee-date">Effective from</Label>
+                  <Input id="fee-date" type="date" value={priceDate} onChange={e => setPriceDate(e.target.value)} />
+                </div>
+              )}
             </div>
             {priceEdit && !isNaN(parseFloat(priceValue)) && parseFloat(priceValue) !== Number(priceEdit.mrr) && (
               <p className={cn("text-xs font-medium",
@@ -1494,18 +1572,21 @@ function ClientsTable({ rows, onPatch, onPriceChange, onFieldChange, priceChange
                 {Number(priceEdit.mrr) > 0 && ` (${((parseFloat(priceValue) - Number(priceEdit.mrr)) / Number(priceEdit.mrr) * 100).toFixed(1)}%)`}
               </p>
             )}
-            <div className="space-y-1.5">
-              <Label htmlFor="fee-reason">Reason</Label>
-              <Textarea id="fee-reason" rows={2} value={priceReason} onChange={e => setPriceReason(e.target.value)}
-                placeholder="e.g. annual 5% uplift, added Airtable, reduced to 2 days" />
-            </div>
+            {priceEdit && Number(priceEdit.mrr) > 0 && (
+              <div className="space-y-1.5">
+                <Label htmlFor="fee-reason">Reason</Label>
+                <Textarea id="fee-reason" rows={2} value={priceReason} onChange={e => setPriceReason(e.target.value)}
+                  placeholder="e.g. annual 5% uplift, added Airtable, reduced to 2 days" />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPriceEdit(null)} disabled={savingPrice}>Cancel</Button>
             <Button onClick={savePrice}
-              disabled={savingPrice || !priceDate || isNaN(parseFloat(priceValue))
-                || parseFloat(priceValue) === Number(priceEdit?.mrr ?? NaN)}>
-              {savingPrice ? "Saving…" : "Save change"}
+              disabled={savingPrice || isNaN(parseFloat(priceValue))
+                || (Number(priceEdit?.mrr ?? 0) > 0 && (!priceDate || parseFloat(priceValue) === Number(priceEdit?.mrr)))
+                || (Number(priceEdit?.mrr ?? 0) <= 0 && parseFloat(priceValue) <= 0)}>
+              {savingPrice ? "Saving…" : Number(priceEdit?.mrr ?? 0) > 0 ? "Save change" : "Set fee"}
             </Button>
           </DialogFooter>
         </DialogContent>
