@@ -1602,6 +1602,46 @@ export function StaffPayManager({ onSummaryComputed }: {
     onSummaryComputed({ month: format(selectedMonth, "yyyy-MM"), totals });
   }, [payrollSummary, selectedMonth, onSummaryComputed]);
 
+  // ...and persist them, so Finance shows the same figure for this month whether
+  // or not this tab has been opened. Without this the two pages disagreed: the
+  // P&L fell back to a projection from base salary, which knows nothing about
+  // overtime, bonuses, deductions or pro-rata.
+  const lastPersistedRef = useRef<string>("");
+  useEffect(() => {
+    if (payrollSummary.length === 0) return;
+    const month = format(selectedMonth, "yyyy-MM");
+    const rows = payrollSummary
+      .map(s => ({ month, user_id: s.userId, total_gbp: Number(s.totalPayInGBP.toFixed(2)) }))
+      .sort((a, b) => a.user_id.localeCompare(b.user_id));
+    // Only write when the numbers actually moved — this effect re-runs on every
+    // recompute, and an unchanged month shouldn't generate database traffic.
+    const fingerprint = JSON.stringify(rows);
+    if (fingerprint === lastPersistedRef.current) return;
+    lastPersistedRef.current = fingerprint;
+
+    const t = setTimeout(async () => {
+      const { error } = await (supabase as any)
+        .from("payroll_month_totals")
+        .upsert(rows, { onConflict: "month,user_id" });
+      if (error) {
+        // Non-fatal: the tab still shows the right numbers, Finance just keeps
+        // projecting. Don't interrupt payroll work with a toast for this.
+        console.error("Couldn't persist payroll totals for Finance:", error);
+        lastPersistedRef.current = "";
+        return;
+      }
+      // Drop anyone who is no longer on this month's payroll, so a removed
+      // person can't linger in the Finance cost for the month.
+      const keep = rows.map(r => r.user_id);
+      await (supabase as any)
+        .from("payroll_month_totals")
+        .delete()
+        .eq("month", month)
+        .not("user_id", "in", `(${keep.join(",")})`);
+    }, 800);
+    return () => clearTimeout(t);
+  }, [payrollSummary, selectedMonth]);
+
   const payrollTotalsByStatus = useMemo(() => {
     let paid = 0, ready = 0, pending = 0;
     payrollSummary.forEach(s => {

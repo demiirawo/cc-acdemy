@@ -50,7 +50,7 @@ interface ClientRow { id: string; name: string; mrr: number | null; software: st
 interface PriceChange { id: string; client_id: string; previous_mrr: number | null; new_mrr: number; effective_date: string; reason: string | null; }
 interface ClientChange { id: string; client_id: string; field: "status" | "contract_end_date"; previous_value: string | null; new_value: string | null; effective_date: string; reason: string | null; }
 interface StaffPay { user_id: string; base_salary: number; base_currency: string; }
-interface HrRow { user_id: string; pay_frequency: string | null; employment_end_date: string | null; }
+interface HrRow { user_id: string; pay_frequency: string | null; employment_end_date: string | null; start_date: string | null; created_at: string | null; }
 interface Profile { user_id: string; display_name: string | null; email: string | null; }
 interface Assignment { staff_user_id: string; client_name: string | null; }
 interface Expense { id: string; name: string; amount_gbp: number; category: string; vat_able: boolean | null; recurring: boolean; notes: string | null; active: boolean; }
@@ -128,6 +128,9 @@ export function FinanceSection() {
   // includes holiday overtime, bonuses, deductions, pro-rata etc. Used as Cost /mo
   // so Finance matches the Payroll tab exactly.
   const [payrollFromTab, setPayrollFromTab] = useState<{ month: string; totals: Record<string, number> } | null>(null);
+  // The Payroll tab's saved totals for the selected month, read from the database
+  // so they apply even when that tab hasn't been opened this session.
+  const [payrollStored, setPayrollStored] = useState<Record<string, number>>({});
   // Cash actually received per month from FreeAgent, keyed 'YYYY-MM' on the payment
   // date. Lets the trend show money in the bank rather than back-projecting today's MRR.
   const [paidByMonth, setPaidByMonth] = useState<Record<string, number>>({});
@@ -160,10 +163,10 @@ export function FinanceSection() {
     const monthStart = `${finMonthKey}-01`;
     const nextM = new Date(fy, fm, 1);
     const monthEnd = `${nextM.getFullYear()}-${String(nextM.getMonth() + 1).padStart(2, "0")}-01`;
-    const [cl, sp, hrp, pr, asg, rt, ex, st, pr2, pat, inv, fa, pc, ccl] = await Promise.all([
+    const [cl, sp, hrp, pr, asg, rt, ex, st, pr2, pat, inv, fa, pc, ccl, pmt] = await Promise.all([
       supabase.from("clients").select("id, name, mrr, software, status, contract_start_date, contract_end_date"),
       (supabase as any).from("staff_salaries").select("user_id, base_salary, base_currency"),
-      supabase.from("hr_profiles").select("user_id, pay_frequency, employment_end_date"),
+      supabase.from("hr_profiles").select("user_id, pay_frequency, employment_end_date, start_date, created_at"),
       supabase.from("profiles").select("user_id, display_name, email"),
       (supabase as any).from("staff_client_assignments").select("staff_user_id, client_name"),
       (supabase as any).from("manual_currency_rates").select("currency_code, rate_to_gbp"),
@@ -194,6 +197,11 @@ export function FinanceSection() {
       (supabase as any).from("client_change_log")
         .select("id, client_id, field, previous_value, new_value, effective_date, reason")
         .order("effective_date", { ascending: true }),
+      // What the Payroll tab computed for this month, if it has run. This is the
+      // same number that tab shows — holiday overtime, bonuses, deductions and
+      // pro-rata included — so both pages report one figure for the month.
+      (supabase as any).from("payroll_month_totals")
+        .select("user_id, total_gbp").eq("month", finMonthKey),
     ]);
     setClients((cl.data as ClientRow[]) || []);
     // Cash received, bucketed by the month the payment landed rather than the month
@@ -235,6 +243,10 @@ export function FinanceSection() {
     });
     setPayAdjustments((pr2.data as PayAdjustment[]) || []);
     setPatterns((pat.data as ShiftPattern[]) || []);
+    setPayrollStored(
+      Object.fromEntries(((pmt.data as { user_id: string; total_gbp: number }[]) || [])
+        .map(r => [r.user_id, Number(r.total_gbp)]))
+    );
     setLoading(false);
   }, [finMonthKey]);
   useEffect(() => { load(); }, [load]);
@@ -273,16 +285,26 @@ export function FinanceSection() {
     const mEndDate = new Date(fy, fm, 0);
     const mEndStr = `${finMonthKey}-${String(mEndDate.getDate()).padStart(2, "0")}`;
 
-    // Employed at any point in the selected month — not "employed today", which
-    // wrongly costs a leaver into later months and a joiner into earlier ones.
+    // Who was on this month's payroll. Deliberately the same test the Payroll tab
+    // applies — a salary on file, a live profile, and employment overlapping the
+    // month — because the two pages counting staff differently is exactly how
+    // they came to report different payroll costs for one month.
     const activeStaff = pay.filter(s => {
+      if (!s.base_salary || Number(s.base_salary) <= 0) return false;
+      if (!profiles[s.user_id]) return false;
       const h = hr[s.user_id];
-      return !h?.employment_end_date || h.employment_end_date >= mStartStr;
+      const startRaw = h?.start_date || h?.created_at || null;
+      if (startRaw && startRaw.slice(0, 10) > mEndStr) return false;
+      if (h?.employment_end_date && h.employment_end_date < mStartStr) return false;
+      return true;
     });
-    // The Payroll tab publishes fully-computed totals for whichever month it is
-    // showing — holiday overtime, bonuses, deductions and pro-rata included. When
-    // that's the month selected here, they're authoritative.
-    const tabTotals = payrollFromTab && payrollFromTab.month === finMonthKey ? payrollFromTab.totals : null;
+    // Payroll's own figures win, in this order: the tab live on screen for this
+    // month, then what it last saved for this month. Only if it has never run
+    // for the month do we project from base salary.
+    const tabTotals = payrollFromTab && payrollFromTab.month === finMonthKey
+      ? payrollFromTab.totals
+      : (Object.keys(payrollStored).length > 0 ? payrollStored : null);
+    const tabIsLive = !!(payrollFromTab && payrollFromTab.month === finMonthKey);
 
     // What was actually recorded for this month, per person. A salary record
     // means their pay run happened — that snapshot IS the month's truth, and
@@ -476,10 +498,11 @@ export function FinanceSection() {
       clientRows, staffRows,
       activeStaffCount: tabTotals ? Object.keys(tabTotals).length : Object.keys(staffCostByUser).length,
       scheduledStaffCount: Object.keys(hoursStaffTotal).length,
-      payrollFromTabLive: !!tabTotals,
+      payrollFromTabLive: tabIsLive,
+      payrollFromSaved: !!tabTotals && !tabIsLive,
       payrollFromRecords: !tabTotals && usedRecords,
     };
-  }, [clients, pay, hr, profiles, assignments, rates, expenses, settings, payAdjustments, patterns, payrollFromTab, priceChanges, changeLog, finMonthKey]);
+  }, [clients, pay, hr, profiles, assignments, rates, expenses, settings, payAdjustments, patterns, payrollFromTab, payrollStored, priceChanges, changeLog, finMonthKey]);
 
   // Last 12 months of (reconstructed) revenue + next 6 months projected, for the trend chart.
   const revenueSeries = useMemo(() => {
@@ -565,21 +588,34 @@ export function FinanceSection() {
       const other = useActual
         ? (paidByMonth[key] ?? 0)
         : live.filter(c => !isZoho(c)).reduce((a, c) => a + grossOf(c, monthEnd), 0) * growth;
-      const started = billing.filter(c => inMonth(c.contract_start_date, monthStart, monthEnd))
-        .map(c => ({ name: c.name, amount: grossOf(c), zoho: isZoho(c) })).sort((a, b) => b.amount - a.amount);
+      // A won/lost marker has to describe money actually arriving or leaving the
+      // book. A prospect signed up and dropped before their contract started
+      // never billed a penny, so it is neither a win nor churn — showing it as
+      // "ended −£909.50" reads as revenue lost that was never there.
+      const prevMonthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth(), 0);
+      const prevMonthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() - 1, 1);
+      const billedLastMonth = (c: ClientRow) => billsIn(c, prevMonthStart, prevMonthEnd);
+
+      const started = billing
+        .filter(c => inMonth(c.contract_start_date, monthStart, monthEnd) && billsIn(c, monthStart, monthEnd))
+        .map(c => ({ name: c.name, amount: grossOf(c, monthEnd), zoho: isZoho(c) })).sort((a, b) => b.amount - a.amount);
       const endedIds = new Set<string>();
       const ended = billing.filter(c => {
         if (endedIds.has(c.id)) return false;
+        // Nothing to lose if they weren't billing the month before.
+        if (!billedLastMonth(c)) return false;
         const byContract = inMonth(c.contract_end_date, monthStart, monthEnd);
         const inactiveFrom = wentInactiveOn(c.id);
         const byStage = !!inactiveFrom && inactiveFrom >= monthStart && inactiveFrom <= monthEnd;
         if (byContract || byStage) { endedIds.add(c.id); return true; }
         return false;
-      }).map(c => ({ name: c.name, amount: grossOf(c), zoho: isZoho(c) })).sort((a, b) => b.amount - a.amount);
+      }).map(c => ({ name: c.name, amount: grossOf(c, prevMonthEnd), zoho: isZoho(c) })).sort((a, b) => b.amount - a.amount);
       // Fee changes taking effect this month, so a step in the line can be told
       // apart from a client arriving or leaving.
       const repriced = priceChanges
         .filter(pc => inMonth(pc.effective_date, monthStart, monthEnd))
+        // A move from nothing is a client being priced, not a fee change.
+        .filter(pc => Number(pc.previous_mrr ?? 0) > 0)
         .map(pc => ({
           name: clients.find(c => c.id === pc.client_id)?.name ?? "Client",
           delta: Number(pc.new_mrr) - Number(pc.previous_mrr ?? pc.new_mrr),
@@ -926,7 +962,7 @@ export function FinanceSection() {
                 {model.revOther > 0 && <Line label="Revenue — other" value={model.revOther} />}
                 <Line label="Total revenue" value={model.revFree + model.revOther} strong />
                 <div className="border-t my-1.5" />
-                <Line label={`Payroll — ${model.activeStaffCount} staff, full pay${model.payrollFromTabLive ? " (live from Payroll)" : model.payrollFromRecords ? " (as paid, from records)" : " (projected)"}`} value={-model.payrollCost} />
+                <Line label={`Payroll — ${model.activeStaffCount} staff, full pay${model.payrollFromTabLive ? " (live from Payroll)" : model.payrollFromSaved ? " (from Payroll)" : model.payrollFromRecords ? " (as paid, from records)" : " (projected)"}`} value={-model.payrollCost} />
                 <Line label="Business expenses" value={-model.opExpenses} />
                 <Line label="Beneficial costs (owner salary, dividends, pension…)" value={-model.beneficialExp} />
                 <Line label="Total costs" value={-model.totalCost} strong />
