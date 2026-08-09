@@ -1421,10 +1421,16 @@ export function StaffScheduleManager() {
   };
 
   const getSchedulesForStaffDay = (userId: string, day: Date) => {
-    return allSchedules.filter(s => {
-      const scheduleDate = parseISO(s.start_datetime);
-      return s.user_id === userId && format(scheduleDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd");
-    });
+    return allSchedules
+      .filter(s => {
+        const scheduleDate = parseISO(s.start_datetime);
+        return s.user_id === userId && format(scheduleDate, "yyyy-MM-dd") === format(day, "yyyy-MM-dd");
+      })
+      // Chronological, so a split day reads down the cell in the order it will
+      // actually be worked. The client view already did this; the staff view was
+      // left in whatever order the schedules and patterns happened to merge in,
+      // which put a 6pm shift above a 7am one.
+      .sort((a, b) => parseISO(a.start_datetime).getTime() - parseISO(b.start_datetime).getTime());
   };
 
   // Days within a holiday range where the staff member has a scheduled shift
