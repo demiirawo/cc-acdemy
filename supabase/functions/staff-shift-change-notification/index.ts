@@ -495,6 +495,32 @@ const subjectFor = (logs: ShiftAuditLog[]): string => {
   return client ? `Changes to your shifts at ${client}` : "Changes to your shifts";
 };
 
+// A one-line plain sentence for the acknowledgement record — the HR profile
+// card and reminder emails reuse it, so it must stand alone without the email
+// around it.
+const plainSummary = (log: ShiftAuditLog): string => {
+  const d = (log.new_data || log.old_data || {}) as Record<string, any>;
+  const client = String(d.client_name ?? "").trim();
+  const at = client ? ` at ${client}` : "";
+  if (log.table_name === "shift_pattern_exceptions") {
+    const day = d.exception_date ? niceDate(String(d.exception_date)) : "";
+    const et = String(d.exception_type ?? "");
+    if (et === "deleted") return `Shift cancelled${at}${day ? ` on ${day}` : ""}`;
+    if (et === "overtime") return `Shift${at}${day ? ` on ${day}` : ""} marked as overtime`;
+    if (et === "not_overtime") return `Shift${at}${day ? ` on ${day}` : ""} no longer overtime`;
+    return `One-day change${at}${day ? ` on ${day}` : ""}`;
+  }
+  if (log.table_name === "staff_schedules") {
+    const day = d.start_datetime ? niceDate(String(d.start_datetime)) : "";
+    if (log.action === "DELETE") return `Shift removed${at}${day ? ` on ${day}` : ""}`;
+    if (log.action === "INSERT") return `New shift${at}${day ? ` on ${day}` : ""}`;
+    return `Shift changed${at}${day ? ` on ${day}` : ""}`;
+  }
+  if (log.action === "DELETE") return `Regular shifts removed${at}`;
+  if (log.action === "INSERT") return `New regular shifts${at}`;
+  return `Regular shifts changed${at}`;
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -683,12 +709,48 @@ serve(async (req) => {
         ? paragraph(`There have been ${countWord(logs.length)} changes to your shifts in the last few minutes — here's what's new.`)
         : "";
 
+      // Every change in this email becomes an acknowledgement record sharing one
+      // token, so the single button below clears the whole batch. If the insert
+      // fails the email still goes — being told matters more than being tracked.
+      const batchToken = crypto.randomUUID();
+      const ackRows = logs.map((log) => {
+        const d = (log.new_data || log.old_data || {}) as Record<string, any>;
+        const isExc = log.table_name === "shift_pattern_exceptions";
+        const changeType = isExc
+          ? (String(d.exception_type ?? "") === "deleted" ? "cancelled" : "changed")
+          : log.action === "DELETE" ? "cancelled" : log.action === "INSERT" ? "new_shift" : "changed";
+        const schedDay = log.table_name === "staff_schedules" && d.start_datetime
+          ? String(d.start_datetime).slice(0, 10) : null;
+        return {
+          user_id: userId,
+          audit_log_id: log.id,
+          change_type: changeType,
+          summary: plainSummary(log),
+          client_name: String(d.client_name ?? "").trim() || null,
+          table_name: log.table_name,
+          record_id: log.record_id ?? null,
+          pattern_id: isExc ? (d.pattern_id ?? null)
+            : log.table_name === "recurring_shift_patterns" ? (log.record_id ?? null) : null,
+          affected_date: isExc ? (d.exception_date ?? null) : schedDay,
+          effective_until: isExc ? (d.exception_date ?? null)
+            : schedDay ?? (log.table_name === "recurring_shift_patterns" ? (d.end_date ?? null) : null),
+          ack_token: batchToken,
+        };
+      });
+      const { error: ackInsertError } = await supabase
+        .from("shift_change_acknowledgements")
+        .insert(ackRows);
+      if (ackInsertError) console.error("Couldn't record acknowledgement rows:", ackInsertError);
+
+      const ackUrl = `${supabaseUrl}/functions/v1/acknowledge-shift-change?token=${batchToken}`;
       const body =
         greeting(profile.name) +
         intro +
         logs.map((log) => renderChange(log, nameFor)).join("") +
-        button("See your updated schedule", `${APP_URL}/view/schedule`) +
-        mutedParagraph("If anything here looks wrong, just reply to this email and the admin team will sort it out.");
+        (ackInsertError ? button("See your updated schedule", `${APP_URL}/view/schedule`) : button("Acknowledge — I've seen this", ackUrl)) +
+        (ackInsertError
+          ? mutedParagraph("If anything here looks wrong, just reply to this email and the admin team will sort it out.")
+          : mutedParagraph(`One tap confirms you've seen these changes — until then you'll get a daily reminder. You can also see your <a href="${APP_URL}/view/schedule" style="color:${BRAND_COLOR};">updated schedule</a>, and if anything looks wrong just reply to this email.`));
 
       const resendResponse = await fetch("https://api.resend.com/emails", {
         method: "POST",

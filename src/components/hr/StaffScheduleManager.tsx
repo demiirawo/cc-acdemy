@@ -333,6 +333,37 @@ export function StaffScheduleManager() {
   });
 
   // Fetch staff members
+  // Schedule changes not yet acknowledged by their staff member. RLS gives staff
+  // their own rows and admins everyone's, so the same query paints "you haven't
+  // confirmed this" for staff and "they haven't confirmed this" for admins.
+  const { data: openAcks = [] } = useQuery({
+    queryKey: ["shift-change-acks-open"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("shift_change_acknowledgements")
+        .select("user_id, table_name, record_id, pattern_id, affected_date")
+        .is("acknowledged_at", null);
+      if (error) throw error;
+      return data as { user_id: string; table_name: string; record_id: string | null; pattern_id: string | null; affected_date: string | null }[];
+    },
+  });
+
+  /** Does this schedule entry have an unacknowledged change behind it? */
+  const isUnacknowledged = useCallback((sch: { id: string; user_id: string }) => {
+    if (openAcks.length === 0 || sch.id.startsWith("bench-")) return false;
+    if (sch.id.startsWith("pattern-")) {
+      const rest = sch.id.slice("pattern-".length);
+      const pid = rest.slice(0, 36);
+      const date = rest.slice(37);
+      return openAcks.some(r => r.user_id === sch.user_id && (
+        (r.table_name === "recurring_shift_patterns" && r.record_id === pid) ||
+        (r.pattern_id === pid && r.affected_date === date)
+      ));
+    }
+    return openAcks.some(r =>
+      r.user_id === sch.user_id && r.table_name === "staff_schedules" && r.record_id === sch.id);
+  }, [openAcks]);
+
   const { data: staffMembers = [] } = useQuery({
     queryKey: ["staff-members"],
     queryFn: async () => {
@@ -2645,6 +2676,7 @@ export function StaffScheduleManager() {
                           const cost = calculateScheduleCost(schedule);
                           const isFromPattern = schedule.id.startsWith('pattern-');
                           const isPatternOvertime = schedule.is_pattern_overtime;
+                          const unacked = isUnacknowledged(schedule);
                           
                           // Check if this specific shift is covered by someone (non-holiday shift cover)
                           const shiftCoverage = !onHoliday ? getStandardShiftCoverage(staff.user_id, schedule, day) : null;
@@ -2661,7 +2693,7 @@ export function StaffScheduleManager() {
                                       ? 'bg-orange-50 border border-orange-300'
                                       : 'bg-violet-50 border border-violet-300' 
                                     : 'bg-primary/10 border border-primary/30'
-                              }`}
+                              } ${unacked ? 'ring-2 ring-red-500' : ''}`}
                               onClick={() => handleScheduleClick(schedule)}
                               onDoubleClick={() => handleScheduleClick(schedule)}
                               title={scheduleEditHint}
@@ -2683,6 +2715,12 @@ export function StaffScheduleManager() {
                               <div className={hasCover ? 'text-cyan-700' : 'text-muted-foreground'}>
                                 {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
                               </div>
+                              {unacked && (
+                                <div className="flex items-center gap-1 text-[10px] font-semibold text-red-600 mt-0.5">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-red-500 inline-block" />
+                                  Not acknowledged
+                                </div>
+                              )}
                               {hasCover && (
                                 <div className="mt-1 pt-1 border-t border-cyan-200">
                                   <div className="flex items-center gap-1 text-[10px] text-cyan-700">
@@ -2877,6 +2915,7 @@ export function StaffScheduleManager() {
                                     const nonHolidayCoverage = !staffOnHoliday ? getStandardShiftCoverage(schedule.user_id, schedule, day) : null;
                                     
                                     const hasNonHolidayCover = nonHolidayCoverage && nonHolidayCoverage.length > 0;
+                                    const unacked = isUnacknowledged(schedule);
                                     
                                     return (
                                       <div 
@@ -2887,7 +2926,7 @@ export function StaffScheduleManager() {
                                             : hasNonHolidayCover
                                               ? 'bg-cyan-50 border-cyan-200'
                                               : `${colors.bg} ${colors.border}`
-                                        }`}
+                                        } ${unacked ? 'ring-2 ring-red-500' : ''}`}
                                         onClick={() => handleScheduleClick(schedule)}
                                         onDoubleClick={() => handleScheduleClick(schedule)}
                                         title={scheduleEditHint}
@@ -2909,6 +2948,12 @@ export function StaffScheduleManager() {
                                         <div className={`${staffOnHoliday ? 'text-amber-700' : hasNonHolidayCover ? 'text-cyan-700' : colors.text} opacity-80`}>
                                           {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
                                         </div>
+                                        {unacked && (
+                                          <div className="flex items-center gap-1 text-[10px] font-semibold text-red-600 mt-0.5">
+                                            <span className="h-1.5 w-1.5 rounded-full bg-red-500 inline-block" />
+                                            Not acknowledged
+                                          </div>
+                                        )}
                                         
                                         {/* Combined holiday + cover info in one box */}
                                         {staffOnHoliday && (
@@ -3047,6 +3092,10 @@ export function StaffScheduleManager() {
               <div className="w-4 h-4 rounded bg-blue-50 border border-blue-200" />
               <span>Covering for Someone</span>
             </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded border-2 border-red-500" />
+              <span>Awaiting acknowledgement</span>
+            </div>
           </>
         ) : (
           <>
@@ -3074,6 +3123,10 @@ export function StaffScheduleManager() {
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 rounded bg-red-50 border border-red-200" />
               <span className="flex items-center gap-1">No Cover <AlertTriangle className="h-3 w-3 text-red-500" /></span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded border-2 border-red-500" />
+              <span>Awaiting acknowledgement</span>
             </div>
           </>
         )}

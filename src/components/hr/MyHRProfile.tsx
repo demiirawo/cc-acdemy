@@ -22,6 +22,7 @@ import { FEEDBACK_KINDS, FEEDBACK_KIND_ORDER, asFeedbackKind, type FeedbackKind 
 import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { StaffOnboardingView } from "./StaffOnboardingView";
+import { ScheduleChangesCard } from "./ScheduleChangesCard";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { StaffSettingsDialog } from "./StaffSettingsDialog";
 import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusPoints, rankBonusMult, bonusEligible, LOWEST_ELIGIBLE_RANK, type Rank } from "./PerformanceRankBadge";
@@ -2777,6 +2778,11 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
           </Accordion>
         );
       })()}
+
+      {/* Schedule changes and whether they've been acknowledged. */}
+      {selectedUserId && (
+        <ScheduleChangesCard userId={selectedUserId} isSelf={selectedUserId === user?.id} />
+      )}
 
       {/* Personal Details Section - from onboarding form */}
       {onboardingData && <Accordion type="single" collapsible className="w-full">
