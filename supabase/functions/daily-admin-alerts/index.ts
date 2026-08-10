@@ -586,11 +586,64 @@ const handler = async (req: Request): Promise<Response> => {
 
       const { data: expiringPatterns } = await supabaseClient
         .from("recurring_shift_patterns")
-        .select("id, user_id, client_name, end_date, shift_type")
+        .select("id, user_id, client_name, end_date, start_date, days_of_week, recurrence_interval, shift_type")
         .eq("is_overtime", false)
         .gte("end_date", todayStr)
         .lte("end_date", futureDateStr)
         .order("end_date");
+
+      // One-day cancellations, so a deleted final day doesn't get reported as
+      // the last shift.
+      const { data: delExc } = (expiringPatterns && expiringPatterns.length > 0)
+        ? await supabaseClient
+            .from("shift_pattern_exceptions")
+            .select("pattern_id, exception_date")
+            .eq("exception_type", "deleted")
+            .in("pattern_id", expiringPatterns.map((p: any) => p.id))
+        : { data: [] as any[] };
+      const deletedDays = new Set((delExc || []).map((e: any) => `${e.pattern_id}::${e.exception_date}`));
+
+      // The pattern's end date is just a fence; the last day someone actually
+      // works is the latest date inside it that matches the pattern's days and
+      // recurrence. A Mon/Wed pattern fenced at a Friday ends, in reality, on
+      // the Wednesday — and that's the date worth telling people.
+      // Calendar arithmetic in UTC: elapsed-ms division loses a day across BST.
+      const lastRealShift = (p: any): string | null => {
+        const days = new Set<number>(((p.days_of_week ?? []) as any[]).map(Number));
+        const end = new Date(`${p.end_date}T00:00:00Z`);
+        const start = p.start_date ? new Date(`${p.start_date}T00:00:00Z`) : null;
+        if (isNaN(end.getTime())) return null;
+        const interval = p.recurrence_interval || "weekly";
+        const mondayOf = (d: Date) => {
+          const m = new Date(d);
+          m.setUTCDate(m.getUTCDate() - ((m.getUTCDay() + 6) % 7));
+          return m;
+        };
+        const startMonday = start ? mondayOf(start) : null;
+        // 10 weeks covers every interval type comfortably.
+        for (let i = 0; i < 70; i++) {
+          const d = new Date(end);
+          d.setUTCDate(d.getUTCDate() - i);
+          if (start && d < start) break;
+          const iso = d.toISOString().slice(0, 10);
+          const dow = d.getUTCDay();
+          let matches = false;
+          if (interval === "daily") matches = true;
+          else if (interval === "weekly" || interval === "one_off") matches = days.has(dow);
+          else if (interval === "biweekly") {
+            if (days.has(dow) && startMonday) {
+              const weeks = Math.round((mondayOf(d).getTime() - startMonday.getTime()) / (7 * 24 * 3600 * 1000));
+              matches = weeks % 2 === 0;
+            }
+          } else if (interval === "monthly") {
+            if (days.has(dow) && start) {
+              matches = Math.ceil(d.getUTCDate() / 7) === Math.ceil(start.getUTCDate() / 7);
+            }
+          } else matches = days.has(dow);
+          if (matches && !deletedDays.has(`${p.id}::${iso}`)) return iso;
+        }
+        return null;
+      };
 
       if (expiringPatterns && expiringPatterns.length > 0) {
         // Tell the staff member directly — until now only admins heard, as a
@@ -601,7 +654,11 @@ const handler = async (req: Request): Promise<Response> => {
         let patternSent = false;
         let patternError: string | undefined;
         for (const p of expiringPatterns) {
-          const daysUntil = Math.ceil((new Date(p.end_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          const lastDay = lastRealShift(p) ?? p.end_date;
+          // Already over: the fence date may still be ahead, but there is no
+          // shift left to warn anyone about.
+          if (lastDay < todayStr) continue;
+          const daysUntil = Math.ceil((new Date(`${lastDay}T00:00:00Z`).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
           if (!notifyOffsets.has(daysUntil)) continue;
           const name = profileMap.get(p.user_id) || null;
           const email = emailByUser.get(p.user_id);
@@ -609,14 +666,14 @@ const handler = async (req: Request): Promise<Response> => {
           if (!email) {
             await alertAdminsOfFailure(
               RESEND_API_KEY,
-              `Their regular shifts${atClient} end on ${niceDate(p.end_date)}`,
+              `Their regular shifts${atClient} — last one on ${niceDate(lastDay)}`,
               `${name || "a staff member with no name on their profile"} (no email address on file)`
             );
             continue;
           }
           const bodyHtml =
             greeting(name) +
-            paragraph(`Your regular shifts${atClient} are due to end on <strong>${niceDate(p.end_date)}</strong> — after that date you won't be scheduled for them.`) +
+            paragraph(`Your last regular shift${atClient} is on <strong>${niceDate(lastDay)}</strong> — after that you won't be scheduled for them.`) +
             paragraph(`If you expected these shifts to carry on, please contact the admin team so they can look into it.`) +
             button("See your schedule", `${APP_URL}/view/schedule`);
           // "in 7 days" keeps the subject short; the exact date is in the body.
@@ -636,17 +693,20 @@ const handler = async (req: Request): Promise<Response> => {
           standaloneResults.push({ type: "pattern_expiring", emailSent: patternSent, error: patternError, title: "Regular shifts ending (personal)" });
         }
 
-        sections.push({
+const endingSoon = expiringPatterns
+          .map(p => ({ p, lastDay: lastRealShift(p) ?? p.end_date }))
+          .filter(({ lastDay }) => lastDay >= todayStr);
+        if (endingSoon.length > 0) sections.push({
           type: "pattern_expiring",
           title: `Regular shifts ending in the next ${patternDays} days`,
           icon: "⚠️",
           accentColor: "#f59e0b",
-          itemsHtml: expiringPatterns.map(p => {
+          itemsHtml: endingSoon.map(({ p, lastDay }) => {
             const name = profileMap.get(p.user_id) || "A staff member with no name on their profile";
             const atClient = p.client_name ? ` at ${p.client_name}` : "";
-            return `<strong>${name}</strong>'s regular shifts${atClient} end on ${niceDate(p.end_date)}.`;
+            return `<strong>${name}</strong>'s last regular shift${atClient} is ${niceDate(lastDay)}.`;
           }),
-          summary: `${expiringPatterns.length === 1 ? "one" : expiringPatterns.length} ending`,
+          summary: `${endingSoon.length === 1 ? "one" : endingSoon.length} ending`,
         });
       }
     }
