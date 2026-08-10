@@ -180,16 +180,18 @@ export function StaffOnboardingView({ userId, personName }: StaffOnboardingViewP
   };
 
   const isStepCompleted = (step: OnboardingStep): boolean => {
-    // Training-linked steps complete automatically when training is up to date.
+    // An explicit completion row always wins — it's how a person ticks a step
+    // off, and how an admin marks steps done in bulk for established staff.
+    if (completions.some(c => c.step_id === step.id)) return true;
+    // Training-linked steps also complete automatically when training is up to date.
     if (step.step_type === 'training') {
       return trainingComplete;
     }
-    // For internal page steps, check acknowledgements
+    // Internal page steps also complete by acknowledging the page.
     if (step.step_type === 'internal_page' && step.target_page_id) {
       return acknowledgements.some(ack => ack.page_id === step.target_page_id);
     }
-    // For other steps (including acknowledgement type), check completions
-    return completions.some(c => c.step_id === step.id);
+    return false;
   };
 
   // Define the correct stage order

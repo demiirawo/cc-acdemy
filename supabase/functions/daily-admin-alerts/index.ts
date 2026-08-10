@@ -1249,7 +1249,7 @@ const handler = async (req: Request): Promise<Response> => {
         // Completions + page acknowledgements for the onboarding cohort.
         const { data: completions } = await supabaseClient
           .from("onboarding_completions")
-          .select("step_id, user_id")
+          .select("step_id, user_id, completed_at")
           .in("user_id", onboardingUserIds.length > 0 ? onboardingUserIds : ["no-match"]);
         const internalPageIds = orderedSteps
           .filter(s => s.step_type === "internal_page" && s.target_page_id)
@@ -1296,14 +1296,27 @@ const handler = async (req: Request): Promise<Response> => {
         };
 
         const isStepDone = (step: any, userId: string): boolean => {
+          // An explicit completion row always wins — including admin bulk-marks.
+          if (completionSet.has(`${step.id}::${userId}`)) return true;
           if (step.step_type === "training") {
             return trainingUpToDate(userId);
           }
           if (step.step_type === "internal_page" && step.target_page_id) {
             return ackSet.has(`${step.target_page_id}::${userId}`);
           }
-          return completionSet.has(`${step.id}::${userId}`);
+          return false;
         };
+
+        // When someone finished, from their most recent completion row. Drives
+        // the one-week window: a finished person appears in the digest for a
+        // week as a result worth seeing, then stops taking up space.
+        const lastCompletionByUser = new Map<string, string>();
+        for (const c of completions || []) {
+          if (!c.completed_at) continue;
+          const prev = lastCompletionByUser.get(c.user_id);
+          if (!prev || c.completed_at > prev) lastCompletionByUser.set(c.user_id, c.completed_at);
+        }
+        const WEEK_MS = 7 * 24 * 3600 * 1000;
 
         // Emails / names for the onboarding cohort.
         const { data: cohortProfiles } = await supabaseClient
@@ -1329,10 +1342,17 @@ const handler = async (req: Request): Promise<Response> => {
                 html: `<strong>${name}</strong> has finished ${completed} of ${total} onboarding steps — next is <em>${nextStep.title}</em>.`,
               });
             } else {
-              adminItems.push({
-                sortKey: 1,
-                html: `<strong>${name}</strong> has finished <span style="color:#10b981;font-weight:600;">all ${total} onboarding steps</span>. 🎉`,
-              });
+              // Finished: celebrate for a week, then stop appearing. Someone
+              // complete for months is not news, and marking veterans complete
+              // in bulk must not fill the digest with fifty lines.
+              const finishedAt = lastCompletionByUser.get(userId);
+              const stillNews = !finishedAt || (Date.now() - new Date(finishedAt).getTime()) <= WEEK_MS;
+              if (stillNews) {
+                adminItems.push({
+                  sortKey: 1,
+                  html: `<strong>${name}</strong> has finished <span style="color:#10b981;font-weight:600;">all ${total} onboarding steps</span>. 🎉`,
+                });
+              }
             }
 
             // Personal daily reminder to the onboarding staff member (only if steps remain).

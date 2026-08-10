@@ -162,23 +162,22 @@ export function OnboardingMatrix() {
   };
 
   const isStepCompleted = (stepId: string, userId: string, step: OnboardingStep): boolean => {
-    // Training-linked steps complete when the user's training is all up to date.
+    // An explicit completion row always wins — including admin bulk-marks.
+    if (completions.some(c => c.step_id === stepId && c.user_id === userId)) return true;
+    // Training-linked steps also complete when the user's training is all up to date.
     if (step.step_type === 'training') {
       const dateByItem = new Map(
         trainingRecords.filter(r => r.user_id === userId).map(r => [r.training_item_id, r.completed_date])
       );
       return allTrainingUpToDate(trainingItems, dateByItem);
     }
-    // For internal page steps, check acknowledgements
+    // Internal page steps also complete by acknowledging the page.
     if (step.step_type === 'internal_page' && step.target_page_id) {
       return acknowledgements.some(
         ack => ack.page_id === step.target_page_id && ack.user_id === userId
       );
     }
-    // For other steps, check completions
-    return completions.some(
-      c => c.step_id === stepId && c.user_id === userId
-    );
+    return false;
   };
 
   // Only count steps in a known stage (shown on the matrix). Steps in an

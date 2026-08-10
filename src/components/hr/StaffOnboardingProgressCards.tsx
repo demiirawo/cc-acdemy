@@ -129,6 +129,8 @@ export function StaffOnboardingProgressCards() {
   const progressFor = (userId: string) => {
     if (countableSteps.length === 0) return { done: 0, total: 0, percent: 0 };
     const done = countableSteps.filter((step) => {
+      // An explicit completion row always wins — including admin bulk-marks.
+      if (completions.some((c) => c.step_id === step.id && c.user_id === userId)) return true;
       if (step.step_type === "training") {
         const dateByItem = new Map(
           trainingRecords.filter((r) => r.user_id === userId).map((r) => [r.training_item_id, r.completed_date])
@@ -138,7 +140,7 @@ export function StaffOnboardingProgressCards() {
       if (step.step_type === "internal_page" && step.target_page_id) {
         return acks.some((a) => a.page_id === step.target_page_id && a.user_id === userId);
       }
-      return completions.some((c) => c.step_id === step.id && c.user_id === userId);
+      return false;
     }).length;
     return { done, total: countableSteps.length, percent: Math.round((done / countableSteps.length) * 100) };
   };
