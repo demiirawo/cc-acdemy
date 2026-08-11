@@ -1372,8 +1372,17 @@ export function StaffPayManager({ onSummaryComputed }: {
       }
       
       // Total pay now includes holiday overtime bonus, calculated overtime pay, unused holiday payout, excess holiday deduction, unpaid holiday deduction, and pro-rata deduction
-      const totalPay = monthlyBaseSalary + bonuses + overtime + expenses + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction - unpaidHolidayDeduction - proRataDeduction;
+      const liveTotalPay = monthlyBaseSalary + bonuses + overtime + expenses + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction - unpaidHolidayDeduction - proRataDeduction;
       const hasSalaryRecord = salaryRecords.length > 0;
+      // Once paid, the records ARE the number. The live recomputation keeps
+      // moving afterwards — a salary edit, a backdated holiday, a pattern
+      // change — and none of that may alter what a paid month reports. The
+      // database enforces the freeze on the records; this enforces it on the
+      // display. Payment now writes every live component into records, so at
+      // the moment of payment the two totals are equal.
+      const totalPay = hasSalaryRecord
+        ? salaryPaid + bonuses + overtimeManualRecords + expenses - deductions
+        : liveTotalPay;
       
       // Check if excess holiday deduction already exists for this month
       const hasExcessHolidayDeduction = deductionRecords.some(r => 
@@ -1419,6 +1428,23 @@ export function StaffPayManager({ onSummaryComputed }: {
         totalPayInGBP,
         hasSalaryRecord,
         records: userRecords
+      };
+    }).map(row => {
+      if (!row.hasSalaryRecord) return row;
+      // Frozen presentation for paid rows: live-derived components zeroed —
+      // whatever of them was real at payment time now lives inside the records.
+      return {
+        ...row,
+        baseSalary: row.salaryPaid || row.baseSalary,
+        overtime: row.totalPay - (row.salaryPaid || 0) - row.bonuses - row.expenses + row.deductions,
+        calculatedOvertimePay: 0,
+        overtimeDays: 0, standardOvertimeDays: 0, doubleUpOvertimeDays: 0,
+        overtimeRequestDetails: [], overtimeDayDetails: [], nonOvertimeCoverDayDetails: [],
+        holidayOvertimeBonus: 0, holidayOvertimeDays: 0, holidayShifts: [],
+        unusedHolidayPayout: 0, unusedHolidayDays: 0,
+        excessHolidayDeduction: 0, excessHolidayDays: 0,
+        unpaidHolidayDeduction: 0, unpaidHolidayDays: 0,
+        proRataDeduction: 0,
       };
     });
   }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses, staffHolidays, hrProfilesFull, selectedMonth, approvedOvertimeRequests, unpaidHolidayRequests, approvedLeaveRequests]);
@@ -1716,6 +1742,33 @@ export function StaffPayManager({ onSummaryComputed }: {
     }
   };
 
+  // Marker on records written automatically at the moment of payment, so a
+  // revert can tell them apart from adjustments an admin entered by hand.
+  const PAY_CAPTURE_TAG = 'captured at payment';
+
+  // Everything the live computation would pay becomes a record, so the records
+  // alone reproduce the paid number exactly and the display can freeze to them.
+  // The salary row goes LAST: the moment it lands, the database refuses further
+  // records for this person-month, and a multi-row insert is processed in order.
+  const buildPaymentRecords = (staff: (typeof payrollSummary)[number], payDate: string, payPeriodStart: string, payPeriodEnd: string) => {
+    const common = { user_id: staff.userId, currency: staff.currency, pay_date: payDate, pay_period_start: payPeriodStart, pay_period_end: payPeriodEnd, created_by: user?.id! };
+    const rows: any[] = [];
+    const overtimeAtPayment = staff.calculatedOvertimePay + staff.holidayOvertimeBonus;
+    if (overtimeAtPayment > 0) rows.push({ ...common, record_type: 'overtime' as any, amount: overtimeAtPayment,
+      description: `Overtime incl. public-holiday uplift (${PAY_CAPTURE_TAG})` });
+    if (staff.unusedHolidayPayout > 0) rows.push({ ...common, record_type: 'bonus' as any, amount: staff.unusedHolidayPayout,
+      description: `Unused holiday payout: ${staff.unusedHolidayDays} days (${PAY_CAPTURE_TAG})` });
+    if (staff.excessHolidayDeduction > 0 && !staff.hasExcessHolidayDeduction) rows.push({ ...common, record_type: 'deduction' as any, amount: staff.excessHolidayDeduction,
+      description: `Excess holiday deduction: ${staff.excessHolidayDays} days over accrued allowance (${PAY_CAPTURE_TAG})` });
+    if (staff.unpaidHolidayDeduction > 0) rows.push({ ...common, record_type: 'deduction' as any, amount: staff.unpaidHolidayDeduction,
+      description: `Unpaid holiday deduction: ${staff.unpaidHolidayDays} days (${PAY_CAPTURE_TAG})` });
+    if (staff.proRataDeduction > 0) rows.push({ ...common, record_type: 'deduction' as any, amount: staff.proRataDeduction,
+      description: `Pro-rata deduction for days outside employment (${PAY_CAPTURE_TAG})` });
+    rows.push({ ...common, record_type: 'salary' as any, amount: staff.baseSalary,
+      description: `Monthly salary for ${format(selectedMonth, 'MMMM yyyy')}` });
+    return rows;
+  };
+
   const handleRunPayroll = async (userId: string) => {
     const staff = payrollSummary.find(s => s.userId === userId);
     if (!staff || staff.hasSalaryRecord) return;
@@ -1725,32 +1778,7 @@ export function StaffPayManager({ onSummaryComputed }: {
       const payPeriodStart = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
       const payPeriodEnd = payDate;
 
-      const recordsToInsert: any[] = [{
-        user_id: userId,
-        record_type: 'salary' as any,
-        amount: staff.baseSalary,
-        currency: staff.currency,
-        description: `Monthly salary for ${format(selectedMonth, 'MMMM yyyy')}`,
-        pay_date: payDate,
-        pay_period_start: payPeriodStart,
-        pay_period_end: payPeriodEnd,
-        created_by: user?.id!
-      }];
-
-      // Auto-create excess holiday deduction in June if applicable
-      if (staff.excessHolidayDeduction > 0 && !staff.hasExcessHolidayDeduction) {
-        recordsToInsert.push({
-          user_id: userId,
-          record_type: 'deduction' as any,
-          amount: staff.excessHolidayDeduction,
-          currency: staff.currency,
-          description: `Excess holiday deduction: ${staff.excessHolidayDays} days over accrued allowance`,
-          pay_date: payDate,
-          pay_period_start: payPeriodStart,
-          pay_period_end: payPeriodEnd,
-          created_by: user?.id!
-        });
-      }
+      const recordsToInsert: any[] = buildPaymentRecords(staff, payDate, payPeriodStart, payPeriodEnd);
 
       const { error } = await supabase
         .from('staff_pay_records')
@@ -1838,12 +1866,23 @@ export function StaffPayManager({ onSummaryComputed }: {
       setMonthLocked(false);
       setLockedAt(null);
 
+      // Salary record first — deleting it IS the revert, and unlocks the rest.
       const { error } = await supabase
         .from('staff_pay_records')
         .delete()
         .eq('id', salaryRecord.id);
-
       if (error) throw error;
+
+      // Then the records payment wrote automatically (overtime, holiday payout,
+      // pro-rata…). Left behind, they'd double-count against the live figures
+      // that resume once the person is unpaid. Hand-entered adjustments stay.
+      const { error: captureError } = await supabase
+        .from('staff_pay_records')
+        .delete()
+        .eq('user_id', userId)
+        .eq('pay_period_start', monthKey)
+        .ilike('description', `%${PAY_CAPTURE_TAG}%`);
+      if (captureError) console.error('Failed to remove payment-captured records:', captureError);
 
       const { error: clearReadyError } = await supabase
         .from('payroll_ready_status')
@@ -1883,17 +1922,7 @@ export function StaffPayManager({ onSummaryComputed }: {
       const payPeriodStart = format(startOfMonth(selectedMonth), 'yyyy-MM-dd');
       const payPeriodEnd = payDate;
 
-      const records = staffToProcess.map(staff => ({
-        user_id: staff.userId,
-        record_type: 'salary' as any,
-        amount: staff.baseSalary,
-        currency: staff.currency,
-        description: `Monthly salary for ${format(selectedMonth, 'MMMM yyyy')}`,
-        pay_date: payDate,
-        pay_period_start: payPeriodStart,
-        pay_period_end: payPeriodEnd,
-        created_by: user?.id!
-      }));
+      const records = staffToProcess.flatMap(staff => buildPaymentRecords(staff, payDate, payPeriodStart, payPeriodEnd));
 
       const { error } = await supabase
         .from('staff_pay_records')
@@ -2062,6 +2091,13 @@ export function StaffPayManager({ onSummaryComputed }: {
       ? existingRecurringBonus.amount 
       : (bonusRecord?.amount || 0);
     
+    if (staff.hasSalaryRecord) {
+      toast({
+        title: "This month is paid",
+        description: `${staff.displayName} is marked paid for ${format(selectedMonth, 'MMMM')} — their pay is locked. Click the Paid badge to revert them first.`,
+      });
+      return;
+    }
     setAdjustmentEdit({
       staffId: staff.userId,
       staffName: staff.displayName,

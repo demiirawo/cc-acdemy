@@ -86,9 +86,19 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
     }).filter((s) => s.worked > 0);
     const totalPoints = staff.reduce((a, s) => a + s.points, 0);
 
-    await supabase.from("staff_pay_records").delete()
+    // Anyone already paid this month keeps the pot share they were paid with —
+    // their records are frozen (and the database would refuse the rewrite).
+    const { data: paidRows } = await supabase.from("staff_pay_records")
+      .select("user_id").eq("record_type", "salary").eq("pay_period_start", mStart);
+    const paidIds = new Set((paidRows ?? []).map((r) => r.user_id));
+
+    let potDelete = supabase.from("staff_pay_records").delete()
       .eq("record_type", "bonus").eq("pay_period_start", mStart)
       .ilike("description", `${POT_DESC_TAG} · ${mLabel}%`);
+    if (paidIds.size > 0) {
+      potDelete = potDelete.not("user_id", "in", `(${[...paidIds].join(",")})`);
+    }
+    await potDelete;
 
     if (amt > 0 && totalPoints > 0) {
       const raw = staff.map((s) => (amt * s.points) / totalPoints);
@@ -107,7 +117,7 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
         pay_period_start: mStart,
         pay_period_end: mEnd,
         created_by: createdBy,
-      })).filter((r) => r.amount > 0);
+      })).filter((r) => r.amount > 0 && !paidIds.has(r.user_id));
 
       if (inserts.length) {
         const { error } = await supabase.from("staff_pay_records").insert(inserts);
