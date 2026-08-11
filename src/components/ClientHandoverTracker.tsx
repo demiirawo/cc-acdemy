@@ -496,9 +496,19 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
     }
   };
 
-  // Notify an assignee (by display name) that they have a new handover task.
+  // Notify an assignee (by display name) that they have new handover tasks.
+  // Batched per person: assigning a whole template set used to fire one email
+  // per task within seconds — dozens of emails, tripping the mail provider's
+  // rate limit and raising a failure alert for every rejected send. Tasks
+  // assigned to the same person within a few seconds now leave as one email.
   // Silent on failure — assignment still succeeds.
-  const notifyAssignment = async (
+  const pendingNotifies = useRef<Map<string, {
+    user: { email: string; name: string };
+    tasks: { task_name: string; task_description?: string | null; link?: string | null; target_date?: string | null; handed_over_by?: string | null }[];
+    timer: ReturnType<typeof setTimeout>;
+  }>>(new Map());
+
+  const notifyAssignment = (
     assigneeName: string,
     task: { task_name: string; task_description?: string | null; link?: string | null; target_date?: string | null; handed_over_by?: string | null },
   ) => {
@@ -506,22 +516,38 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
     if (!trimmed) return;
     const user = userByName(trimmed);
     if (!user?.email) return;
-    try {
-      await supabase.functions.invoke("send-handover-assignment-email", {
-        body: {
-          assigneeEmail: user.email,
-          assigneeName: user.name,
-          clientName,
-          taskName: task.task_name,
-          taskDescription: task.task_description ?? null,
-          link: task.link ?? null,
-          handedOverBy: task.handed_over_by ?? null,
-          targetDate: task.target_date ?? null,
-        },
-      });
-    } catch (e) {
-      console.warn("Handover assignment email failed", e);
+
+    const key = user.email.toLowerCase();
+    const existing = pendingNotifies.current.get(key);
+    if (existing) {
+      clearTimeout(existing.timer);
+      existing.tasks.push(task);
     }
+    const entry = existing ?? { user: { email: user.email, name: user.name }, tasks: [task], timer: 0 as unknown as ReturnType<typeof setTimeout> };
+    entry.timer = setTimeout(async () => {
+      pendingNotifies.current.delete(key);
+      const [first, ...rest] = entry.tasks;
+      try {
+        await supabase.functions.invoke("send-handover-assignment-email", {
+          body: {
+            assigneeEmail: entry.user.email,
+            assigneeName: entry.user.name,
+            clientName,
+            taskName: first.task_name,
+            taskDescription: rest.length === 0 ? (first.task_description ?? null) : null,
+            link: rest.length === 0 ? (first.link ?? null) : null,
+            handedOverBy: first.handed_over_by ?? null,
+            targetDate: rest.length === 0 ? (first.target_date ?? null) : null,
+            // Extra task names, so the email reads "and N more" as one message
+            // instead of N separate sends.
+            additionalTaskNames: rest.map((t) => t.task_name),
+          },
+        });
+      } catch (e) {
+        console.warn("Handover assignment email failed", e);
+      }
+    }, 4000);
+    pendingNotifies.current.set(key, entry);
   };
 
 
@@ -666,11 +692,21 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
     return "bg-destructive/10 text-destructive";
   }
 
+  // Template ids with an insert currently in flight. The usedTemplateIds guard
+  // reads from the task list, which only refreshes after a round-trip — every
+  // click in that gap used to get through, 34 times in one recorded case. This
+  // ref is synchronous, so the second click is stopped before it starts. The
+  // database enforces the same rule with a unique index as the last line of
+  // defence.
+  const inFlightTemplateIds = useRef<Set<string>>(new Set());
+
   const addTemplateAsTask = (t: HandoverTemplate) => {
     if (usedTemplateIds.has(t.id)) {
       toast.info(`"${t.name}" is already in this tracker.`);
       return;
     }
+    if (inFlightTemplateIds.current.has(t.id)) return; // already being added
+    inFlightTemplateIds.current.add(t.id);
     const last = tasks[tasks.length - 1];
     createMutation.mutate({
       ...newDraft(),
@@ -683,6 +719,8 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
       // leave and To to whoever is covering them; otherwise carry over the last row.
       handed_over_by: leave?.staffName || last?.handed_over_by || "",
       handed_over_to: leave?.coverNames?.[0] || last?.handed_over_to || "",
+    }, {
+      onSettled: () => { inFlightTemplateIds.current.delete(t.id); },
     });
   };
 

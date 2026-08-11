@@ -205,6 +205,12 @@ const handler = async (req: Request): Promise<Response> => {
       handedOverBy,
       targetDate,
     } = body;
+    // Further tasks assigned to the same person in the same sitting — sent as
+    // one email rather than one per task, which is how a template set being
+    // assigned used to become dozens of sends in seconds.
+    const additionalTaskNames: string[] = Array.isArray((body as Record<string, unknown>).additionalTaskNames)
+      ? ((body as Record<string, unknown>).additionalTaskNames as unknown[]).map(String).filter(Boolean)
+      : [];
 
     if (!assigneeEmail || !clientName || !taskName) {
       // A real task with no reachable assignee must never fail silently:
@@ -237,14 +243,27 @@ const handler = async (req: Request): Promise<Response> => {
       ? `, and it needs to be finished by <strong>${dueNice}</strong>`
       : "";
 
+    const totalTasks = 1 + additionalTaskNames.length;
+    const taskListHtml = totalTasks > 1
+      ? `<ul style="color:#374151;font-size:15px;line-height:1.7;margin:0 0 16px;padding-left:20px;">` +
+        [taskName, ...additionalTaskNames].map((t) => `<li style="margin-bottom:4px;">${esc(t)}</li>`).join("") +
+        `</ul>`
+      : "";
+
     // ---- Email 1: the assignee -------------------------------------------
     const assigneeBody =
       greeting(assigneeName) +
-      paragraph(
-        hbName
-          ? `<strong>${safeHb}</strong> has handed the task "${safeTask}" for <strong>${safeClient}</strong> over to you${dueClause}.`
-          : `The handover task "${safeTask}" for <strong>${safeClient}</strong> is now yours${dueClause}.`,
-      ) +
+      (totalTasks > 1
+        ? paragraph(
+            hbName
+              ? `<strong>${safeHb}</strong> has handed ${totalTasks} tasks for <strong>${safeClient}</strong> over to you:`
+              : `${totalTasks} handover tasks for <strong>${safeClient}</strong> are now yours:`,
+          ) + taskListHtml
+        : paragraph(
+            hbName
+              ? `<strong>${safeHb}</strong> has handed the task "${safeTask}" for <strong>${safeClient}</strong> over to you${dueClause}.`
+              : `The handover task "${safeTask}" for <strong>${safeClient}</strong> is now yours${dueClause}.`,
+          )) +
       (taskDescription
         ? paragraph(`Here's what needs doing${hbFirst ? `, in ${esc(hbFirst)}'s words` : ""}: "${esc(taskDescription)}"`)
         : "") +
@@ -268,7 +287,7 @@ const handler = async (req: Request): Promise<Response> => {
     const result = await resend.emails.send({
       from: EMAIL_SENDER,
       to: [assigneeEmail],
-      subject: `You have a new handover task for ${clampName(clientName, 25)}`,
+      subject: totalTasks > 1 ? `You have ${totalTasks} new handover tasks for ${clampName(clientName, 22)}` : `You have a new handover task for ${clampName(clientName, 25)}`,
       html,
     });
 
