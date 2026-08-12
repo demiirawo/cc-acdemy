@@ -187,8 +187,13 @@ export function StaffMeetingsSection() {
   useEffect(() => {
     if (!present) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") setSectionIdx(i => Math.min(PRESENT_ORDER.length - 1, i + 1));
-      else if (e.key === "ArrowLeft") setSectionIdx(i => Math.max(0, i - 1));
+      // Don't hijack digits someone is typing into a field mid-presentation.
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      // 2 = next, 1 = back — presentation clickers send digits, and they're
+      // one-handed on a keyboard too. Arrows keep working.
+      if (e.key === "ArrowRight" || e.key === "2") setSectionIdx(i => Math.min(PRESENT_ORDER.length - 1, i + 1));
+      else if (e.key === "ArrowLeft" || e.key === "1") setSectionIdx(i => Math.max(0, i - 1));
       else if (e.key === "Escape") setPresent(false);
     };
     window.addEventListener("keydown", onKey);
