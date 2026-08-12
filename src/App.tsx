@@ -10,6 +10,7 @@ import ProjectView from "./components/ProjectView";
 
 import { PublicPageView } from "./components/PublicPageView";
 import { PublicClientSchedule } from "./components/PublicClientSchedule";
+import AcknowledgeShiftChangePage from "./components/AcknowledgeShiftChangePage";
 import { PublicLiveView } from "./components/PublicLiveView";
 import { PublicTrainingMatrix } from "./components/PublicTrainingMatrix";
 import { CandidateApplyPage } from "./components/recruitment/CandidateApplyPage";
@@ -29,6 +30,7 @@ const App = () => (
           <Route path="/view/:viewName" element={<Index />} />
           <Route path="/payroll" element={<Navigate to="/view/hr?tab=payroll" replace />} />
           
+          <Route path="/acknowledge-shift-change" element={<AcknowledgeShiftChangePage />} />
           <Route path="/public/schedule/:clientName" element={<PublicClientSchedule />} />
           <Route path="/public/schedule-only/:clientName" element={<PublicClientSchedule scheduleOnly />} />
           <Route path="/embed/live-view" element={<PublicLiveView />} />
