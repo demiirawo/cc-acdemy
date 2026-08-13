@@ -1891,19 +1891,21 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   )}
                   {canEditPhoto && (
                     <>
-                      <span className={cn(
-                        "absolute inset-0 rounded-full bg-black/55 text-white flex flex-col items-center justify-center gap-0.5 transition-opacity",
-                        photoUploading ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
-                      )}>
-                        {photoUploading ? (
+                      {/* Uploading: cover the photo so the wait is visible. */}
+                      {photoUploading && (
+                        <span className="absolute inset-0 rounded-full bg-black/55 text-white flex items-center justify-center">
                           <Loader2 className="h-5 w-5 animate-spin" />
-                        ) : (
-                          <>
-                            <Camera className="h-4 w-4" />
-                            <span className="text-[9px] font-medium leading-none">Change</span>
-                          </>
-                        )}
-                      </span>
+                        </span>
+                      )}
+                      {/* A camera badge that is always visible. It used to appear
+                          on hover only, which meant that on a phone — where there
+                          is no hover — the photo looked like a plain picture with
+                          no sign it could be changed at all. */}
+                      {!photoUploading && (
+                        <span className="absolute -bottom-0.5 -right-0.5 h-6 w-6 rounded-full bg-primary text-primary-foreground border-2 border-background flex items-center justify-center shadow-sm">
+                          <Camera className="h-3 w-3" />
+                        </span>
+                      )}
                       <input
                         type="file"
                         accept="image/jpeg,image/png,image/webp"
@@ -1914,6 +1916,25 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                     </>
                   )}
                 </label>
+                {/* And a plain labelled button, because an icon alone still asks
+                    people to guess. Same input, so both routes behave alike. */}
+                {canEditPhoto && (
+                  <label className="mt-1.5 block text-center">
+                    <span className={cn(
+                      "text-xs font-medium cursor-pointer hover:underline",
+                      photoUploading ? "text-muted-foreground" : "text-primary"
+                    )}>
+                      {photoUploading ? "Uploading…" : profilePhotoUrl ? "Change photo" : "Add photo"}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="sr-only"
+                      disabled={photoUploading}
+                      onChange={handlePhotoUpload}
+                    />
+                  </label>
+                )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 min-w-0">
                 <div className="flex items-center gap-2 min-w-0">
