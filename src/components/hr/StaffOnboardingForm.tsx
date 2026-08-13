@@ -410,7 +410,7 @@ export function StaffOnboardingForm() {
     const isUploading = uploading === field;
     // A photograph must be displayable; ID and proof-of-address docs are
     // routinely PDFs, so only narrow the picker for the photo field.
-    const accept = field === "photograph_path" ? "image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" : "image/*,.pdf";
+    const accept = field === "photograph_path" ? "image/jpeg,image/png,image/webp" : "image/*,.pdf";
     const path = formData[field];
     const hasFile = !!path;
     const fileType = hasFile ? (path.split(".").pop() || "").toUpperCase() : "";

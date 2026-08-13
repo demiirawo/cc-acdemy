@@ -1906,7 +1906,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                       </span>
                       <input
                         type="file"
-                        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
+                        accept="image/jpeg,image/png,image/webp"
                         className="sr-only"
                         disabled={photoUploading}
                         onChange={handlePhotoUpload}
@@ -2853,7 +2853,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                         </div>
                         <input
                           type="file"
-                          accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
+                          accept="image/jpeg,image/png,image/webp"
                           className="sr-only"
                           disabled={photoUploading}
                           onChange={handlePhotoUpload}
