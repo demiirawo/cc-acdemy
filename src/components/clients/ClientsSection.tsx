@@ -11,7 +11,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Pencil, Trash2, ExternalLink, Copy, Check, Plus, Building2, Search, Loader2 } from "lucide-react";
+import { Pencil, Trash2, ExternalLink, Copy, Check, Plus, Building2, Search, Loader2, KeyRound, Eye, EyeOff } from "lucide-react";
+import { useUserRole } from "@/hooks/useUserRole";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
 interface Client {
@@ -26,6 +28,53 @@ interface Client {
 }
 
 export function ClientsSection() {
+  const { isAdmin } = useUserRole();
+  const { user } = useAuth();
+
+  // Access passwords for the public "all info" pages — super admins only. RLS
+  // returns nothing for anyone else, so the query is safely a no-op for them.
+  const { data: pagePasswords = [] } = useQuery({
+    queryKey: ["client-page-access"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("client_page_access")
+        .select("client_name, password");
+      if (error) throw error;
+      return data as { client_name: string; password: string }[];
+    },
+    enabled: isAdmin,
+  });
+  const pagePasswordFor = (name: string) =>
+    pagePasswords.find(p => p.client_name === name)?.password ?? "Compliance4210";
+
+  const [passwordDialogClient, setPasswordDialogClient] = useState<Client | null>(null);
+  const [newPagePassword, setNewPagePassword] = useState("");
+  const [showPagePassword, setShowPagePassword] = useState(false);
+  const [savingPagePassword, setSavingPagePassword] = useState(false);
+  const qcForPasswords = useQueryClient();
+
+  const savePagePassword = async () => {
+    if (!passwordDialogClient || !newPagePassword.trim()) return;
+    setSavingPagePassword(true);
+    const { error } = await (supabase as any)
+      .from("client_page_access")
+      .upsert({
+        client_name: passwordDialogClient.name,
+        password: newPagePassword.trim(),
+        updated_at: new Date().toISOString(),
+        updated_by: user?.id ?? null,
+      }, { onConflict: "client_name" });
+    setSavingPagePassword(false);
+    if (error) {
+      toast.error("Couldn't save the password: " + error.message);
+      return;
+    }
+    toast.success(`Page password updated for ${passwordDialogClient.name}`);
+    qcForPasswords.invalidateQueries({ queryKey: ["client-page-access"] });
+    setPasswordDialogClient(null);
+    setNewPagePassword("");
+  };
+
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -332,6 +381,16 @@ export function ClientsSection() {
                           >
                             <ExternalLink className="h-4 w-4" />
                           </Button>
+                          {isAdmin && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => { setPasswordDialogClient(client); setNewPagePassword(""); setShowPagePassword(false); }}
+                              title="Page access password"
+                            >
+                              <KeyRound className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -585,6 +644,52 @@ export function ClientsSection() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Page access password — what a visitor must enter to open the public
+          "all info" page. Super admins only; the button that opens this is
+          hidden for everyone else and RLS blocks them regardless. */}
+      <Dialog open={!!passwordDialogClient} onOpenChange={(o) => { if (!o) setPasswordDialogClient(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Page password — {passwordDialogClient?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <div className="space-y-1.5">
+              <Label>Current password</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  readOnly
+                  type={showPagePassword ? "text" : "password"}
+                  value={passwordDialogClient ? pagePasswordFor(passwordDialogClient.name) : ""}
+                  className="font-mono"
+                />
+                <Button variant="outline" size="icon" onClick={() => setShowPagePassword(v => !v)}
+                  title={showPagePassword ? "Hide" : "Show"}>
+                  {showPagePassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Visitors enter this to open the client's full public page. The schedule-only link is not affected.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-page-password">Change to</Label>
+              <Input
+                id="new-page-password"
+                value={newPagePassword}
+                onChange={(e) => setNewPagePassword(e.target.value)}
+                placeholder="New password"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPasswordDialogClient(null)} disabled={savingPagePassword}>Cancel</Button>
+            <Button onClick={savePagePassword} disabled={savingPagePassword || !newPagePassword.trim()}>
+              {savingPagePassword ? "Saving…" : "Save password"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

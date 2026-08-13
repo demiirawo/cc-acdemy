@@ -173,6 +173,47 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
   // refund; the database also enforces this via RLS + the protect trigger.
   const { isAdmin } = useUserRole();
 
+  // The full "all info" page is password-protected for outside visitors: it
+  // carries handover details, contact numbers and the credentials vault, and
+  // the link travels by email and chat. Signed-in staff skip the gate — the
+  // password is for people without an academy login. The schedule-only link
+  // stays open, as it always was. Verification happens server-side, so the
+  // password itself is never readable from the browser.
+  const [pageUnlocked, setPageUnlocked] = useState<boolean>(
+    () => scheduleOnly || sessionStorage.getItem(`cc-client-page-unlock:${decodeURIComponent(clientName || "")}`) === "1"
+  );
+  const [hasSession, setHasSession] = useState<boolean | null>(null);
+  const [gatePassword, setGatePassword] = useState("");
+  const [gateChecking, setGateChecking] = useState(false);
+  const [gateError, setGateError] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setHasSession(!!data.session));
+  }, []);
+
+  const submitGatePassword = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!gatePassword.trim() || gateChecking) return;
+    setGateChecking(true);
+    setGateError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("verify-client-page-password", {
+        body: { clientName: decodedClientName, password: gatePassword },
+      });
+      if (error) throw error;
+      if (data?.valid) {
+        sessionStorage.setItem(`cc-client-page-unlock:${decodedClientName}`, "1");
+        setPageUnlocked(true);
+      } else {
+        setGateError("That password isn't right. Please check with your Care Cuddle contact.");
+      }
+    } catch {
+      setGateError("Couldn't check the password just now — please try again.");
+    } finally {
+      setGateChecking(false);
+    }
+  };
+
   const [weekOffset, setWeekOffset] = useState(0);
   
   // Holiday management state
@@ -864,6 +905,52 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
         <Card className="max-w-md">
           <CardContent className="pt-6">
             <p className="text-center text-muted-foreground">Invalid client link</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // The password gate for outside visitors. Waits for the session check so a
+  // signed-in staff member never sees a flash of the lock screen.
+  if (!scheduleOnly && !pageUnlocked && hasSession !== true) {
+    if (hasSession === null) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      );
+    }
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="pt-8 pb-6 px-6 space-y-4">
+            <div className="mx-auto h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+              <Key className="h-6 w-6 text-primary" />
+            </div>
+            <div className="text-center space-y-1">
+              <h1 className="text-xl font-bold">{decodedClientName}</h1>
+              <p className="text-sm text-muted-foreground">
+                This page is protected. Enter the access password you've been given by Care Cuddle.
+              </p>
+            </div>
+            <form onSubmit={submitGatePassword} className="space-y-3">
+              <Input
+                type="password"
+                autoFocus
+                placeholder="Access password"
+                value={gatePassword}
+                onChange={(e) => { setGatePassword(e.target.value); setGateError(null); }}
+              />
+              {gateError && <p className="text-sm text-destructive">{gateError}</p>}
+              <Button type="submit" className="w-full" disabled={gateChecking || !gatePassword.trim()}>
+                {gateChecking ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                View page
+              </Button>
+            </form>
+            <p className="text-xs text-muted-foreground/70 text-center">
+              Don't have the password? Contact your Care Cuddle administrator.
+            </p>
           </CardContent>
         </Card>
       </div>
