@@ -23,6 +23,7 @@ import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { StaffOnboardingView } from "./StaffOnboardingView";
 import { ScheduleChangesCard } from "./ScheduleChangesCard";
+import { normalizePhotoFile } from "@/lib/photoUpload";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { StaffSettingsDialog } from "./StaffSettingsDialog";
 import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusPoints, rankBonusMult, bonusEligible, LOWEST_ELIGIBLE_RANK, type Rank } from "./PerformanceRankBadge";
@@ -505,8 +506,16 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.target;
-    const file = input.files?.[0];
-    if (!file || !selectedUserId) return;
+    const rawFile = input.files?.[0];
+    if (!rawFile || !selectedUserId) return;
+
+    // iPhone HEIC converts to JPEG in the browser, so it just works.
+    let file = rawFile;
+    try {
+      file = await normalizePhotoFile(rawFile);
+    } catch (convErr) {
+      console.error("HEIC conversion failed:", convErr);
+    }
 
     const problem = await describeProfilePhotoProblem(file);
     if (problem) {
@@ -1897,7 +1906,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                       </span>
                       <input
                         type="file"
-                        accept="image/jpeg,image/png,image/webp"
+                        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
                         className="sr-only"
                         disabled={photoUploading}
                         onChange={handlePhotoUpload}
@@ -2844,7 +2853,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                         </div>
                         <input
                           type="file"
-                          accept="image/jpeg,image/png,image/webp"
+                          accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
                           className="sr-only"
                           disabled={photoUploading}
                           onChange={handlePhotoUpload}

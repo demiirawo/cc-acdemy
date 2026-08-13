@@ -61,6 +61,7 @@
     "date-fns": "^3.6.0",
     "embla-carousel-react": "^8.3.0",
     "fabric": "^6.7.0",
+    "heic2any": "^0.0.4",
     "input-otp": "^1.2.4",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",

@@ -13,6 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Upload, CheckCircle2, AlertCircle, FileText, User } from "lucide-react";
 import { format } from "date-fns";
+import { normalizePhotoFile } from "@/lib/photoUpload";
 
 type FileField =
   | "proof_of_id_1_path"
@@ -188,8 +189,19 @@ export function StaffOnboardingForm() {
     field: FileField
   ) => {
     const input = e.target;
-    const file = input.files?.[0];
-    if (!file || !user) return;
+    const rawFile = input.files?.[0];
+    if (!rawFile || !user) return;
+
+    // iPhone HEIC photographs convert to JPEG in the browser rather than being
+    // rejected — the validator below still guards PDFs and corrupt files.
+    let file = rawFile;
+    if (field === "photograph_path") {
+      try {
+        file = await normalizePhotoFile(rawFile);
+      } catch (convErr) {
+        console.error("HEIC conversion failed:", convErr);
+      }
+    }
 
     // Reject anything unusable before it reaches storage. Photographs have to be
     // displayable in a browser, and people were uploading PDFs and iPhone HEICs
@@ -398,7 +410,7 @@ export function StaffOnboardingForm() {
     const isUploading = uploading === field;
     // A photograph must be displayable; ID and proof-of-address docs are
     // routinely PDFs, so only narrow the picker for the photo field.
-    const accept = field === "photograph_path" ? "image/jpeg,image/png,image/webp" : "image/*,.pdf";
+    const accept = field === "photograph_path" ? "image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" : "image/*,.pdf";
     const path = formData[field];
     const hasFile = !!path;
     const fileType = hasFile ? (path.split(".").pop() || "").toUpperCase() : "";
