@@ -52,7 +52,8 @@ import {
   Plus,
   Minus,
   Settings,
-  Monitor
+  Monitor,
+  Workflow,
 } from "lucide-react";
 
 interface ContentEditorProps {
@@ -1077,7 +1078,49 @@ export function EnhancedContentEditor({
     if (table && cell) {
       e.preventDefault();
       showTableContextMenu(e, cell, table);
+      return;
     }
+
+    // Process-map steps get their own menu, same interaction as tables.
+    const step = target.closest('.process-step');
+    const flow = target.closest('.process-flow');
+    if (flow && step && editorRef.current?.contains(flow)) {
+      e.preventDefault();
+      showProcessContextMenu(e, step, flow);
+    }
+  };
+
+  const showProcessContextMenu = (e: MouseEvent, step: Element, flow: Element) => {
+    document.querySelector('.table-context-menu')?.remove();
+    const blankStep = () => {
+      const d = document.createElement('div');
+      d.className = 'process-step';
+      d.innerHTML = '<div class="process-step-title">New step</div><div class="process-step-desc">Describe this step.</div>';
+      return d;
+    };
+    const menu = document.createElement('div');
+    menu.className = 'table-context-menu';
+    menu.style.cssText = `position: fixed; top: ${e.clientY}px; left: ${e.clientX}px; background: white; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 1000; padding: 4px 0; min-width: 170px;`;
+    const items = [
+      { text: 'Add Step Above', action: () => { step.before(blankStep()); } },
+      { text: 'Add Step Below', action: () => { step.after(blankStep()); } },
+      { text: 'Move Step Up', action: () => { const prev = step.previousElementSibling; if (prev) prev.before(step); } },
+      { text: 'Move Step Down', action: () => { const next = step.nextElementSibling; if (next) next.after(step); } },
+      { text: 'Delete Step', action: () => { step.remove(); if (!flow.querySelector('.process-step')) flow.remove(); } },
+      { text: 'Delete Process Map', action: () => { flow.remove(); } },
+    ];
+    items.forEach(item => {
+      const mi = document.createElement('div');
+      mi.textContent = item.text;
+      mi.style.cssText = 'padding: 8px 12px; cursor: pointer; font-size: 14px; color: #333;';
+      mi.addEventListener('mouseenter', () => { mi.style.backgroundColor = '#f0f0f0'; });
+      mi.addEventListener('mouseleave', () => { mi.style.backgroundColor = 'transparent'; });
+      mi.addEventListener('click', () => { item.action(); menu.remove(); updateContent(); });
+      menu.appendChild(mi);
+    });
+    document.body.appendChild(menu);
+    const close = (ev: MouseEvent) => { if (!menu.contains(ev.target as Node)) { menu.remove(); document.removeEventListener('click', close); } };
+    setTimeout(() => document.addEventListener('click', close), 0);
   };
 
   const showTableContextMenu = (e: MouseEvent, cell: Element, table: Element) => {
@@ -2778,6 +2821,25 @@ export function EnhancedContentEditor({
     }, tooltip: "Quote" },
   ];
 
+  // A process map: numbered steps with a title and an explanation each,
+  // connected vertically. Numbering and connectors are pure CSS (counters), so
+  // steps can be added, removed and reordered without any renumbering logic,
+  // and the block renders identically in the editor, the page view and the
+  // public view. Right-click a step for add/move/delete.
+  const insertProcessFlow = () => {
+    const step = (title: string, desc: string) =>
+      `<div class="process-step"><div class="process-step-title">${title}</div><div class="process-step-desc">${desc}</div></div>`;
+    const html =
+      `<div class="process-flow" data-process-flow="true">` +
+      step("First step", "Explain exactly what to do first.") +
+      step("Second step", "Then what happens next.") +
+      step("Third step", "And how to finish.") +
+      `</div><p><br/></p>`;
+    editorRef.current?.focus();
+    document.execCommand('insertHTML', false, html);
+    updateContent();
+  };
+
   const insertToolbarItems = [
     { icon: Link, action: insertLink, tooltip: "Insert Link" },
     { icon: Image, action: insertImage, tooltip: "Insert Image" },
@@ -2790,7 +2852,8 @@ export function EnhancedContentEditor({
       action: insertDivider, 
       tooltip: "Insert Section Divider" 
     },
-    { icon: FileText, action: () => fileInputRef.current?.click(), tooltip: "Upload File" }
+    { icon: FileText, action: () => fileInputRef.current?.click(), tooltip: "Upload File" },
+    { icon: Workflow, action: insertProcessFlow, tooltip: "Insert Process Map" }
   ];
 
   const headingToolbarItems = [
@@ -3511,6 +3574,7 @@ export function EnhancedContentEditor({
                   key={index}
                   variant="ghost"
                   size="sm"
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={item.action}
                   title={item.tooltip}
                   className="h-8 w-8 p-0 hover:bg-muted"
@@ -3527,6 +3591,7 @@ export function EnhancedContentEditor({
                   key={index}
                   variant="ghost"
                   size="sm"
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={item.action}
                   title={item.tooltip}
                   className="h-8 w-8 p-0 hover:bg-muted text-xs font-medium"
@@ -3543,6 +3608,7 @@ export function EnhancedContentEditor({
                   key={index}
                   variant="ghost"
                   size="sm"
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={item.action}
                   title={item.tooltip}
                   className="h-8 w-8 p-0 hover:bg-muted"
@@ -3579,6 +3645,7 @@ export function EnhancedContentEditor({
                   key={index}
                   variant="ghost"
                   size="sm"
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={item.action}
                   title={item.tooltip}
                   className="h-8 w-8 p-0 hover:bg-muted"
@@ -3600,6 +3667,7 @@ export function EnhancedContentEditor({
                   key={index}
                   variant="ghost"
                   size="sm"
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={item.action}
                   title={item.tooltip}
                   className="h-8 w-8 p-0 hover:bg-muted"
@@ -3616,6 +3684,7 @@ export function EnhancedContentEditor({
                   key={index}
                   variant="ghost"
                   size="sm"
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={item.action}
                   title={item.tooltip}
                   className="h-8 w-8 p-0 hover:bg-muted"
@@ -3632,6 +3701,7 @@ export function EnhancedContentEditor({
                   key={index}
                   variant="ghost"
                   size="sm"
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={item.action}
                   title={item.tooltip}
                   className="h-8 w-8 p-0 hover:bg-muted"

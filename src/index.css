@@ -665,3 +665,58 @@ textarea.glass-input:focus-visible {
     0 1px 2px rgba(16, 24, 40, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
+
+/* ---- Process maps (Essential Reading SOPs) --------------------------------
+   Numbered steps with a connector line. Numbering is a CSS counter, so adding,
+   removing or reordering steps in the editor renumbers automatically. Renders
+   the same in the editor, the academy page view and the public page view. */
+.process-flow {
+  counter-reset: process-step;
+  margin: 1.25rem 0;
+  padding: 0;
+}
+.process-step {
+  position: relative;
+  display: block;
+  margin: 0;
+  padding: 0.25rem 0 1.1rem 3.25rem;
+}
+.process-step::before {
+  counter-increment: process-step;
+  content: counter(process-step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  font-weight: 700;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Connector line between step numbers */
+.process-step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: calc(1.125rem - 1px);
+  top: 2.45rem;
+  bottom: -0.1rem;
+  width: 2px;
+  background: hsl(var(--primary) / 0.25);
+}
+.process-step-title {
+  font-weight: 600;
+  font-size: 1.02rem;
+  line-height: 2.25rem; /* vertically centres against the number bubble */
+  color: hsl(var(--foreground));
+}
+.process-step-desc {
+  margin-top: 0.1rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
