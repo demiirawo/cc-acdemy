@@ -24,6 +24,8 @@ export type MapColour = "green" | "blue" | "purple" | "amber" | "red" | "grey";
 export interface MapNode {
   id: string;
   text: string;
+  /** The wording that appears against this step's number in the list. */
+  note?: string;
   shape: MapShape;
   colour: MapColour;
   /** Top-left corner, diagram units. Set by autoLayout, then by dragging. */
@@ -396,6 +398,28 @@ export function autoLayout(model: ProcessMapModel): ProcessMapModel {
   });
 
   return { ...model, nodes };
+}
+
+/**
+ * Reading order — down the page, then left to right. The number a box gets is
+ * the number its explanation gets in the list beside it, which is the whole
+ * point: one numbered thing, described once, drawn once.
+ */
+export function stepOrder(model: ProcessMapModel): MapNode[] {
+  return [...model.nodes].sort((a, b) => (Math.abs(a.y - b.y) > 12 ? a.y - b.y : a.x - b.x));
+}
+
+export function stepNumbers(model: ProcessMapModel): Map<string, number> {
+  const numbers = new Map<string, number>();
+  stepOrder(model).forEach((n, i) => numbers.set(n.id, i + 1));
+  return numbers;
+}
+
+/** Where a step's number sits — on the outline, clear of the wording. */
+export function badgeSpot(n: MapNode): { x: number; y: number } {
+  if (n.shape === "decision") return { x: n.x + n.w * 0.25, y: n.y + n.h * 0.25 };
+  if (n.shape === "terminator") return { x: n.x + 6, y: n.y + 3 };
+  return { x: n.x, y: n.y };
 }
 
 /* --------------------------------------------------------------- routing -- */
@@ -773,11 +797,25 @@ export function renderProcessMapSvg(model: ProcessMapModel): string {
     .join("");
 
   const nodes = model.nodes.map(renderNode).join("");
+
+  // The number on each box is the number of its explanation in the list.
+  const numbers = stepNumbers(model);
+  const badges = model.nodes
+    .map((n) => {
+      const spot = badgeSpot(n);
+      const c = MAP_COLOURS[n.colour] ?? MAP_COLOURS.green;
+      return (
+        `<circle cx="${fmt(spot.x)}" cy="${fmt(spot.y)}" r="9.5" fill="${c.stroke}" stroke="#ffffff" stroke-width="1.5"/>` +
+        `<text x="${fmt(spot.x)}" y="${fmt(spot.y + 3.7)}" text-anchor="middle" font-size="10.5" font-weight="600" fill="#ffffff">${numbers.get(n.id) ?? ""}</text>`
+      );
+    })
+    .join("");
+
   const title = model.title ? `<title>${escapeXml(model.title)}</title>` : "";
 
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" ` +
-    `role="img" style="font-family:${FONT}">${title}${edges}${nodes}</svg>`
+    `role="img" style="font-family:${FONT}">${title}${edges}${nodes}${badges}</svg>`
   );
 }
 
@@ -800,28 +838,73 @@ function fromBase64(s: string): string {
 }
 
 export function encodeModel(model: ProcessMapModel): string {
-  return toBase64(JSON.stringify(model));
+  // Box sizes come from the wording, so storing them would only be a second
+  // copy of something already derivable — and one that could disagree.
+  const lean = {
+    ...model,
+    nodes: model.nodes.map(({ w: _w, h: _h, ...rest }) => ({
+      ...rest,
+      x: Math.round(rest.x),
+      y: Math.round(rest.y),
+    })),
+  };
+  return toBase64(JSON.stringify(lean));
 }
 
 export function decodeModel(encoded: string): ProcessMapModel | null {
   try {
     const parsed = JSON.parse(fromBase64(encoded));
     if (!parsed || !Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) return null;
-    return parsed as ProcessMapModel;
+    return {
+      ...parsed,
+      nodes: parsed.nodes.map((n: MapNode) => ({ ...n, ...measureNode(n.text, n.shape) })),
+    } as ProcessMapModel;
   } catch {
     return null;
   }
 }
 
 /**
- * The block written into page content: the picture for everyone to read, and
- * the model tucked into an attribute so it can be opened and changed again.
+ * A process map as it appears on a page: the numbered explanations down the
+ * left, the drawing on the right, and the same number against each step in
+ * both. They are one thing — the list is generated from the map, so a step
+ * cannot exist in one and be missing from the other, and renumbering after an
+ * edit is not something anyone has to remember to do.
+ */
+export function renderProcessMapBlock(model: ProcessMapModel): string {
+  const numbers = stepNumbers(model);
+
+  const items = stepOrder(model)
+    .map((n) => {
+      const c = MAP_COLOURS[n.colour] ?? MAP_COLOURS.green;
+      return (
+        `<li class="process-map-step">` +
+        `<span class="process-map-step-num" style="background:${c.stroke}">${numbers.get(n.id) ?? ""}</span>` +
+        `<span class="process-map-step-body">` +
+        `<span class="process-map-step-title">${escapeXml(n.text)}</span>` +
+        (n.note ? `<span class="process-map-step-note">${escapeXml(n.note)}</span>` : "") +
+        `</span></li>`
+      );
+    })
+    .join("");
+
+  return (
+    `<div class="process-map-layout">` +
+    `<ol class="process-map-steps">${items}</ol>` +
+    `<div class="process-map-figure">${renderProcessMapSvg(model)}</div>` +
+    `</div>`
+  );
+}
+
+/**
+ * What gets written into the page: the block for everyone to read, and the
+ * model tucked into an attribute so it can be opened and changed again.
  * Marked uneditable so typing in the page can't tear the drawing apart.
  */
 export function serialiseProcessMap(model: ProcessMapModel): string {
   return (
     `<div class="process-map" data-process-map="${encodeModel(model)}" contenteditable="false">` +
-    renderProcessMapSvg(model) +
+    renderProcessMapBlock(model) +
     `</div>`
   );
 }

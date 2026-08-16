@@ -21,6 +21,7 @@ import {
   SHAPE_LABELS,
   autoLayout,
   edgeVisual,
+  badgeSpot,
   laneAssignments,
   makeEdge,
   makeNode,
@@ -28,6 +29,7 @@ import {
   measureNode,
   newProcessMap,
   nodeVisual,
+  stepNumbers,
   type MapColour,
   type MapEdge,
   type MapNode,
@@ -117,6 +119,7 @@ export default function ProcessMapEditor({ open, initial, onCancel, onSave }: Pr
 
   const bounds = useMemo(() => mapBounds(model), [model]);
   const lanes = useMemo(() => laneAssignments(model), [model]);
+  const numbers = useMemo(() => stepNumbers(model), [model]);
   const nodeById = useMemo(() => new Map(model.nodes.map((n) => [n.id, n])), [model.nodes]);
 
   const selectedNode = selected?.kind === "node" ? nodeById.get(selected.id) ?? null : null;
@@ -407,6 +410,26 @@ export default function ProcessMapEditor({ open, initial, onCancel, onSave }: Pr
                         </tspan>
                       ))}
                     </text>
+                    <circle
+                      cx={badgeSpot(node).x}
+                      cy={badgeSpot(node).y}
+                      r={9.5}
+                      fill={v.stroke}
+                      stroke="#fff"
+                      strokeWidth={1.5}
+                      style={{ pointerEvents: "none" }}
+                    />
+                    <text
+                      x={badgeSpot(node).x}
+                      y={badgeSpot(node).y + 3.7}
+                      textAnchor="middle"
+                      fontSize={10.5}
+                      fontWeight={600}
+                      fill="#fff"
+                      style={{ pointerEvents: "none", userSelect: "none" }}
+                    >
+                      {numbers.get(node.id)}
+                    </text>
                     {isSelected && (
                       <circle
                         cx={node.x + node.w / 2}
@@ -430,7 +453,9 @@ export default function ProcessMapEditor({ open, initial, onCancel, onSave }: Pr
             {selectedNode && (
               <>
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold">{SHAPE_LABELS[selectedNode.shape]}</h3>
+                  <h3 className="text-sm font-semibold">
+                    Step {numbers.get(selectedNode.id)} · {SHAPE_LABELS[selectedNode.shape]}
+                  </h3>
                   <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={removeSelected} title="Delete this box">
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -441,6 +466,16 @@ export default function ProcessMapEditor({ open, initial, onCancel, onSave }: Pr
                     value={selectedNode.text}
                     onChange={(e) => updateNode(selectedNode.id, { text: e.target.value })}
                     rows={3}
+                    className="text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-medium text-muted-foreground">Explanation</label>
+                  <Textarea
+                    value={selectedNode.note ?? ""}
+                    onChange={(e) => updateNode(selectedNode.id, { note: e.target.value })}
+                    rows={4}
+                    placeholder="What this step actually involves. Shown against this number in the list beside the diagram."
                     className="text-sm"
                   />
                 </div>
