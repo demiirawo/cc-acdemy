@@ -16,6 +16,8 @@ import { useGlossary } from "@/hooks/useGlossary";
 import { GlossaryTooltip } from "./GlossaryTooltip";
 import { EditableTitle } from "./EditableTitle";
 import { ColorPicker } from "./ColorPicker";
+import ProcessMapEditor from "./ProcessMapEditor";
+import { decodeModel, serialiseProcessMap, type ProcessMapModel } from "@/lib/processMap";
 import {
   Bold,
   Italic,
@@ -116,6 +118,12 @@ export function EnhancedContentEditor({
   const contentRef = useRef(content);
   const editorRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // The process map being drawn. `mapTarget` is the block on the page being
+  // changed — null when a brand new map is being inserted at the cursor.
+  const [mapOpen, setMapOpen] = useState(false);
+  const [mapModel, setMapModel] = useState<ProcessMapModel | null>(null);
+  const mapTargetRef = useRef<HTMLElement | null>(null);
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedStateRef = useRef({
     title,
@@ -2826,17 +2834,42 @@ export function EnhancedContentEditor({
   // steps can be added, removed and reordered without any renumbering logic,
   // and the block renders identically in the editor, the page view and the
   // public view. Right-click a step for add/move/delete.
+  /** Toolbar button: draw a new map, then drop the finished picture in. */
   const insertProcessFlow = () => {
-    const step = (title: string, desc: string) =>
-      `<div class="process-step"><div class="process-step-title">${title}</div><div class="process-step-desc">${desc}</div></div>`;
-    const html =
-      `<div class="process-flow" data-process-flow="true">` +
-      step("First step", "Explain exactly what to do first.") +
-      step("Second step", "Then what happens next.") +
-      step("Third step", "And how to finish.") +
-      `</div><p><br/></p>`;
-    editorRef.current?.focus();
-    document.execCommand('insertHTML', false, html);
+    mapTargetRef.current = null;
+    setMapModel(null);
+    setMapOpen(true);
+  };
+
+  /** Clicking a map on the page opens it again with everything still in place. */
+  const editProcessMapAt = (block: HTMLElement) => {
+    const model = decodeModel(block.getAttribute('data-process-map') ?? '');
+    if (!model) {
+      toast({
+        title: "This map can't be opened",
+        description: "Delete it and draw a new one.",
+        variant: "destructive",
+      });
+      return;
+    }
+    mapTargetRef.current = block;
+    setMapModel(model);
+    setMapOpen(true);
+  };
+
+  const handleProcessMapSave = (model: ProcessMapModel) => {
+    const html = serialiseProcessMap(model);
+    const target = mapTargetRef.current;
+
+    if (target) {
+      target.outerHTML = html;
+    } else {
+      editorRef.current?.focus();
+      document.execCommand('insertHTML', false, html + '<p><br/></p>');
+    }
+
+    setMapOpen(false);
+    mapTargetRef.current = null;
     updateContent();
   };
 
@@ -3761,6 +3794,10 @@ export function EnhancedContentEditor({
               onInput={updateContent}
               onPaste={handlePaste}
               onKeyDown={handleKeyDown}
+              onClick={(e) => {
+                const block = (e.target as HTMLElement)?.closest?.('.process-map') as HTMLElement | null;
+                if (block && editorRef.current?.contains(block)) editProcessMapAt(block);
+              }}
               className="w-full p-4 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-background text-foreground min-h-[800px] prose prose-lg max-w-none"
               style={{
                 fontFamily: 'system-ui, -apple-system, sans-serif',
@@ -4220,6 +4257,16 @@ export function EnhancedContentEditor({
         onChange={handleFileUpload}
         className="hidden"
         accept="image/*,video/*,.pdf,.doc,.docx,.txt"
+      />
+
+      <ProcessMapEditor
+        open={mapOpen}
+        initial={mapModel}
+        onCancel={() => {
+          setMapOpen(false);
+          mapTargetRef.current = null;
+        }}
+        onSave={handleProcessMapSave}
       />
      </div>
    );

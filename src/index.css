@@ -720,3 +720,113 @@ textarea.glass-input:focus-visible {
   font-size: 0.95rem;
   line-height: 1.55;
 }
+
+/* Process maps — the flowchart blocks drawn by the editor.
+   The picture is stored as inline SVG at its natural size, so a wide map
+   scrolls inside its own block instead of shrinking until nobody can read it.
+   In the editor the whole block is clickable, which reopens the drawing tool. */
+.process-map {
+  position: relative;
+  overflow-x: auto;
+  margin: 1.25rem 0;
+  padding: 2px;
+}
+
+.process-map svg {
+  display: block;
+}
+
+[contenteditable="true"] .process-map {
+  cursor: pointer;
+  border-radius: 8px;
+  transition: box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+[contenteditable="true"] .process-map:hover {
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.35);
+}
+
+/* "View larger", shown in the corner of a map on a page being read. */
+.process-map-zoom {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: hsl(var(--background) / 0.9);
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.process-map:hover .process-map-zoom,
+.process-map-zoom:focus-visible {
+  opacity: 1;
+}
+
+/* Touch devices have no hover, so the control has to be there already. */
+@media (hover: none) {
+  .process-map-zoom {
+    opacity: 1;
+  }
+}
+
+.process-map-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: rgb(15 18 24 / 0.72);
+  backdrop-filter: blur(2px);
+  padding: 16px;
+}
+
+.process-map-overlay-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.process-map-overlay-bar button {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid rgb(255 255 255 / 0.25);
+  background: rgb(255 255 255 / 0.12);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.process-map-overlay-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+@media print {
+  .process-map {
+    overflow: visible;
+  }
+  .process-map svg {
+    max-width: 100%;
+    height: auto;
+  }
+  .process-map-zoom {
+    display: none;
+  }
+}

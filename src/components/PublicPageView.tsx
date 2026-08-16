@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,6 +6,7 @@ import { Globe, Eye, ArrowLeft } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { RecommendedReadingSection } from "@/components/RecommendedReadingSection";
+import { useProcessMapViewer } from "@/hooks/useProcessMapViewer";
 
 interface PublicPage {
   id: string;
@@ -27,6 +28,9 @@ export function PublicPageView() {
   const { toast } = useToast();
 
   // Function to make content read-only by removing contenteditable attributes
+  // Adds the "View larger" control to any process map on the page.
+  const pageContentRef = useRef<HTMLDivElement>(null);
+
   const makeContentReadOnly = (content: string): string => {
     // Remove all contenteditable attributes to prevent editing in view mode
     return content.replace(/\scontenteditable="true"/gi, '');
@@ -37,6 +41,8 @@ export function PublicPageView() {
       fetchPublicPage();
     }
   }, [token]);
+
+  useProcessMapViewer(pageContentRef, page?.content);
 
   const fetchPublicPage = async () => {
     try {
@@ -181,6 +187,7 @@ export function PublicPageView() {
           <CardContent>
             <div className="prose prose-lg max-w-none">
               <div 
+                ref={pageContentRef}
                 className="text-foreground leading-relaxed"
                 dangerouslySetInnerHTML={{ 
                   __html: makeContentReadOnly(page.content)

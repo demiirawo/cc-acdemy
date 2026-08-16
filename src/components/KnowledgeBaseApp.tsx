@@ -1,10 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ResizableSidebar } from "./ResizableSidebar";
 import { RealDashboard } from "./RealDashboard";
 
 import { TagsPage } from "./TagsPage";
 import { EnhancedContentEditor } from "./EnhancedContentEditor";
+import { highlightGlossaryTerms as highlightTerms } from "@/lib/glossaryHighlight";
+import { useProcessMapViewer } from "@/hooks/useProcessMapViewer";
 import { CreatePageDialog } from "./CreatePageDialog";
 import { PagePermissionsDialog } from "./PagePermissionsDialog";
 import { SettingsPage } from "./SettingsPage";
@@ -128,67 +130,15 @@ function PageView({
     return content.replace(/\scontenteditable="true"/gi, '');
   };
 
-  // Function to highlight glossary terms in content
-  const highlightGlossaryTerms = (content: string): string => {
-    const matchableTerms = getAllMatchableTerms();
-    if (!matchableTerms.length) return content;
-    
-    // Create a map of positions to avoid overlapping highlights
-    const highlights: { start: number; end: number; term: string; definition: string; mainTerm: string }[] = [];
-    const highlightedMainTerms = new Set<string>();
-    
-    // Sort terms by length (longest first) to prioritize longer matches
-    const sortedTerms = [...matchableTerms].sort((a, b) => b.term.length - a.term.length);
-    
-    sortedTerms.forEach(termData => {
-      const regex = new RegExp(`\\b${termData.term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
-      let match;
-      let isFirstMatch = true;
-      
-      while ((match = regex.exec(content)) !== null) {
-        const mainTermLower = termData.mainTerm.toLowerCase();
-        
-        // Only highlight the first occurrence of each main term (including its variations)
-        if (isFirstMatch && !highlightedMainTerms.has(mainTermLower)) {
-          const start = match.index;
-          const end = match.index + match[0].length;
-          
-          // Check if this position overlaps with existing highlights
-          const overlaps = highlights.some(h => 
-            (start >= h.start && start < h.end) || 
-            (end > h.start && end <= h.end) ||
-            (start <= h.start && end >= h.end)
-          );
-          
-          if (!overlaps) {
-            highlights.push({ 
-              start, 
-              end, 
-              term: termData.term,
-              definition: termData.definition,
-              mainTerm: termData.mainTerm
-            });
-            highlightedMainTerms.add(mainTermLower);
-            isFirstMatch = false;
-          }
-        }
-      }
-    });
-    
-    // Sort highlights by position (reverse order for easier string manipulation)
-    highlights.sort((a, b) => b.start - a.start);
-    
-    // Apply highlights from end to beginning to maintain positions
-    let result = content;
-    highlights.forEach(highlight => {
-      const { start, end, mainTerm, definition } = highlight;
-      const matchedText = content.substring(start, end);
-      const replacement = `<span class="glossary-term" data-term="${mainTerm}" data-definition="${definition.replace(/"/g, '&quot;')}">${matchedText}</span>`;
-      result = result.substring(0, start) + replacement + result.substring(end);
-    });
-    
-    return result;
-  };
+  // Marks up the first mention of each glossary term. See the note in
+  // lib/glossaryHighlight on why this works on the parsed page, not the markup.
+  const highlightGlossaryTerms = (content: string): string =>
+    highlightTerms(content, getAllMatchableTerms());
+
+  // Adds the "View larger" control to any process map drawn on the page.
+  const pageContentRef = useRef<HTMLDivElement>(null);
+  useProcessMapViewer(pageContentRef, currentPage.content);
+
   // Add event listeners for glossary term hover tooltips
   useEffect(() => {
     const handleGlossaryHover = (e: MouseEvent) => {
@@ -417,7 +367,7 @@ function PageView({
         {/* Show content if not empty, otherwise show child pages */}
         {!isContentEmpty ? (
           <div className="prose prose-lg max-w-none">
-            <div className="text-foreground leading-relaxed" dangerouslySetInnerHTML={{
+            <div ref={pageContentRef} className="text-foreground leading-relaxed" dangerouslySetInnerHTML={{
               __html: makeContentReadOnly(highlightGlossaryTerms(cleanContent.split('RECOMMENDED_READING:')[0]))
             }} />
           </div>
