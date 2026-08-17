@@ -426,6 +426,9 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   const [staffRequests, setStaffRequests] = useState<StaffRequest[]>([]);
   const [coveredUserPatterns, setCoveredUserPatterns] = useState<RecurringShiftPattern[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
+  // This month's actual bonus pot, so the share figures below are the real
+  // money rather than a worked example. null = no pot set for the month yet.
+  const [bonusPotGbp, setBonusPotGbp] = useState<number | null>(null);
   const [onboardingData, setOnboardingData] = useState<OnboardingFormData | null>(null);
   const [onboardingSteps, setOnboardingSteps] = useState<OnboardingStep[]>([]);
   const [onboardingCompletedIds, setOnboardingCompletedIds] = useState<Set<string>>(new Set());
@@ -623,6 +626,25 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       fetchData(selectedUserId);
     }
   }, [selectedUserId]);
+
+  // The bonus pot for the current month. Readable by any signed-in user, so
+  // everyone sees their own share worked out against the real figure.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const now = new Date();
+      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const { data } = await (supabase as any)
+        .from('monthly_bonus_pots')
+        .select('amount_gbp')
+        .eq('month', monthStart)
+        .maybeSingle();
+      if (!active) return;
+      const amount = Number(data?.amount_gbp);
+      setBonusPotGbp(Number.isFinite(amount) && amount > 0 ? amount : null);
+    })();
+    return () => { active = false; };
+  }, []);
 
   // Team-wide rating + tenure spread (for the performance comparison and to
   // show how each rating/tenure combination shares a bonus pot).
@@ -2112,17 +2134,28 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         const higher = teamPerf.filter(t => rankBonusMult(t.rank) > myMult).length;
         const sameLevel = Math.max(0, teamPerf.filter(t => rankBonusMult(t.rank) === myMult).length - 1);
 
-        const examplePot = 1000;
+        // The real pot for this month — not an illustration. Without one set,
+        // no figure is shown at all rather than a made-up one.
+        const pot = bonusPotGbp;
         const flagEligible = hrProfile.bonus_pot_eligible !== false;
         const eligible = bonusEligible(myRank) && flagEligible;
         // myPoints is rank-only; zero it out when opted out so the share is £0.
         const effPoints = flagEligible ? myPoints : 0;
-        const myShare = (examplePot * effPoints) / teamTotalPoints;
+        const myShare = pot === null ? null : (pot * effPoints) / teamTotalPoints;
         const idx = myRank ? RANK_ORDER.indexOf(myRank) : -1;
         // For eligible staff show the next rank up; for ineligible (D) show the
         // threshold they must reach to earn any pot share at all.
         const nextUp: Rank | null = !eligible ? LOWEST_ELIGIBLE_RANK : !myRank ? 'A' : idx > 0 ? RANK_ORDER[idx - 1] : null;
-        const nextShare = nextUp ? (examplePot * bonusPoints(nextUp, myYears)) / teamTotalPoints : null;
+        // A better rating changes the split, not just this person's slice: their
+        // new points join the pool everyone is measured against. For someone on
+        // D that pool currently excludes them entirely, so the points have to be
+        // added in or the figure promises more than the pot can pay.
+        const nextPoints = nextUp ? bonusPoints(nextUp, myYears) : 0;
+        const nextDenominator = teamTotalPoints - effPoints + nextPoints;
+        const nextShare =
+          nextUp && pot !== null && nextDenominator > 0
+            ? (pot * nextPoints) / nextDenominator
+            : null;
 
         const overallTone: StatusTone = myRank ? 'success' : 'neutral';
 
@@ -2290,6 +2323,12 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   </p>
                   {eligible ? (
                   <div className="rounded-lg border bg-muted/20 p-3 space-y-1.5 text-sm">
+                    {myShare === null ? (
+                      <p className="text-muted-foreground text-xs">
+                        This month's bonus pot hasn't been set yet, so there's no figure to show.
+                      </p>
+                    ) : (
+                    <>
                     <div className="flex justify-between gap-2">
                       <span className="text-muted-foreground">Bonus share based on your current rating</span>
                       <span className="font-medium tabular-nums">≈ {oneValue(myShare)}</span>
@@ -2300,6 +2339,11 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                         <span className="font-medium tabular-nums">≈ {oneValue(nextShare)}</span>
                       </div>
                     )}
+                    <p className="text-[11px] text-muted-foreground pt-1">
+                      Worked out from this month's pot of {oneValue(pot)}, shared across the team by rating and time served.
+                    </p>
+                    </>
+                    )}
                   </div>
                   ) : (
                   <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 space-y-1.5 text-sm">
@@ -2308,9 +2352,12 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                         ? "You're currently excluded from the monthly bonus pot. Speak to your manager if you think this is a mistake."
                         : `Your ${myRank} rating isn't eligible for the monthly bonus pot — this applies regardless of how long you've been here.`}
                     </p>
-                    {flagEligible && nextUp && nextShare !== null && (
+                    {flagEligible && nextUp && (
                       <p className="text-muted-foreground">
-                        Reaching <strong className="text-foreground">{RANK_STYLES[nextUp].label}</strong> would make you eligible — worth ≈ <strong className="text-foreground">{oneValue(nextShare)}</strong> at your current tenure.
+                        Reaching <strong className="text-foreground">{RANK_STYLES[nextUp].label}</strong> would make you eligible
+                        {nextShare === null
+                          ? " for a share of the monthly bonus pot."
+                          : <> — worth ≈ <strong className="text-foreground">{oneValue(nextShare)}</strong> at your current tenure, based on this month's pot of {oneValue(pot)}.</>}
                       </p>
                     )}
                   </div>
