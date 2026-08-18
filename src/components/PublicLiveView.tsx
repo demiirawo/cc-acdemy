@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { filterSchedulesByCoverageMetadata } from "@/lib/coverageUtils";
 import { useQuery } from "@tanstack/react-query";
+import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
 import { supabase } from "@/integrations/supabase/client";
 import { format, startOfDay, endOfDay, parseISO, isSameDay, isWithinInterval, getDay, differenceInWeeks, startOfWeek, isBefore, isAfter, differenceInMinutes } from "date-fns";
 import { Clock, Infinity, Users, UserCheck, Loader2 } from "lucide-react";
@@ -104,13 +105,26 @@ export function PublicLiveView() {
   });
 
   const { data: staffProfiles = [], isLoading: staffLoading } = useQuery({
-    queryKey: ["public-live-staff"],
+    queryKey: ["public-live-staff", "employed-only"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
         .select("user_id, display_name, email");
       if (error) throw error;
-      return data || [];
+
+      // This board is public, so it cannot read hr_profiles. staff_employment_public
+      // exposes the employment window and nothing else, which is enough to stop
+      // showing people who have left — and stops sign-in accounts that were never
+      // staff appearing at all.
+      const { data: windows } = await supabase
+        .from("staff_employment_public" as never)
+        .select("user_id, start_date, employment_end_date");
+      const byUser = new Map<string, EmploymentWindow>(
+        ((windows ?? []) as unknown as ({ user_id: string } & EmploymentWindow)[])
+          .map((w) => [w.user_id, w]),
+      );
+
+      return (data || []).filter((p) => isCurrentlyEmployed(byUser.get(p.user_id)));
     },
   });
 
