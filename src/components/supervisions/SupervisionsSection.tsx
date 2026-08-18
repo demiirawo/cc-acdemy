@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { cn } from "@/lib/utils";
+import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
 import { format, parseISO, addMonths, differenceInCalendarDays, differenceInMonths } from "date-fns";
 import { trainingItemUpToDate } from "@/lib/trainingStatus";
 import { RANK_STYLES, RANK_ORDER, type Rank } from "@/components/hr/PerformanceRankBadge";
@@ -22,7 +23,7 @@ import {
 
 // ---- Types ------------------------------------------------------------------
 interface StaffRow { user_id: string; display_name: string | null; email: string | null; }
-interface HrRow { user_id: string; performance_rating: string | null; start_date: string | null; }
+interface HrRow extends EmploymentWindow { user_id: string; performance_rating: string | null; start_date: string | null; }
 interface Supervision {
   id: string;
   user_id: string;
@@ -106,7 +107,7 @@ export function SupervisionsSection({ onViewProfile }: { onViewProfile?: (userId
     setLoading(true);
     const [{ data: profiles }, { data: hrRows }, { data: sups }] = await Promise.all([
       supabase.from("profiles").select("user_id, display_name, email").order("display_name"),
-      supabase.from("hr_profiles").select("user_id, performance_rating, start_date"),
+      supabase.from("hr_profiles").select("user_id, performance_rating, start_date, employment_end_date"),
       (supabase as any).from("supervisions").select("*").order("supervision_date", { ascending: false }),
     ]);
     setStaff((profiles as StaffRow[]) || []);
@@ -137,8 +138,12 @@ export function SupervisionsSection({ onViewProfile }: { onViewProfile?: (userId
     );
   }
 
-  // Overview: staff ranked by urgency.
-  const rows = staff.map(s => ({ staff: s, last: latest[s.user_id] || null, meta: dueMeta(latest[s.user_id] || null) }));
+  // Overview: staff ranked by urgency. Only people still employed — nobody
+  // needs a supervision booked after their last day, and a `profiles` row on
+  // its own (a sign-in account with no HR record) was never staff.
+  const rows = staff
+    .filter(s => isCurrentlyEmployed(hr[s.user_id]))
+    .map(s => ({ staff: s, last: latest[s.user_id] || null, meta: dueMeta(latest[s.user_id] || null) }));
   const order: Record<DueTone, number> = { overdue: 0, never: 1, soon: 2, ok: 3 };
   rows.sort((a, b) => order[a.meta.tone] - order[b.meta.tone] || (a.staff.display_name || "").localeCompare(b.staff.display_name || ""));
   const overdue = rows.filter(r => r.meta.tone === "overdue" || r.meta.tone === "never").length;
@@ -163,7 +168,7 @@ export function SupervisionsSection({ onViewProfile }: { onViewProfile?: (userId
         </div>
 
         <div className="grid grid-cols-3 gap-3">
-          <Card><CardContent className="p-4"><p className="text-2xl font-bold tabular-nums">{staff.length}</p><p className="text-xs text-muted-foreground">Staff</p></CardContent></Card>
+          <Card><CardContent className="p-4"><p className="text-2xl font-bold tabular-nums">{rows.length}</p><p className="text-xs text-muted-foreground">Staff</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className={cn("text-2xl font-bold tabular-nums", overdue > 0 && "text-red-600")}>{overdue}</p><p className="text-xs text-muted-foreground">Overdue / never</p></CardContent></Card>
           <Card><CardContent className="p-4"><p className={cn("text-2xl font-bold tabular-nums", soon > 0 && "text-amber-600")}>{soon}</p><p className="text-xs text-muted-foreground">Due within 30 days</p></CardContent></Card>
         </div>

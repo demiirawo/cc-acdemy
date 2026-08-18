@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -54,7 +55,7 @@ export function SendContractDialog({ open, onOpenChange, onSent }: SendContractD
   useEffect(() => {
     if (!open) return;
     (async () => {
-      const [{ data: profiles }, { data: tpls }] = await Promise.all([
+      const [{ data: profiles }, { data: tpls }, { data: hr }] = await Promise.all([
         supabase
           .from("profiles")
           .select("user_id, display_name, email, role")
@@ -64,8 +65,22 @@ export function SendContractDialog({ open, onOpenChange, onSent }: SendContractD
           .select("id, name, body_html")
           .eq("is_archived", false)
           .order("name"),
+        supabase
+          .from("hr_profiles")
+          .select("user_id, start_date, employment_end_date"),
       ]);
-      setStaff((profiles ?? []) as StaffProfile[]);
+      const windows = new Map<string, EmploymentWindow>(
+        (hr ?? []).map((h: { user_id: string } & EmploymentWindow) => [h.user_id, h])
+      );
+      // Only offer people still employed today. A new contract to sign is work
+      // you can't give to someone whose last day has passed, and a sign-in
+      // account with no HR record was never staff. Contracts already sent are
+      // listed elsewhere and keep their recipient either way.
+      setStaff(
+        ((profiles ?? []) as StaffProfile[]).filter((p) =>
+          isCurrentlyEmployed(windows.get(p.user_id))
+        )
+      );
       setTemplates((tpls ?? []) as TemplateOption[]);
     })();
   }, [open]);

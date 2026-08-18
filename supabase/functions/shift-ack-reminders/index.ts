@@ -141,6 +141,18 @@ serve(async (req) => {
       (profiles ?? []).map((p) => [p.user_id, { name: p.display_name as string | null, email: p.email as string | null }]),
     );
 
+    // Someone whose last day has passed is not chased about a shift change they
+    // will never work. The leaving date is inclusive, so the day itself counts.
+    const { data: hrRows } = await admin
+      .from("hr_profiles")
+      .select("user_id, employment_end_date")
+      .in("user_id", [...byUser.keys()]);
+    const todayIso = new Date().toISOString().slice(0, 10);
+    for (const h of hrRows ?? []) {
+      const end = h.employment_end_date as string | null;
+      if (end && end < todayIso) byUser.delete(h.user_id as string);
+    }
+
     let reminded = 0;
     const missingEmail: string[] = [];
 

@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Search, CheckCircle2, Users } from "lucide-react";
 import { allTrainingUpToDate } from "@/lib/trainingStatus";
+import { isCurrentlyEmployed } from "@/lib/employment";
 import { StaffOnboardingView } from "./StaffOnboardingView";
 
 interface Person {
@@ -71,17 +72,20 @@ export function StaffOnboardingProgressCards() {
             .from("onboarding_steps")
             .select("id, step_type, target_page_id, stage")
             .order("sort_order", { ascending: true }),
-          supabase.from("hr_profiles").select("user_id, employment_status, start_date"),
+          supabase.from("hr_profiles").select("user_id, employment_status, start_date, employment_end_date"),
           supabase.from("profiles").select("user_id, display_name").order("display_name"),
         ]);
 
         const statusByUser = new Map(
           (hrData ?? []).map((h) => [h.user_id, h])
         );
-        // Anyone with an HR record, ordered so people still onboarding come
-        // first — a finished colleague is still worth being able to look up.
+        // Anyone with an HR record who still works here, ordered so people
+        // still onboarding come first — a finished colleague is still worth
+        // being able to look up, someone who has left is not. The leaving date
+        // is the test, not employment_status: that stays "active" once a
+        // leaving date is recorded.
         const merged: Person[] = (profilesData ?? [])
-          .filter((p) => statusByUser.has(p.user_id))
+          .filter((p) => isCurrentlyEmployed(statusByUser.get(p.user_id)))
           .map((p) => ({
             user_id: p.user_id,
             display_name: p.display_name,

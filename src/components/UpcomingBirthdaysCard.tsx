@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Cake } from "lucide-react";
 import { format, parseISO, addDays, isSameDay, setYear } from "date-fns";
+import { isEmployedOn, type EmploymentWindow } from "@/lib/employment";
 interface StaffOnboarding {
   user_id: string;
   date_of_birth: string | null;
@@ -30,7 +31,20 @@ export function UpcomingBirthdaysCard() {
         error
       } = await supabase.rpc("get_staff_directory");
       if (error) throw error;
-      return ((data || []) as StaffOnboarding[]).filter(s => s.date_of_birth);
+
+      // The directory keeps everyone who ever completed an onboarding form,
+      // leavers included, so their employment window comes along to decide
+      // whether we still wish them a happy birthday.
+      const {
+        data: hr
+      } = await supabase.from("hr_profiles").select("user_id, start_date, employment_end_date");
+      const windows = new Map<string, EmploymentWindow>((hr || []).map((h: {
+        user_id: string;
+      } & EmploymentWindow) => [h.user_id, h]));
+      return ((data || []) as StaffOnboarding[]).filter(s => s.date_of_birth).map(s => ({
+        ...s,
+        employment: windows.get(s.user_id)
+      }));
     }
   });
 
@@ -69,7 +83,10 @@ export function UpcomingBirthdaysCard() {
       nextBirthday,
       daysUntil: Math.ceil((nextBirthday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     };
-  }).filter(staff => staff.nextBirthday >= today && staff.nextBirthday <= thirtyDaysFromNow).sort((a, b) => a.nextBirthday.getTime() - b.nextBirthday.getTime());
+  })
+  // Only people who are still here on the day itself. The leaving date is
+  // inclusive, so someone finishing on their birthday is still celebrated.
+  .filter(staff => staff.nextBirthday >= today && staff.nextBirthday <= thirtyDaysFromNow && isEmployedOn(staff.employment, format(staff.nextBirthday, "yyyy-MM-dd"))).sort((a, b) => a.nextBirthday.getTime() - b.nextBirthday.getTime());
   if (loadingStaff) {
     return <Card className="flex-1">
         <CardHeader className="pb-3">

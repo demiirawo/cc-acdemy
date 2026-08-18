@@ -22,6 +22,9 @@ export function SchedulePage({ initialRequestId, onRequestClosed, onViewProfile 
   useEffect(() => {
     if (initialRequestId) {
       setSelectedRequestId(initialRequestId);
+      // Coming in from an email link, "Back" should land on the requests list
+      // rather than the schedule the reviewer never asked for.
+      setActiveTab("requests");
     }
   }, [initialRequestId]);
 

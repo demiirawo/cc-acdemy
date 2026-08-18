@@ -266,6 +266,7 @@ const handler = async (req: Request): Promise<Response> => {
     const emailRequest: EmailRequest = await req.json();
     const {
       type,
+      requestId,
       requestType,
       requesterName,
       requesterEmail,
@@ -284,6 +285,13 @@ const handler = async (req: Request): Promise<Response> => {
       previousAssigneeName,
       newAssigneeName,
     } = emailRequest;
+
+    // Reviewers get taken to the request itself. Without an id we still send
+    // them to the requests list rather than the HR page, which lands whoever
+    // clicks it on their own profile.
+    const reviewLink = requestId
+      ? `${APP_URL}/view/schedule?request=${encodeURIComponent(requestId)}`
+      : `${APP_URL}/view/schedule`;
 
     const noun = requestTypeNoun(requestType);
     const range = niceDateRange(startDate ?? "", endDate ?? "");
@@ -361,7 +369,7 @@ const handler = async (req: Request): Promise<Response> => {
 
       const { data: adminProfiles, error: adminError } = await supabaseClient
         .from("profiles")
-        .select("email, display_name")
+        .select("user_id, email, display_name")
         .in("role", recipientRoles);
 
       if (adminError) {
@@ -379,7 +387,22 @@ const handler = async (req: Request): Promise<Response> => {
         throw new Error("Failed to fetch admin emails");
       }
 
-      const adminRecipients = (adminProfiles || []).filter((p) => p.email);
+      // Someone who has left keeps their account until it is closed, but they
+      // are no longer a reviewer. The leaving date is inclusive.
+      const { data: reviewerHr } = await supabaseClient
+        .from("hr_profiles")
+        .select("user_id, employment_end_date");
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const leftAlready = new Set(
+        (reviewerHr || [])
+          .filter((h: { employment_end_date: string | null }) =>
+            h.employment_end_date && h.employment_end_date < todayIso)
+          .map((h: { user_id: string }) => h.user_id),
+      );
+
+      const adminRecipients = (adminProfiles || [])
+        .filter((p) => p.email)
+        .filter((p) => !leftAlready.has(p.user_id as string));
 
       if (adminRecipients.length === 0) {
         console.warn("No admin emails found — alerting admins of the gap");
@@ -417,7 +440,7 @@ const handler = async (req: Request): Promise<Response> => {
           paragraph(storySentence) +
           (details ? paragraph(`In their words: &ldquo;${esc(details)}&rdquo;`) : "") +
           paragraph(`Please review it and let ${requesterFirst === "A staff member" ? "them" : esc(requesterFirst)} know.`) +
-          button(`Review ${requesterFirst === "A staff member" ? "this" : `${esc(requesterFirst)}'s`} request`, `${APP_URL}/view/hr`);
+          button(`Review ${requesterFirst === "A staff member" ? "this" : `${esc(requesterFirst)}'s`} request`, reviewLink);
         const res = await sendOne(
           recipient.email as string,
           subject,

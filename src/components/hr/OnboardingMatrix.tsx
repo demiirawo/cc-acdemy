@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Check, Clock } from "lucide-react";
 import { allTrainingUpToDate } from "@/lib/trainingStatus";
+import { isCurrentlyEmployed } from "@/lib/employment";
 
 interface OnboardingOwner {
   id: string;
@@ -92,14 +93,17 @@ export function OnboardingMatrix() {
       // Fetch HR profiles to check employment status
       const { data: hrData, error: hrError } = await supabase
         .from('hr_profiles')
-        .select('user_id, employment_status');
+        .select('user_id, employment_status, start_date, employment_end_date');
 
       if (hrError) throw hrError;
       setHRProfiles(hrData || []);
 
-      // Get user IDs who are in onboarding statuses
+      // Get user IDs who are in onboarding statuses and still work here. The
+      // status is not enough on its own — it stays as it was when someone's
+      // leaving date was recorded — so the employment window decides.
       const onboardingUserIds = (hrData || [])
         .filter(hr => ONBOARDING_STATUSES.includes(hr.employment_status))
+        .filter(hr => isCurrentlyEmployed(hr))
         .map(hr => hr.user_id);
 
       // Fetch staff members who are in onboarding

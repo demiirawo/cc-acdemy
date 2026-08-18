@@ -3,9 +3,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Award } from "lucide-react";
 import { format, parseISO, addDays, isSameDay, setYear, differenceInYears } from "date-fns";
+import { isEmployedOn } from "@/lib/employment";
 interface HRProfile {
   user_id: string;
   start_date: string | null;
+  employment_end_date: string | null;
 }
 interface UserProfile {
   user_id: string;
@@ -27,7 +29,7 @@ export function UpcomingAnniversariesCard() {
       const {
         data,
         error
-      } = await supabase.from("hr_profiles").select("user_id, start_date").not("start_date", "is", null);
+      } = await supabase.from("hr_profiles").select("user_id, start_date, employment_end_date").not("start_date", "is", null);
       if (error) throw error;
       return data as HRProfile[];
     }
@@ -69,7 +71,10 @@ export function UpcomingAnniversariesCard() {
       yearsOfService,
       daysUntil: Math.ceil((nextAnniversary.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     };
-  }).filter(profile => profile.nextAnniversary >= today && profile.nextAnniversary <= thirtyDaysFromNow && profile.yearsOfService > 0).sort((a, b) => a.nextAnniversary.getTime() - b.nextAnniversary.getTime());
+  })
+  // Only people who are still here on the day itself. The leaving date is
+  // inclusive, so someone finishing on their anniversary is still celebrated.
+  .filter(profile => profile.nextAnniversary >= today && profile.nextAnniversary <= thirtyDaysFromNow && profile.yearsOfService > 0 && isEmployedOn(profile, format(profile.nextAnniversary, "yyyy-MM-dd"))).sort((a, b) => a.nextAnniversary.getTime() - b.nextAnniversary.getTime());
   if (loadingHR) {
     return <Card className="flex-1">
         <CardHeader className="pb-3">

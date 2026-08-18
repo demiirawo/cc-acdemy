@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { isEmployedDuring, type EmploymentWindow } from "@/lib/employment";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -367,8 +368,11 @@ export function RequestDetailPage({
   const {
     data: allStaffWithAssignments = []
   } = useQuery({
-    queryKey: ["all-staff-with-assignments"],
+    queryKey: ["all-staff-with-assignments", request?.start_date, request?.end_date],
     queryFn: async () => {
+      // The span this cover has to be worked.
+      const coverFromIso = request?.start_date ?? new Date().toISOString().slice(0, 10);
+      const coverToIso = request?.end_date ?? coverFromIso;
       const {
         data: profiles,
         error: profilesError
@@ -380,8 +384,20 @@ export function RequestDetailPage({
       } = await supabase.from("staff_client_assignments").select("staff_user_id, client_name");
       if (assignmentsError) throw assignmentsError;
 
+      // Who is actually employed for the days being covered. Someone whose
+      // last day has passed — or who leaves before the cover starts — cannot
+      // do the work, so they are not offered.
+      const { data: hr } = await supabase
+        .from("hr_profiles")
+        .select("user_id, start_date, employment_end_date");
+      const windows = new Map<string, EmploymentWindow>(
+        (hr || []).map((h: { user_id: string } & EmploymentWindow) => [h.user_id, h]),
+      );
+
       // Map profiles with their assignments
-      return (profiles || []).map(profile => ({
+      return (profiles || [])
+        .filter(profile => isEmployedDuring(windows.get(profile.user_id), coverFromIso, coverToIso))
+        .map(profile => ({
         ...profile,
         clientAssignments: (assignments || []).filter(a => a.staff_user_id === profile.user_id).map(a => a.client_name),
         isBench: (assignments || []).some(a => a.staff_user_id === profile.user_id && a.client_name === "Care Cuddle")

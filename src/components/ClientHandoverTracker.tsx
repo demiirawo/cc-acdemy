@@ -13,22 +13,38 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
 import { getUpcomingLeaveForClient, type UpcomingClientLeave } from "@/lib/handoverStatus";
+import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
 
 // Shared hook: list of staff display names for the user picker
 function useHandoverUsers() {
   return useQuery({
-    queryKey: ["handover-user-options"],
+    queryKey: ["handover-user-options", "with-employment"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
         .select("user_id, display_name, email")
         .order("display_name", { ascending: true });
       if (error) throw error;
+
+      // Employment windows, so handover work isn't offered to people who have
+      // gone. `profiles` also holds sign-in accounts that were never staff and
+      // have no HR row at all — those come out as not employed, which is right.
+      const { data: hr } = await supabase
+        .from("hr_profiles")
+        .select("user_id, start_date, employment_end_date");
+      const windows = new Map<string, EmploymentWindow>(
+        (hr || []).map((h: { user_id: string } & EmploymentWindow) => [h.user_id, h]),
+      );
+
       return (data || [])
         .map((p) => ({
           id: p.user_id as string,
           name: (p.display_name || p.email || "").trim(),
           email: (p.email || "").trim(),
+          // Flagged rather than dropped here: the picker offers current staff
+          // only, but name→email lookup for change emails about a task a leaver
+          // was already on still has to find them.
+          employed: isCurrentlyEmployed(windows.get(p.user_id as string)),
         }))
         .filter((u) => u.name);
     },
@@ -49,7 +65,10 @@ function UserPickerCell({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const { data: users = [] } = useHandoverUsers();
+  const { data: allUsers = [] } = useHandoverUsers();
+  // Handover work is being assigned here, so only people still employed are
+  // offered. A name already saved on a row still shows as it was recorded.
+  const users = useMemo(() => allUsers.filter((u) => u.employed), [allUsers]);
   const display = (value || "").trim();
   return (
     <Popover open={open} onOpenChange={setOpen}>

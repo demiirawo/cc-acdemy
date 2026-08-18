@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -154,6 +155,31 @@ export function StaffRequestForm() {
       return data as StaffMember[];
     }
   });
+
+  // Employment windows, so the pickers below can leave out people who have
+  // left. Kept separate from staffMembers because the request list further
+  // down still has to show a leaver's name on requests they made.
+  const { data: employmentWindows } = useQuery({
+    queryKey: ["staff-employment-windows-for-requests"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("hr_profiles")
+        .select("user_id, start_date, employment_end_date");
+
+      if (error) throw error;
+      return new Map<string, EmploymentWindow>(
+        (data || []).map((h: { user_id: string } & EmploymentWindow) => [h.user_id, h])
+      );
+    }
+  });
+
+  // Who can be picked to do work right now. Someone whose last day has passed
+  // can't cover a shift or have a request raised for them, and a sign-in
+  // account with no HR record was never staff. The signed-in user is always
+  // kept — this form defaults to submitting for yourself.
+  const currentStaff = staffMembers.filter(
+    s => s.user_id === user?.id || isCurrentlyEmployed(employmentWindows?.get(s.user_id))
+  );
 
   // Determine which user ID to use for pattern lookups (admin submitting on behalf of staff uses selectedStaffId)
   const targetUserId = isAdmin && selectedStaffId ? selectedStaffId : user?.id;
@@ -353,7 +379,7 @@ export function StaffRequestForm() {
   }, [selectedCoverHolidayId, swapWithUserId, swapPartnerHolidays, swapPartnerPatterns, swapPartnerAllSchedules, shiftCoverType]);
 
   // Get staff members who have approved holidays (for the covering dropdown)
-  const staffWithHolidays = staffMembers.filter(s => s.user_id !== user?.id);
+  const staffWithHolidays = currentStaff.filter(s => s.user_id !== user?.id);
 
   // Generate available shifts to swap from partner's schedules and patterns
   const availableSwapShifts = (() => {
@@ -660,7 +686,7 @@ export function StaffRequestForm() {
         }
       }
 
-      const { error } = await supabase.from("staff_requests").insert({
+      const { data: created, error } = await supabase.from("staff_requests").insert({
         user_id: targetUserId,
         request_type: requestType,
         swap_with_user_id: requestType === 'shift_swap' ? swapWithUserId : null,
@@ -674,7 +700,7 @@ export function StaffRequestForm() {
         reviewed_by: isAdmin ? user.id : null,
         reviewed_at: isAdmin ? new Date().toISOString() : null,
         coverage_metadata: coverageMetadata as any,
-      } as any);
+      } as any).select("id").single();
 
       if (error) throw error;
 
@@ -710,6 +736,8 @@ export function StaffRequestForm() {
           endDate: format(requestEndDate!, "yyyy-MM-dd"),
           daysRequested: requestDays,
           details: requestDetails || undefined,
+          // Lets the reviewer's email link open this exact request.
+          requestId: (created as { id?: string } | null)?.id,
         }).catch(err => console.error("Failed to send email notification:", err));
       }
     },
@@ -889,7 +917,7 @@ export function StaffRequestForm() {
                   <SelectValue placeholder="Select staff member..." />
                 </SelectTrigger>
                 <SelectContent className="bg-background">
-                  {staffMembers.map(staff => (
+                  {currentStaff.map(staff => (
                     <SelectItem key={staff.user_id} value={staff.user_id}>
                       {staff.display_name || staff.email}
                       {staff.user_id === user?.id && " (You)"}
@@ -1026,7 +1054,7 @@ export function StaffRequestForm() {
                     <SelectValue placeholder="Select staff member..." />
                   </SelectTrigger>
                   <SelectContent className="bg-background">
-                    {staffMembers
+                    {currentStaff
                       .filter(s => s.user_id !== user?.id)
                       .map(staff => (
                         <SelectItem key={staff.user_id} value={staff.user_id}>

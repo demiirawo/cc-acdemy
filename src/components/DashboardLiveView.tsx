@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { format, startOfDay, endOfDay, parseISO, isSameDay, isWithinInterval, getDay, differenceInWeeks, startOfWeek, isBefore, isAfter, differenceInMinutes } from "date-fns";
 import { Infinity, UserCheck, Loader2 } from "lucide-react";
+import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
 interface Schedule {
   id: string;
   user_id: string;
@@ -120,6 +121,23 @@ export function DashboardLiveView() {
       } = await supabase.from("profiles").select("user_id, display_name, email");
       if (error) throw error;
       return data || [];
+    }
+  });
+  // Employment windows. The board is "who is on today", so anyone whose last
+  // day has passed comes off it. `profiles` also holds sign-in accounts that
+  // were never staff and have no HR row at all — those come out as not
+  // employed, which is what we want.
+  const {
+    data: employment
+  } = useQuery({
+    queryKey: ["dashboard-live-employment"],
+    queryFn: async () => {
+      const {
+        data,
+        error
+      } = await supabase.from("hr_profiles").select("user_id, start_date, employment_end_date");
+      if (error) throw error;
+      return new Map<string, EmploymentWindow>((data || []).map((h: { user_id: string } & EmploymentWindow) => [h.user_id, h]));
     }
   });
   const {
@@ -260,6 +278,11 @@ export function DashboardLiveView() {
   // Filter to today's schedules only, excluding staff on holiday
   const todaySchedules = useMemo(() => {
     return allSchedules.filter(schedule => {
+      // Someone whose last day has passed is off the board, even where a
+      // recurring pattern still generates shifts for them.
+      if (!isCurrentlyEmployed(employment?.get(schedule.user_id))) {
+        return false;
+      }
       // Exclude staff on holiday (unless it's a cover shift)
       if (!schedule.is_cover_shift && isStaffOnHoliday(schedule.user_id)) {
         return false;
@@ -268,7 +291,7 @@ export function DashboardLiveView() {
       const end = parseISO(schedule.end_datetime);
       return start < timelineEnd && end > timelineStart;
     });
-  }, [allSchedules, timelineStart, timelineEnd, holidays]);
+  }, [allSchedules, timelineStart, timelineEnd, holidays, employment]);
 
   // Get unique clients with shifts today
   const uniqueClients = useMemo(() => {

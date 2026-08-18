@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LiveTimelineView } from "./hr/LiveTimelineView";
 import { format, parseISO, startOfWeek, endOfWeek, startOfDay, endOfDay, isWithinInterval, getDay, differenceInWeeks, isBefore, isAfter } from "date-fns";
 import { Clock } from "lucide-react";
+import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
 
 interface Schedule {
   id: string;
@@ -90,6 +91,23 @@ export function DashboardLiveViewWrapper() {
         .order("display_name");
       if (error) throw error;
       return data as StaffMember[];
+    }
+  });
+
+  // Employment windows. The board is "who is on today", so anyone whose last
+  // day has passed comes off it. `profiles` also holds sign-in accounts that
+  // were never staff and have no HR row at all — those come out as not
+  // employed, which is what we want.
+  const { data: employment } = useQuery({
+    queryKey: ["employment-for-dashboard-live"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("hr_profiles")
+        .select("user_id, start_date, employment_end_date");
+      if (error) throw error;
+      return new Map<string, EmploymentWindow>(
+        (data || []).map((h: { user_id: string } & EmploymentWindow) => [h.user_id, h]),
+      );
     }
   });
 
@@ -243,8 +261,19 @@ export function DashboardLiveViewWrapper() {
       return !realScheduleKeys.has(key);
     });
 
-    return [...schedules, ...uniqueVirtual];
-  }, [schedules, virtualSchedulesFromPatterns]);
+    // Drop leavers' shifts, including ones a recurring pattern still generates
+    // for them. `getStaffName` below keeps reading the full profile list, so
+    // anything that does render still has a name.
+    return [...schedules, ...uniqueVirtual].filter(s =>
+      isCurrentlyEmployed(employment?.get(s.user_id))
+    );
+  }, [schedules, virtualSchedulesFromPatterns, employment]);
+
+  // The staff rows on the board are current staff only.
+  const currentStaff = useMemo(
+    () => staffMembers.filter(s => isCurrentlyEmployed(employment?.get(s.user_id))),
+    [staffMembers, employment]
+  );
 
   // Helper functions
   const getStaffName = (userId: string): string => {
@@ -275,7 +304,7 @@ export function DashboardLiveViewWrapper() {
       <CardContent>
         <LiveTimelineView
           viewMode="client"
-          filteredStaff={staffMembers}
+          filteredStaff={currentStaff}
           filteredClients={filteredClients}
           allSchedules={allSchedules}
           isStaffOnHoliday={isStaffOnHoliday}

@@ -10,6 +10,7 @@ import { Loader2, GraduationCap, Link2 } from "lucide-react";
 import { addMonths, format, parseISO, differenceInCalendarDays } from "date-fns";
 import { cn } from "@/lib/utils";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./TrainingItemsManager";
+import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
 
 type EmploymentStatus = "onboarding_probation" | "onboarding_passed" | "active" | "inactive_left" | "inactive_fired";
 // Staff we show on the matrix — everyone except those who have left/been let go.
@@ -107,9 +108,15 @@ export function TrainingMatrix({ publicMode = false }: { publicMode?: boolean })
       // branch resolves its own Supabase generic type correctly.
       const { data: hrData } = publicMode
         ? await supabase.from("training_matrix_staff_public" as any).select("user_id, employment_status")
-        : await supabase.from("hr_profiles").select("user_id, employment_status");
-      const visibleIds = ((hrData ?? []) as { user_id: string; employment_status: string }[])
+        : await supabase.from("hr_profiles").select("user_id, employment_status, start_date, employment_end_date");
+      // Status on its own leaves people on the matrix after they have gone: it
+      // still reads "active" once a leaving date is recorded, so the leaving
+      // date has to be checked too. The public view exposes no date columns, so
+      // there the window is empty and only the status filter (which the view
+      // also applies in SQL) has anything to say.
+      const visibleIds = ((hrData ?? []) as ({ user_id: string; employment_status: string } & EmploymentWindow)[])
         .filter(hr => VISIBLE_STATUSES.includes(hr.employment_status as EmploymentStatus))
+        .filter(hr => isCurrentlyEmployed(hr))
         .map(hr => hr.user_id);
 
       const { data: staffData } = await supabase

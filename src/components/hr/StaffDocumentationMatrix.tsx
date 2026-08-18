@@ -7,6 +7,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Check, Clock, FileText, Image as ImageIcon } from "lucide-react";
 import { format } from "date-fns";
+import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
 
 interface UserProfile {
   user_id: string;
@@ -132,15 +133,24 @@ export function StaffDocumentationMatrix() {
         .order('display_name');
 
       if (profilesError) throw profilesError;
-      setUserProfiles(profilesData || []);
 
       // Fetch all HR profiles (salary comes from the private staff_salaries table).
       const [{ data: hrData, error: hrError }, { data: salaryData }] = await Promise.all([
-        supabase.from('hr_profiles').select('user_id, employee_id, job_title, start_date, employment_status'),
+        supabase.from('hr_profiles').select('user_id, employee_id, job_title, start_date, employment_status, employment_end_date'),
         (supabase as any).from('staff_salaries').select('user_id, base_salary, base_currency'),
       ]);
 
       if (hrError) throw hrError;
+
+      // Only people who work here get a column. A profile with no HR record is
+      // a sign-in account that was never staff, and someone past their leaving
+      // date is no longer chased for paperwork — employment_status cannot say
+      // so, because it still reads "active" once a leaving date is recorded.
+      const windows = new Map<string, EmploymentWindow>(
+        ((hrData as any[]) || []).map((h) => [h.user_id, h])
+      );
+      setUserProfiles((profilesData || []).filter((p) => isCurrentlyEmployed(windows.get(p.user_id))));
+
       const salaryMap = new Map<string, { base_salary: number | null; base_currency: string }>(
         ((salaryData as any[]) || []).map((s) => [s.user_id, { base_salary: s.base_salary, base_currency: s.base_currency }])
       );

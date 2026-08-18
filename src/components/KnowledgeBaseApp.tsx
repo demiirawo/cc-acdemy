@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { ResizableSidebar } from "./ResizableSidebar";
 import { RealDashboard } from "./RealDashboard";
 
@@ -437,6 +437,7 @@ export function KnowledgeBaseApp() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
   const { pageId, viewName } = useParams();
+  const { search } = useLocation();
   const {
     user,
     loading,
@@ -446,6 +447,15 @@ export function KnowledgeBaseApp() {
     toast
   } = useToast();
   const { isAdmin, canManageHR, canManageTraining } = useUserRole();
+
+  // A link from a notification email names the request to open:
+  // /view/schedule?request=<id> goes straight to that request, rather than
+  // dropping the reviewer on the page and leaving them to find it.
+  useEffect(() => {
+    if (viewName !== 'schedule') return;
+    const requested = new URLSearchParams(search).get('request');
+    if (requested) setSelectedRequestId(requested);
+  }, [viewName, search]);
 
   // Handle URL parameters for email confirmation and password reset on component mount
   useEffect(() => {

@@ -18,6 +18,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
 import { format, parseISO } from "date-fns";
 import {
   AlertTriangle, Plus, ArrowLeft, ShieldAlert, Users, Share2, Loader2,
@@ -81,6 +82,9 @@ export function IncidentsSection({ onViewProfile }: { onViewProfile?: (userId: s
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [staff, setStaff] = useState<StaffProfile[]>([]);
+  // Employment windows keyed by user_id. `staff` stays complete so past
+  // statements keep their author's name; this only gates who can be added.
+  const [employment, setEmployment] = useState<Map<string, EmploymentWindow>>(new Map());
   const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   // Airtable-style inline editing: which list cell is being edited.
@@ -129,6 +133,8 @@ export function IncidentsSection({ onViewProfile }: { onViewProfile?: (userId: s
     (async () => {
       const { data: p } = await supabase.from("profiles").select("user_id, display_name, email").order("display_name");
       setStaff((p as StaffProfile[]) || []);
+      const { data: hr } = await supabase.from("hr_profiles").select("user_id, start_date, employment_end_date");
+      setEmployment(new Map(((hr || []) as ({ user_id: string } & EmploymentWindow)[]).map(h => [h.user_id, h])));
       const { data: c } = await supabase.from("clients").select("id, name").order("name");
       setClients((c as { id: string; name: string }[]) || []);
     })();
@@ -141,6 +147,7 @@ export function IncidentsSection({ onViewProfile }: { onViewProfile?: (userId: s
         isAdmin={isAdmin}
         currentUserId={user?.id ?? null}
         staff={staff}
+        employment={employment}
         clients={clients}
         onViewProfile={onViewProfile}
         onBack={() => { setSelectedId(null); loadIncidents(); }}
@@ -538,12 +545,13 @@ function LabeledField({ label, children }: { label: string; children: React.Reac
 }
 
 function IncidentDetail({
-  incidentId, isAdmin, currentUserId, staff, clients, onViewProfile, onBack,
+  incidentId, isAdmin, currentUserId, staff, employment, clients, onViewProfile, onBack,
 }: {
   incidentId: string;
   isAdmin: boolean;
   currentUserId: string | null;
   staff: StaffProfile[];
+  employment: Map<string, EmploymentWindow>;
   clients: { id: string; name: string }[];
   onViewProfile?: (userId: string) => void;
   onBack: () => void;
@@ -656,7 +664,11 @@ function IncidentDetail({
 
   const sev = sevMeta(incident.severity);
   const st = statusMeta(incident.status);
-  const available = staff.filter(s => !statements.some(x => x.user_id === s.user_id));
+  // Only people still employed can be asked for a statement — someone whose
+  // last day has passed can't be emailed for one. Statements already recorded
+  // stay in the list above regardless, because that's the incident's history.
+  const available = staff.filter(s =>
+    !statements.some(x => x.user_id === s.user_id) && isCurrentlyEmployed(employment.get(s.user_id)));
 
   return (
     <div className="flex-1 overflow-auto p-4 md:p-6">

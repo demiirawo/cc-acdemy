@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Calendar, Gift, Cake } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { format, addDays, isBefore, isAfter, parseISO, setYear } from "date-fns";
+import { isEmployedOn, isEmployedDuring, type EmploymentWindow } from "@/lib/employment";
 
 interface Holiday {
   id: string;
@@ -50,6 +51,18 @@ export function UpcomingStaffCards() {
       
       const profilesMap = new Map(profilesData?.map(p => [p.user_id, p.display_name]) || []);
 
+      // Employment windows. These cards — and the reminders that follow them —
+      // are about people who work here, so someone whose last day has passed
+      // drops off. A `profiles` row with no HR row at all is a sign-in account
+      // that was never staff, and comes out as not employed, which is right.
+      const { data: hrProfilesData } = await supabase
+        .from('hr_profiles')
+        .select('user_id, start_date, employment_end_date');
+
+      const employment = new Map<string, EmploymentWindow>(
+        (hrProfilesData || []).map((h: { user_id: string } & EmploymentWindow) => [h.user_id, h])
+      );
+
       // Fetch upcoming holidays (approved or pending, starting within 30 days)
       const { data: holidaysData } = await supabase
         .from('staff_holidays')
@@ -58,19 +71,19 @@ export function UpcomingStaffCards() {
         .gte('start_date', format(today, 'yyyy-MM-dd'))
         .lte('start_date', format(thirtyDaysFromNow, 'yyyy-MM-dd'))
         .order('start_date', { ascending: true })
-        .limit(5);
+        .limit(20);
 
-      const enrichedHolidays = holidaysData?.map(h => ({
-        ...h,
-        display_name: profilesMap.get(h.user_id) || 'Unknown'
-      })) || [];
+      const enrichedHolidays = (holidaysData || [])
+        // Only leave that falls inside the person's employment — dates booked
+        // beyond a leaver's last day are not upcoming staff holidays. Fetched
+        // wide and trimmed after filtering so the card still fills up.
+        .filter(h => isEmployedDuring(employment.get(h.user_id), h.start_date, h.end_date))
+        .map(h => ({
+          ...h,
+          display_name: profilesMap.get(h.user_id) || 'Unknown'
+        }))
+        .slice(0, 5);
       setHolidays(enrichedHolidays);
-
-      // Fetch HR profiles for anniversaries
-      const { data: hrProfilesData } = await supabase
-        .from('hr_profiles')
-        .select('user_id, start_date')
-        .not('start_date', 'is', null);
 
       // Filter and sort anniversaries coming up in the next 30 days
       const upcomingAnniversaries: Anniversary[] = [];
@@ -87,6 +100,9 @@ export function UpcomingStaffCards() {
         }
         
         if (isBefore(upcomingDate, thirtyDaysFromNow) && !isBefore(upcomingDate, today)) {
+          // No anniversary for a date that falls after the person has left.
+          if (!isEmployedOn(profile, format(upcomingDate, 'yyyy-MM-dd'))) return;
+
           const years = upcomingDate.getFullYear() - startDate.getFullYear();
           upcomingAnniversaries.push({
             user_id: profile.user_id,
@@ -118,6 +134,9 @@ export function UpcomingStaffCards() {
         }
         
         if (isBefore(upcomingDate, thirtyDaysFromNow) && !isBefore(upcomingDate, today)) {
+          // No birthday card for someone whose last day has passed.
+          if (!isEmployedOn(employment.get(doc.user_id), format(upcomingDate, 'yyyy-MM-dd'))) return;
+
           upcomingBirthdays.push({
             user_id: doc.user_id,
             date_of_birth: format(upcomingDate, 'yyyy-MM-dd'),

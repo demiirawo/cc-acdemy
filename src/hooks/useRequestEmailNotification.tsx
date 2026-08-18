@@ -1,6 +1,8 @@
 import { supabase } from "@/integrations/supabase/client";
 
 interface SendNewRequestEmailParams {
+  /** The request just created — the reviewer's email link opens it directly. */
+  requestId?: string;
   requestType: string;
   requesterName: string;
   requesterEmail: string;
