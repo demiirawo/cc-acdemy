@@ -680,12 +680,29 @@ serve(async (req) => {
     );
     const nameFor: NameLookup = (id) => (id && profileMap.get(id)?.name) || null;
 
+    // Whose last day has passed. They still appear by name in a colleague's
+    // email — "X used to cover this" is worth reading — but nobody sends a
+    // person who has left an email asking them to acknowledge a shift change
+    // they will never work. The leaving date is inclusive, so the day counts.
+    const { data: leaverRows } = await supabase
+      .from("hr_profiles")
+      .select("user_id, employment_end_date")
+      .in("user_id", allIds);
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const hasLeft = new Set(
+      (leaverRows ?? [])
+        .filter((h: { employment_end_date: string | null }) =>
+          h.employment_end_date !== null && h.employment_end_date < todayIso)
+        .map((h: { user_id: string }) => h.user_id),
+    );
+
     let emailsSent = 0;
     let coworkerEmailsSent = 0;
     const errors: string[] = [];
 
     // ---- Personal "your shifts changed" emails ----
     for (const [userId, logs] of grouped.entries()) {
+      if (hasLeft.has(userId)) continue;
       const profile = profileMap.get(userId);
       const clientsTxt = [...new Set(logs.map((l) => String(((l.new_data || l.old_data || {}) as Record<string, unknown>).client_name ?? "").trim()).filter(Boolean))].join(", ");
       const what = `${logs.length === 1 ? "a change" : `${countWord(logs.length)} changes`} to their shifts${clientsTxt ? ` at ${clientsTxt}` : ""}`;
@@ -805,6 +822,7 @@ serve(async (req) => {
 
       const recipients = [...(coworkerIdsByClient.get(client) || [])]
         .filter((id) => !involved.has(id) && !changerIds.includes(id)) // involved got a personal email; the changer made the change
+        .filter((id) => !hasLeft.has(id)) // and nobody who has already left
         .map((id) => profileMap.get(id))
         .filter((p): p is { name: string | null; email: string } => !!p && !!p.email);
 
