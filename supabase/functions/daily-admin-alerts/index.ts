@@ -645,7 +645,30 @@ const handler = async (req: Request): Promise<Response> => {
         return null;
       };
 
-      if (expiringPatterns && expiringPatterns.length > 0) {
+      // A one-off shift is a single date, not a pattern. Nothing is "coming to
+      // an end" when it passes — it was only ever that one day — so reporting it
+      // as a regular shift pattern ending is noise, and it was drowning out the
+      // genuine ones. Overtime is already excluded by the query above, since
+      // overtime is not a regular pattern either.
+      //
+      // Identical rows are collapsed too: the same shift recorded twice was
+      // being announced twice, to admins and to the person.
+      const seenPattern = new Set<string>();
+      const regularPatterns = (expiringPatterns ?? []).filter((p: any) => {
+        if ((p.recurrence_interval || "weekly") === "one_off") return false;
+        const key = [
+          p.user_id,
+          p.client_name ?? "",
+          p.end_date,
+          p.recurrence_interval ?? "weekly",
+          (p.days_of_week ?? []).join(","),
+        ].join("|");
+        if (seenPattern.has(key)) return false;
+        seenPattern.add(key);
+        return true;
+      });
+
+      if (regularPatterns.length > 0) {
         // Tell the staff member directly — until now only admins heard, as a
         // digest line, while the person kept planning around shifts that were
         // about to stop. One email as the end date enters the window, then
@@ -653,7 +676,7 @@ const handler = async (req: Request): Promise<Response> => {
         const notifyOffsets = new Set([patternDays, 7, 1]);
         let patternSent = false;
         let patternError: string | undefined;
-        for (const p of expiringPatterns) {
+        for (const p of regularPatterns) {
           const lastDay = lastRealShift(p) ?? p.end_date;
           // Already over: the fence date may still be ahead, but there is no
           // shift left to warn anyone about.
@@ -693,7 +716,7 @@ const handler = async (req: Request): Promise<Response> => {
           standaloneResults.push({ type: "pattern_expiring", emailSent: patternSent, error: patternError, title: "Regular shifts ending (personal)" });
         }
 
-const endingSoon = expiringPatterns
+const endingSoon = regularPatterns
           .map(p => ({ p, lastDay: lastRealShift(p) ?? p.end_date }))
           .filter(({ lastDay }) => lastDay >= todayStr);
         if (endingSoon.length > 0) sections.push({
