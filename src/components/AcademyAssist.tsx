@@ -81,7 +81,23 @@ export function AcademyAssist() {
       const { data, error: fnError } = await supabase.functions.invoke("academy-assist", {
         body: { question: asked, history },
       });
-      if (fnError) throw fnError;
+
+      // A non-2xx arrives here as a thrown-style error whose body has not been
+      // read. The useful explanation is inside it, so dig it out rather than
+      // replacing it with a shrug.
+      if (fnError) {
+        let detail: string | null = null;
+        try {
+          const res = (fnError as { context?: Response }).context;
+          if (res && typeof res.json === "function") {
+            const body = await res.json();
+            if (typeof body?.error === "string") detail = body.error;
+          }
+        } catch { /* fall through to the generic message */ }
+        setError(detail ?? "The assistant is unavailable right now. Please try again shortly.");
+        return;
+      }
+
       if (data?.error) {
         setError(data.error);
       } else {

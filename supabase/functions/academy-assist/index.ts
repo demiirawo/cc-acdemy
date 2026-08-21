@@ -228,8 +228,11 @@ ${corpus}`;
           ? "The assistant is busy right now. Please try again in a moment."
           : "The assistant is unavailable right now. Please try again shortly.";
 
+      // Deliberately 200: the Supabase client throws on any non-2xx without
+      // reading the body, so a 502 would replace this explanation with a
+      // generic "unavailable" and send someone hunting for the wrong problem.
       return new Response(JSON.stringify({ error: message }), {
-        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
