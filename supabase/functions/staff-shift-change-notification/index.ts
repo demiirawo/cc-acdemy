@@ -516,9 +516,35 @@ const plainSummary = (log: ShiftAuditLog): string => {
     if (log.action === "INSERT") return `New shift${at}${day ? ` on ${day}` : ""}`;
     return `Shift changed${at}${day ? ` on ${day}` : ""}`;
   }
-  if (log.action === "DELETE") return `Regular shifts removed${at}`;
-  if (log.action === "INSERT") return `New regular shifts${at}`;
-  return `Regular shifts changed${at}`;
+  // A recurring pattern. Without the day and the time this read as "New
+  // regular shifts at Nurse Next Door", which tells somebody nothing about what
+  // they are being asked to confirm — and this line is the whole of what the
+  // reminder email, the profile card and the admin copy have to work with.
+  const days = daysPhrase(d.days_of_week);
+  const from = t24(d.start_time);
+  const to = t24(d.end_time);
+  const oneOff = String(d.recurrence_interval ?? "") === "one_off";
+  const startDay = d.start_date ? niceDate(String(d.start_date)) : "";
+  const endDay = d.end_date ? niceDate(String(d.end_date)) : "";
+
+  // A one-off is a date; a pattern is a set of weekdays that runs between dates.
+  const on = oneOff ? (startDay || days) : days;
+  const tail: string[] = [];
+  if (from && to) tail.push(`${from} to ${to}`);
+  if (!oneOff) {
+    // One span, not two clauses — "from the 5th until the 31st" reads as a
+    // period, whereas "from the 5th, until the 31st" reads as an afterthought.
+    if (startDay && endDay && endDay !== startDay) tail.push(`from ${startDay} until ${endDay}`);
+    else if (startDay) tail.push(`from ${startDay}`);
+    else if (endDay) tail.push(`until ${endDay}`);
+  }
+  const when = `${on ? ` on ${on}` : ""}${tail.length ? `, ${tail.join(", ")}` : ""}`;
+  const noun = oneOff ? "shift" : "regular shifts";
+  const Noun = oneOff ? "Shift" : "Regular shifts";
+
+  if (log.action === "DELETE") return `${Noun} removed${at}${when}`;
+  if (log.action === "INSERT") return `New ${noun}${at}${when}`;
+  return `${Noun} changed${at}${when}`;
 };
 
 serve(async (req) => {
