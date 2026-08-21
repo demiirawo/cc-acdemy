@@ -34,6 +34,7 @@ import { SupervisionsSection } from "./supervisions/SupervisionsSection";
 import { InspectionsSection } from "./inspections/InspectionsSection";
 import { FinanceSection } from "./finance/FinanceSection";
 import { SchedulePage } from "./SchedulePage";
+import { AcademyAssist } from "./AcademyAssist";
 import { useGlossary } from "@/hooks/useGlossary";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useCopyPermission } from "@/hooks/useCopyPermission";
@@ -1254,5 +1255,8 @@ export function KnowledgeBaseApp() {
 
       {/* Page Permissions Dialog */}
       {currentPage && <PagePermissionsDialog open={permissionsDialogOpen} onOpenChange={setPermissionsDialogOpen} pageId={currentPage.id} pageTitle={currentPage.title} />}
+
+      {/* Answers questions from the Academy's own guidance, and nothing else. */}
+      <AcademyAssist />
     </div>;
 }
