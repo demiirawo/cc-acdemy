@@ -877,11 +877,83 @@ serve(async (req) => {
       }
     }
 
+    // ---- Admin copy of every scheduling change ----
+    // The admin team sees every change, including the ones they made
+    // themselves. A change you made is still a change you want the record of,
+    // and "I thought you did it" is exactly how a shift ends up uncovered.
+    let adminCopiesSent = 0;
+    try {
+      const { data: adminRows } = await supabase
+        .from("profiles")
+        .select("email")
+        .eq("role", "admin")
+        .not("email", "is", null);
+      const adminEmails = (adminRows ?? []).map((a: { email: string }) => a.email).filter(Boolean);
+
+      if (adminEmails.length > 0) {
+        // One line per person, so a batch of edits reads as a short list rather
+        // than a wall of individual changes.
+        const perPerson = [...grouped.entries()].map(([userId, logs]) => {
+          const who = profileMap.get(userId)?.name || "A staff member";
+          const awaiting = !hasLeft.has(userId);
+          const lines = logs.map((l) => plainSummary(l)).filter(Boolean);
+          return { who, lines, awaiting };
+        });
+
+        const blocks = perPerson.map(({ who, lines, awaiting }) =>
+          `<p style="color:#374151;font-size:15px;line-height:1.6;margin:0 0 6px;"><strong>${escapeHtml(who)}</strong>${
+            awaiting ? ` <span style="color:#92400e;font-size:13px;">— acknowledgement requested</span>` : ""
+          }</p>` +
+          `<ul style="color:#374151;font-size:14px;line-height:1.6;margin:0 0 14px;padding-left:20px;">${
+            lines.slice(0, 8).map((l) => `<li style="margin-bottom:3px;">${escapeHtml(l)}</li>`).join("")
+          }</ul>`,
+        ).join("");
+
+        const changedByNames = [...new Set(changerIds.map((id) => nameFor(id)).filter(Boolean))];
+        const madeBy = changedByNames.length
+          ? `Made by ${changedByNames.join(" and ")}.`
+          : "Made automatically.";
+
+        const adminBody =
+          paragraph("Hi,") +
+          paragraph(`${meaningfulLogs.length} scheduling ${meaningfulLogs.length === 1 ? "change has" : "changes have"} just been recorded. ${escapeHtml(madeBy)}`) +
+          blocks +
+          mutedParagraph("You are told about every scheduling change, including your own, so the schedule always has a witness. Anyone marked as awaiting acknowledgement will be chased daily until they confirm, and you will be emailed when they do.") +
+          button("Open the schedule", `${APP_URL}/view/schedule`);
+
+        const adminHtml = emailShell(
+          "Schedule changes recorded",
+          adminBody,
+          "You're receiving this because you administer schedules at Care Cuddle.",
+          BRAND_COLOR,
+        );
+
+        for (const to of adminEmails) {
+          const resp = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              from: EMAIL_SENDER,
+              to: [to],
+              subject: `${meaningfulLogs.length} scheduling change${meaningfulLogs.length === 1 ? "" : "s"} recorded`,
+              html: adminHtml,
+            }),
+          });
+          if (resp.ok) adminCopiesSent++;
+          else errors.push(`${to}: ${await resp.text()}`);
+        }
+      }
+    } catch (adminErr) {
+      // Staff were told; a failed admin copy must not fail the run.
+      console.error("admin copy failed", adminErr);
+    }
+
     return new Response(JSON.stringify({
       success: true,
       changeCount: meaningfulLogs.length,
       staffNotified: emailsSent,
       coworkersNotified: coworkerEmailsSent,
+      adminCopiesSent,
       errors: errors.length ? errors : undefined,
       failureAlerts: failureAlerts.length ? failureAlerts : undefined,
     }), {
