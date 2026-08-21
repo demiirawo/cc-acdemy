@@ -3,6 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 interface SendNewRequestEmailParams {
   /** The request just created — the reviewer's email link opens it directly. */
   requestId?: string;
+  /** Who it is for, so the email can warn about others on their team being off. */
+  requesterUserId?: string;
   requestType: string;
   requesterName: string;
   requesterEmail: string;

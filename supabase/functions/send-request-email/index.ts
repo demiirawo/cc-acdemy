@@ -188,6 +188,8 @@ const HANDOVER_VIDEO_URL = "https://www.youtube.com/watch?v=VGzR7cR1npA";
 interface EmailRequest {
   type: "new_request" | "request_approved" | "request_rejected" | "cover_assigned" | "cover_confirmed" | "cover_removed";
   requestId?: string;
+  /** Who the request is for — lets us check the rest of their team for clashes. */
+  requesterUserId?: string;
   requestType?: string;
   requesterName?: string;
   requesterEmail?: string;
@@ -207,6 +209,35 @@ interface EmailRequest {
   /** Set when cover moves between people, so the wording says "changed". */
   previousAssigneeName?: string;
   newAssigneeName?: string;
+}
+
+/**
+ * Anyone on the requester's team already off over the same dates. Computed here
+ * rather than trusted from the caller, so the reviewer's warning is right no
+ * matter where the request came from. Shares one definition with the request
+ * form — the team_leave_clashes function in the database.
+ */
+async function fetchTeamClashes(
+  userId: string,
+  start: string,
+  end: string,
+  excludeRequestId?: string,
+): Promise<Array<{ display_name: string; start_date: string; end_date: string; status: string; shared_clients: string[] }>> {
+  try {
+    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.49.1");
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data, error } = await admin.rpc("team_leave_clashes", {
+      p_user_id: userId,
+      p_start: start,
+      p_end: end,
+      p_exclude_request_id: excludeRequestId ?? null,
+    });
+    if (error) throw error;
+    return (data ?? []) as Array<{ display_name: string; start_date: string; end_date: string; status: string; shared_clients: string[] }>;
+  } catch (e) {
+    console.error("fetchTeamClashes failed", e);
+    return [];
+  }
 }
 
 const isHolidayType = (rt: string | undefined): boolean =>
@@ -267,6 +298,7 @@ const handler = async (req: Request): Promise<Response> => {
     const {
       type,
       requestId,
+      requesterUserId,
       requestType,
       requesterName,
       requesterEmail,
@@ -432,6 +464,35 @@ const handler = async (req: Request): Promise<Response> => {
         ? `${requesterFirst} has requested ${subjectNoun}${shortRange ? ` — ${shortRange}` : ""}`
         : `${requesterFirst} has sent a new request`;
 
+      // Warn the reviewer when someone covering the same client is already off
+      // over these dates. It does not change the request — it is the thing they
+      // would otherwise have to remember to check by hand.
+      let clashHtml = "";
+      if (isHolidayType(requestType) && requesterUserId && startDate && endDate) {
+        const clashes = await fetchTeamClashes(requesterUserId, startDate, endDate, requestId);
+        if (clashes.length > 0) {
+          const lines = clashes.map((c) => {
+            const when = niceDateRange(c.start_date, c.end_date);
+            const pending = c.status === "pending" ? " (requested, not yet approved)" : "";
+            const shared = c.shared_clients?.length
+              ? ` — both on ${esc(c.shared_clients.join(", "))}`
+              : "";
+            return `<li style="margin-bottom:6px;"><strong>${esc(c.display_name)}</strong>: ${esc(when)}${pending}${shared}</li>`;
+          }).join("");
+
+          clashHtml =
+            `<div style="border-left:4px solid #f59e0b;background:#fffbeb;padding:12px 16px;margin:0 0 16px;">
+               <p style="color:#92400e;font-size:15px;font-weight:600;margin:0 0 8px;">
+                 ${clashes.length === 1 ? "Someone on the same team is already off then" : `${clashes.length} people on the same team are already off then`}
+               </p>
+               <ul style="color:#374151;font-size:14px;line-height:1.6;margin:0;padding-left:20px;">${lines}</ul>
+               <p style="color:#92400e;font-size:13px;line-height:1.6;margin:8px 0 0;">
+                 Approving this would leave that client without their usual cover.
+               </p>
+             </div>`;
+        }
+      }
+
       // One email per reviewer — never every address in one visible to: field.
       const results = [];
       for (const recipient of adminRecipients) {
@@ -439,6 +500,7 @@ const handler = async (req: Request): Promise<Response> => {
           greeting(recipient.display_name) +
           paragraph(storySentence) +
           (details ? paragraph(`In their words: &ldquo;${esc(details)}&rdquo;`) : "") +
+          clashHtml +
           paragraph(`Please review it and let ${requesterFirst === "A staff member" ? "them" : esc(requesterFirst)} know.`) +
           button(`Review ${requesterFirst === "A staff member" ? "this" : `${esc(requesterFirst)}'s`} request`, reviewLink);
         const res = await sendOne(

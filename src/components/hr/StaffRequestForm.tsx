@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
+import { TeamLeaveClashWarning, type TeamLeaveClash } from "./TeamLeaveClashWarning";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -469,6 +470,29 @@ export function StaffRequestForm() {
     return hasStandardHoursOverlap ? 'standard_hours' : 'outside_hours';
   };
 
+  // Somebody from the same team already off over these dates. Two people who
+  // share a client are usually the only two who cover it, so this is worth
+  // saying before the request goes in — but it is a warning, never a block:
+  // the decision belongs to whoever approves it.
+  const isHolidayRequest = requestType === 'holiday_paid' || requestType === 'holiday_unpaid';
+  const clashStartIso = startDate ? format(startDate, "yyyy-MM-dd") : null;
+  const clashEndIso = endDate ? format(endDate, "yyyy-MM-dd") : null;
+
+  const { data: teamClashes = [] } = useQuery({
+    queryKey: ["team-leave-clashes", targetUserId, clashStartIso, clashEndIso],
+    enabled: Boolean(isHolidayRequest && targetUserId && clashStartIso && clashEndIso),
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).rpc("team_leave_clashes", {
+        p_user_id: targetUserId,
+        p_start: clashStartIso,
+        p_end: clashEndIso,
+        p_exclude_request_id: null,
+      });
+      if (error) throw error;
+      return (data ?? []) as TeamLeaveClash[];
+    },
+  });
+
   // Auto-calculate working days when dates change for holiday requests
   useEffect(() => {
     if ((requestType === 'holiday_paid' || requestType === 'holiday_unpaid') && startDate && endDate) {
@@ -738,6 +762,8 @@ export function StaffRequestForm() {
           details: requestDetails || undefined,
           // Lets the reviewer's email link open this exact request.
           requestId: (created as { id?: string } | null)?.id,
+          // Lets it check whether the rest of their team is already off then.
+          requesterUserId: targetUserId,
         }).catch(err => console.error("Failed to send email notification:", err));
       }
     },
@@ -1497,6 +1523,10 @@ export function StaffRequestForm() {
                 Automatically calculated based on your shift patterns
               </p>
             </div>
+          )}
+
+          {isHolidayRequest && (
+            <TeamLeaveClashWarning clashes={teamClashes} />
           )}
 
           {/* Shift swap shows selected shifts count - auto-calculated */}
