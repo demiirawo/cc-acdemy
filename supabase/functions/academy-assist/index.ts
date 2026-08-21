@@ -22,7 +22,84 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
  *      and says where to ask instead.
  */
 
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+/**
+ * Whichever AI account is configured. Three are supported so the assistant can
+ * be moved between them by setting a secret rather than by changing code:
+ *
+ *   LOVABLE_API_KEY    — the Lovable gateway, which is how CCFORMS runs its
+ *                        assistant; provisioned automatically for Lovable
+ *                        projects, so usually the least setup.
+ *   ANTHROPIC_API_KEY  — Claude, direct.
+ *   OPENAI_API_KEY     — OpenAI, direct. The original.
+ *
+ * The first one present wins. Nothing here ever logs a key.
+ */
+type Provider = {
+  name: string;
+  url: string;
+  headers: Record<string, string>;
+  body: (system: string, turns: Array<{ role: string; content: string }>) => unknown;
+  answerFrom: (payload: any) => string;
+};
+
+function chooseProvider(): Provider | null {
+  const lovable = Deno.env.get("LOVABLE_API_KEY");
+  if (lovable) {
+    return {
+      name: "lovable",
+      url: "https://ai.gateway.lovable.dev/v1/chat/completions",
+      headers: { Authorization: `Bearer ${lovable}`, "Content-Type": "application/json" },
+      body: (system, turns) => ({
+        model: "google/gemini-2.5-flash",
+        messages: [{ role: "system", content: system }, ...turns],
+      }),
+      answerFrom: (p) => p?.choices?.[0]?.message?.content ?? "",
+    };
+  }
+
+  const anthropic = Deno.env.get("ANTHROPIC_API_KEY");
+  if (anthropic) {
+    return {
+      name: "anthropic",
+      url: "https://api.anthropic.com/v1/messages",
+      headers: {
+        "x-api-key": anthropic,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+      },
+      // Claude takes the system prompt as its own field, not as a message.
+      body: (system, turns) => ({
+        model: "claude-sonnet-5",
+        max_tokens: 700,
+        temperature: 0.2,
+        system,
+        messages: turns.length ? turns : [{ role: "user", content: "Hello" }],
+      }),
+      answerFrom: (p) =>
+        Array.isArray(p?.content)
+          ? p.content.filter((b: any) => b?.type === "text").map((b: any) => b.text).join("")
+          : "",
+    };
+  }
+
+  const openai = Deno.env.get("OPENAI_API_KEY");
+  if (openai) {
+    return {
+      name: "openai",
+      url: "https://api.openai.com/v1/chat/completions",
+      headers: { Authorization: `Bearer ${openai}`, "Content-Type": "application/json" },
+      body: (system, turns) => ({
+        model: "gpt-4o-mini",
+        temperature: 0.2,
+        max_tokens: 700,
+        messages: [{ role: "system", content: system }, ...turns],
+      }),
+      answerFrom: (p) => p?.choices?.[0]?.message?.content ?? "",
+    };
+  }
+
+  return null;
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -88,10 +165,12 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    if (!OPENAI_API_KEY) {
-      return new Response(JSON.stringify({ error: "The assistant is not configured yet." }), {
-        status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    const provider = chooseProvider();
+    if (!provider) {
+      return new Response(
+        JSON.stringify({ error: "The assistant has no AI account configured. An administrator needs to set one of LOVABLE_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY." }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
     const authHeader = req.headers.get("Authorization") ?? "";
@@ -193,30 +272,19 @@ ${corpus}`;
           .map((m: { role: string; content: string }) => ({ role: m.role, content: m.content.slice(0, 2000) }))
       : [];
 
-    const aiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    // A help bubble someone is watching — latency matters more than depth, and
+    // the reasoning is already done: the pages are handed over and the links
+    // are fixed.
+    const turns = [...priorTurns, { role: "user", content: asked }];
+    const aiResponse = await fetch(provider.url, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        // A help bubble someone is watching — latency matters more than depth,
-        // and the reasoning is already done: the pages are handed over and the
-        // links are fixed.
-        model: "gpt-4o-mini",
-        temperature: 0.2,
-        max_tokens: 700,
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...priorTurns,
-          { role: "user", content: asked },
-        ],
-      }),
+      headers: provider.headers,
+      body: JSON.stringify(provider.body(systemPrompt, turns)),
     });
 
     if (!aiResponse.ok) {
       const detail = await aiResponse.text();
-      console.error("academy-assist model error", aiResponse.status, detail.slice(0, 500));
+      console.error("academy-assist model error", provider.name, aiResponse.status, detail.slice(0, 500));
 
       // Say which wall we hit. "Unavailable" sends someone hunting for a bug
       // when the real answer is that the account needs topping up, or that too
@@ -237,7 +305,7 @@ ${corpus}`;
     }
 
     const payload = await aiResponse.json();
-    const answer = payload?.choices?.[0]?.message?.content ?? "";
+    const answer = provider.answerFrom(payload);
 
     return new Response(JSON.stringify({ answer, sources }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
