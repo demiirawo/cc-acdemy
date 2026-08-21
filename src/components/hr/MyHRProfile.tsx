@@ -336,8 +336,12 @@ interface StaffWarning {
   severity: string;
   issued_at: string;
   client_id: string | null; // null = raised internally rather than by a client
+  /** Set when the staff member has confirmed they've read it. */
+  acknowledged_at: string | null;
+  /** Optional — they are asked to acknowledge, not to reply. */
+  acknowledgement_comment: string | null;
 }
-const STAFF_WARNING_COLS = 'id, user_id, kind, category, reason, severity, issued_at, client_id';
+const STAFF_WARNING_COLS = 'id, user_id, kind, category, reason, severity, issued_at, client_id, acknowledged_at, acknowledgement_comment';
 // An incident this staff member is a party to (via their incident_statements row).
 interface StaffIncident {
   statementId: string;
@@ -1679,6 +1683,8 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     if (recipient?.email) {
       supabase.functions.invoke("send-feedback-email", {
         body: {
+          // Lets the email carry an acknowledgement link for this exact entry.
+          feedbackId: (data as StaffWarning).id,
           recipientEmail: recipient.email,
           recipientName: recipient.display_name,
           kind: fbKind,

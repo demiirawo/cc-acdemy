@@ -36,11 +36,15 @@ interface FeedbackRow {
   severity: string;
   issued_at: string;
   client_id: string | null;
+  /** Set when the staff member has confirmed they've read it. */
+  acknowledged_at: string | null;
+  /** Optional — they are asked to acknowledge, not to reply. */
+  acknowledgement_comment: string | null;
 }
 interface StaffRow { user_id: string; display_name: string | null; email: string | null; }
 interface ClientRow { id: string; name: string; }
 
-const FEEDBACK_COLS = "id, user_id, kind, category, reason, severity, issued_at, client_id";
+const FEEDBACK_COLS = "id, user_id, kind, category, reason, severity, issued_at, client_id, acknowledged_at, acknowledgement_comment";
 const NO_CLIENT = "none";
 
 export function FeedbackLogSection() {
@@ -144,7 +148,7 @@ export function FeedbackLogSection() {
     const recipient = staff.find(s => s.user_id === fbUser);
     if (recipient?.email) {
       supabase.functions.invoke("send-feedback-email", {
-        body: { recipientEmail: recipient.email, recipientName: recipient.display_name, kind: fbKind, category, reason: (data as FeedbackRow).reason, severity },
+        body: { feedbackId: (data as FeedbackRow).id, recipientEmail: recipient.email, recipientName: recipient.display_name, kind: fbKind, category, reason: (data as FeedbackRow).reason, severity },
       }).catch(() => {});
     }
     toast({
@@ -204,6 +208,7 @@ export function FeedbackLogSection() {
                   <th className="text-left font-medium px-3 py-2 w-[150px]">Area</th>
                   <th className="text-left font-medium px-3 py-2">Feedback</th>
                   <th className="text-left font-medium px-3 py-2 w-[110px]">Date</th>
+                  <th className="text-left font-medium px-3 py-2 w-[150px]">Acknowledged</th>
                   <th className="w-[80px]" />
                 </tr>
               </thead>
@@ -220,6 +225,22 @@ export function FeedbackLogSection() {
                     <td className="px-3 py-2 text-muted-foreground">{r.category || "—"}</td>
                     <td className="px-3 py-2"><span className="whitespace-pre-wrap break-words">{r.reason}</span></td>
                     <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{format(parseISO(r.issued_at), "d MMM yyyy")}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {r.acknowledged_at ? (
+                        <div className="space-y-0.5">
+                          <Badge variant="outline" className="text-[10px] border-green-300 text-green-600">
+                            {format(parseISO(r.acknowledged_at), "d MMM yyyy")}
+                          </Badge>
+                          {r.acknowledgement_comment && (
+                            <p className="text-[11px] text-muted-foreground italic whitespace-pre-wrap break-words max-w-[220px]">
+                              “{r.acknowledgement_comment}”
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600">Awaiting</Badge>
+                      )}
+                    </td>
                     <td className="px-2 py-2 text-right whitespace-nowrap">
                       {canManageHR && (
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" title="Edit feedback" onClick={() => openEdit(r)}>

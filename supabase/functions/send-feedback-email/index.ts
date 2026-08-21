@@ -175,6 +175,33 @@ function niceCategory(category?: string | null): string {
 }
 
 /** Emails of every admin, for the immediate copy of formal warnings. */
+/**
+ * Everyone whose job is to hold the record: HR on every piece of feedback, so
+ * there is a copy outside the manager's and the staff member's inboxes.
+ */
+async function fetchHrEmails(): Promise<string[]> {
+  try {
+    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.57.4");
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data } = await admin.from("profiles").select("email").eq("role", "human_resources").not("email", "is", null);
+    return (data ?? []).map((a: { email: string }) => a.email).filter(Boolean);
+  } catch (_) {
+    return [];
+  }
+}
+
+/** The acknowledgement token for a feedback row, read with the service role. */
+async function fetchAckToken(feedbackId: string): Promise<string | null> {
+  try {
+    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.57.4");
+    const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const { data } = await admin.from("staff_warnings").select("ack_token").eq("id", feedbackId).maybeSingle();
+    return (data?.ack_token as string | undefined) ?? null;
+  } catch (_) {
+    return null;
+  }
+}
+
 async function fetchAdminEmails(): Promise<string[]> {
   try {
     const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2.57.4");
@@ -187,6 +214,8 @@ async function fetchAdminEmails(): Promise<string[]> {
 }
 
 interface FeedbackEmailRequest {
+  /** The staff_warnings row this email is about — carries the ack token. */
+  feedbackId?: string | null;
   recipientEmail?: string | null;
   recipientName?: string | null;
   kind?: "praise" | "development" | "warning" | null;
@@ -202,7 +231,7 @@ serve(async (req) => {
 
   try {
     const body: FeedbackEmailRequest = await req.json();
-    const { recipientEmail, recipientName, kind, category, reason, severity } = body;
+    const { feedbackId, recipientEmail, recipientName, kind, category, reason, severity } = body;
 
     const cat = niceCategory(category);
     const safeReason = escapeHtml(reason);
@@ -237,6 +266,15 @@ serve(async (req) => {
     let bodyHtml: string;
     let footerReason: string;
 
+    // Every piece of feedback has to be acknowledged by the person it is about.
+    // The link goes straight to the page in the app rather than through the
+    // function's redirect, so there is one hop fewer between them and confirming.
+    const ackToken = feedbackId ? await fetchAckToken(feedbackId) : null;
+    const closing = ackToken
+      ? paragraph(`Please confirm you have read this. There is a box to reply in if you want to — that part is optional, the acknowledgement is not.`) +
+        button("Acknowledge this feedback", `${APP_URL}/acknowledge-feedback?token=${encodeURIComponent(ackToken)}`)
+      : button("Open your HR profile", `${APP_URL}/view/hr`);
+
     if (kind === "development") {
       // Coaching, not a sanction — the wording matters, because this lands in the
       // same inbox as warnings and shouldn't read like one.
@@ -250,7 +288,7 @@ serve(async (req) => {
         paragraph(`In your manager's words: &ldquo;${safeReason}&rdquo;`) +
         paragraph(`Working on this helps your performance rating over time. Your rating can affect your monthly bonus.`) +
         paragraph(`If anything is unclear, please ask your manager.`) +
-        button("See your performance rating", `${APP_URL}/view/hr`);
+        closing;
     } else if (kind === "praise") {
       subject = "Well done — your manager has praised your work";
       headerTitle = "Well done";
@@ -261,7 +299,7 @@ serve(async (req) => {
         (cat ? paragraph(`It's about your ${cat}.`) : "") +
         paragraph(`In your manager's words: &ldquo;${safeReason}&rdquo;`) +
         paragraph(`Praise like this helps your performance rating. A higher rating can mean a bigger monthly bonus. Keep it up.`) +
-        button("See your performance rating", `${APP_URL}/view/hr`);
+        closing;
     } else {
       subject = `You've been given a ${sevWord} warning`;
       headerTitle = `A ${sevWord} warning`;
@@ -279,7 +317,7 @@ serve(async (req) => {
         paragraph(severityMeaning) +
         paragraph(`You can respond to this — please arrange a chat with your manager this week. They can explain what needs to change and how to put it right.`) +
         paragraph(`Warnings can lower your performance rating. Your rating can affect your monthly bonus. Steady improvement can raise it again.`) +
-        button("Open your HR profile", `${APP_URL}/view/hr`);
+        closing;
     }
 
     const { error } = await resend.emails.send({
@@ -290,41 +328,56 @@ serve(async (req) => {
     });
     if (error) throw error;
 
-    // Formal warnings: admins get an immediate individual copy, so the only
-    // emailed record of a disciplinary step doesn't live solely in the inbox
-    // of the person being disciplined. Praise and development points reach
-    // admins through the daily digest instead.
-    if (kind !== "development" && kind !== "praise") {
-      try {
-        const adminEmails = (await fetchAdminEmails()).filter(
-          (e) => e.toLowerCase() !== recipientEmail.toLowerCase(),
-        );
-        // Subjects are plain text — use the raw name, never the HTML-escaped one.
-        const adminSubject = `${staffNameRaw} has been given a ${sevWord} warning`;
-        const adminBody =
+    // Who else holds a copy. HR keeps a record of every piece of feedback, so
+    // it does not live only in the manager's and the staff member's inboxes.
+    // Formal warnings additionally go to admins, as they always have.
+    try {
+      const copyTo = new Set<string>();
+      (await fetchHrEmails()).forEach((e) => copyTo.add(e));
+      if (kind !== "development" && kind !== "praise") {
+        (await fetchAdminEmails()).forEach((e) => copyTo.add(e));
+      }
+      // Never send someone a "copy" of feedback about themselves.
+      const recipients = [...copyTo].filter(
+        (e) => e.toLowerCase() !== recipientEmail.toLowerCase(),
+      );
+
+      if (recipients.length > 0) {
+        const isWarning = kind !== "development" && kind !== "praise";
+        const kindNoun = kind === "praise" ? "positive feedback"
+          : kind === "development" ? "development point"
+          : `${sevWord} warning`;
+
+        const copySubject = isWarning
+          ? `${staffNameRaw} has been given a ${sevWord} warning`
+          : `${staffNameRaw} has been given ${kind === "praise" ? "positive feedback" : "a development point"}`;
+
+        const copyBody =
           greeting(null) +
-          paragraph(`${staffName} has been given a ${sevWord} warning${cat ? ` about their ${cat}` : ""}.`) +
+          paragraph(`${staffName} has been given ${isWarning ? `a ${sevWord} warning` : kind === "praise" ? "positive feedback" : "a development point"}${cat ? ` about their ${cat}` : ""}.`) +
           paragraph(`In the manager's words: &ldquo;${safeReason}&rdquo;`) +
-          paragraph(`We've emailed ${staffFirst === "They" ? "them" : staffFirst} directly. This copy is so admins know a formal warning has been issued.`) +
+          paragraph(`We have emailed ${staffFirst === "They" ? "them" : staffFirst} directly and asked them to acknowledge it. You will be told when they do${isWarning ? "" : ", along with anything they say back"}.`) +
           button("Open the HR area", `${APP_URL}/view/hr`);
-        const adminHtml = emailShell(
-          "Copy of a formal warning",
-          adminBody,
-          "You're receiving this because you're an admin at Care Cuddle.",
+
+        const copyHtml = emailShell(
+          isWarning ? "Copy of a formal warning" : "Copy of feedback given",
+          copyBody,
+          "You're receiving this because you look after HR or administration at Care Cuddle.",
         );
-        // Individual sends — never one email with every admin address visible.
-        await Promise.all(adminEmails.map((to) =>
+
+        // Individual sends — never one email with every address visible.
+        await Promise.all(recipients.map((to) =>
           resend.emails.send({
             from: EMAIL_SENDER,
             to: [to],
-            subject: adminSubject,
-            html: adminHtml,
-          }).catch((e: unknown) => console.error("send-feedback-email admin copy failed", e))
+            subject: copySubject,
+            html: copyHtml,
+          }).catch((e: unknown) => console.error("send-feedback-email copy failed", to, e))
         ));
-      } catch (copyErr) {
-        // The staff member was emailed; a failed admin copy must not fail the request.
-        console.error("send-feedback-email admin copies failed", copyErr);
       }
+    } catch (copyErr) {
+      // The staff member was emailed; a failed copy must not fail the request.
+      console.error("send-feedback-email copies failed", copyErr);
     }
 
     return new Response(JSON.stringify({ success: true }), {
