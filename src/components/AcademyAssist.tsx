@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Sparkles, X, Loader2, SendHorizonal } from "lucide-react";
+import { X, Loader2, SendHorizonal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -120,26 +120,55 @@ export function AcademyAssist() {
 
   if (!open) {
     return (
-      <Button
+      <button
+        type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-40 shadow-lg gap-2 rounded-full h-12 px-5"
+        aria-label="Open Ask the Academy"
+        title="Ask the Academy"
+        className={cn(
+          "fixed bottom-0 right-4 z-40 md:right-6 flex items-center justify-center",
+          "rounded-t-xl bg-primary px-4 py-2 text-primary-foreground",
+          "text-[13px] font-semibold tracking-wide uppercase",
+          "shadow-lg transition-all duration-200 hover:bg-primary/90 hover:scale-105 hover:shadow-xl",
+          "motion-safe:animate-assist-pulse print:hidden",
+        )}
       >
-        <Sparkles className="h-4 w-4" />
-        Ask the Academy
-      </Button>
+        <span className="inline-flex items-center gap-2 motion-safe:animate-assist-breathe">
+          <span aria-hidden className="h-2 w-2 rounded-full bg-current motion-safe:animate-orb-breathe" />
+          Ask the Academy
+        </span>
+      </button>
     );
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-40 w-[min(420px,calc(100vw-2.5rem))] rounded-xl border bg-card shadow-2xl flex flex-col max-h-[min(620px,calc(100vh-3rem))]">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" />
-          <span className="font-semibold text-sm">Ask the Academy</span>
-        </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setOpen(false)} aria-label="Close">
+    <div
+      className={cn(
+        "fixed bottom-0 right-0 z-40 flex h-[560px] max-h-[85vh] w-full flex-col overflow-hidden",
+        "rounded-t-xl border bg-card shadow-2xl sm:right-4 sm:w-[380px] md:right-6 print:hidden",
+        "origin-bottom-right motion-safe:animate-assist-pop",
+      )}
+    >
+      <div className="flex items-center justify-between border-b bg-primary px-4 py-3 text-primary-foreground">
+        <span className="inline-flex items-center gap-2 text-sm font-semibold">
+          {/* The orb is the face: slow breaths at rest, quicker while it reads. */}
+          <span
+            aria-hidden
+            className={cn(
+              "h-2 w-2 rounded-full bg-current",
+              busy ? "motion-safe:animate-orb-think" : "motion-safe:animate-orb-breathe",
+            )}
+          />
+          Ask the Academy
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          aria-label="Close"
+          className="rounded p-1 transition hover:bg-white/15"
+        >
           <X className="h-4 w-4" />
-        </Button>
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">

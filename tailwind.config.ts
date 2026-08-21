@@ -115,6 +115,30 @@ export default {
 				sm: 'calc(var(--radius) - 4px)',
 			},
 			keyframes: {
+				/* Ask the Academy — the launcher is meant to feel alive rather
+				   than parked: a ring pulses on the button while the label and
+				   its presence orb draw slow breaths. Two layers, because the
+				   ring is a box-shadow and the breath is a transform, and a
+				   hover-scale on the outer would fight the breathing. */
+				'assist-pulse': {
+					'0%, 100%': { boxShadow: '0 0 0 0 rgba(255,255,255,0.4)' },
+					'50%': { boxShadow: '0 0 0 16px rgba(255,255,255,0)' },
+				},
+				'assist-breathe': {
+					'0%, 100%': { transform: 'scale(1)' },
+					'50%': { transform: 'scale(1.05)' },
+				},
+				/* The orb brightens as it swells, like drawing breath. */
+				'orb-breathe': {
+					'0%, 100%': { transform: 'scale(1)', opacity: '0.7' },
+					'50%': { transform: 'scale(1.35)', opacity: '1' },
+				},
+				/* The panel arrives eager — rises past its mark, settles back. */
+				'assist-pop': {
+					'0%': { opacity: '0', transform: 'translateY(28px) scale(0.94)' },
+					'60%': { opacity: '1', transform: 'translateY(-5px) scale(1.01)' },
+					'100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+				},
 				'accordion-down': {
 					from: { height: '0' },
 					to: { height: 'var(--radix-accordion-content-height)' },
@@ -152,6 +176,11 @@ export default {
 				},
 			},
 			animation: {
+				'assist-pulse': 'assist-pulse 2.5s ease-in-out infinite',
+				'assist-breathe': 'assist-breathe 3.4s ease-in-out infinite',
+				'orb-breathe': 'orb-breathe 3.4s ease-in-out infinite',
+				'orb-think': 'orb-breathe 0.9s ease-in-out infinite',
+				'assist-pop': 'assist-pop 0.38s cubic-bezier(0.34, 1.4, 0.64, 1) both',
 				'accordion-down': 'accordion-down 0.2s ease-out',
 				'accordion-up': 'accordion-up 0.2s ease-out',
 				'hero-fade-up': 'hero-fade-up 0.8s ease-out forwards',
