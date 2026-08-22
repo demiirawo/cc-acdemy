@@ -37,11 +37,16 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const [{ data: objectives }, { data: actions }, { data: spots }, { data: updates }] = await Promise.all([
+    // Incidents reach the whole team here and nowhere else: the incident record
+    // itself is visible only to the people involved in it. Flagging one for the
+    // agenda is the deliberate act of sharing its lesson with everybody.
+    const [{ data: objectives }, { data: actions }, { data: spots }, { data: updates }, { data: incidents }] = await Promise.all([
       supabase.from("meeting_objectives").select("title, target_date, is_done, sort_order").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       supabase.from("meeting_actions").select("title, detail, owner_name, due_date, status, priority, on_agenda, sort_order").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
       supabase.from("meeting_spotlights").select("user_id, note").order("created_at", { ascending: false }),
       supabase.from("meeting_updates").select("title, body, category, created_at").order("created_at", { ascending: false }),
+      supabase.from("incidents").select("title, description, client_name, incident_date, severity, category, immediate_actions")
+        .eq("on_meeting_agenda", true).order("incident_date", { ascending: false }),
     ]);
 
     // Enrich spotlights with name, rank, tenure and a signed photo URL.
@@ -81,6 +86,7 @@ serve(async (req) => {
       updates: updates ?? [],
       actions: actions ?? [],
       spotlights,
+      incidents: incidents ?? [],
     }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (err) {
     console.error("public-staff-meeting error", err);

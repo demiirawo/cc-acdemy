@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { format, parseISO, differenceInCalendarDays } from "date-fns";
-import { Rocket, Target, Sparkles, Flag, CalendarDays, AlertCircle, Loader2, CheckCircle2, Presentation, Megaphone } from "lucide-react";
+import { Rocket, Target, Sparkles, Flag, CalendarDays, AlertCircle, Loader2, CheckCircle2, Presentation, Megaphone, ShieldAlert } from "lucide-react";
 
 const STATUS = {
   not_started: { label: "Not started", cls: "bg-muted text-muted-foreground border-border" },
@@ -30,7 +30,17 @@ interface MeetingData {
   updates: { title: string; body: string | null; category: string | null }[];
   actions: { title: string; detail: string | null; owner_name: string | null; due_date: string | null; status: string; priority: string; on_agenda: boolean }[];
   spotlights: { name: string; note: string | null; rank: string | null; years: number | null; photo: string | null }[];
+  // Only incidents flagged for the agenda — the incident records themselves are
+  // visible solely to the people involved in them.
+  incidents: { title: string; description: string; client_name: string | null; incident_date: string; severity: string; category: string | null; immediate_actions: string | null }[];
 }
+
+const SEV: Record<string, { label: string; cls: string }> = {
+  low: { label: "Low", cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  medium: { label: "Medium", cls: "bg-amber-100 text-amber-700 border-amber-200" },
+  high: { label: "High", cls: "bg-orange-100 text-orange-700 border-orange-200" },
+  critical: { label: "Critical", cls: "bg-red-100 text-red-700 border-red-200" },
+};
 
 const UPDATE_CAT: Record<string, { label: string; cls: string }> = {
   policy: { label: "Policy", cls: "bg-blue-100 text-blue-700 border-blue-200" },
@@ -195,6 +205,41 @@ export function PublicStaffMeeting() {
             </div>
           )}
         </Section>
+
+        {/* Incidents raised with the whole team */}
+        {(data.incidents ?? []).length > 0 && (
+          <Section icon={ShieldAlert} title="Incidents &amp; Lessons Learned">
+            <p className="text-sm text-muted-foreground">
+              Shared with everyone so we all learn from them. Being listed here doesn't mean you were involved.
+            </p>
+            <div className="space-y-3">
+              {data.incidents.map((inc, i) => {
+                const sev = SEV[inc.severity] || SEV.medium;
+                return (
+                  <div key={i} className="rounded-xl border p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2 flex-wrap">
+                      <p className="font-semibold">{inc.title}</p>
+                      <div className="flex items-center gap-2">
+                        <span className={cn("rounded-md border px-1.5 py-0.5 text-[10px] font-medium", sev.cls)}>{sev.label}</span>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">{format(parseISO(inc.incident_date), "d MMM yyyy")}</span>
+                      </div>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {inc.client_name ? <span className="font-medium text-foreground">{inc.client_name}: </span> : null}
+                      {inc.description}
+                    </p>
+                    {inc.immediate_actions && (
+                      <div className="rounded-lg bg-muted/40 p-3">
+                        <Label>What this means for us</Label>
+                        <p className="text-sm whitespace-pre-wrap mt-1">{inc.immediate_actions}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Section>
+        )}
 
         {/* Spotlight */}
         <Section icon={Sparkles} title="Staff Spotlight">
