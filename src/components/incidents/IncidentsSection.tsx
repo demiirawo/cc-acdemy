@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -21,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
 import { format, parseISO } from "date-fns";
 import {
-  AlertTriangle, Plus, ArrowLeft, ShieldAlert, Users, Share2, Loader2,
+  AlertTriangle, Plus, ArrowLeft, ShieldAlert, Users, Loader2,
   MapPin, Calendar, Clock, CheckCircle2, MessageSquarePlus, Trash2, UserPlus, ExternalLink,
 } from "lucide-react";
 
@@ -57,7 +56,6 @@ interface Incident {
   status: string;
   immediate_actions: string | null;
   reported_by: string | null;
-  shared_with_staff: boolean;
   created_at: string;
 }
 interface IncidentStatement {
@@ -165,7 +163,7 @@ export function IncidentsSection({ onViewProfile }: { onViewProfile?: (userId: s
             </div>
             <div className="min-w-0">
               <h1 className="text-2xl font-bold">Incidents</h1>
-              <p className="text-muted-foreground text-sm">Log, investigate and share incidents impacting our clients.</p>
+              <p className="text-muted-foreground text-sm">{isAdmin ? "Log and investigate incidents impacting our clients." : "Incidents you have been asked to give a statement about."}</p>
             </div>
           </div>
           {isAdmin && (
@@ -184,7 +182,7 @@ export function IncidentsSection({ onViewProfile }: { onViewProfile?: (userId: s
             <CardContent className="py-14 text-center text-muted-foreground">
               <AlertTriangle className="h-8 w-8 mx-auto mb-3 opacity-40" />
               <p className="font-medium">No incidents logged</p>
-              <p className="text-sm">{isAdmin ? "Log the first incident to start a record." : "Incidents shared with you will appear here."}</p>
+              <p className="text-sm">{isAdmin ? "Log the first incident to start a record." : "Only incidents you are personally involved in appear here."}</p>
             </CardContent>
           </Card>
         ) : (
@@ -742,16 +740,10 @@ function IncidentDetail({
                   <Textarea defaultValue={incident.immediate_actions || ""} key={`act-${incident.id}`} rows={2}
                     onBlur={e => patchIncident({ immediate_actions: e.target.value.trim() || null })} placeholder="What was done straight away?" />
                 </LabeledField>
-                <div className="flex items-center justify-between rounded-lg border bg-muted/20 p-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Share2 className="h-4 w-4 text-primary flex-shrink-0" />
-                    <div>
-                      <p className="text-sm font-medium">Share with all staff</p>
-                      <p className="text-xs text-muted-foreground">When on, every staff member can read this incident and its statements.</p>
-                    </div>
-                  </div>
-                  <Switch checked={incident.shared_with_staff} onCheckedChange={c => patchIncident({ shared_with_staff: c })} disabled={busy} />
-                </div>
+                <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                  <Users className="h-3 w-3 flex-shrink-0" />
+                  Only the people added below can see this incident — nobody else does.
+                </p>
               </>
             ) : (
               <>
@@ -785,7 +777,9 @@ function IncidentDetail({
                     <p className="text-sm whitespace-pre-wrap">{incident.immediate_actions}</p>
                   </div>
                 )}
-                {incident.shared_with_staff && <p className="text-xs text-primary flex items-center gap-1"><Share2 className="h-3 w-3" /> Shared with the team for awareness and lessons learned.</p>}
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Users className="h-3 w-3" /> You can see this because you've been added as an involved party.
+                </p>
               </>
             )}
           </CardContent>
@@ -819,18 +813,16 @@ function IncidentDetail({
           </Card>
         )}
 
-        {/* ---- Involved parties ---- */}
-        <Card>
-          <CardContent className="p-5 space-y-3">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-muted-foreground" />
-              <p className="font-semibold">Involved parties &amp; statements</p>
-              <Badge variant="outline" className="text-[10px]">{statements.filter(s => s.status === "submitted").length}/{statements.length}</Badge>
-            </div>
+        {/* ---- Involved parties (admins only — staff see their own statement above) ---- */}
+        {isAdmin && (
+          <Card>
+            <CardContent className="p-5 space-y-3">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <p className="font-semibold">Involved parties &amp; statements</p>
+                <Badge variant="outline" className="text-[10px]">{statements.filter(s => s.status === "submitted").length}/{statements.length}</Badge>
+              </div>
 
-            {statements.length === 0 && !isAdmin && <p className="text-sm text-muted-foreground italic">No statements yet.</p>}
-
-            {isAdmin ? (
               <div className="space-y-3">
                 {statements.map(s => (
                   <AdminStatementRow
@@ -863,31 +855,9 @@ function IncidentDetail({
                 </div>
                 <p className="text-[11px] text-muted-foreground">Add anyone involved — you can type their account and lessons in for them, or email them to fill it in themselves.</p>
               </div>
-            ) : (
-              <div className="space-y-2">
-                {statements.map(s => {
-                  const submitted = s.status === "submitted";
-                  return (
-                    <div key={s.id} className="rounded-lg border p-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium">{nameOf(s.user_id)}</span>
-                        {submitted
-                          ? <Badge variant="outline" className="text-[10px] border-emerald-300 text-emerald-600 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> Submitted</Badge>
-                          : <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600">Invited</Badge>}
-                      </div>
-                      {submitted && (s.statement || s.lessons) ? (
-                        <div className="mt-2 space-y-2 text-sm">
-                          {s.statement && <div><span className="text-xs text-muted-foreground">Statement: </span><span className="whitespace-pre-wrap">{s.statement}</span></div>}
-                          {s.lessons && <div><span className="text-xs text-muted-foreground">Lessons: </span><span className="whitespace-pre-wrap">{s.lessons}</span></div>}
-                        </div>
-                      ) : <p className="text-xs text-muted-foreground mt-1 italic">Awaiting their response.</p>}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
