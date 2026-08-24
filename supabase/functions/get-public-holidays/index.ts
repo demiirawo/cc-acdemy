@@ -5,8 +5,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Islamic holidays with estimated dates (need to be updated annually)
-const ISLAMIC_HOLIDAYS: Record<number, Array<{ date: string; name: string }>> = {
+// Islamic holidays. These follow the lunar calendar and aren't in the Nager.Date
+// feed for Nigeria, so they are listed here and updated annually. Dates are
+// estimated until the Federal Government announces them, at which point the
+// entry is corrected and marked `estimated: false` so payroll stops hedging.
+const ISLAMIC_HOLIDAYS: Record<number, Array<{ date: string; name: string; estimated?: boolean }>> = {
   2025: [
     { date: "2025-03-30", name: "Eid-el-Fitr (Estimated)" },
     { date: "2025-03-31", name: "Eid-el-Fitr Holiday (Estimated)" },
@@ -19,7 +22,8 @@ const ISLAMIC_HOLIDAYS: Record<number, Array<{ date: string; name: string }>> = 
     { date: "2026-03-20", name: "Eid El-Fitr" },
     { date: "2026-05-27", name: "Id el Kabir (Tentative Date)" },
     { date: "2026-05-28", name: "Id el Kabir additional holiday (Tentative Date)" },
-    { date: "2026-08-26", name: "Id el Maulud (Tentative Date)" },
+    // Confirmed: the holiday falls on the 25th, not the 26th as first estimated.
+    { date: "2026-08-25", name: "Id el Maulud", estimated: false },
   ],
   2027: [
     { date: "2027-03-09", name: "Eid-el-Fitr (Estimated)" },
@@ -121,9 +125,11 @@ serve(async (req) => {
 
     // Add Islamic holidays (these aren't in the Nager.Date API for Nigeria)
     const islamicHolidays = ISLAMIC_HOLIDAYS[year] || [];
-    const islamicHolidaysWithFlag = islamicHolidays.map(h => ({
+    // Estimated unless the entry says otherwise — a confirmed date shouldn't
+    // carry an "Est." badge next to it on the payroll screen.
+    const islamicHolidaysWithFlag = islamicHolidays.map(({ estimated, ...h }) => ({
       ...h,
-      isEstimated: true,
+      isEstimated: estimated !== false,
     }));
 
     // Merge and sort by date
