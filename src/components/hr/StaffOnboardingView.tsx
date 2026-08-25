@@ -43,8 +43,9 @@ interface PageAcknowledgement {
   acknowledged_at: string;
 }
 
-// Helper to render description with clickable links
-function renderDescriptionWithLinks(description: string) {
+// Helper to render description with clickable links. Shared with the programme
+// view so the two renderings of a step description can never drift apart.
+export function renderDescriptionWithLinks(description: string) {
   const urlRegex = /(https?:\/\/[^\s]+)/g;
   const parts = description.split(urlRegex);
   

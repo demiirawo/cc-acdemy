@@ -7,6 +7,7 @@ import { OnboardingMatrix } from "./OnboardingMatrix";
 import { StaffDocumentationMatrix } from "./StaffDocumentationMatrix";
 import { StaffOnboardingView } from "./StaffOnboardingView";
 import { StaffOnboardingProgressCards } from "./StaffOnboardingProgressCards";
+import { OnboardingProgramme } from "./OnboardingProgramme";
 import { Settings, Grid3X3, Users, ClipboardList, FileCheck, ListChecks } from "lucide-react";
 
 export function OnboardingManager() {
@@ -14,7 +15,7 @@ export function OnboardingManager() {
   // Default to a tab that's valid in the management view. Role resolves async,
   // so basing this on canManageHR at mount could leave it on a non-existent tab
   // (blank content) once the role loads in.
-  const [activeTab, setActiveTab] = useState("by-person");
+  const [activeTab, setActiveTab] = useState("programme");
 
   // Staff without HR-management rights see their personal onboarding view.
   if (!canManageHR) {
@@ -26,6 +27,10 @@ export function OnboardingManager() {
     <div className="space-y-6">
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
+          <TabsTrigger value="programme" className="flex items-center gap-2">
+            <ClipboardList className="h-4 w-4" />
+            Programme
+          </TabsTrigger>
           <TabsTrigger value="by-person" className="flex items-center gap-2">
             <ListChecks className="h-4 w-4" />
             By Person
@@ -47,6 +52,10 @@ export function OnboardingManager() {
             Owner Configuration
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="programme" className="mt-4">
+          <OnboardingProgramme />
+        </TabsContent>
 
         <TabsContent value="by-person" className="mt-4">
           <StaffOnboardingProgressCards />
