@@ -492,24 +492,37 @@ export function StaffOnboardingView({ userId, personName }: StaffOnboardingViewP
                                 </div>
 
                                 {/* Action button */}
-                                <div className="flex-shrink-0">
+                                <div className="flex-shrink-0 flex items-center gap-3">
+                                  {/* Whatever a step points at stays reachable. Ticking it off
+                                      is personal; reading it is not — HR walking a new starter
+                                      through the programme needs to open the page or the link,
+                                      and so does anyone revisiting a step they finished months
+                                      ago. Shown unless the button below is already opening it. */}
+                                  {(completed || !isSelf) && step.step_type === 'internal_page' && step.target_page_id && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => navigate(`/page/${step.target_page_id}`)}
+                                    >
+                                      <FileText className="h-4 w-4 mr-2" />
+                                      View page
+                                    </Button>
+                                  )}
+                                  {(completed || !isSelf) && step.step_type === 'external_link' && step.external_url && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => window.open(step.external_url!, '_blank', 'noopener,noreferrer')}
+                                    >
+                                      <ExternalLink className="h-4 w-4 mr-2" />
+                                      Open link
+                                    </Button>
+                                  )}
+
                                   {completed ? (
-                                    <div className="flex items-center gap-3">
-                                      {/* Show "View Page" button for internal_page steps even when completed */}
-                                      {step.step_type === 'internal_page' && step.target_page_id && (
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          onClick={() => navigate(`/page/${step.target_page_id}`)}
-                                        >
-                                          <FileText className="h-4 w-4 mr-2" />
-                                          View Page
-                                        </Button>
-                                      )}
-                                      <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
-                                        <CheckCircle2 className="h-5 w-5" />
-                                        <span className="font-medium">Completed</span>
-                                      </div>
+                                    <div className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                                      <CheckCircle2 className="h-5 w-5" />
+                                      <span className="font-medium">Completed</span>
                                     </div>
                                   ) : !isSelf ? (
                                     <div className="flex items-center gap-2 text-muted-foreground">
