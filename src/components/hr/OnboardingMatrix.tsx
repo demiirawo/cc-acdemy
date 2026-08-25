@@ -6,6 +6,7 @@ import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Check, Clock } from "lucide-react";
 import { allTrainingUpToDate } from "@/lib/trainingStatus";
 import { isCurrentlyEmployed } from "@/lib/employment";
+import { groupByStage, orderStages } from "@/lib/onboardingStages";
 
 interface OnboardingOwner {
   id: string;
@@ -49,15 +50,6 @@ interface PageAcknowledgement {
   user_id: string;
   acknowledged_at: string;
 }
-
-// Define the correct stage order (matching OnboardingStepsManager)
-const STAGE_ORDER = [
-  "Getting Started",
-  "System & Tools",
-  "Company Policies",
-  "Training",
-  "Final Checks"
-];
 
 // Only show staff in onboarding statuses
 const ONBOARDING_STATUSES: EmploymentStatus[] = ['onboarding_probation', 'onboarding_passed'];
@@ -184,31 +176,18 @@ export function OnboardingMatrix() {
     return false;
   };
 
-  // Only count steps in a known stage (shown on the matrix). Steps in an
-  // unrecognised/typo stage are hidden, so must not affect the totals.
-  const STAGE_SET = new Set(STAGE_ORDER);
-  const countableSteps = steps.filter(s => STAGE_SET.has(s.stage || 'Getting Started'));
-
   const getCompletionStats = (userId: string): { completed: number; total: number } => {
     let completed = 0;
-    countableSteps.forEach(step => {
+    steps.forEach(step => {
       if (isStepCompleted(step.id, userId, step)) {
         completed++;
       }
     });
-    return { completed, total: countableSteps.length };
+    return { completed, total: steps.length };
   };
 
-  // Group steps by stage
-  const stepsByStage = steps.reduce((acc, step) => {
-    const stageKey = step.stage || 'Getting Started';
-    if (!acc[stageKey]) acc[stageKey] = [];
-    acc[stageKey].push(step);
-    return acc;
-  }, {} as Record<string, OnboardingStep[]>);
-
-  // Use predefined order, only including stages that have steps
-  const orderedStages = STAGE_ORDER.filter(stage => stepsByStage[stage] && stepsByStage[stage].length > 0);
+  const stepsByStage = groupByStage(steps);
+  const orderedStages = orderStages(stepsByStage);
 
   if (loading) {
     return <div className="text-center py-8 text-muted-foreground">Loading...</div>;

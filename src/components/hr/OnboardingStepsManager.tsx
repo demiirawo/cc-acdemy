@@ -33,6 +33,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { VoiceNoteRecorder } from "./VoiceNoteRecorder";
 import { Volume2 } from "lucide-react";
+import { STAGE_ORDER, groupByStage, orderStages, isUnknownStage } from "@/lib/onboardingStages";
 
 interface OnboardingOwner {
   id: string;
@@ -57,14 +58,6 @@ interface OnboardingStep {
   owner?: OnboardingOwner | null;
 }
 
-const DEFAULT_STAGES = [
-  "Getting Started",
-  "System & Tools",
-  "Company Policies",
-  "Training",
-  "Final Checks"
-];
-
 interface Page {
   id: string;
   title: string;
@@ -78,7 +71,7 @@ export function OnboardingStepsManager() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingStep, setEditingStep] = useState<OnboardingStep | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [expandedStages, setExpandedStages] = useState<string[]>(DEFAULT_STAGES);
+  const [expandedStages, setExpandedStages] = useState<string[]>([...STAGE_ORDER]);
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -290,11 +283,12 @@ export function OnboardingStepsManager() {
     }
   };
 
-  // Group steps by stage
-  const stepsByStage = DEFAULT_STAGES.reduce((acc, stageName) => {
-    acc[stageName] = steps.filter(s => s.stage === stageName).sort((a, b) => a.sort_order - b.sort_order);
-    return acc;
-  }, {} as Record<string, OnboardingStep[]>);
+  // Every stage present, plus the canonical five even when empty, so a step can
+  // always be filed into one of them — and so a stage nobody meant to create is
+  // visible here rather than quietly holding steps nobody can see.
+  const stepsByStage = { ...Object.fromEntries(STAGE_ORDER.map(s => [s, [] as OnboardingStep[]])), ...groupByStage(steps) };
+  Object.values(stepsByStage).forEach(list => list.sort((a, b) => a.sort_order - b.sort_order));
+  const allStages = orderStages(stepsByStage);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -427,7 +421,7 @@ export function OnboardingStepsManager() {
             onValueChange={setExpandedStages}
             className="space-y-4"
           >
-            {DEFAULT_STAGES.map((stageName) => {
+            {allStages.map((stageName) => {
               const stageSteps = stepsByStage[stageName] || [];
               return (
                 <AccordionItem 
@@ -544,8 +538,10 @@ export function OnboardingStepsManager() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {DEFAULT_STAGES.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
+                    {[...STAGE_ORDER, ...(stage && isUnknownStage(stage) ? [stage] : [])].map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {s}{isUnknownStage(s) ? " (unrecognised stage)" : ""}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

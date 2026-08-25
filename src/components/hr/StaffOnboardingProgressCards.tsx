@@ -26,17 +26,6 @@ interface Step {
   stage: string;
 }
 
-// Mirrors the stages the personal view renders, so the count on a card matches
-// the count inside it. A step filed under an unrecognised stage is hidden there
-// and must not inflate the total here.
-const STAGE_ORDER = [
-  "Getting Started",
-  "System & Tools",
-  "Company Policies",
-  "Training",
-  "Final Checks",
-];
-
 /** Statuses that mean someone is still working through onboarding. */
 const IN_ONBOARDING = ["onboarding_probation", "onboarding_passed"];
 
@@ -125,14 +114,9 @@ export function StaffOnboardingProgressCards() {
     })();
   }, [toast]);
 
-  const countableSteps = useMemo(
-    () => steps.filter((s) => STAGE_ORDER.includes(s.stage || "Getting Started")),
-    [steps]
-  );
-
   const progressFor = (userId: string) => {
-    if (countableSteps.length === 0) return { done: 0, total: 0, percent: 0 };
-    const done = countableSteps.filter((step) => {
+    if (steps.length === 0) return { done: 0, total: 0, percent: 0 };
+    const done = steps.filter((step) => {
       // An explicit completion row always wins — including admin bulk-marks.
       if (completions.some((c) => c.step_id === step.id && c.user_id === userId)) return true;
       if (step.step_type === "training") {
@@ -146,7 +130,7 @@ export function StaffOnboardingProgressCards() {
       }
       return false;
     }).length;
-    return { done, total: countableSteps.length, percent: Math.round((done / countableSteps.length) * 100) };
+    return { done, total: steps.length, percent: Math.round((done / steps.length) * 100) };
   };
 
   const visible = useMemo(() => {

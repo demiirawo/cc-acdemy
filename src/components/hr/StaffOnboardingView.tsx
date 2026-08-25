@@ -9,6 +9,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Check, Clock, ExternalLink, FileText, User, Mail, Phone, Briefcase, CheckCircle2, Loader2, Rocket } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { allTrainingUpToDate } from "@/lib/trainingStatus";
+import { groupByStage, orderStages } from "@/lib/onboardingStages";
 
 interface OnboardingOwner {
   id: string;
@@ -194,25 +195,8 @@ export function StaffOnboardingView({ userId, personName }: StaffOnboardingViewP
     return false;
   };
 
-  // Define the correct stage order
-  const STAGE_ORDER = [
-    "Getting Started",
-    "System & Tools",
-    "Company Policies",
-    "Training",
-    "Final Checks"
-  ];
-
-  // Group steps by stage
-  const stepsByStage = steps.reduce((acc, step) => {
-    const stageKey = step.stage || 'Getting Started';
-    if (!acc[stageKey]) acc[stageKey] = [];
-    acc[stageKey].push(step);
-    return acc;
-  }, {} as Record<string, OnboardingStep[]>);
-
-  // Use predefined order, only including stages that have steps
-  const stageOrder = STAGE_ORDER.filter(stage => stepsByStage[stage] && stepsByStage[stage].length > 0);
+  const stepsByStage = groupByStage(steps);
+  const stageOrder = orderStages(stepsByStage);
 
   const handleRequestOffer = async () => {
     setRequesting(true);
@@ -288,13 +272,9 @@ export function StaffOnboardingView({ userId, personName }: StaffOnboardingViewP
     }
   };
 
-  // Only count steps that are actually shown (in a known stage). Steps in an
-  // unrecognised/typo stage are hidden from the list, so they must not inflate
-  // the denominator.
-  const STAGE_SET = new Set(STAGE_ORDER);
-  const countableSteps = steps.filter(s => STAGE_SET.has(s.stage || 'Getting Started'));
-  const totalSteps = countableSteps.length;
-  const completedCount = countableSteps.filter(s => isStepCompleted(s)).length;
+  // Every step is shown now, whatever its stage, so every step counts.
+  const totalSteps = steps.length;
+  const completedCount = steps.filter(s => isStepCompleted(s)).length;
   const progressPercent = totalSteps > 0 ? Math.round((completedCount / totalSteps) * 100) : 0;
 
   if (loading) {

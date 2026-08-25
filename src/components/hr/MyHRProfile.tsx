@@ -32,6 +32,7 @@ import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItemsManager";
 import { allTrainingUpToDate } from "@/lib/trainingStatus";
 import { computeHolidayHandoverStatus, patternDatesInWindow, PATTERN_WINDOW_COLS, type PatternWindow, coverAppliesToClient } from "@/lib/handoverStatus";
+import { groupByStage, orderStages } from "@/lib/onboardingStages";
 interface UserProfile {
   user_id: string;
   display_name: string | null;
@@ -2588,20 +2589,11 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       {onboardingSteps.length > 0
         && ['onboarding_probation', 'onboarding_passed'].includes(hrProfile.employment_status || '')
         && (() => {
-        const STAGE_ORDER = ["Getting Started", "System & Tools", "Company Policies", "Training", "Final Checks"];
-        const stepsByStage = onboardingSteps.reduce((acc, step) => {
-          const key = step.stage || "Getting Started";
-          if (!acc[key]) acc[key] = [];
-          acc[key].push(step);
-          return acc;
-        }, {} as Record<string, OnboardingStep[]>);
-        const stages = STAGE_ORDER.filter(s => stepsByStage[s]?.length > 0);
-        // Count only steps in a known stage (those shown); steps in an
-        // unrecognised/typo stage are hidden and must not inflate the total.
-        const STAGE_SET = new Set(STAGE_ORDER);
-        const countableSteps = onboardingSteps.filter(s => STAGE_SET.has(s.stage || 'Getting Started'));
-        const totalSteps = countableSteps.length;
-        const completedSteps = countableSteps.filter(s => onboardingCompletedIds.has(s.id)).length;
+        const stepsByStage = groupByStage(onboardingSteps);
+        const stages = orderStages(stepsByStage);
+        // Every step is shown now, whatever its stage, so every step counts.
+        const totalSteps = onboardingSteps.length;
+        const completedSteps = onboardingSteps.filter(s => onboardingCompletedIds.has(s.id)).length;
         const progressPct = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
         const allDone = completedSteps === totalSteps;
 
