@@ -494,8 +494,9 @@ export function RealKnowledgeBaseSidebar({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SidebarItem[]>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
-  // Per-nav-group expand state for items with adminChildren (HR, Finance, …). Expanded by default.
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  // Per-nav-group expand state for items with adminChildren (HR, Finance, …). Collapsed by default;
+  // the chevron opens a group when it's wanted rather than every group claiming space up front.
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [pages, setPages] = useState<Page[]>([]);
   const [hierarchyData, setHierarchyData] = useState<SidebarItem[]>([]);
@@ -955,7 +956,7 @@ export function RealKnowledgeBaseSidebar({
             const isSelected = selectedId === item.id;
             const canSeeChildren = (item as any).adminOnly ? isAdmin : canManageHR;
             const kids = (canSeeChildren && (item as any).adminChildren) ? (item as any).adminChildren as SidebarItem[] : null;
-            const isExpanded = !collapsedGroups[item.id];
+            const isExpanded = !!expandedGroups[item.id];
             return (
               <div key={item.id}>
                 <div
@@ -971,7 +972,7 @@ export function RealKnowledgeBaseSidebar({
                   <span className="text-zinc-50 flex-1">{item.title}</span>
                   {kids && (
                     <button
-                      onClick={(e) => { e.stopPropagation(); setCollapsedGroups(prev => ({ ...prev, [item.id]: isExpanded })); }}
+                      onClick={(e) => { e.stopPropagation(); setExpandedGroups(prev => ({ ...prev, [item.id]: !isExpanded })); }}
                       className="p-0.5 -mr-1 text-white/70 hover:text-white"
                       aria-label={isExpanded ? "Collapse" : "Expand"}
                     >
