@@ -302,11 +302,11 @@ function SidebarTreeItem({
   return (
     <div className="relative group">
       <div className={cn(
-        "flex items-center px-2 py-2 text-sm rounded-lg cursor-pointer glass-nav-item font-medium",
+        "flex items-center px-2 py-1 text-sm rounded-lg cursor-pointer glass-nav-item font-medium",
         isSelected ? "glass-nav-active text-white" : "text-white",
         isLoading && "opacity-50 pointer-events-none"
       )}
-      style={{ paddingLeft: `${level * 14 + 8}px` }}
+      style={{ paddingLeft: `${level * 12 + 8}px` }}
       onClick={() => { onSelect(item); if (hasChildren) onToggleExpanded(item.id); }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}>
@@ -871,27 +871,27 @@ export function RealKnowledgeBaseSidebar({
   return (
     <div className="w-full border-r-0 flex flex-col h-full bg-sidebar glass-sidebar relative">
       {/* Header */}
-      <div className="p-4 border-b border-sidebar-border">
-        <div className="flex items-center gap-2 mb-4">
+      <div className="p-3 border-b border-sidebar-border">
+        <div className="flex items-center gap-2 mb-2">
           <button
             type="button"
             onClick={() => handleItemSelect({ id: 'home', title: 'Home', type: 'space' })}
             title="Go to home"
             aria-label="Go to home"
-            className="w-full py-5 px-2 flex items-center justify-center cursor-pointer transition-transform hover:scale-[1.02] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 rounded-lg"
+            className="w-full py-1.5 px-2 flex items-center justify-center cursor-pointer transition-transform hover:scale-[1.02] focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60 rounded-lg"
           >
-            <img src="/images/ccacademy-logo.svg" alt="CC Academy Logo" className="w-full max-w-[210px] h-auto" />
+            <img src="/images/ccacademy-logo.svg" alt="CC Academy Logo" className="w-full max-w-[170px] h-auto" />
           </button>
         </div>
         
         {/* Search */}
         <div className="relative">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-black/50" />
+          <Search className="absolute left-3 top-2 h-4 w-4 text-black/50" />
           <Input 
             placeholder="Search..." 
             value={searchQuery} 
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 bg-white border-gray-300 text-black placeholder:text-black/50 h-9"
+            className="pl-9 bg-white border-gray-300 text-black placeholder:text-black/50 h-8"
           />
           
           {/* Search Results Dropdown */}
@@ -947,8 +947,8 @@ export function RealKnowledgeBaseSidebar({
       </div>
 
       {/* Navigation */}
-      <div className="p-4 border-b border-sidebar-border">
-        <div className="space-y-1">
+      <div className="px-3 py-2 border-b border-sidebar-border">
+        <div className="space-y-0.5">
           {navigationItems
             .filter(item => item.id !== 'chat' && (item.id !== 'clients' || isAdmin || canManageHR) && (item.id !== 'training' || canManageTraining) && (!('adminOnly' in item) || !item.adminOnly || isAdmin) && (!('hrOnly' in item) || !item.hrOnly || canManageHR))
             .map((item) => {
@@ -960,7 +960,7 @@ export function RealKnowledgeBaseSidebar({
               <div key={item.id}>
                 <div
                   className={cn(
-                    "flex items-center gap-3 px-2 py-2 text-sm rounded-lg cursor-pointer font-medium glass-nav-item",
+                    "flex items-center gap-3 px-2 py-1 text-sm rounded-lg cursor-pointer font-medium glass-nav-item",
                     isSelected ? "glass-nav-active text-white" : "text-white"
                   )}
                   onClick={() => handleItemSelect({
@@ -984,7 +984,7 @@ export function RealKnowledgeBaseSidebar({
                     {kids.map((child, ci) => (
                       <div
                         key={ci}
-                        className="flex items-center px-2 py-1.5 text-sm rounded-lg cursor-pointer glass-nav-item text-white/90"
+                        className="flex items-center px-2 py-1 text-sm rounded-lg cursor-pointer glass-nav-item text-white/90"
                         onClick={() => handleItemSelect({ ...child, type: 'space' })}
                       >
                         <span className="text-zinc-50">{child.title}</span>
@@ -999,8 +999,8 @@ export function RealKnowledgeBaseSidebar({
       </div>
 
       {/* Content Tree */}
-      <div className="flex-1 p-4 overflow-hidden">
-        <div className="flex items-center justify-between mb-3">
+      <div className="flex-1 px-3 py-2 overflow-hidden">
+        <div className="flex items-center justify-between mb-1.5">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-50">
             Pages
           </h3>
@@ -1022,13 +1022,13 @@ export function RealKnowledgeBaseSidebar({
         <ScrollArea className="h-full">
           <div className="pb-16">
             {loading ? (
-              <div className="space-y-2">
+              <div className="space-y-0.5">
                 {[...Array(5)].map((_, i) => (
                   <div key={i} className="h-8 bg-sidebar-accent/20 rounded animate-pulse" />
                 ))}
               </div>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {filteredHierarchy.length > 0 ? (
                   filteredHierarchy.map((item) => (
                     <SidebarTreeItem
