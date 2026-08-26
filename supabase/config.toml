@@ -97,3 +97,5 @@ verify_jwt = true
 [functions.public-staff-meeting]
 verify_jwt = false
 
+[functions.send-profile-welcome-email]
+verify_jwt = true

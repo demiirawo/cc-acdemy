@@ -244,6 +244,24 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
         if (insertError) throw insertError;
       }
 
+      // First time a profile is set up, tell the person it exists and what's on
+      // it. Sent for everyone, not only new starters: whoever the profile is
+      // for, they can't use what they don't know is there.
+      if (!existingHRId && staffEmail) {
+        try {
+          await supabase.functions.invoke('send-profile-welcome-email', {
+            body: {
+              recipientEmail: staffEmail,
+              recipientName: formData.display_name || staffEmail,
+              jobTitle: formData.job_title || null,
+              startDate: formData.start_date || null,
+            },
+          });
+        } catch (e) {
+          console.error('profile welcome email failed', e);
+        }
+      }
+
       // On first-time setup in an onboarding status, email the onboarding
       // invite — same behavior as the Staffing Settings roster dialog.
       if (!existingHRId && String(formData.employment_status).startsWith('onboarding') && staffEmail) {
