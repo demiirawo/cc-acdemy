@@ -1492,7 +1492,7 @@ export function StaffPayManager({ onSummaryComputed }: {
         // they were actually here for.
         worked: employedFraction(hrFull?.start_date, hrFull?.employment_end_date, selectedMonth),
         // Explicit per-staff opt-out flag (default eligible), and the
-        // peak-cover rule: leave between 1 Dec and 30 Jan forfeits that
+        // peak-cover rule: leave between 1 Dec and 31 Jan forfeits that
         // month's pot. Folded in here so the preview below and the records
         // written to payroll can never disagree about who shares in it.
         flagEligible: hrFull?.bonus_pot_eligible !== false
@@ -2434,7 +2434,7 @@ export function StaffPayManager({ onSummaryComputed }: {
               <Coins className="h-4 w-4 text-amber-500 flex-shrink-0" />
               <span className="text-sm font-medium">Bonus pot allocation</span>
               <span className="text-xs text-muted-foreground truncate">
-                £{potAllocation.potGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {potAllocation.items.filter(i => i.points > 0).length} eligible staff · £{(potAllocation.potGbp / potAllocation.totalPoints).toFixed(2)}/point · D & opted-out excluded{peakLeaveWindowForMonth(selectedMonth) ? " · leave 1 Dec–30 Jan excluded" : ""}
+                £{potAllocation.potGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {potAllocation.items.filter(i => i.points > 0).length} eligible staff · £{(potAllocation.potGbp / potAllocation.totalPoints).toFixed(2)}/point · D & opted-out excluded{peakLeaveWindowForMonth(selectedMonth) ? " · leave 1 Dec–31 Jan excluded" : ""}
               </span>
               {potBusy && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground flex-shrink-0" />}
             </div>

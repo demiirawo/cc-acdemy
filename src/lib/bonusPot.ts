@@ -15,14 +15,13 @@ export const POT_DESC_TAG = "Bonus pot";
  * December absence costs the December pot; the January pot is untouched
  * unless there is January leave too.
  *
- * The window is deliberately asymmetric: December runs to the 31st, January
- * only to the 30th.
+ * The window is both months in full — 1 December to 31 January.
  */
 export function peakLeaveWindowForMonth(month: Date): { start: string; end: string } | null {
   const y = month.getFullYear();
   switch (month.getMonth()) {
     case 11: return { start: `${y}-12-01`, end: `${y}-12-31` };
-    case 0:  return { start: `${y}-01-01`, end: `${y}-01-30` };
+    case 0:  return { start: `${y}-01-01`, end: `${y}-01-31` };
     default: return null;   // the rule can only ever touch December and January
   }
 }
