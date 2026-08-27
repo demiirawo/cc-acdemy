@@ -27,6 +27,7 @@ import { normalizePhotoFile } from "@/lib/photoUpload";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { StaffSettingsDialog } from "./StaffSettingsDialog";
 import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusPoints, rankBonusMult, bonusEligible, LOWEST_ELIGIBLE_RANK, type Rank } from "./PerformanceRankBadge";
+import { peakCover, isPeakMonth, type PeakLeaveRow } from "@/lib/bonusPot";
 import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItemsManager";
@@ -2144,6 +2145,18 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         // The real pot for this month — not an illustration. Without one set,
         // no figure is shown at all rather than a made-up one.
         const pot = bonusPotGbp;
+        // December and January aren't shared on rank or tenure — they're shared
+        // on days worked over 1 Dec – 31 Jan. Showing a rank-derived figure in
+        // those two months would promise a number nobody is going to be paid,
+        // so the estimate gives way to the days themselves. No pound figure:
+        // that would need everyone else's leave, which staff can't see.
+        const potMonth = startOfMonth(new Date());
+        const peakMonth = isPeakMonth(potMonth);
+        const myCover = peakCover(
+          holidays.map(h => ({ user_id: "me", start_date: h.start_date, end_date: h.end_date, status: h.status })) as PeakLeaveRow[],
+          "me",
+          potMonth,
+        );
         const flagEligible = hrProfile.bonus_pot_eligible !== false;
         const eligible = bonusEligible(myRank) && flagEligible;
         // myPoints is rank-only; zero it out when opted out so the share is £0.
@@ -2325,10 +2338,29 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                 {showSalary && (
                 <div className="space-y-2">
                   <p className="text-sm font-medium">How this affects your bonus</p>
+                  {peakMonth ? (
+                  <p className="text-xs text-muted-foreground">
+                    December and January work differently. Those two pots pay for cover over Christmas and the new year, so they're shared on <strong className="text-foreground">days worked between 1 December and 31 January</strong> — not on your rating or how long you've been here. <strong className="text-foreground">A D rating still gets no bonus.</strong>
+                  </p>
+                  ) : (
                   <p className="text-xs text-muted-foreground">
                     A higher rating and longer time with us both mean a bigger share of the monthly bonus. <strong className="text-foreground">A D rating gets no bonus.</strong>
                   </p>
-                  {eligible ? (
+                  )}
+                  {eligible && peakMonth ? (
+                  <div className="rounded-lg border bg-muted/20 p-3 space-y-1.5 text-sm">
+                    <div className="flex justify-between gap-2">
+                      <span className="text-muted-foreground">Days you're covering this month</span>
+                      <span className="font-medium tabular-nums">{myCover.daysCovered} of {myCover.windowDays}</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground pt-1">
+                      {myCover.daysOff === 0
+                        ? "You have no leave booked this month, so you take a full share."
+                        : `You have ${myCover.daysOff} day${myCover.daysOff === 1 ? "" : "s"} of leave booked this month, so your share is smaller — what you don't take goes to whoever covers for you.`}
+                      {pot !== null && ` This month's pot is ${oneValue(pot)}, shared across the team by days worked.`}
+                    </p>
+                  </div>
+                  ) : eligible ? (
                   <div className="rounded-lg border bg-muted/20 p-3 space-y-1.5 text-sm">
                     {myShare === null ? (
                       <p className="text-muted-foreground text-xs">
@@ -2362,7 +2394,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                     {flagEligible && nextUp && (
                       <p className="text-muted-foreground">
                         Reaching <strong className="text-foreground">{RANK_STYLES[nextUp].label}</strong> would make you eligible
-                        {nextShare === null
+                        {nextShare === null || peakMonth
                           ? " for a share of the monthly bonus pot."
                           : <> — worth ≈ <strong className="text-foreground">{oneValue(nextShare)}</strong> at your current tenure, based on this month's pot of {oneValue(pot)}.</>}
                       </p>

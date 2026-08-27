@@ -1,6 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { format, startOfMonth, endOfMonth, parseISO, eachDayOfInterval } from "date-fns";
-import { RANK_ORDER, bonusPoints, bonusTenureYears, employedFraction, type Rank } from "@/components/hr/PerformanceRankBadge";
+import { RANK_ORDER, bonusPoints, bonusEligible, bonusTenureYears, employedFraction, type Rank } from "@/components/hr/PerformanceRankBadge";
 
 export const POT_DESC_TAG = "Bonus pot";
 
@@ -49,10 +49,33 @@ export interface PeakLeaveRow {
   status: string;
 }
 
-/** Calendar days of approved leave falling inside that month's peak window. */
-export function peakDaysOff(leaves: PeakLeaveRow[], userId: string, month: Date): number {
+/** True for December and January — the two months the peak rule governs. */
+export function isPeakMonth(month: Date): boolean {
+  return peakLeaveWindowForMonth(month) !== null;
+}
+
+export interface PeakCover {
+  /** Calendar days in that month's half of the window (31 for both). */
+  windowDays: number;
+  /** Days of approved leave inside it. */
+  daysOff: number;
+  /** Days present — what the December and January pots are actually shared on. */
+  daysCovered: number;
+  /** daysCovered/windowDays, bent by PEAK_SHARE_EXPONENT. 1 outside Dec & Jan. */
+  weight: number;
+}
+
+/**
+ * How much of the peak window this person covered, and what that's worth.
+ *
+ * Days and weight come back together because they always have to agree: the
+ * number shown on the pay record is the number the share was worked out from.
+ */
+export function peakCover(leaves: PeakLeaveRow[], userId: string, month: Date): PeakCover {
   const w = peakLeaveWindowForMonth(month);
-  if (!w) return 0;
+  if (!w) return { windowDays: 0, daysOff: 0, daysCovered: 0, weight: 1 };
+
+  const windowDays = eachDayOfInterval({ start: parseISO(w.start), end: parseISO(w.end) }).length;
   const away = new Set<string>();
   for (const l of leaves) {
     if (l.user_id !== userId || l.status !== "approved") continue;
@@ -66,22 +89,60 @@ export function peakDaysOff(leaves: PeakLeaveRow[], userId: string, month: Date)
       away.add(format(d, "yyyy-MM-dd"));   // overlapping bookings count once
     }
   }
-  return away.size;
+
+  const daysOff = away.size;
+  const daysCovered = Math.max(0, windowDays - daysOff);
+  return { windowDays, daysOff, daysCovered, weight: Math.pow(daysCovered / windowDays, PEAK_SHARE_EXPONENT) };
+}
+
+export interface PotScore {
+  rank: Rank | null;
+  years: number;
+  /** Fraction of the month employed — joiners and leavers share pro-rata. */
+  worked: number;
+  /** Peak-window cover weight (1 outside December and January). */
+  peakShare: number;
+  /** The per-staff opt-out flag. */
+  flagEligible: boolean;
 }
 
 /**
- * The multiplier applied to this person's points for that month's pot: 1
- * outside December and January, 1 when they took no leave, and falling away
- * steeply from there.
+ * One person's points in one month's pot — the single place the split is
+ * decided, so the payroll preview and the recalculation can't drift apart.
+ *
+ * Most months the pot rewards standing: rank and tenure set the size of the
+ * share. December and January don't. Those two pots exist to pay for cover
+ * over Christmas and the new year, so they're settled on days worked and
+ * nothing else — a senior colleague who takes the fortnight off and a new
+ * starter who works every day of it are judged on the same question, which is
+ * who was actually here.
+ *
+ * Eligibility is untouched by that. A D rating or an opt-out still means no
+ * share, in December as in any other month; it's the size of the share that
+ * stops depending on rank, not the right to one.
  */
-export function peakShareWeight(leaves: PeakLeaveRow[], userId: string, month: Date): number {
-  const w = peakLeaveWindowForMonth(month);
-  if (!w) return 1;
-  const windowDays = eachDayOfInterval({ start: parseISO(w.start), end: parseISO(w.end) }).length;
-  const off = peakDaysOff(leaves, userId, month);
-  if (off === 0) return 1;
-  const covered = Math.max(0, (windowDays - off) / windowDays);
-  return Math.pow(covered, PEAK_SHARE_EXPONENT);
+export function monthlyBonusPoints(s: PotScore, month: Date): number {
+  if (!s.flagEligible || !bonusEligible(s.rank)) return 0;
+  return isPeakMonth(month)
+    ? s.worked * s.peakShare                    // Dec & Jan — days worked, nothing else
+    : bonusPoints(s.rank, s.years) * s.worked;  // every other month — rank and tenure
+}
+
+/**
+ * The line written onto the pay record. It has to explain the number without
+ * anyone opening the payroll page, so in December and January it names days
+ * rather than a rank that had no bearing on the amount.
+ */
+export function potRecordDescription(
+  monthLabel: string,
+  s: PotScore & { points: number; cover: PeakCover },
+  month: Date,
+): string {
+  const partMonth = s.worked < 1 ? ` · ${Math.round(s.worked * 100)}% of month` : "";
+  const basis = isPeakMonth(month)
+    ? `days worked · ${s.cover.daysCovered} of ${s.cover.windowDays} days covered`
+    : `${s.rank ?? "unrated"} · ${s.years}y`;
+  return `${POT_DESC_TAG} · ${monthLabel} (${basis} · ${s.points.toFixed(2)} pts${partMonth})`;
 }
 
 // GBP conversion fallbacks (must match StaffPayManager). rate = GBP per 1 unit.
@@ -90,8 +151,9 @@ const FALLBACK_RATES: Record<string, number> = {
 };
 
 /**
- * Recompute EVERY month that has a bonus pot from the CURRENT ratings, tenure
- * and eligibility, and rewrite each staff member's "Bonus pot" pay record. This
+ * Recompute EVERY month that has a bonus pot from the CURRENT ratings, tenure,
+ * peak-window cover and eligibility, and rewrite each staff member's "Bonus
+ * pot" pay record. This
  * is what makes a rating/eligibility change (e.g. to D) drop someone out of pots
  * that were already distributed and redistribute the amount to eligible staff.
  *
@@ -160,12 +222,13 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
       const worked = employedFraction(h.start_date, h.employment_end_date, d);
       const flagEligible = h.bonus_pot_eligible !== false;
       // Time away over Christmas/new year dilutes the share rather than ending it.
-      const peakShare = peakShareWeight(peakLeave, h.user_id, d);
+      const cover = peakCover(peakLeave, h.user_id, d);
+      const score = { rank: rating, years, worked, peakShare: cover.weight, flagEligible };
       return {
         userId: h.user_id as string,
         currency: (h.base_currency as string) || "GBP",
-        rank: rating, years, worked, peakShare,
-        points: flagEligible ? bonusPoints(rating, years) * worked * peakShare : 0,
+        ...score, cover,
+        points: monthlyBonusPoints(score, d),
       };
     }).filter((s) => s.worked > 0);
     const totalPoints = staff.reduce((a, s) => a + s.points, 0);
@@ -196,7 +259,7 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
         record_type: "bonus" as const,
         amount: Math.round(gbpToCurrency(shareGbp[i], s.currency) * 100) / 100,
         currency: s.currency,
-        description: `${POT_DESC_TAG} · ${mLabel} (${s.rank ?? "unrated"} · ${s.years}y · ${s.points.toFixed(2)} pts${s.worked < 1 ? ` · ${Math.round(s.worked * 100)}% of month` : ""}${s.peakShare < 1 ? ` · ${Math.round(s.peakShare * 100)}% peak share` : ""})`,
+        description: potRecordDescription(mLabel, s, d),
         pay_date: mEnd,
         pay_period_start: mStart,
         pay_period_end: mEnd,
