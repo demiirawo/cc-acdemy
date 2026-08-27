@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusTenureYears, employedFraction, bonusPoints, type Rank } from "./PerformanceRankBadge";
 import { cn } from "@/lib/utils";
-import { recalcAllBonusPots, POT_DESC_TAG, peakWorkedFraction, peakLeaveWindowForMonth } from "@/lib/bonusPot";
+import { recalcAllBonusPots, POT_DESC_TAG, peakShareWeight, peakLeaveWindowForMonth } from "@/lib/bonusPot";
 
 // Monthly bonus pot: each staff member's slice is proportional to
 // (1 + tenure years) × rank multiplier — see bonusPoints in PerformanceRankBadge.
@@ -1493,11 +1493,10 @@ export function StaffPayManager({ onSummaryComputed }: {
         worked: employedFraction(hrFull?.start_date, hrFull?.employment_end_date, selectedMonth),
         // Explicit per-staff opt-out flag (default eligible).
         flagEligible: hrFull?.bonus_pot_eligible !== false,
-        // Peak-cover rule: December and January shares scale with the days
-        // worked across 1 Dec – 31 Jan, so whoever covers Christmas takes
-        // more of it. Computed here so the preview below and the records
-        // written to payroll can never disagree about the split.
-        peakWorked: peakWorkedFraction(staffHolidays, s.userId, selectedMonth),
+        // Peak-cover rule: December and January shares lean steeply towards
+        // whoever covered 1 Dec – 31 Jan. Computed here so the preview below
+        // and the records written to payroll can never disagree on the split.
+        peakShare: peakShareWeight(staffHolidays, s.userId, selectedMonth),
       };
     }).filter(s => s.worked > 0);
   }, [payrollSummary, hrProfilesFull, selectedMonth, staffHolidays]);
@@ -1510,7 +1509,7 @@ export function StaffPayManager({ onSummaryComputed }: {
   // Live allocation of the current pot across staff (largest-remainder in GBP).
   const potAllocation = useMemo(() => {
     const potGbp = Math.max(0, parseFloat(bonusPotInput) || 0);
-    const withPoints = potStaff.map(s => ({ ...s, points: s.flagEligible ? bonusPoints(s.rank, s.years) * s.worked * s.peakWorked : 0 }));
+    const withPoints = potStaff.map(s => ({ ...s, points: s.flagEligible ? bonusPoints(s.rank, s.years) * s.worked * s.peakShare : 0 }));
     const totalPoints = withPoints.reduce((a, s) => a + s.points, 0);
     if (potGbp <= 0 || totalPoints <= 0) {
       return { potGbp, totalPoints, items: [] as Array<typeof withPoints[number] & { shareGbp: number; shareLocal: number }> };
@@ -1569,7 +1568,7 @@ export function StaffPayManager({ onSummaryComputed }: {
         .ilike("description", `${POT_DESC_TAG} · ${monthLabel}%`);
 
       if (amountGbp > 0 && potStaff.length > 0) {
-        const withPoints = potStaff.map(s => ({ ...s, points: s.flagEligible ? bonusPoints(s.rank, s.years) * s.worked * s.peakWorked : 0 }));
+        const withPoints = potStaff.map(s => ({ ...s, points: s.flagEligible ? bonusPoints(s.rank, s.years) * s.worked * s.peakShare : 0 }));
         const totalPoints = withPoints.reduce((a, s) => a + s.points, 0);
         if (totalPoints > 0) {
           const raw = withPoints.map(s => (amountGbp * s.points) / totalPoints);
@@ -1582,7 +1581,7 @@ export function StaffPayManager({ onSummaryComputed }: {
               record_type: "bonus" as const,
               amount: Math.round(gbpToCurrency(shareGbp[i], s.currency, ratesOverride) * 100) / 100,
               currency: s.currency,
-              description: `${POT_DESC_TAG} · ${monthLabel} (${s.rank ?? "unrated"} · ${s.years}y · ${s.points.toFixed(2)} pts${s.peakWorked < 1 ? ` · ${Math.round(s.peakWorked * 100)}% peak cover` : ""})`,
+              description: `${POT_DESC_TAG} · ${monthLabel} (${s.rank ?? "unrated"} · ${s.years}y · ${s.points.toFixed(2)} pts${s.peakShare < 1 ? ` · ${Math.round(s.peakShare * 100)}% peak share` : ""})`,
               pay_date: monthEndISO,
               pay_period_start: monthStartISO,
               pay_period_end: monthEndISO,
@@ -2435,7 +2434,7 @@ export function StaffPayManager({ onSummaryComputed }: {
               <Coins className="h-4 w-4 text-amber-500 flex-shrink-0" />
               <span className="text-sm font-medium">Bonus pot allocation</span>
               <span className="text-xs text-muted-foreground truncate">
-                £{potAllocation.potGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {potAllocation.items.filter(i => i.points > 0).length} eligible staff · £{(potAllocation.potGbp / potAllocation.totalPoints).toFixed(2)}/point · D & opted-out excluded{peakLeaveWindowForMonth(selectedMonth) ? " · shares scaled by cover over 1 Dec–31 Jan" : ""}
+                £{potAllocation.potGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {potAllocation.items.filter(i => i.points > 0).length} eligible staff · £{(potAllocation.potGbp / potAllocation.totalPoints).toFixed(2)}/point · D & opted-out excluded{peakLeaveWindowForMonth(selectedMonth) ? " · shares weighted to cover over 1 Dec–31 Jan" : ""}
               </span>
               {potBusy && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground flex-shrink-0" />}
             </div>

@@ -5,15 +5,15 @@ import { RANK_ORDER, bonusPoints, bonusTenureYears, employedFraction, type Rank 
 export const POT_DESC_TAG = "Bonus pot";
 
 /**
- * Peak-cover rule: the December and January pots are shared out in proportion
- * to how much of the peak period each person was actually available.
+ * Peak-cover rule: the December and January pots lean heavily towards whoever
+ * covers Christmas and the new year.
  *
- * Christmas and the new year are when cover is hardest to find, and the people
- * who work through it are carrying the service. So the pot leans towards them:
- * everyone still shares in it, but a share is scaled by the days worked across
- * 1 December – 31 January. Someone who takes no new leave over Christmas takes
- * the largest share; someone who takes a fortnight off still gets paid, just
- * less. It rewards continuity rather than punishing a holiday.
+ * Those weeks are when cover is hardest to find, and the people who work them
+ * are carrying the service. So a share of those two pots is scaled by how much
+ * of 1 December – 31 January the person was available — and scaled steeply, so
+ * that working through is worth markedly more than nearly working through.
+ * Everyone who takes leave still gets paid; they take a smaller slice, and the
+ * slice they leave behind goes to the people who covered for them.
  *
  * Scored per month against that month's half of the window, matching how the
  * pot itself is monthly: December leave dilutes the December share and leaves
@@ -32,6 +32,16 @@ export function peakLeaveWindowForMonth(month: Date): { start: string; end: stri
   }
 }
 
+/**
+ * How sharply the share falls away as days off mount up. The weight is the
+ * fraction of the window covered, raised to this power, so 1 is a flat
+ * pro-rata and higher numbers bend it towards the people who took least.
+ * At 3, a single day off costs about a tenth of the share, a week costs
+ * nearly half, and a fortnight costs three quarters. Raise it to lean harder;
+ * lower it to soften. Nothing else needs to change.
+ */
+export const PEAK_SHARE_EXPONENT = 3;
+
 export interface PeakLeaveRow {
   user_id: string;
   start_date: string;
@@ -39,17 +49,10 @@ export interface PeakLeaveRow {
   status: string;
 }
 
-/**
- * The fraction of that month's peak window this person was available for: 1
- * outside December and January, 1 when they took no leave, and downwards from
- * there. Overlapping leave records are counted once.
- */
-export function peakWorkedFraction(leaves: PeakLeaveRow[], userId: string, month: Date): number {
+/** Calendar days of approved leave falling inside that month's peak window. */
+export function peakDaysOff(leaves: PeakLeaveRow[], userId: string, month: Date): number {
   const w = peakLeaveWindowForMonth(month);
-  if (!w) return 1;
-  const windowDays = eachDayOfInterval({ start: parseISO(w.start), end: parseISO(w.end) })
-    .map(d => format(d, "yyyy-MM-dd"));
-
+  if (!w) return 0;
   const away = new Set<string>();
   for (const l of leaves) {
     if (l.user_id !== userId || l.status !== "approved") continue;
@@ -60,11 +63,25 @@ export function peakWorkedFraction(leaves: PeakLeaveRow[], userId: string, month
     const to = end < w.end ? end : w.end;
     if (from > to) continue;
     for (const d of eachDayOfInterval({ start: parseISO(from), end: parseISO(to) })) {
-      away.add(format(d, "yyyy-MM-dd"));
+      away.add(format(d, "yyyy-MM-dd"));   // overlapping bookings count once
     }
   }
-  if (away.size === 0) return 1;
-  return Math.max(0, (windowDays.length - away.size) / windowDays.length);
+  return away.size;
+}
+
+/**
+ * The multiplier applied to this person's points for that month's pot: 1
+ * outside December and January, 1 when they took no leave, and falling away
+ * steeply from there.
+ */
+export function peakShareWeight(leaves: PeakLeaveRow[], userId: string, month: Date): number {
+  const w = peakLeaveWindowForMonth(month);
+  if (!w) return 1;
+  const windowDays = eachDayOfInterval({ start: parseISO(w.start), end: parseISO(w.end) }).length;
+  const off = peakDaysOff(leaves, userId, month);
+  if (off === 0) return 1;
+  const covered = Math.max(0, (windowDays - off) / windowDays);
+  return Math.pow(covered, PEAK_SHARE_EXPONENT);
 }
 
 // GBP conversion fallbacks (must match StaffPayManager). rate = GBP per 1 unit.
@@ -143,12 +160,12 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
       const worked = employedFraction(h.start_date, h.employment_end_date, d);
       const flagEligible = h.bonus_pot_eligible !== false;
       // Time away over Christmas/new year dilutes the share rather than ending it.
-      const peakWorked = peakWorkedFraction(peakLeave, h.user_id, d);
+      const peakShare = peakShareWeight(peakLeave, h.user_id, d);
       return {
         userId: h.user_id as string,
         currency: (h.base_currency as string) || "GBP",
-        rank: rating, years, worked, peakWorked,
-        points: flagEligible ? bonusPoints(rating, years) * worked * peakWorked : 0,
+        rank: rating, years, worked, peakShare,
+        points: flagEligible ? bonusPoints(rating, years) * worked * peakShare : 0,
       };
     }).filter((s) => s.worked > 0);
     const totalPoints = staff.reduce((a, s) => a + s.points, 0);
@@ -179,7 +196,7 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
         record_type: "bonus" as const,
         amount: Math.round(gbpToCurrency(shareGbp[i], s.currency) * 100) / 100,
         currency: s.currency,
-        description: `${POT_DESC_TAG} · ${mLabel} (${s.rank ?? "unrated"} · ${s.years}y · ${s.points.toFixed(2)} pts${s.worked < 1 ? ` · ${Math.round(s.worked * 100)}% of month` : ""}${s.peakWorked < 1 ? ` · ${Math.round(s.peakWorked * 100)}% peak cover` : ""})`,
+        description: `${POT_DESC_TAG} · ${mLabel} (${s.rank ?? "unrated"} · ${s.years}y · ${s.points.toFixed(2)} pts${s.worked < 1 ? ` · ${Math.round(s.worked * 100)}% of month` : ""}${s.peakShare < 1 ? ` · ${Math.round(s.peakShare * 100)}% peak share` : ""})`,
         pay_date: mEnd,
         pay_period_start: mStart,
         pay_period_end: mEnd,
