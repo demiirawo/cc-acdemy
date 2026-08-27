@@ -38,6 +38,16 @@ const processorOf = (software: string | null): "zoho" | "freeagent" | "other" =>
   return "other";
 };
 
+// What the client actually buys. Most take admin + compliance; a newer set
+// takes CCFORMS on its own, and the two earn their money differently enough
+// that the finance page has to be able to read them apart.
+type ServiceKey = "admin_compliance" | "ccforms";
+const serviceOf = (v: string | null): ServiceKey => (v === "ccforms" ? "ccforms" : "admin_compliance");
+const SERVICE_META: Record<ServiceKey, { label: string; short: string; cls: string; bar: string }> = {
+  admin_compliance: { label: "ADMIN + COMPLIANCE", short: "Admin + Compliance", cls: "border-violet-300 text-violet-600 bg-violet-50", bar: "bg-violet-400" },
+  ccforms: { label: "CCFORMS", short: "CCFORMS", cls: "border-sky-300 text-sky-600 bg-sky-50", bar: "bg-sky-400" },
+};
+
 // Sales stage — only "active" clients count toward every revenue figure below.
 const SALES_STAGES = [
   { value: "active", label: "Active", cls: "border-emerald-300 text-emerald-600" },
@@ -46,7 +56,7 @@ const SALES_STAGES = [
 ];
 const stageMeta = (v: string | null) => SALES_STAGES.find(s => s.value === (v || "active")) ?? SALES_STAGES[0];
 
-interface ClientRow { id: string; name: string; mrr: number | null; software: string | null; status: string | null; contract_start_date: string | null; contract_end_date: string | null; }
+interface ClientRow { id: string; name: string; mrr: number | null; software: string | null; status: string | null; contract_start_date: string | null; contract_end_date: string | null; service_line: string | null; }
 interface PriceChange { id: string; client_id: string; previous_mrr: number | null; new_mrr: number; effective_date: string; reason: string | null; }
 interface ClientChange { id: string; client_id: string; field: "status" | "contract_end_date"; previous_value: string | null; new_value: string | null; effective_date: string; reason: string | null; }
 interface StaffPay { user_id: string; base_salary: number; base_currency: string; }
@@ -164,7 +174,7 @@ export function FinanceSection() {
     const nextM = new Date(fy, fm, 1);
     const monthEnd = `${nextM.getFullYear()}-${String(nextM.getMonth() + 1).padStart(2, "0")}-01`;
     const [cl, sp, hrp, pr, asg, rt, ex, st, pr2, pat, inv, fa, pc, ccl, pmt] = await Promise.all([
-      supabase.from("clients").select("id, name, mrr, software, status, contract_start_date, contract_end_date"),
+      supabase.from("clients").select("id, name, mrr, software, status, contract_start_date, contract_end_date, service_line"),
       (supabase as any).from("staff_salaries").select("user_id, base_salary, base_currency"),
       supabase.from("hr_profiles").select("user_id, pay_frequency, employment_end_date, start_date, created_at"),
       supabase.from("profiles").select("user_id, display_name, email"),
@@ -425,7 +435,7 @@ export function FinanceSection() {
       const share = isActive && priced && revenue > 0 ? (netRevenue as number) / revenue : 0;
       const profit = isActive && priced ? (netRevenue as number) - share * totalCost : null;
       return {
-        ...c, mrr: mrrGross, netRevenue, processor: processorOf(c.software), profit,
+        ...c, mrr: mrrGross, netRevenue, processor: processorOf(c.software), service: serviceOf(c.service_line), profit,
         margin: isActive && priced && (netRevenue as number) > 0 ? (profit as number) / (netRevenue as number) : null,
       };
     }).sort((a, b) =>
@@ -1319,7 +1329,7 @@ function clientTenure(contractStart: string | null, lastUplift: string | null) {
   return { label, upliftDue: monthsSince >= 12 };
 }
 
-type ClientTableRow = ClientRow & { mrr: number; netRevenue: number | null; processor: "zoho" | "freeagent" | "other"; profit: number | null; margin: number | null };
+type ClientTableRow = ClientRow & { mrr: number; netRevenue: number | null; processor: "zoho" | "freeagent" | "other"; service: ServiceKey; profit: number | null; margin: number | null };
 
 function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemovePriceChange, onFieldChange, priceChanges, changeLog }: {
   rows: ClientTableRow[];
@@ -1360,6 +1370,7 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemov
   // when it took effect, which is what revenue needs — so both go through a
   // dialog rather than an inline control.
   const [billingEdit, setBillingEdit] = useState<ClientTableRow | null>(null);
+  const [serviceEdit, setServiceEdit] = useState<ClientTableRow | null>(null);
   const [changeEdit, setChangeEdit] = useState<{ client: ClientTableRow; field: "status" | "contract_end_date" } | null>(null);
   const [changeValue, setChangeValue] = useState("");
   const [changeDate, setChangeDate] = useState("");
@@ -1465,384 +1476,455 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemov
     );
   };
 
-  // Inactive clients group together regardless of who used to bill them, so the
-  // Zoho and FreeAgent sums read as live books rather than history.
+  // Two ways to read the same book: who invoices them, or what they buy. The
+  // second only started mattering once some clients took CCFORMS on its own —
+  // their revenue needs reading apart from the admin + compliance book rather
+  // than summed into one figure with it.
+  const [groupBy, setGroupBy] = useState<"billing" | "service">("billing");
+
+  // Inactive clients group together regardless of who used to bill them or what
+  // they used to buy, so the live sums read as a live book rather than history.
   const isChurned = (r: ClientTableRow) => (r.status ?? "active") === "inactive";
-  const groups = (["zoho", "freeagent", "other", "inactive"] as const)
+  const groupKeys = groupBy === "billing"
+    ? (["zoho", "freeagent", "other", "inactive"] as const)
+    : (["admin_compliance", "ccforms", "inactive"] as const);
+  const groups = groupKeys
     .map(key => ({
-      key,
-      meta: PROCESSOR_META[key],
-      items: sortRows(rows.filter(r => (key === "inactive" ? isChurned(r) : !isChurned(r) && r.processor === key))),
+      key: key as string,
+      meta: key === "inactive" ? PROCESSOR_META.inactive
+        : groupBy === "billing" ? PROCESSOR_META[key] : SERVICE_META[key as ServiceKey],
+      items: sortRows(rows.filter(r => (
+        key === "inactive" ? isChurned(r)
+          : !isChurned(r) && (groupBy === "billing" ? r.processor === key : r.service === key)
+      ))),
     }))
     .filter(g => g.items.length > 0);
 
   return (
-    <div className="rounded-lg border overflow-hidden bg-card">
-      <table className="w-full text-sm border-collapse">
-        <thead>
-          <tr className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
-            {sortHead("name", "Client")}
-            {sortHead("status", "Sales Stage", "w-[150px]")}
-            <th className="text-left font-medium px-4 py-2.5 w-[110px]">Billing</th>
-            {sortHead("contract_start_date", "Contract start", "w-[120px]")}
-            {sortHead("tenure", "Tenure", "w-[150px]")}
-            {sortHead("contract_end_date", "Contract end", "w-[120px]")}
-            {sortHead("mrr", "MRR (gross)", "w-[130px]", "right")}
-            {sortHead("profit", "Est. profit", "w-[130px]", "right")}
-            <th className="text-right font-medium px-4 py-2.5 w-[90px]">Margin</th>
-          </tr>
-        </thead>
-        {groups.map(g => {
-          const isCollapsed = collapsed[g.key];
-          // Group sum counts Active clients only, so totals keep matching the
-          // revenue figures even with Pending/Inactive clients listed below.
-          const sum = g.items.filter(c => (c.status ?? "active") === "active").reduce((a, c) => a + c.mrr, 0);
-          return (
-            <tbody key={g.key}>
-              <tr
-                className="cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors border-b"
-                onClick={() => setCollapsed(prev => ({ ...prev, [g.key]: !isCollapsed }))}
-              >
-                <td colSpan={9} className="px-4 py-2">
-                  <div className="flex items-center gap-2">
-                    {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
-                    <span className={cn("h-3 w-1 rounded-full", g.meta.bar)} />
-                    <Badge variant="outline" className={cn("text-[10px] font-semibold", g.meta.cls)}>{g.meta.label}</Badge>
-                    <span className="text-xs text-muted-foreground">{g.items.length}</span>
-                    <span className="ml-auto text-xs font-semibold text-foreground">Sum {gbp2(sum)}</span>
-                  </div>
-                </td>
-              </tr>
-              {!isCollapsed && g.items.map(c => {
-                const st = stageMeta(c.status);
-                const isActive = (c.status ?? "active") === "active";
-                return (
-                  <tr key={c.id} className={cn("border-b last:border-0 hover:bg-muted/20 transition-colors", !isActive && "opacity-60")}>
-                    <td className="px-4 py-3 font-medium">
-                      <div className="flex items-center gap-2">
-                        <span className={cn("h-4 w-1 rounded-full flex-shrink-0", isActive ? g.meta.bar : "bg-muted-foreground/30")} />
-                        {c.name}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge
-                        variant="outline"
-                        className={cn("text-[10px] cursor-pointer", stageMeta(c.status).cls)}
-                        onClick={() => openChangeDialog(c, "status")}
-                        title="Change sales stage — records when it took effect"
-                      >{stageMeta(c.status).label}</Badge>
-                      {(() => {
-                        const last = lastChangeOf(c.id, "status");
-                        if (!last) return null;
-                        return (
-                          <div className="text-[10px] text-muted-foreground mt-0.5">
-                            since {new Date(last.effective_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "2-digit" })}
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge
-                        variant="outline"
-                        className={cn("text-[10px] cursor-pointer", PROCESSOR_META[c.processor].cls)}
-                        onClick={() => setBillingEdit(c)}
-                        title="Which system invoices this client"
-                      >{c.processor === "other" ? "Set billing" : PROCESSOR_META[c.processor].label}</Badge>
-                    </td>
-                    <td
-                      className="px-4 py-3 text-muted-foreground cursor-text"
-                      onDoubleClick={() => setEdit({ id: c.id, field: "contract_start_date" })}
-                      title="Double-click to edit"
-                    >
-                      {edit?.id === c.id && edit.field === "contract_start_date" ? (
-                        <Input
-                          autoFocus type="date" defaultValue={c.contract_start_date ?? ""} className="h-8"
-                          onBlur={e => { onPatch(c.id, { contract_start_date: e.target.value || null }); setEdit(null); }}
-                          onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEdit(null); }}
-                        />
-                      ) : c.contract_start_date ? new Date(c.contract_start_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      {(() => {
-                        const t = clientTenure(c.contract_start_date, lastUpliftOf(c.id));
-                        if (!t) return <span className="text-muted-foreground">—</span>;
-                        return (
-                          <div className="flex items-center gap-2">
-                            <span className="text-muted-foreground">{t.label}</span>
-                            {t.upliftDue && (
-                              <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600 whitespace-nowrap">
-                                Uplift due
-                              </Badge>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td
-                      className="px-4 py-3 text-muted-foreground cursor-pointer hover:text-primary"
-                      onClick={() => openChangeDialog(c, "contract_end_date")}
-                      title="Set or change the contract end date — recorded with a reason"
-                    >
-                      {c.contract_end_date ? new Date(c.contract_end_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—"}
-                    </td>
-                    <td
-                      className="px-4 py-3 text-right tabular-nums cursor-pointer hover:text-primary"
-                      onClick={() => openPriceDialog(c)}
-                      title="Change fee — records when it takes effect"
-                    >
-                      {c.mrr > 0 ? gbp2(c.mrr) : (
-                        <span className="text-amber-600 text-xs font-medium">No price set</span>
-                      )}
-                      {/* Only offered when there's something to undo. */}
-                      {priceChanges.some(pc => pc.client_id === c.id) && !pendingOf(c.id) && (
-                        <button type="button" onClick={e => { e.stopPropagation(); setHistoryFor(c); }}
-                          className="block ml-auto text-[10px] text-muted-foreground hover:text-primary hover:underline">
-                          fee history
-                        </button>
-                      )}
-                      {(() => {
-                        const p = pendingOf(c.id);
-                        if (!p) return null;
-                        return (
-                          <button
-                            type="button"
-                            onClick={e => { e.stopPropagation(); setHistoryFor(c); }}
-                            title="Scheduled fee change — click to cancel it"
-                            className={cn("text-[10px] font-medium hover:underline",
-                              Number(p.new_mrr) > Number(c.mrr) ? "text-emerald-600" : "text-amber-600")}
-                          >
-                            → {gbp2(p.new_mrr)} on {new Date(p.effective_date).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Group by</span>
+        {([
+          { value: "billing", label: "Billing system" },
+          { value: "service", label: "Service line" },
+        ] as const).map(opt => (
+          <Button
+            key={opt.value}
+            size="sm"
+            variant={groupBy === opt.value ? "default" : "outline"}
+            className="h-7 text-xs"
+            onClick={() => setGroupBy(opt.value)}
+          >
+            {opt.label}
+          </Button>
+        ))}
+      </div>
+
+      <div className="rounded-lg border overflow-x-auto bg-card">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
+              {sortHead("name", "Client")}
+              {sortHead("status", "Sales Stage", "w-[150px]")}
+              <th className="text-left font-medium px-4 py-2.5 w-[110px]">Billing</th>
+              <th className="text-left font-medium px-4 py-2.5 w-[130px]">Service</th>
+              {sortHead("contract_start_date", "Contract start", "w-[120px]")}
+              {sortHead("tenure", "Tenure", "w-[150px]")}
+              {sortHead("contract_end_date", "Contract end", "w-[120px]")}
+              {sortHead("mrr", "MRR (gross)", "w-[130px]", "right")}
+              {sortHead("profit", "Est. profit", "w-[130px]", "right")}
+              <th className="text-right font-medium px-4 py-2.5 w-[90px]">Margin</th>
+            </tr>
+          </thead>
+          {groups.map(g => {
+            const isCollapsed = collapsed[g.key];
+            // Group sum counts Active clients only, so totals keep matching the
+            // revenue figures even with Pending/Inactive clients listed below.
+            const sum = g.items.filter(c => (c.status ?? "active") === "active").reduce((a, c) => a + c.mrr, 0);
+            return (
+              <tbody key={g.key}>
+                <tr
+                  className="cursor-pointer bg-muted/30 hover:bg-muted/50 transition-colors border-b"
+                  onClick={() => setCollapsed(prev => ({ ...prev, [g.key]: !isCollapsed }))}
+                >
+                  <td colSpan={10} className="px-4 py-2">
+                    <div className="flex items-center gap-2">
+                      {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+                      <span className={cn("h-3 w-1 rounded-full", g.meta.bar)} />
+                      <Badge variant="outline" className={cn("text-[10px] font-semibold", g.meta.cls)}>{g.meta.label}</Badge>
+                      <span className="text-xs text-muted-foreground">{g.items.length}</span>
+                      <span className="ml-auto text-xs font-semibold text-foreground">Sum {gbp2(sum)}</span>
+                    </div>
+                  </td>
+                </tr>
+                {!isCollapsed && g.items.map(c => {
+                  const st = stageMeta(c.status);
+                  const isActive = (c.status ?? "active") === "active";
+                  return (
+                    <tr key={c.id} className={cn("border-b last:border-0 hover:bg-muted/20 transition-colors", !isActive && "opacity-60")}>
+                      <td className="px-4 py-3 font-medium">
+                        <div className="flex items-center gap-2">
+                          <span className={cn("h-4 w-1 rounded-full flex-shrink-0", isActive ? g.meta.bar : "bg-muted-foreground/30")} />
+                          {c.name}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge
+                          variant="outline"
+                          className={cn("text-[10px] cursor-pointer", stageMeta(c.status).cls)}
+                          onClick={() => openChangeDialog(c, "status")}
+                          title="Change sales stage — records when it took effect"
+                        >{stageMeta(c.status).label}</Badge>
+                        {(() => {
+                          const last = lastChangeOf(c.id, "status");
+                          if (!last) return null;
+                          return (
+                            <div className="text-[10px] text-muted-foreground mt-0.5">
+                              since {new Date(last.effective_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "2-digit" })}
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge
+                          variant="outline"
+                          className={cn("text-[10px] cursor-pointer", PROCESSOR_META[c.processor].cls)}
+                          onClick={() => setBillingEdit(c)}
+                          title="Which system invoices this client"
+                        >{c.processor === "other" ? "Set billing" : PROCESSOR_META[c.processor].label}</Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge
+                          variant="outline"
+                          className={cn("text-[10px] cursor-pointer whitespace-nowrap", SERVICE_META[c.service].cls)}
+                          onClick={() => setServiceEdit(c)}
+                          title="What this client buys"
+                        >{SERVICE_META[c.service].short}</Badge>
+                      </td>
+                      <td
+                        className="px-4 py-3 text-muted-foreground cursor-text"
+                        onDoubleClick={() => setEdit({ id: c.id, field: "contract_start_date" })}
+                        title="Double-click to edit"
+                      >
+                        {edit?.id === c.id && edit.field === "contract_start_date" ? (
+                          <Input
+                            autoFocus type="date" defaultValue={c.contract_start_date ?? ""} className="h-8"
+                            onBlur={e => { onPatch(c.id, { contract_start_date: e.target.value || null }); setEdit(null); }}
+                            onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") setEdit(null); }}
+                          />
+                        ) : c.contract_start_date ? new Date(c.contract_start_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        {(() => {
+                          const t = clientTenure(c.contract_start_date, lastUpliftOf(c.id));
+                          if (!t) return <span className="text-muted-foreground">—</span>;
+                          return (
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground">{t.label}</span>
+                              {t.upliftDue && (
+                                <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600 whitespace-nowrap">
+                                  Uplift due
+                                </Badge>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      <td
+                        className="px-4 py-3 text-muted-foreground cursor-pointer hover:text-primary"
+                        onClick={() => openChangeDialog(c, "contract_end_date")}
+                        title="Set or change the contract end date — recorded with a reason"
+                      >
+                        {c.contract_end_date ? new Date(c.contract_end_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "—"}
+                      </td>
+                      <td
+                        className="px-4 py-3 text-right tabular-nums cursor-pointer hover:text-primary"
+                        onClick={() => openPriceDialog(c)}
+                        title="Change fee — records when it takes effect"
+                      >
+                        {c.mrr > 0 ? gbp2(c.mrr) : (
+                          <span className="text-amber-600 text-xs font-medium">No price set</span>
+                        )}
+                        {/* Only offered when there's something to undo. */}
+                        {priceChanges.some(pc => pc.client_id === c.id) && !pendingOf(c.id) && (
+                          <button type="button" onClick={e => { e.stopPropagation(); setHistoryFor(c); }}
+                            className="block ml-auto text-[10px] text-muted-foreground hover:text-primary hover:underline">
+                            fee history
                           </button>
-                        );
-                      })()}
-                    </td>
-                    <td className={cn("px-4 py-3 text-right tabular-nums font-medium", c.profit == null ? "text-muted-foreground/60" : c.profit >= 0 ? "text-emerald-600" : "text-red-600")}>{c.profit == null ? "—" : gbp2(c.profit)}</td>
-                    <td className={cn("px-4 py-3 text-right tabular-nums", c.margin == null ? "text-muted-foreground/60" : c.margin >= 0 ? "text-muted-foreground" : "text-red-600")}>{c.margin == null ? "—" : pct(c.margin)}</td>
-                  </tr>
+                        )}
+                        {(() => {
+                          const p = pendingOf(c.id);
+                          if (!p) return null;
+                          return (
+                            <button
+                              type="button"
+                              onClick={e => { e.stopPropagation(); setHistoryFor(c); }}
+                              title="Scheduled fee change — click to cancel it"
+                              className={cn("text-[10px] font-medium hover:underline",
+                                Number(p.new_mrr) > Number(c.mrr) ? "text-emerald-600" : "text-amber-600")}
+                            >
+                              → {gbp2(p.new_mrr)} on {new Date(p.effective_date).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+                            </button>
+                          );
+                        })()}
+                      </td>
+                      <td className={cn("px-4 py-3 text-right tabular-nums font-medium", c.profit == null ? "text-muted-foreground/60" : c.profit >= 0 ? "text-emerald-600" : "text-red-600")}>{c.profit == null ? "—" : gbp2(c.profit)}</td>
+                      <td className={cn("px-4 py-3 text-right tabular-nums", c.margin == null ? "text-muted-foreground/60" : c.margin >= 0 ? "text-muted-foreground" : "text-red-600")}>{c.margin == null ? "—" : pct(c.margin)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            );
+          })}
+        </table>
+        <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
+          Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the month it falls in, in both the history and the projection. Inactive clients are grouped separately whichever way you group. Use “Group by” to read the book by billing system or by service line — each group sum is that group’s active monthly revenue. Click a fee to set or change it — an existing fee asks when the new price takes effect and is logged on the chart; a first fee is just recorded. Click a scheduled change or "fee history" to cancel or undo one. Click the billing pill to say whether Zoho or FreeAgent invoices them · click the service pill to say whether they buy admin + compliance or CCFORMS · double-click either contract date to edit · click the stage pill to change it · click a group header to collapse it.
+        </p>
+
+        {/* Fee history — where a scheduled change is cancelled and an applied one
+            is undone. The chart reads this log, so removing an entry that is
+            currently setting the price has to move the live fee back with it,
+            otherwise the table and the chart would disagree. */}
+        <Dialog open={!!historyFor} onOpenChange={o => { if (!o && !removingChange) setHistoryFor(null); }}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Fee history — {historyFor?.name}</DialogTitle>
+              <DialogDescription>
+                Cancel a change that hasn't happened yet, or undo one that has.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 py-1 max-h-[50vh] overflow-y-auto">
+              {(() => {
+                if (!historyFor) return null;
+                const mine = priceChanges
+                  .filter(pc => pc.client_id === historyFor.id)
+                  .sort((a, b) => b.effective_date.localeCompare(a.effective_date));
+                if (mine.length === 0) {
+                  return <p className="text-sm text-muted-foreground">No fee changes recorded.</p>;
+                }
+                // The one setting the price right now: the most recent that has
+                // taken effect. Undoing it is what has to move the live fee.
+                const inForce = mine.filter(pc => pc.effective_date <= today)[0] ?? null;
+                return mine.map(pc => {
+                  const scheduled = pc.effective_date > today;
+                  const isInForce = inForce?.id === pc.id;
+                  const up = Number(pc.new_mrr) > Number(pc.previous_mrr ?? 0);
+                  return (
+                    <div key={pc.id} className="flex items-start gap-3 rounded-lg border px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium tabular-nums">
+                            {gbp2(Number(pc.previous_mrr ?? 0))} → {gbp2(Number(pc.new_mrr))}
+                          </span>
+                          <Badge variant="outline" className={cn("text-[10px]",
+                            up ? "border-emerald-300 text-emerald-600" : "border-amber-300 text-amber-600")}>
+                            {up ? "increase" : "decrease"}
+                          </Badge>
+                          {scheduled && (
+                            <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600">scheduled</Badge>
+                          )}
+                          {isInForce && (
+                            <Badge variant="outline" className="text-[10px]">currently in force</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {scheduled ? "Takes effect " : "Took effect "}
+                          {new Date(pc.effective_date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}
+                          {pc.reason ? ` · ${pc.reason}` : ""}
+                        </p>
+                        {isInForce && (
+                          <p className="text-[11px] text-amber-600 mt-1">
+                            Undoing this puts the fee back to {gbp2(Number(pc.previous_mrr ?? 0))}/mo.
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        variant="outline" size="sm" className="flex-shrink-0"
+                        disabled={removingChange === pc.id}
+                        onClick={async () => {
+                          setRemovingChange(pc.id);
+                          await onRemovePriceChange(historyFor, pc, isInForce);
+                          setRemovingChange(null);
+                          setHistoryFor(null);
+                        }}
+                      >
+                        {removingChange === pc.id ? "Removing…" : scheduled ? "Cancel" : "Undo"}
+                      </Button>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Which system invoices this client. A plain attribute, not a dated change:
+            moving a client between Zoho and FreeAgent doesn't alter what they pay. */}
+        <Dialog open={!!billingEdit} onOpenChange={o => { if (!o) setBillingEdit(null); }}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Billing system — {billingEdit?.name}</DialogTitle>
+              <DialogDescription>Which system raises this client's invoices.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-2 py-1">
+              {[
+                { value: "Zoho", label: "Zoho" },
+                { value: "FreeAgent", label: "FreeAgent" },
+                { value: null, label: "Not set" },
+              ].map(opt => {
+                const current = processorOf(billingEdit?.software ?? null);
+                const selected = opt.value ? processorOf(opt.value) === current : current === "other";
+                return (
+                  <Button
+                    key={opt.label}
+                    variant={selected ? "default" : "outline"}
+                    className="justify-start"
+                    onClick={() => {
+                      if (billingEdit) onPatch(billingEdit.id, { software: opt.value } as Partial<ClientRow>);
+                      setBillingEdit(null);
+                    }}
+                  >
+                    {opt.label}{selected && " ✓"}
+                  </Button>
                 );
               })}
-            </tbody>
-          );
-        })}
-      </table>
-      <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
-        Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the month it falls in, in both the history and the projection. Inactive clients are grouped separately from the billing systems. Click a fee to set or change it — an existing fee asks when the new price takes effect and is logged on the chart; a first fee is just recorded. Click a scheduled change or "fee history" to cancel or undo one. Click the billing pill to say whether Zoho or FreeAgent invoices them · double-click either contract date to edit · click the stage pill to change it · click a group header to collapse it.
-      </p>
+            </div>
+          </DialogContent>
+        </Dialog>
 
-      {/* Fee history — where a scheduled change is cancelled and an applied one
-          is undone. The chart reads this log, so removing an entry that is
-          currently setting the price has to move the live fee back with it,
-          otherwise the table and the chart would disagree. */}
-      <Dialog open={!!historyFor} onOpenChange={o => { if (!o && !removingChange) setHistoryFor(null); }}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Fee history — {historyFor?.name}</DialogTitle>
-            <DialogDescription>
-              Cancel a change that hasn't happened yet, or undo one that has.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2 py-1 max-h-[50vh] overflow-y-auto">
-            {(() => {
-              if (!historyFor) return null;
-              const mine = priceChanges
-                .filter(pc => pc.client_id === historyFor.id)
-                .sort((a, b) => b.effective_date.localeCompare(a.effective_date));
-              if (mine.length === 0) {
-                return <p className="text-sm text-muted-foreground">No fee changes recorded.</p>;
-              }
-              // The one setting the price right now: the most recent that has
-              // taken effect. Undoing it is what has to move the live fee.
-              const inForce = mine.filter(pc => pc.effective_date <= today)[0] ?? null;
-              return mine.map(pc => {
-                const scheduled = pc.effective_date > today;
-                const isInForce = inForce?.id === pc.id;
-                const up = Number(pc.new_mrr) > Number(pc.previous_mrr ?? 0);
+        {/* What the client buys. Like billing, a plain attribute rather than a dated
+            change: moving a client between service lines doesn't alter what they pay. */}
+        <Dialog open={!!serviceEdit} onOpenChange={o => { if (!o) setServiceEdit(null); }}>
+          <DialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Service line — {serviceEdit?.name}</DialogTitle>
+              <DialogDescription>What this client buys from us. Their revenue groups under it on this page.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-2 py-1">
+              {(["admin_compliance", "ccforms"] as const).map(key => {
+                const selected = serviceOf(serviceEdit?.service_line ?? null) === key;
                 return (
-                  <div key={pc.id} className="flex items-start gap-3 rounded-lg border px-3 py-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-medium tabular-nums">
-                          {gbp2(Number(pc.previous_mrr ?? 0))} → {gbp2(Number(pc.new_mrr))}
-                        </span>
-                        <Badge variant="outline" className={cn("text-[10px]",
-                          up ? "border-emerald-300 text-emerald-600" : "border-amber-300 text-amber-600")}>
-                          {up ? "increase" : "decrease"}
-                        </Badge>
-                        {scheduled && (
-                          <Badge variant="outline" className="text-[10px] border-blue-300 text-blue-600">scheduled</Badge>
-                        )}
-                        {isInForce && (
-                          <Badge variant="outline" className="text-[10px]">currently in force</Badge>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {scheduled ? "Takes effect " : "Took effect "}
-                        {new Date(pc.effective_date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}
-                        {pc.reason ? ` · ${pc.reason}` : ""}
-                      </p>
-                      {isInForce && (
-                        <p className="text-[11px] text-amber-600 mt-1">
-                          Undoing this puts the fee back to {gbp2(Number(pc.previous_mrr ?? 0))}/mo.
-                        </p>
-                      )}
-                    </div>
-                    <Button
-                      variant="outline" size="sm" className="flex-shrink-0"
-                      disabled={removingChange === pc.id}
-                      onClick={async () => {
-                        setRemovingChange(pc.id);
-                        await onRemovePriceChange(historyFor, pc, isInForce);
-                        setRemovingChange(null);
-                        setHistoryFor(null);
-                      }}
-                    >
-                      {removingChange === pc.id ? "Removing…" : scheduled ? "Cancel" : "Undo"}
-                    </Button>
-                  </div>
+                  <Button
+                    key={key}
+                    variant={selected ? "default" : "outline"}
+                    className="justify-start"
+                    onClick={() => {
+                      if (serviceEdit) onPatch(serviceEdit.id, { service_line: key } as Partial<ClientRow>);
+                      setServiceEdit(null);
+                    }}
+                  >
+                    {SERVICE_META[key].short}{selected && " ✓"}
+                  </Button>
                 );
-              });
-            })()}
-          </div>
-        </DialogContent>
-      </Dialog>
+              })}
+            </div>
+          </DialogContent>
+        </Dialog>
 
-      {/* Which system invoices this client. A plain attribute, not a dated change:
-          moving a client between Zoho and FreeAgent doesn't alter what they pay. */}
-      <Dialog open={!!billingEdit} onOpenChange={o => { if (!o) setBillingEdit(null); }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Billing system — {billingEdit?.name}</DialogTitle>
-            <DialogDescription>Which system raises this client's invoices.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-2 py-1">
-            {[
-              { value: "Zoho", label: "Zoho" },
-              { value: "FreeAgent", label: "FreeAgent" },
-              { value: null, label: "Not set" },
-            ].map(opt => {
-              const current = processorOf(billingEdit?.software ?? null);
-              const selected = opt.value ? processorOf(opt.value) === current : current === "other";
-              return (
-                <Button
-                  key={opt.label}
-                  variant={selected ? "default" : "outline"}
-                  className="justify-start"
-                  onClick={() => {
-                    if (billingEdit) onPatch(billingEdit.id, { software: opt.value } as Partial<ClientRow>);
-                    setBillingEdit(null);
-                  }}
-                >
-                  {opt.label}{selected && " ✓"}
-                </Button>
-              );
-            })}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Stage / contract-end change — the effective date is the point of it. */}
-      <Dialog open={!!changeEdit} onOpenChange={o => { if (!o && !savingChange) setChangeEdit(null); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {changeEdit?.field === "status" ? "Change sales stage" : "Contract end date"} — {changeEdit?.client.name}
-            </DialogTitle>
-            <DialogDescription>
-              {changeEdit?.field === "status"
-                ? "Moving a client out of Active stops them counting toward revenue from the date you set — not from today."
-                : "Revenue stops counting this client from the month their contract lapses."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-1">
-            {changeEdit?.field === "status" ? (
+        {/* Stage / contract-end change — the effective date is the point of it. */}
+        <Dialog open={!!changeEdit} onOpenChange={o => { if (!o && !savingChange) setChangeEdit(null); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {changeEdit?.field === "status" ? "Change sales stage" : "Contract end date"} — {changeEdit?.client.name}
+              </DialogTitle>
+              <DialogDescription>
+                {changeEdit?.field === "status"
+                  ? "Moving a client out of Active stops them counting toward revenue from the date you set — not from today."
+                  : "Revenue stops counting this client from the month their contract lapses."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-1">
+              {changeEdit?.field === "status" ? (
+                <div className="space-y-1.5">
+                  <Label>New stage</Label>
+                  <Select value={changeValue} onValueChange={setChangeValue}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>{SALES_STAGES.map(st => <SelectItem key={st.value} value={st.value}>{st.label}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+              ) : null}
               <div className="space-y-1.5">
-                <Label>New stage</Label>
-                <Select value={changeValue} onValueChange={setChangeValue}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>{SALES_STAGES.map(st => <SelectItem key={st.value} value={st.value}>{st.label}</SelectItem>)}</SelectContent>
-                </Select>
+                <Label htmlFor="change-date">
+                  {changeEdit?.field === "status" ? "Effective from" : "Contract ends"}
+                </Label>
+                <Input id="change-date" type="date"
+                  value={changeEdit?.field === "contract_end_date" ? changeValue : changeDate}
+                  onChange={e => (changeEdit?.field === "contract_end_date" ? setChangeValue(e.target.value) : setChangeDate(e.target.value))} />
+                {changeEdit?.field === "contract_end_date" && (
+                  <button type="button" onClick={() => setChangeValue("")}
+                    className="text-[11px] text-primary hover:underline">Clear end date (contract continues)</button>
+                )}
               </div>
-            ) : null}
-            <div className="space-y-1.5">
-              <Label htmlFor="change-date">
-                {changeEdit?.field === "status" ? "Effective from" : "Contract ends"}
-              </Label>
-              <Input id="change-date" type="date"
-                value={changeEdit?.field === "contract_end_date" ? changeValue : changeDate}
-                onChange={e => (changeEdit?.field === "contract_end_date" ? setChangeValue(e.target.value) : setChangeDate(e.target.value))} />
-              {changeEdit?.field === "contract_end_date" && (
-                <button type="button" onClick={() => setChangeValue("")}
-                  className="text-[11px] text-primary hover:underline">Clear end date (contract continues)</button>
+              <div className="space-y-1.5">
+                <Label htmlFor="change-reason">Reason</Label>
+                <Textarea id="change-reason" rows={2} value={changeReason} onChange={e => setChangeReason(e.target.value)}
+                  placeholder="e.g. gave notice, went in-house, agency closed, moved to annual contract" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setChangeEdit(null)} disabled={savingChange}>Cancel</Button>
+              <Button onClick={saveChange} disabled={savingChange}>{savingChange ? "Saving…" : "Save change"}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Fee change — captures the effective date, so a rise agreed today but
+            starting next month is projected from next month, not applied to history. */}
+        <Dialog open={!!priceEdit} onOpenChange={o => { if (!o && !savingPrice) setPriceEdit(null); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                {priceEdit && Number(priceEdit.mrr) > 0 ? "Change fee" : "Set fee"} — {priceEdit?.name}
+              </DialogTitle>
+              <DialogDescription>
+                {priceEdit && Number(priceEdit.mrr) > 0
+                  ? `Currently ${gbp2(priceEdit.mrr)}/mo. The new price applies from the date you set.`
+                  : "Their agreed monthly fee. Revenue starts counting from their contract start date."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-1">
+              <div className={cn("grid gap-3", priceEdit && Number(priceEdit.mrr) > 0 ? "grid-cols-2" : "grid-cols-1")}>
+                <div className="space-y-1.5">
+                  <Label htmlFor="new-fee">Monthly fee</Label>
+                  <Input id="new-fee" type="number" step="0.01" value={priceValue}
+                    onChange={e => setPriceValue(e.target.value)} className="text-right" />
+                </div>
+                {priceEdit && Number(priceEdit.mrr) > 0 && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="fee-date">Effective from</Label>
+                    <Input id="fee-date" type="date" value={priceDate} onChange={e => setPriceDate(e.target.value)} />
+                  </div>
+                )}
+              </div>
+              {priceEdit && !isNaN(parseFloat(priceValue)) && parseFloat(priceValue) !== Number(priceEdit.mrr) && (
+                <p className={cn("text-xs font-medium",
+                  parseFloat(priceValue) > Number(priceEdit.mrr) ? "text-emerald-600" : "text-amber-600")}>
+                  {parseFloat(priceValue) > Number(priceEdit.mrr) ? "Increase" : "Decrease"} of{" "}
+                  {gbp2(Math.abs(parseFloat(priceValue) - Number(priceEdit.mrr)))}/mo
+                  {Number(priceEdit.mrr) > 0 && ` (${((parseFloat(priceValue) - Number(priceEdit.mrr)) / Number(priceEdit.mrr) * 100).toFixed(1)}%)`}
+                </p>
               )}
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="change-reason">Reason</Label>
-              <Textarea id="change-reason" rows={2} value={changeReason} onChange={e => setChangeReason(e.target.value)}
-                placeholder="e.g. gave notice, went in-house, agency closed, moved to annual contract" />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setChangeEdit(null)} disabled={savingChange}>Cancel</Button>
-            <Button onClick={saveChange} disabled={savingChange}>{savingChange ? "Saving…" : "Save change"}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Fee change — captures the effective date, so a rise agreed today but
-          starting next month is projected from next month, not applied to history. */}
-      <Dialog open={!!priceEdit} onOpenChange={o => { if (!o && !savingPrice) setPriceEdit(null); }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {priceEdit && Number(priceEdit.mrr) > 0 ? "Change fee" : "Set fee"} — {priceEdit?.name}
-            </DialogTitle>
-            <DialogDescription>
-              {priceEdit && Number(priceEdit.mrr) > 0
-                ? `Currently ${gbp2(priceEdit.mrr)}/mo. The new price applies from the date you set.`
-                : "Their agreed monthly fee. Revenue starts counting from their contract start date."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-1">
-            <div className={cn("grid gap-3", priceEdit && Number(priceEdit.mrr) > 0 ? "grid-cols-2" : "grid-cols-1")}>
-              <div className="space-y-1.5">
-                <Label htmlFor="new-fee">Monthly fee</Label>
-                <Input id="new-fee" type="number" step="0.01" value={priceValue}
-                  onChange={e => setPriceValue(e.target.value)} className="text-right" />
-              </div>
               {priceEdit && Number(priceEdit.mrr) > 0 && (
                 <div className="space-y-1.5">
-                  <Label htmlFor="fee-date">Effective from</Label>
-                  <Input id="fee-date" type="date" value={priceDate} onChange={e => setPriceDate(e.target.value)} />
+                  <Label htmlFor="fee-reason">Reason</Label>
+                  <Textarea id="fee-reason" rows={2} value={priceReason} onChange={e => setPriceReason(e.target.value)}
+                    placeholder="e.g. annual 5% uplift, added Airtable, reduced to 2 days" />
                 </div>
               )}
             </div>
-            {priceEdit && !isNaN(parseFloat(priceValue)) && parseFloat(priceValue) !== Number(priceEdit.mrr) && (
-              <p className={cn("text-xs font-medium",
-                parseFloat(priceValue) > Number(priceEdit.mrr) ? "text-emerald-600" : "text-amber-600")}>
-                {parseFloat(priceValue) > Number(priceEdit.mrr) ? "Increase" : "Decrease"} of{" "}
-                {gbp2(Math.abs(parseFloat(priceValue) - Number(priceEdit.mrr)))}/mo
-                {Number(priceEdit.mrr) > 0 && ` (${((parseFloat(priceValue) - Number(priceEdit.mrr)) / Number(priceEdit.mrr) * 100).toFixed(1)}%)`}
-              </p>
-            )}
-            {priceEdit && Number(priceEdit.mrr) > 0 && (
-              <div className="space-y-1.5">
-                <Label htmlFor="fee-reason">Reason</Label>
-                <Textarea id="fee-reason" rows={2} value={priceReason} onChange={e => setPriceReason(e.target.value)}
-                  placeholder="e.g. annual 5% uplift, added Airtable, reduced to 2 days" />
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPriceEdit(null)} disabled={savingPrice}>Cancel</Button>
-            <Button onClick={savePrice}
-              disabled={savingPrice || isNaN(parseFloat(priceValue))
-                || (Number(priceEdit?.mrr ?? 0) > 0 && (!priceDate || parseFloat(priceValue) === Number(priceEdit?.mrr)))
-                || (Number(priceEdit?.mrr ?? 0) <= 0 && parseFloat(priceValue) <= 0)}>
-              {savingPrice ? "Saving…" : Number(priceEdit?.mrr ?? 0) > 0 ? "Save change" : "Set fee"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPriceEdit(null)} disabled={savingPrice}>Cancel</Button>
+              <Button onClick={savePrice}
+                disabled={savingPrice || isNaN(parseFloat(priceValue))
+                  || (Number(priceEdit?.mrr ?? 0) > 0 && (!priceDate || parseFloat(priceValue) === Number(priceEdit?.mrr)))
+                  || (Number(priceEdit?.mrr ?? 0) <= 0 && parseFloat(priceValue) <= 0)}>
+                {savingPrice ? "Saving…" : Number(priceEdit?.mrr ?? 0) > 0 ? "Save change" : "Set fee"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
     </div>
   );
 }

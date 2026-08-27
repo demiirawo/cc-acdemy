@@ -371,6 +371,7 @@ export type Database = {
           software: string | null
           software_login_details: string | null
           software_used: string | null
+          service_line: string
           source: string | null
           status: string | null
           updated_at: string
@@ -396,6 +397,7 @@ export type Database = {
           software?: string | null
           software_login_details?: string | null
           software_used?: string | null
+          service_line?: string
           source?: string | null
           status?: string | null
           updated_at?: string
@@ -421,6 +423,7 @@ export type Database = {
           software?: string | null
           software_login_details?: string | null
           software_used?: string | null
+          service_line?: string
           source?: string | null
           status?: string | null
           updated_at?: string
