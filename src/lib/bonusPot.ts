@@ -4,6 +4,51 @@ import { RANK_ORDER, bonusPoints, bonusTenureYears, employedFraction, type Rank 
 
 export const POT_DESC_TAG = "Bonus pot";
 
+/**
+ * Peak-cover rule: leave taken between 1 December and 30 January costs that
+ * month's share of the bonus pot.
+ *
+ * Christmas and the new year are when cover is hardest to find and when the
+ * people who do work are carrying the service. The pot is what recognises
+ * that, so taking any approved leave in the window — a single day counts —
+ * forfeits the pot for the month the leave falls in, and only that month. A
+ * December absence costs the December pot; the January pot is untouched
+ * unless there is January leave too.
+ *
+ * The window is deliberately asymmetric: December runs to the 31st, January
+ * only to the 30th.
+ */
+export function peakLeaveWindowForMonth(month: Date): { start: string; end: string } | null {
+  const y = month.getFullYear();
+  switch (month.getMonth()) {
+    case 11: return { start: `${y}-12-01`, end: `${y}-12-31` };
+    case 0:  return { start: `${y}-01-01`, end: `${y}-01-30` };
+    default: return null;   // the rule can only ever touch December and January
+  }
+}
+
+export interface PeakLeaveRow {
+  user_id: string;
+  start_date: string;
+  end_date: string | null;
+  status: string;
+}
+
+/** True when this person has approved leave overlapping that month's peak window. */
+export function tookPeakLeave(leaves: PeakLeaveRow[], userId: string, month: Date): boolean {
+  const w = peakLeaveWindowForMonth(month);
+  if (!w) return false;
+  // ISO dates compare correctly as strings, and a leave with no end date is a
+  // single day. Overlap, not containment: leave spanning the new year is
+  // caught by both months.
+  return leaves.some(l =>
+    l.user_id === userId &&
+    l.status === "approved" &&
+    l.start_date <= w.end &&
+    (l.end_date ?? l.start_date) >= w.start
+  );
+}
+
 // GBP conversion fallbacks (must match StaffPayManager). rate = GBP per 1 unit.
 const FALLBACK_RATES: Record<string, number> = {
   GBP: 1, EUR: 0.85, USD: 0.79, INR: 0.0095, AED: 0.21, AUD: 0.52, CAD: 0.58, PHP: 0.014, ZAR: 0.044, NGN: 0.00052,
@@ -34,12 +79,14 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
     .filter(p => !lockedMonths.has(format(startOfMonth(parseISO(p.month)), "yyyy-MM-dd")));
   if (!pots.length) return 0;
 
-  const [{ data: hr }, { data: rateRows }, { data: profs }, { data: salaries }] = await Promise.all([
+  const [{ data: hr }, { data: rateRows }, { data: profs }, { data: salaries }, { data: leaves }] = await Promise.all([
     supabase.from("hr_profiles").select("user_id, performance_rating, start_date, created_at, employment_end_date, bonus_pot_eligible"),
     (supabase as any).from("manual_currency_rates").select("currency_code, rate_to_gbp"),
     supabase.from("profiles").select("user_id"),
     (supabase as any).from("staff_salaries").select("user_id, base_salary, base_currency"),
+    supabase.from("staff_holidays").select("user_id, start_date, end_date, status").eq("status", "approved"),
   ]);
+  const peakLeave = (leaves as PeakLeaveRow[]) || [];
 
   const rates: Record<string, number> = { ...FALLBACK_RATES };
   (rateRows || []).forEach((r: any) => { if (r.rate_to_gbp) rates[r.currency_code] = Number(r.rate_to_gbp); });
@@ -76,7 +123,8 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
       const rating = (h.performance_rating && RANK_ORDER.includes(h.performance_rating) ? h.performance_rating : null) as Rank | null;
       const years = bonusTenureYears(h.start_date || h.created_at, d) ?? 0;
       const worked = employedFraction(h.start_date, h.employment_end_date, d);
-      const flagEligible = h.bonus_pot_eligible !== false;
+      // Opted out, or away over Christmas/new year — either way, no share.
+      const flagEligible = h.bonus_pot_eligible !== false && !tookPeakLeave(peakLeave, h.user_id, d);
       return {
         userId: h.user_id as string,
         currency: (h.base_currency as string) || "GBP",

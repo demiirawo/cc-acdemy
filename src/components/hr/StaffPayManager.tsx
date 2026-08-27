@@ -17,7 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusTenureYears, employedFraction, bonusPoints, type Rank } from "./PerformanceRankBadge";
 import { cn } from "@/lib/utils";
-import { recalcAllBonusPots, POT_DESC_TAG } from "@/lib/bonusPot";
+import { recalcAllBonusPots, POT_DESC_TAG, tookPeakLeave, peakLeaveWindowForMonth } from "@/lib/bonusPot";
 
 // Monthly bonus pot: each staff member's slice is proportional to
 // (1 + tenure years) × rank multiplier — see bonusPoints in PerformanceRankBadge.
@@ -269,7 +269,7 @@ export function StaffPayManager({ onSummaryComputed }: {
   const [recurringPatterns, setRecurringPatterns] = useState<RecurringShiftPattern[]>([]);
   const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
-  const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; status: string; absence_type: string }[]>([]);
+  const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; end_date: string | null; status: string; absence_type: string }[]>([]);
   const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; employment_end_date: string | null; unlimited_holiday: boolean; public_holiday_pay_disabled?: boolean; created_at?: string; performance_rating?: string | null; bonus_pot_eligible?: boolean }[]>([]);
   const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null; swap_with_user_id: string | null; coverage_metadata: Json | null }[]>([]);
   const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string }[]>([]);
@@ -611,7 +611,7 @@ export function StaffPayManager({ onSummaryComputed }: {
       // Fetch staff holidays for unused holiday calculation
       const { data: holidaysData, error: holidaysError } = await supabase
         .from('staff_holidays')
-        .select('user_id, days_taken, start_date, status, absence_type');
+        .select('user_id, days_taken, start_date, end_date, status, absence_type');
       
       if (holidaysError) {
         console.error('Error fetching staff holidays:', holidaysError);
@@ -1491,11 +1491,15 @@ export function StaffPayManager({ onSummaryComputed }: {
         // Joiners and leavers share only in proportion to the part of the month
         // they were actually here for.
         worked: employedFraction(hrFull?.start_date, hrFull?.employment_end_date, selectedMonth),
-        // Explicit per-staff opt-out flag (default eligible).
-        flagEligible: hrFull?.bonus_pot_eligible !== false,
+        // Explicit per-staff opt-out flag (default eligible), and the
+        // peak-cover rule: leave between 1 Dec and 30 Jan forfeits that
+        // month's pot. Folded in here so the preview below and the records
+        // written to payroll can never disagree about who shares in it.
+        flagEligible: hrFull?.bonus_pot_eligible !== false
+          && !tookPeakLeave(staffHolidays, s.userId, selectedMonth),
       };
     }).filter(s => s.worked > 0);
-  }, [payrollSummary, hrProfilesFull, selectedMonth]);
+  }, [payrollSummary, hrProfilesFull, selectedMonth, staffHolidays]);
 
   // Monthly bonus pot input state (declared before the allocation memo/effects).
   const [bonusPotInput, setBonusPotInput] = useState("");
@@ -2430,7 +2434,7 @@ export function StaffPayManager({ onSummaryComputed }: {
               <Coins className="h-4 w-4 text-amber-500 flex-shrink-0" />
               <span className="text-sm font-medium">Bonus pot allocation</span>
               <span className="text-xs text-muted-foreground truncate">
-                £{potAllocation.potGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {potAllocation.items.filter(i => i.points > 0).length} eligible staff · £{(potAllocation.potGbp / potAllocation.totalPoints).toFixed(2)}/point · D & opted-out excluded
+                £{potAllocation.potGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {potAllocation.items.filter(i => i.points > 0).length} eligible staff · £{(potAllocation.potGbp / potAllocation.totalPoints).toFixed(2)}/point · D & opted-out excluded{peakLeaveWindowForMonth(selectedMonth) ? " · leave 1 Dec–30 Jan excluded" : ""}
               </span>
               {potBusy && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground flex-shrink-0" />}
             </div>
