@@ -188,6 +188,13 @@ export function StaffPayManager({ onSummaryComputed }: {
   const [quickInvoiceBusy, setQuickInvoiceBusy] = useState<string | null>(null);
   const [exchangeRates, setExchangeRates] = useState<ExchangeRates>(FALLBACK_RATES);
   const [manualRates, setManualRates] = useState<ExchangeRates>({});
+  // Manual rates arrive from the database a moment after mount. Until they do,
+  // conversions would silently fall back to the API/fallback rate — and the
+  // bonus pot writes amounts in each person's own currency, so a pot written
+  // in that window is denominated at the wrong rate and no longer sums to the
+  // pot when read back in GBP. Nothing that converts money may run until this
+  // is true.
+  const [ratesLoaded, setRatesLoaded] = useState(false);
   const [ratesDate, setRatesDate] = useState<string | null>(null);
   const [loadingRates, setLoadingRates] = useState(false);
   const [adjustmentEdit, setAdjustmentEdit] = useState<AdjustmentEditState | null>(null);
@@ -282,13 +289,17 @@ export function StaffPayManager({ onSummaryComputed }: {
 
   // Load persisted manual currency rates from DB
   const fetchManualRates = async () => {
-    const { data } = await supabase
-      .from('manual_currency_rates')
-      .select('currency_code, rate_to_gbp');
-    if (data && data.length > 0) {
+    try {
+      const { data } = await supabase
+        .from('manual_currency_rates')
+        .select('currency_code, rate_to_gbp');
       const rates: ExchangeRates = {};
-      data.forEach((r: any) => { rates[r.currency_code] = Number(r.rate_to_gbp); });
-      setManualRates(rates);
+      (data || []).forEach((r: any) => { rates[r.currency_code] = Number(r.rate_to_gbp); });
+      // Anything the admin has already typed wins over the load that was still
+      // in flight when they typed it.
+      setManualRates(prev => ({ ...rates, ...prev }));
+    } finally {
+      setRatesLoaded(true);
     }
   };
 
@@ -410,8 +421,10 @@ export function StaffPayManager({ onSummaryComputed }: {
 
   const handleManualRateChange = async (currency: string, value: string) => {
     const numValue = parseFloat(value);
+    let nextRates: ExchangeRates;
     if (!isNaN(numValue) && numValue > 0) {
-      setManualRates(prev => ({ ...prev, [currency]: numValue }));
+      nextRates = { ...manualRates, [currency]: numValue };
+      setManualRates(nextRates);
       // Upsert to DB
       const { data: userData } = await supabase.auth.getUser();
       if (userData.user) {
@@ -426,27 +439,39 @@ export function StaffPayManager({ onSummaryComputed }: {
       }
     } else if (value === '') {
       // Clear manual rate - delete from DB
-      setManualRates(prev => {
-        const newRates = { ...prev };
-        delete newRates[currency];
-        return newRates;
-      });
+      nextRates = { ...manualRates };
+      delete nextRates[currency];
+      setManualRates(nextRates);
       await supabase
         .from('manual_currency_rates')
         .delete()
         .eq('currency_code', currency);
+    } else {
+      return;
+    }
+
+    // The bonus pot is banked in each person's own currency, converted from a
+    // GBP pot at the rate of the day it was written. Change the rate and those
+    // records no longer add up to the pot — a £500 pot written at ₦1,923/£ and
+    // read back at ₦1,865/£ reports £515, so raising the pot by £100 moves the
+    // payroll total by £103. Rewriting the shares at the new rate keeps the pot
+    // worth exactly the pot. Passed explicitly because setManualRates has not
+    // reached this closure yet.
+    const currentPot = Math.max(0, parseFloat(bonusPotInput) || 0);
+    if (currentPot > 0) {
+      await syncBonusPot(currentPot, nextRates);
     }
   };
 
   // Convert amount from source currency to GBP using manual rate if set, otherwise API rate
-  const convertToGBP = (amount: number, currency: string): number => {
-    const rate = manualRates[currency] ?? exchangeRates[currency] ?? 1;
+  const convertToGBP = (amount: number, currency: string, override?: ExchangeRates): number => {
+    const rate = override?.[currency] ?? manualRates[currency] ?? exchangeRates[currency] ?? 1;
     return amount * rate;
   };
 
   // Inverse: convert a GBP amount into the given currency (for the bonus pot).
-  const gbpToCurrency = (amountGbp: number, currency: string): number => {
-    const rate = manualRates[currency] ?? exchangeRates[currency] ?? 1;
+  const gbpToCurrency = (amountGbp: number, currency: string, override?: ExchangeRates): number => {
+    const rate = override?.[currency] ?? manualRates[currency] ?? exchangeRates[currency] ?? 1;
     return rate > 0 ? amountGbp / rate : amountGbp;
   };
 
@@ -1526,7 +1551,7 @@ export function StaffPayManager({ onSummaryComputed }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [monthStartISO]);
 
-  const syncBonusPot = async (amountGbp: number) => {
+  const syncBonusPot = async (amountGbp: number, ratesOverride?: ExchangeRates) => {
     if (!user?.id) return;
     const token = ++potSyncToken.current;
     setPotBusy(true);
@@ -1550,7 +1575,7 @@ export function StaffPayManager({ onSummaryComputed }: {
             .map((s, i) => ({
               user_id: s.userId,
               record_type: "bonus" as const,
-              amount: Math.round(gbpToCurrency(shareGbp[i], s.currency) * 100) / 100,
+              amount: Math.round(gbpToCurrency(shareGbp[i], s.currency, ratesOverride) * 100) / 100,
               currency: s.currency,
               description: `${POT_DESC_TAG} · ${monthLabel} (${s.rank ?? "unrated"} · ${s.years}y · ${s.points.toFixed(2)} pts)`,
               pay_date: monthEndISO,
@@ -1586,13 +1611,17 @@ export function StaffPayManager({ onSummaryComputed }: {
   };
 
   // Debounced auto-sync when the pot input changes (skips the seeded value).
+  // Held until the manual rates are in: the shares are written in each person's
+  // own currency, so writing them against a fallback rate would bake in a
+  // conversion the totals then disagree with.
   useEffect(() => {
+    if (!ratesLoaded) return;
     const amt = Math.max(0, parseFloat(bonusPotInput) || 0);
     if (loadedPotRef.current !== null && amt === loadedPotRef.current) return;
     const t = setTimeout(() => { void syncBonusPot(amt); }, 800);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bonusPotInput]);
+  }, [bonusPotInput, ratesLoaded]);
 
   // Recompute EVERY month that has a bonus pot from the current ratings, tenure
   // and eligibility — so changing a rating (e.g. to D) drops that person out of
