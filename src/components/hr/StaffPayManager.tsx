@@ -1569,7 +1569,7 @@ export function StaffPayManager({ onSummaryComputed }: {
         // Explicit per-staff opt-out flag (default eligible).
         flagEligible: hrFull?.bonus_pot_eligible !== false,
         // Peak-cover rule: December and January shares are settled on days
-        // worked over 1 Dec – 31 Jan. Computed here so the preview below and
+        // worked over 15 Dec – 15 Jan. Computed here so the preview below and
         // the records written to payroll can never disagree on the split.
         peakShare: cover.weight,
         cover,
@@ -2512,7 +2512,7 @@ export function StaffPayManager({ onSummaryComputed }: {
               <Coins className="h-4 w-4 text-amber-500 flex-shrink-0" />
               <span className="text-sm font-medium">Bonus pot allocation</span>
               <span className="text-xs text-muted-foreground truncate">
-                £{potAllocation.potGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {potAllocation.items.filter(i => i.points > 0).length} eligible staff · £{(potAllocation.potGbp / potAllocation.totalPoints).toFixed(2)}/point · D & opted-out excluded{isPeakMonth(selectedMonth) ? " · shared on days worked over 1 Dec–31 Jan, not rank or tenure" : ""}
+                £{potAllocation.potGbp.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} across {potAllocation.items.filter(i => i.points > 0).length} eligible staff · £{(potAllocation.potGbp / potAllocation.totalPoints).toFixed(2)}/point · D & opted-out excluded{isPeakMonth(selectedMonth) ? ` · shared on days worked over ${selectedMonth.getMonth() === 11 ? "15–31 Dec" : "1–15 Jan"}, not rank or tenure` : ""}
               </span>
               {potBusy && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground flex-shrink-0" />}
             </div>

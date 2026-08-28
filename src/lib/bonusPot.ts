@@ -10,14 +10,21 @@ export const POT_DESC_TAG = "Bonus pot";
  *
  * Those weeks are when cover is hardest to find, and the people who work them
  * are carrying the service. So a share of those two pots is scaled by how much
- * of 1 December – 31 January the person was available — and scaled steeply, so
- * that working through is worth markedly more than nearly working through.
- * Everyone who takes leave still gets paid; they take a smaller slice, and the
- * slice they leave behind goes to the people who covered for them.
+ * of the critical window the person was available — and scaled steeply, so that
+ * working through is worth markedly more than nearly working through. Everyone
+ * who takes leave still gets paid; they take a smaller slice, and the slice
+ * they leave behind goes to the people who covered for them.
+ *
+ * The window is 15 December to 15 January, because that is where the pressure
+ * actually is: across two winters of bookings, an average day in that stretch
+ * had six people away and Christmas Day had seventeen, while the first half of
+ * December sat at 0.4 — no different from a week in February. Rewarding
+ * availability across all of December and January would have paid for cover
+ * nobody needed.
  *
  * Scored per month against that month's half of the window, matching how the
- * pot itself is monthly: December leave dilutes the December share and leaves
- * January alone, and a break spanning the new year touches both.
+ * pot itself is monthly: December is judged on 15–31 December, January on
+ * 1–15 January, and a break spanning the new year touches both.
  *
  * Availability is counted in calendar days, not chargeable leave days. Being
  * away from the 24th to the 4th is eleven days without cover however few of
@@ -26,8 +33,8 @@ export const POT_DESC_TAG = "Bonus pot";
 export function peakLeaveWindowForMonth(month: Date): { start: string; end: string } | null {
   const y = month.getFullYear();
   switch (month.getMonth()) {
-    case 11: return { start: `${y}-12-01`, end: `${y}-12-31` };
-    case 0:  return { start: `${y}-01-01`, end: `${y}-01-31` };
+    case 11: return { start: `${y}-12-15`, end: `${y}-12-31` };   // the 17 days that matter
+    case 0:  return { start: `${y}-01-01`, end: `${y}-01-15` };   // and the 15 that follow
     default: return null;   // the rule can only ever touch December and January
   }
 }

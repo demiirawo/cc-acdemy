@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
-import { TeamLeaveClashWarning, type TeamLeaveClash } from "./TeamLeaveClashWarning";
+import { TeamLeaveClashWarning, clashBreakdown, type TeamLeaveClash } from "./TeamLeaveClashWarning";
+import { LeaveNoticeWarning, checkLeaveNotice } from "./LeaveNoticeWarning";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -475,6 +476,11 @@ export function StaffRequestForm() {
   // saying before the request goes in — but it is a warning, never a block:
   // the decision belongs to whoever approves it.
   const isHolidayRequest = requestType === 'holiday_paid' || requestType === 'holiday_unpaid';
+
+  // Whether these dates break the notice rules in the absence policy. Warned
+  // about, never blocked — see LeaveNoticeWarning for why.
+  const noticeBreach = isHolidayRequest ? checkLeaveNotice(startDate, endDate) : null;
+
   const clashStartIso = startDate ? format(startDate, "yyyy-MM-dd") : null;
   const clashEndIso = endDate ? format(endDate, "yyyy-MM-dd") : null;
 
@@ -492,6 +498,13 @@ export function StaffRequestForm() {
       return (data ?? []) as TeamLeaveClash[];
     },
   });
+
+  // Days a colleague on the same client has already taken. Unlike the notice
+  // rules this one does block, per day rather than per request — see
+  // TeamLeaveClashWarning.
+  const clashes = isHolidayRequest
+    ? clashBreakdown(teamClashes, startDate, endDate)
+    : { blocked: [], free: [], people: [] };
 
   // Auto-calculate working days when dates change for holiday requests
   useEffect(() => {
@@ -603,6 +616,17 @@ export function StaffRequestForm() {
       } else if (requestType !== 'overtime') {
         if (!startDate) throw new Error("Please select a start date");
         if (!endDate) throw new Error("Please select an end date");
+      }
+
+      // Leave cannot sit on top of a colleague's on the same client. Checked
+      // here as well as in the form so that submitting on someone else's behalf
+      // is held to the same rule.
+      if (isHolidayRequest && clashes.blocked.length > 0) {
+        throw new Error(
+          clashes.free.length > 0
+            ? `${clashes.blocked.length} of these days are already covered by a colleague's leave. Change your dates to the free days shown above.`
+            : "Every day you have asked for is already covered by a colleague's leave. Please choose different dates."
+        );
       }
       
       if (requestType === 'overtime' && !linkedHolidayId) {
@@ -1526,7 +1550,11 @@ export function StaffRequestForm() {
           )}
 
           {isHolidayRequest && (
-            <TeamLeaveClashWarning clashes={teamClashes} />
+            <LeaveNoticeWarning breach={noticeBreach} paid={requestType === 'holiday_paid'} />
+          )}
+
+          {isHolidayRequest && (
+            <TeamLeaveClashWarning breakdown={clashes} />
           )}
 
           {/* Shift swap shows selected shifts count - auto-calculated */}
@@ -1550,7 +1578,7 @@ export function StaffRequestForm() {
             </Button>
             <Button 
               onClick={() => submitRequestMutation.mutate()}
-              disabled={submitRequestMutation.isPending}
+              disabled={submitRequestMutation.isPending || clashes.blocked.length > 0}
             >
               {submitRequestMutation.isPending ? "Submitting..." : "Submit"}
             </Button>
