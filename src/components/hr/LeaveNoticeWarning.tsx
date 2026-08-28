@@ -9,11 +9,18 @@ import { format, eachDayOfInterval, differenceInCalendarDays, startOfDay } from 
  * of that period it falls on. Anything outside the peak period follows the
  * ordinary month.
  *
- * Neither is enforced here. A form is the wrong place to refuse leave: the
- * reason for a late request is often exactly the reason to allow it, and that
- * judgement belongs to whoever approves it. What the form owes people is that
- * nobody submits a request without knowing it is outside policy, and nobody is
- * surprised later by a deduction they did not see coming.
+ * The two are enforced differently, because they are different kinds of rule.
+ *
+ * The peak deadline is a hard stop. Once 30 September has passed the winter
+ * rota is being built, and a request that lands afterwards is not a late
+ * request so much as a request for a period that has already been planned. So
+ * the form refuses it, and the way through is a supervisor arranging cover
+ * directly rather than a form the person can push past.
+ *
+ * The ordinary month is a warning only. Short notice is usually a life event,
+ * the reason it is late is often exactly the reason to allow it, and that
+ * judgement belongs to whoever approves it. What the form owes people there is
+ * simply that nobody is surprised later by a deduction they did not see coming.
  */
 
 /** The peak window a date falls in, and the day requests for that window close. */
@@ -65,16 +72,20 @@ export function checkLeaveNotice(start: Date | undefined, end: Date | undefined)
 export function LeaveNoticeWarning({ breach, paid }: { breach: NoticeBreach | null; paid: boolean }) {
   if (!breach) return null;
 
+  const blocking = breach.kind === "peak";
+
   const unpaidLine = paid
     ? " Leave booked outside the notice period is unpaid unless management agrees otherwise, so this may come off your pay."
     : " You are already requesting this as unpaid leave, so there is nothing further to deduct — but cover still has to be found.";
 
   return (
-    <div className="rounded-lg border border-amber-400/50 bg-amber-500/10 p-3 space-y-2">
+    <div className={blocking
+      ? "rounded-lg border border-destructive/50 bg-destructive/10 p-3 space-y-2"
+      : "rounded-lg border border-amber-400/50 bg-amber-500/10 p-3 space-y-2"}>
       {breach.kind === "peak" ? (
         <>
-          <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
-            These dates are in the peak period, and it has already closed
+          <p className="text-sm font-medium text-destructive">
+            These dates are in the peak period, and it closed on {format(breach.window!.deadline, "d MMMM")}
           </p>
           <p className="text-sm text-foreground">
             Leave between{" "}
@@ -82,7 +93,12 @@ export function LeaveNoticeWarning({ breach, paid }: { breach: NoticeBreach | nu
             <span className="font-medium">{format(breach.window!.end, "d MMMM yyyy")}</span> had to be
             requested by <span className="font-medium">{format(breach.window!.deadline, "d MMMM yyyy")}</span>.
             Christmas and the new year are when cover is hardest to find, which is why the whole winter
-            rota is settled in one pass at the end of September.
+            rota is settled in one pass at the end of September — and why it cannot be reopened by a
+            request afterwards.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            This request cannot be submitted. If you have to be away over these dates, speak to your
+            supervisor — they can arrange cover and enter the leave directly.
           </p>
         </>
       ) : (
@@ -104,9 +120,11 @@ export function LeaveNoticeWarning({ breach, paid }: { breach: NoticeBreach | nu
           </p>
         </>
       )}
-      <p className="text-xs text-muted-foreground">
-        You can still send this request, and it will go to your manager as normal.{unpaidLine}
-      </p>
+      {!blocking && (
+        <p className="text-xs text-muted-foreground">
+          You can still send this request, and it will go to your manager as normal.{unpaidLine}
+        </p>
+      )}
     </div>
   );
 }

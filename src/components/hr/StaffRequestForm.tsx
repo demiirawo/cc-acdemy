@@ -618,6 +618,16 @@ export function StaffRequestForm() {
         if (!endDate) throw new Error("Please select an end date");
       }
 
+      // The peak window closes on 30 September. After that the winter rota is
+      // already built, so the request is refused and the supervisor arranges
+      // cover instead — which is what an admin entering it here is doing, so
+      // they are not held to it.
+      if (isHolidayRequest && !isAdmin && noticeBreach?.kind === "peak") {
+        throw new Error(
+          "Leave between 15 December and 15 January had to be requested by 30 September. Speak to your supervisor — they can arrange cover and enter it for you."
+        );
+      }
+
       // Leave cannot sit on top of a colleague's on the same client. Checked
       // here as well as in the form so that submitting on someone else's behalf
       // is held to the same rule.
@@ -1578,7 +1588,11 @@ export function StaffRequestForm() {
             </Button>
             <Button 
               onClick={() => submitRequestMutation.mutate()}
-              disabled={submitRequestMutation.isPending || clashes.blocked.length > 0}
+              disabled={
+                submitRequestMutation.isPending
+                || clashes.blocked.length > 0
+                || (!isAdmin && noticeBreach?.kind === "peak")
+              }
             >
               {submitRequestMutation.isPending ? "Submitting..." : "Submit"}
             </Button>

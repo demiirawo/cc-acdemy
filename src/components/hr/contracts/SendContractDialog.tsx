@@ -3,6 +3,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import {
+  fillContractFields, missingContractFields, fieldsUsedIn,
+  CONTRACT_FIELD_LABELS, contractFieldValues,
+  type ContractRecipient, type ContractField,
+} from "@/lib/contractFields";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -47,6 +52,7 @@ export function SendContractDialog({ open, onOpenChange, onSent }: SendContractD
   const { toast } = useToast();
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [templates, setTemplates] = useState<TemplateOption[]>([]);
+  const [details, setDetails] = useState<Map<string, ContractRecipient>>(new Map());
   const [templateId, setTemplateId] = useState("");
   const [recipientId, setRecipientId] = useState("");
   const [title, setTitle] = useState("");
@@ -67,8 +73,25 @@ export function SendContractDialog({ open, onOpenChange, onSent }: SendContractD
           .order("name"),
         supabase
           .from("hr_profiles")
-          .select("user_id, start_date, employment_end_date"),
+          .select("user_id, start_date, employment_end_date, job_title"),
       ]);
+      // Salary lives in the private staff_salaries table; only an admin can
+      // read it, which is the same person who can send a contract.
+      const { data: salaries } = await (supabase as any)
+        .from("staff_salaries")
+        .select("user_id, base_salary, base_currency");
+      setDetails(new Map(
+        ((hr ?? []) as any[]).map((h) => {
+          const pay = ((salaries ?? []) as any[]).find((s) => s.user_id === h.user_id);
+          return [h.user_id, {
+            fullName: null,
+            jobTitle: h.job_title ?? null,
+            monthlyFee: pay?.base_salary ?? null,
+            currency: pay?.base_currency ?? null,
+            startDate: h.start_date ?? null,
+          } as ContractRecipient];
+        })
+      ));
       const windows = new Map<string, EmploymentWindow>(
         (hr ?? []).map((h: { user_id: string } & EmploymentWindow) => [h.user_id, h])
       );
@@ -89,6 +112,22 @@ export function SendContractDialog({ open, onOpenChange, onSent }: SendContractD
     () => templates.find((t) => t.id === templateId),
     [templates, templateId]
   );
+
+  // What the contract will say once the person's details are merged in, and
+  // whether those details exist yet. A contract is a snapshot at the moment it
+  // is sent, so anything missing now would be missing in the signed copy.
+  const recipientDetails = useMemo<ContractRecipient | null>(() => {
+    if (!recipientId) return null;
+    const person = staff.find((s) => s.user_id === recipientId);
+    const d = details.get(recipientId);
+    return d ? { ...d, fullName: person?.display_name ?? null } : null;
+  }, [recipientId, staff, details]);
+
+  const missing = useMemo<ContractField[]>(() => {
+    if (!recipientDetails || !selectedTemplate) return [];
+    const used = fieldsUsedIn(selectedTemplate.body_html);
+    return missingContractFields(recipientDetails).filter((f) => used.includes(f));
+  }, [recipientDetails, selectedTemplate]);
 
   // Default the contract title from the chosen template.
   useEffect(() => {
@@ -112,13 +151,30 @@ export function SendContractDialog({ open, onOpenChange, onSent }: SendContractD
       });
       return;
     }
+    if (missing.length > 0) {
+      toast({
+        title: "Their profile is incomplete",
+        description: `Set their ${missing.map((f) => CONTRACT_FIELD_LABELS[f].toLowerCase()).join(" and ")} before sending this contract.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    let bodyHtml: string;
+    try {
+      bodyHtml = fillContractFields(selectedTemplate.body_html, recipientDetails!);
+    } catch (e) {
+      toast({ title: "Could not prepare the contract", description: String((e as Error).message), variant: "destructive" });
+      return;
+    }
+
     setSending(true);
     const { data, error } = await supabase
       .from("contracts")
       .insert({
         template_id: selectedTemplate.id,
         title: title.trim(),
-        body_html: selectedTemplate.body_html, // snapshot
+        body_html: bodyHtml, // snapshot, with their details already merged in
         recipient_user_id: recipient.user_id,
         recipient_email: recipient.email,
         recipient_name: recipient.display_name,
@@ -208,6 +264,38 @@ export function SendContractDialog({ open, onOpenChange, onSent }: SendContractD
             </Select>
           </div>
 
+          {recipientDetails && selectedTemplate && (
+            missing.length > 0 ? (
+              <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 space-y-1.5">
+                <p className="text-sm font-medium text-destructive">
+                  This contract cannot be sent yet
+                </p>
+                <p className="text-sm text-foreground">
+                  Their {missing.map((f) => CONTRACT_FIELD_LABELS[f].toLowerCase()).join(" and ")}{" "}
+                  {missing.length === 1 ? "is" : "are"} not set on their profile, and the contract
+                  states {missing.length === 1 ? "it" : "them"}. Set{" "}
+                  {missing.length === 1 ? "it" : "them"} in HR first.
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Filled in from their profile
+                </p>
+                {fieldsUsedIn(selectedTemplate.body_html).map((f) => {
+                  const value = contractFieldValues(recipientDetails)[f];
+                  if (!value) return null;
+                  return (
+                    <p key={f} className="text-sm">
+                      <span className="text-muted-foreground">{CONTRACT_FIELD_LABELS[f]}: </span>
+                      <span className="font-medium">{value}</span>
+                    </p>
+                  );
+                })}
+              </div>
+            )
+          )}
+
           <div className="grid gap-1.5">
             <Label htmlFor="contract-title">Contract title</Label>
             <Input
@@ -222,7 +310,7 @@ export function SendContractDialog({ open, onOpenChange, onSent }: SendContractD
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={sending}>
             Cancel
           </Button>
-          <Button onClick={send} disabled={sending}>
+          <Button onClick={send} disabled={sending || missing.length > 0}>
             {sending && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />}
             Send contract
           </Button>
