@@ -158,13 +158,15 @@ async function alertAdminsOfFailure(
 // ============================================================================
 
 interface ContractEmailRequest {
-  type: "contract_sent" | "contract_reminder" | "contract_signed";
+  type: "contract_sent" | "contract_reminder" | "contract_signed" | "contract_overdue_digest";
   contractId: string;
   contractTitle: string;
   recipientName?: string | null;
   recipientEmail?: string | null;
   /** Reminders only: whole days the contract has been waiting. */
   daysWaiting?: number | null;
+  /** Digest only: everyone who has been sitting on a contract for over a week. */
+  overdue?: Array<{ name: string | null; email: string | null; days: number; opened: boolean }>;
 }
 
 const CONTRACTS_LINK = `${APP_URL}/view/hr?tab=my-contracts`;
@@ -267,6 +269,59 @@ serve(async (req) => {
           "Your contract is still waiting",
           content,
           "You're receiving this because a contract sent to you at Care Cuddle hasn't been signed yet.",
+        ),
+      });
+      if (error) throw error;
+    }
+
+    if (type === "contract_overdue_digest") {
+      // One summary to the admins, not a copy of every chaser. The point is to
+      // know who to have a word with, which is a list, not forty emails.
+      const rows = (body.overdue ?? []).slice().sort((a, b) => b.days - a.days);
+      if (rows.length === 0) {
+        return new Response(JSON.stringify({ skipped: "nobody overdue" }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: admins } = await supabase
+        .from("profiles").select("email").eq("role", "admin").not("email", "is", null);
+      const to: string[] = (admins ?? []).map((a: { email: string }) => a.email);
+      if (to.length === 0) {
+        return new Response(JSON.stringify({ skipped: "no admin address on file" }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const list = rows.map((r) => `
+        <tr>
+          <td style="padding:6px 12px 6px 0;color:#111827;font-size:14px;">${r.name ?? r.email ?? "Unknown"}</td>
+          <td style="padding:6px 12px 6px 0;color:#6b7280;font-size:14px;white-space:nowrap;">${r.days} days</td>
+          <td style="padding:6px 0;color:#6b7280;font-size:14px;">${r.opened ? "opened, not signed" : "never opened"}</td>
+        </tr>`).join("");
+
+      const neverOpened = rows.filter((r) => !r.opened).length;
+
+      const content =
+        greeting(null) +
+        paragraph(
+          `${rows.length} ${rows.length === 1 ? "person has" : "people have"} had a contract waiting for over a week. They are being reminded every morning, but at this point a conversation will probably do more than another email.`
+        ) +
+        `<table role="presentation" style="border-collapse:collapse;margin:8px 0 16px;">${list}</table>` +
+        (neverOpened > 0
+          ? paragraph(`${neverOpened} of them ${neverOpened === 1 ? "has" : "have"} never opened it — worth checking the reminders are reaching them at all.`)
+          : "") +
+        button("Open contracts", `${APP_URL}/view/hr?tab=my-contracts`);
+
+      const { error } = await resend.emails.send({
+        from: EMAIL_SENDER,
+        to,
+        subject: `${rows.length} contract${rows.length === 1 ? "" : "s"} unsigned for over a week`,
+        html: emailShell(
+          "Contracts still unsigned",
+          content,
+          "You're receiving this because you're an admin at Care Cuddle.",
+          "#d97706",
         ),
       });
       if (error) throw error;

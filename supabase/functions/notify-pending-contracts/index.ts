@@ -26,7 +26,15 @@ const corsHeaders = {
  * happens to start a few minutes late; the guard is against two in a morning,
  * not against one arriving slightly early. A signed contract drops out of both
  * queries, so reminders stop on their own.
+ *
+ * Once a contract has been waiting over a week, another identical email is not
+ * going to be what finally does it. So the run also sends the admins a single
+ * digest of everyone that far behind — the list you would want before having a
+ * word with someone, rather than forty copies of their reminder.
  */
+
+/** After this long, a reminder stops being the answer and a conversation is. */
+const CHASE_AFTER_DAYS = 7;
 
 const PER_SECOND = 4;                       // well inside the provider's ten
 const GAP_MS = Math.ceil(1000 / PER_SECOND);
@@ -128,8 +136,35 @@ serve(async (req: Request): Promise<Response> => {
       await sleep(GAP_MS);
     }
 
-    console.log(`notify-pending-contracts — sent ${sent} (${reminders} reminders), failed ${failures.length}`);
-    return json({ sent, reminders, firstNotices: sent - reminders, failed: failures.length, failures });
+    // Anyone a week behind, whether or not they were chased in this run.
+    const overdueCutoff = new Date(Date.now() - CHASE_AFTER_DAYS * 86_400_000).toISOString();
+    const { data: stale } = await supabase
+      .from("contracts")
+      .select("recipient_name, recipient_email, sent_at, viewed_at")
+      .in("status", ["sent", "viewed"])
+      .is("signed_at", null)
+      .lt("sent_at", overdueCutoff);
+
+    let digested = 0;
+    if (stale?.length) {
+      const overdue = stale.map((c) => ({
+        name: c.recipient_name,
+        email: c.recipient_email,
+        days: Math.floor((Date.now() - new Date(c.sent_at).getTime()) / 86_400_000),
+        opened: !!c.viewed_at,
+      }));
+      try {
+        await supabase.functions.invoke("send-contract-email", {
+          body: { type: "contract_overdue_digest", contractId: "", contractTitle: "", overdue },
+        });
+        digested = overdue.length;
+      } catch (e) {
+        console.error("overdue digest failed", e);
+      }
+    }
+
+    console.log(`notify-pending-contracts — sent ${sent} (${reminders} reminders), overdue ${digested}, failed ${failures.length}`);
+    return json({ sent, reminders, firstNotices: sent - reminders, overdue: digested, failed: failures.length, failures });
   } catch (err) {
     console.error("notify-pending-contracts error", err);
     return json({ error: String((err as Error)?.message ?? err) });
