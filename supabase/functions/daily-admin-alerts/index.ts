@@ -1484,6 +1484,63 @@ const endingSoon = regularPatterns
       }
     }
 
+    // ===== 10. CONTRACTS AWAITING SIGNATURE =====
+    // Staff are chased every morning by notify-pending-contracts. This is the
+    // other half of that: who is still outstanding, so somebody can have a word
+    // once the emails have plainly stopped working.
+    {
+      const CHASE_AFTER_DAYS = 7;
+      const { data: unsigned } = await supabaseClient
+        .from("contracts")
+        .select("recipient_name, recipient_email, sent_at, viewed_at")
+        .in("status", ["sent", "viewed"])
+        .is("signed_at", null);
+
+      if (unsigned && unsigned.length > 0) {
+        const rows = unsigned
+          .map((c: { recipient_name: string | null; recipient_email: string | null; sent_at: string; viewed_at: string | null }) => ({
+            name: c.recipient_name || c.recipient_email || "Unknown",
+            days: Math.floor((Date.now() - new Date(c.sent_at).getTime()) / 86_400_000),
+            opened: !!c.viewed_at,
+          }))
+          .sort((a, b) => b.days - a.days);
+
+        const overdue = rows.filter((r) => r.days >= CHASE_AFTER_DAYS);
+        const neverOpened = rows.filter((r) => !r.opened);
+
+        const items = rows.map((r) => {
+          const waited = r.days === 0 ? "sent today" : `${r.days} day${r.days === 1 ? "" : "s"}`;
+          const state = r.opened ? "opened it, not signed" : "hasn't opened it";
+          return r.days >= CHASE_AFTER_DAYS
+            ? `<strong>${r.name}</strong> — <span style="color:#b45309;font-weight:600;">${waited}</span>, ${state}`
+            : `<strong>${r.name}</strong> — ${waited}, ${state}`;
+        });
+
+        // The useful signal is buried in a long list, so say it above the list.
+        if (overdue.length > 0 || neverOpened.length > 0) {
+          const notes: string[] = [];
+          if (overdue.length > 0) {
+            notes.push(`${overdue.length} ${overdue.length === 1 ? "has" : "have"} been waiting over a week — another email is unlikely to be what does it`);
+          }
+          if (neverOpened.length > 0) {
+            notes.push(`${neverOpened.length} ${neverOpened.length === 1 ? "has" : "have"} never opened it, so it may not be reaching them`);
+          }
+          items.unshift(`<em>${notes.join("; ")}.</em>`);
+        }
+
+        sections.push({
+          type: "contracts_unsigned",
+          title: "Contracts awaiting signature",
+          icon: "✍️",
+          accentColor: overdue.length > 0 ? "#b45309" : "#5F17EB",
+          itemsHtml: items,
+          summary: overdue.length > 0
+            ? `${rows.length} unsigned · ${overdue.length} over a week`
+            : `${rows.length} unsigned`,
+        });
+      }
+    }
+
     // ===== SEND THE DIGEST =====
     // One email per admin recipient — never one email with every address in to:.
     let digestSent = false;
