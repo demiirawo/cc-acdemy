@@ -95,6 +95,12 @@ export function StaffOnboardingView({ userId, personName }: StaffOnboardingViewP
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  /** Open a step's link: in-app when it points inside the Academy, new tab otherwise. */
+  const openStepLink = (url: string) => {
+    if (url.startsWith("/")) navigate(url);
+    else window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   // Whose checklist this is, and whether the viewer is looking at their own.
   const subjectId = userId ?? user?.id ?? null;
   const isSelf = !userId || userId === user?.id;
@@ -237,9 +243,12 @@ export function StaffOnboardingView({ userId, personName }: StaffOnboardingViewP
       return;
     }
 
-    // For external link steps, open the link
+    // For external link steps, open the link. A URL starting with "/" is
+    // somewhere inside the Academy — their contract, their schedule — so it is
+    // navigated to rather than thrown into a new tab where they lose their
+    // place in the checklist.
     if (step.step_type === 'external_link' && step.external_url) {
-      window.open(step.external_url, '_blank');
+      openStepLink(step.external_url);
     }
 
     // Mark the step as complete
@@ -513,7 +522,7 @@ export function StaffOnboardingView({ userId, personName }: StaffOnboardingViewP
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      onClick={() => window.open(step.external_url!, '_blank', 'noopener,noreferrer')}
+                                      onClick={() => openStepLink(step.external_url!)}
                                     >
                                       <ExternalLink className="h-4 w-4 mr-2" />
                                       Open link
@@ -540,7 +549,11 @@ export function StaffOnboardingView({ userId, personName }: StaffOnboardingViewP
                                       ) : step.step_type === 'internal_page' ? (
                                         <FileText className="h-4 w-4 mr-2" />
                                       ) : step.step_type === 'external_link' ? (
-                                        <ExternalLink className="h-4 w-4 mr-2" />
+                                        // An in-app destination is not an external link, and the
+                                        // arrow icon would suggest they are leaving the Academy.
+                                        step.external_url?.startsWith('/')
+                                          ? <FileText className="h-4 w-4 mr-2" />
+                                          : <ExternalLink className="h-4 w-4 mr-2" />
                                       ) : (
                                         <Check className="h-4 w-4 mr-2" />
                                       )}
