@@ -19,6 +19,44 @@ import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusTenure
 import { cn } from "@/lib/utils";
 import { recalcAllBonusPots, POT_DESC_TAG, peakCover, monthlyBonusPoints, potRecordDescription, isPeakMonth } from "@/lib/bonusPot";
 
+const DAY_MS = 1000 * 60 * 60 * 24;
+const HOLIDAY_ALLOWANCE_DEFAULT = 15;
+const HOLIDAY_ALLOWANCE_AFTER_1_YEAR = 18;
+
+/**
+ * Days of holiday allowance earned by `upTo`, within one holiday year.
+ *
+ * Allowance is tenure-based — 15 days, or 18 once a full year of service has
+ * been completed as at `rateAsOf` — and accrues evenly across the year from
+ * whichever came later, the start of the holiday year or the start date.
+ *
+ * `rateAsOf` is separate from `upTo` because the two reconciliations ask
+ * slightly different questions. June asks what rate applied to the year that
+ * just ended, so it looks at the year end. A leaver's final month asks what
+ * rate applied to them on their last day.
+ *
+ * Returns 0 when the two dates don't overlap the year at all, so someone who
+ * joined after it ended, or left before it began, accrues nothing.
+ */
+function accruedHolidayDays(
+  employmentStart: Date, hyStart: Date, hyEnd: Date, upTo: Date, rateAsOf: Date,
+): number {
+  const annual = (rateAsOf.getTime() - employmentStart.getTime()) / (DAY_MS * 365) >= 1
+    ? HOLIDAY_ALLOWANCE_AFTER_1_YEAR
+    : HOLIDAY_ALLOWANCE_DEFAULT;
+  const accrualStart = employmentStart > hyStart ? employmentStart : hyStart;
+  if (upTo <= accrualStart) return 0;
+  const totalDaysInYear = Math.ceil((hyEnd.getTime() - hyStart.getTime()) / DAY_MS);
+  const daysAccruing = Math.max(0, Math.ceil((upTo.getTime() - accrualStart.getTime()) / DAY_MS));
+  return Math.round(annual * Math.min(daysAccruing / totalDaysInYear, 1) * 10) / 10;
+}
+
+/** The holiday year (1 June – 31 May) that the given date falls inside. */
+function holidayYearOf(d: Date): { start: Date; end: Date } {
+  const startYear = d.getFullYear() - (d.getMonth() < 5 ? 1 : 0);
+  return { start: new Date(startYear, 5, 1), end: new Date(startYear + 1, 4, 31) };
+}
+
 // Monthly bonus pot: each staff member's slice is proportional to
 // (1 + tenure years) × rank multiplier — except in December and January, which
 // are shared on days worked over the peak window instead. Both live in
@@ -1280,38 +1318,15 @@ export function StaffPayManager({ onSummaryComputed }: {
 
         // June payroll reconciles the holiday year that JUST ENDED (June prev year → May current year).
         // Use the FULL annual allowance for that completed year, pro-rated only if the
-        // employee started mid-year.
-        const DEFAULT_ALLOWANCE = 15;
-        const INCREASED_ALLOWANCE = 18;
-        const totalDaysInYear = Math.ceil((holidayYearEnd.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
-
-        // Allowance is tenure-based: 15 days by default, 18 days once the staff member
-        // has completed 1+ full year of employment AS OF THE END of the holiday year
-        // being reconciled (so staff who cross their 1-year anniversary during the year
-        // get the higher rate applied to the completed year).
+        // employee started mid-year, and capped at their leaving date if they left during it.
+        // With no start date on file we cannot verify entitlement, so nothing is assumed.
         let accruedAllowance = 0;
         if (employeeStartDateStr) {
           const start = parseISO(employeeStartDateStr);
-          const yearsEmployedAtYearEnd = (holidayYearEnd.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
-          const annualAllowance = yearsEmployedAtYearEnd >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
-
-          // Cap accrual by employment_end_date if the employee left during the year
           const employmentEndStr = userHRFull?.employment_end_date || null;
           const employmentEnd = employmentEndStr ? parseISO(employmentEndStr) : null;
           const effectiveYearEnd = employmentEnd && employmentEnd < holidayYearEnd ? employmentEnd : holidayYearEnd;
-
-          if (start > holidayYearEnd || (employmentEnd && employmentEnd < holidayYearStart)) {
-            // Employee was not employed during this holiday year
-            accruedAllowance = 0;
-          } else {
-            const accrualStart = start > holidayYearStart ? start : holidayYearStart;
-            const daysAccruing = Math.max(0, Math.ceil((effectiveYearEnd.getTime() - accrualStart.getTime()) / (1000 * 60 * 60 * 24)));
-            const fraction = Math.min(daysAccruing / totalDaysInYear, 1);
-            accruedAllowance = Math.round(annualAllowance * fraction * 10) / 10;
-          }
-        } else {
-          // No start date on file — we cannot verify entitlement, so do not assume a full allowance
-          accruedAllowance = 0;
+          accruedAllowance = accruedHolidayDays(start, holidayYearStart, holidayYearEnd, effectiveYearEnd, holidayYearEnd);
         }
 
         const holidayBalance = accruedAllowance - userHolidaysTaken;
@@ -1324,6 +1339,52 @@ export function StaffPayManager({ onSummaryComputed }: {
           // Staff has used more holidays than accrued - deduction required
           excessHolidayDays = Math.abs(holidayBalance);
           excessHolidayDeduction = (monthlyBaseSalary / 20) * excessHolidayDays;
+        }
+      }
+
+      // ---- Leaver reconciliation ------------------------------------------
+      //
+      // Holiday accrues across the year but is usually taken in a lump, so
+      // someone who leaves in October may have had all fifteen days in August
+      // while only earning six. The June reconciliation above never catches
+      // this: by June they have gone, and a leaver is filtered off the payroll
+      // from the month after their last day. So their holiday year is closed
+      // early here, in the final month they are actually paid.
+      //
+      // This only ever deducts. Paying a leaver for holiday they accrued but
+      // did not take is a separate decision, and nobody has made it.
+      let leaverHolidayDeduction = 0;
+      let leaverHolidayDays = 0;
+      let leaverHolidayAccrued = 0;
+      let leaverHolidayTaken = 0;
+
+      const leaverEndStr = userHRFull?.employment_end_date || null;
+      const leaverEnd = leaverEndStr ? parseISO(leaverEndStr) : null;
+      const leavesThisMonth = leaverEnd && leaverEnd >= monthStart && leaverEnd <= monthEnd;
+      const leaverStartStr = userHRFull?.start_date || null;
+
+      if (leavesThisMonth && !hasUnlimitedHoliday && leaverStartStr) {
+        const leaverStart = parseISO(leaverStartStr);
+        // The holiday year their last day falls in — for a June leaver this is
+        // the new year that has just begun, and the block above has already
+        // settled the old one separately. The two windows never overlap.
+        const hy = holidayYearOf(leaverEnd);
+
+        leaverHolidayAccrued = accruedHolidayDays(leaverStart, hy.start, hy.end, leaverEnd, leaverEnd);
+        leaverHolidayTaken = staffHolidays.filter(h => {
+          if (h.user_id !== hr.user_id) return false;
+          if (h.status !== 'approved') return false;
+          if (h.absence_type !== 'holiday') return false;
+          const startDate = parseISO(h.start_date);
+          // Leave booked for after their last day was never taken, so it is
+          // not counted — and should be cancelled rather than charged for.
+          return startDate >= hy.start && startDate <= leaverEnd;
+        }).reduce((sum, h) => sum + Number(h.days_taken), 0);
+
+        const overTaken = leaverHolidayTaken - leaverHolidayAccrued;
+        if (overTaken > 0) {
+          leaverHolidayDays = Math.round(overTaken * 10) / 10;
+          leaverHolidayDeduction = (monthlyBaseSalary / 20) * leaverHolidayDays;
         }
       }
       
@@ -1399,7 +1460,7 @@ export function StaffPayManager({ onSummaryComputed }: {
       }
       
       // Total pay now includes holiday overtime bonus, calculated overtime pay, unused holiday payout, excess holiday deduction, unpaid holiday deduction, and pro-rata deduction
-      const liveTotalPay = monthlyBaseSalary + bonuses + overtime + expenses + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction - unpaidHolidayDeduction - proRataDeduction;
+      const liveTotalPay = monthlyBaseSalary + bonuses + overtime + expenses + holidayOvertimeBonus + unusedHolidayPayout - deductions - excessHolidayDeduction - leaverHolidayDeduction - unpaidHolidayDeduction - proRataDeduction;
       const hasSalaryRecord = salaryRecords.length > 0;
       // Once paid, the records ARE the number. The live recomputation keeps
       // moving afterwards — a salary edit, a backdated holiday, a pattern
@@ -1414,6 +1475,9 @@ export function StaffPayManager({ onSummaryComputed }: {
       // Check if excess holiday deduction already exists for this month
       const hasExcessHolidayDeduction = deductionRecords.some(r => 
         r.description?.includes('Excess holiday deduction')
+      );
+      const hasLeaverHolidayDeduction = deductionRecords.some(r =>
+        r.description?.includes('Leaver holiday deduction')
       );
       
       // Convert total pay to GBP for aggregation
@@ -1445,6 +1509,11 @@ export function StaffPayManager({ onSummaryComputed }: {
         unusedHolidayDays,
         excessHolidayDeduction,
         excessHolidayDays,
+        leaverHolidayDeduction,
+        leaverHolidayDays,
+        leaverHolidayAccrued,
+        leaverHolidayTaken,
+        hasLeaverHolidayDeduction,
         unpaidHolidayDeduction,
         unpaidHolidayDays,
         proRataDeduction,
@@ -1470,6 +1539,8 @@ export function StaffPayManager({ onSummaryComputed }: {
         holidayOvertimeBonus: 0, holidayOvertimeDays: 0, holidayShifts: [],
         unusedHolidayPayout: 0, unusedHolidayDays: 0,
         excessHolidayDeduction: 0, excessHolidayDays: 0,
+        leaverHolidayDeduction: 0, leaverHolidayDays: 0,
+        leaverHolidayAccrued: 0, leaverHolidayTaken: 0, hasLeaverHolidayDeduction: false,
         unpaidHolidayDeduction: 0, unpaidHolidayDays: 0,
         proRataDeduction: 0,
       };
@@ -1798,6 +1869,8 @@ export function StaffPayManager({ onSummaryComputed }: {
       description: `Unused holiday payout: ${staff.unusedHolidayDays} days (${PAY_CAPTURE_TAG})` });
     if (staff.excessHolidayDeduction > 0 && !staff.hasExcessHolidayDeduction) rows.push({ ...common, record_type: 'deduction' as any, amount: staff.excessHolidayDeduction,
       description: `Excess holiday deduction: ${staff.excessHolidayDays} days over accrued allowance (${PAY_CAPTURE_TAG})` });
+    if (staff.leaverHolidayDeduction > 0 && !staff.hasLeaverHolidayDeduction) rows.push({ ...common, record_type: 'deduction', amount: staff.leaverHolidayDeduction,
+      description: `Leaver holiday deduction: ${staff.leaverHolidayDays} days taken above the ${staff.leaverHolidayAccrued} accrued by their last day (${PAY_CAPTURE_TAG})` });
     if (staff.unpaidHolidayDeduction > 0) rows.push({ ...common, record_type: 'deduction' as any, amount: staff.unpaidHolidayDeduction,
       description: `Unpaid holiday deduction: ${staff.unpaidHolidayDays} days (${PAY_CAPTURE_TAG})` });
     if (staff.proRataDeduction > 0) rows.push({ ...common, record_type: 'deduction' as any, amount: staff.proRataDeduction,
@@ -2869,7 +2942,20 @@ export function StaffPayManager({ onSummaryComputed }: {
                               {staff.excessHolidayDays.toFixed(1)} day{staff.excessHolidayDays !== 1 ? 's' : ''} over allowance
                             </span>
                           </div>
-                        ) : '-'}
+                        ) : staff.leaverHolidayDeduction > 0 ? null : '-'}
+                        {staff.leaverHolidayDeduction > 0 && (
+                          <div
+                            className="flex flex-col items-end mt-1"
+                            title={`Left part-way through the holiday year: ${staff.leaverHolidayTaken} days taken against ${staff.leaverHolidayAccrued} accrued by their last day.`}
+                          >
+                            <span className="text-destructive">
+                              -{formatCurrency(staff.leaverHolidayDeduction, staff.currency)}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground">
+                              {staff.leaverHolidayDays.toFixed(1)} day{staff.leaverHolidayDays !== 1 ? 's' : ''} unaccrued on leaving
+                            </span>
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         {staff.unpaidHolidayDeduction > 0 ? (
