@@ -7,6 +7,7 @@ import { MyHRProfile } from "./MyHRProfile";
 import { OnboardingManager } from "./OnboardingManager";
 import { StaffOnboardingForm } from "./StaffOnboardingForm";
 import { MyContracts } from "./contracts/MyContracts";
+import { ContractsManager } from "./contracts/ContractsManager";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { TrainingMatrix } from "./training/TrainingMatrix";
 import { IncidentsSection } from "../incidents/IncidentsSection";
@@ -161,10 +162,21 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
           {/* Everyone has this, admins included: the onboarding step links here,
               and an admin going through onboarding needs to reach their own
               contract too. MyContracts only ever loads the signed-in person's. */}
-          <TabsContent value="my-contracts" className="mt-0">
+          <TabsContent value="my-contracts" className="mt-0 space-y-8">
             <ErrorBoundary area="My Contracts">
               <MyContracts />
             </ErrorBoundary>
+
+            {/* Admins get everyone's underneath their own. The all-staff view
+                already existed but only under Settings, which is not where
+                anyone looks for a contract. */}
+            {canManageHR && (
+              <ErrorBoundary area="All staff contracts">
+                <div className="border-t pt-8">
+                  <ContractsManager />
+                </div>
+              </ErrorBoundary>
+            )}
           </TabsContent>
 
           <TabsContent value="onboarding" className="mt-0">
