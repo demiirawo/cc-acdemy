@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { recalcAllBonusPots } from "@/lib/bonusPot";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +27,7 @@ import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { StaffSettingsDialog } from "./StaffSettingsDialog";
 import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusPoints, rankBonusMult, bonusEligible, LOWEST_ELIGIBLE_RANK, type Rank } from "./PerformanceRankBadge";
 import { peakCover, isPeakMonth, type PeakLeaveRow } from "@/lib/bonusPot";
+import { schedulePendingRatingChange, describeEffectiveDate } from "@/lib/pendingRating";
 import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItemsManager";
@@ -1603,8 +1603,10 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     setRankDialogOpen(true);
   };
 
-  // Save a new performance rating with a mandatory reason, which is emailed to
-  // the staff member so they understand why their rank changed.
+  // Record a rating change to take effect on the 2nd of next month, once
+  // payroll has run. Nothing changes today: not the profile, not the bonus
+  // pot, not the staff member's view of it, and no email goes out until the
+  // apply-pending-ratings job moves it on the day. See @/lib/pendingRating.
   const saveRankChange = async () => {
     if (!hrProfile || !isAdmin || !rankChoice || !rankReason.trim()) return;
     const cur = hrProfile.performance_rating as Rank | null;
@@ -1613,39 +1615,24 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       return;
     }
     setSavingRank(true);
-    const prev = hrProfile;
-    setHRProfile({ ...hrProfile, performance_rating: rankChoice }); // optimistic
-    const { error } = await supabase
-      .from('hr_profiles')
-      .update({ performance_rating: rankChoice })
-      .eq('id', hrProfile.id);
-    if (error) {
-      setHRProfile(prev);
+    try {
+      const { effectiveDate } = await schedulePendingRatingChange({
+        userId: selectedUserId!,
+        previousRating: cur,
+        newRating: rankChoice,
+        reason: rankReason.trim(),
+        createdBy: user?.id ?? null,
+      });
       setSavingRank(false);
-      toast({ title: "Couldn't update rating", description: error.message, variant: "destructive" });
-      return;
+      setRankDialogOpen(false);
+      toast({
+        title: `Rating change scheduled for ${describeEffectiveDate(effectiveDate)}`,
+        description: "Nothing changes until then — they will not see it, and the email goes out on the day.",
+      });
+    } catch (e) {
+      setSavingRank(false);
+      toast({ title: "Couldn't schedule the rating change", description: String((e as Error).message), variant: "destructive" });
     }
-    const recipient = allStaff.find(s => s.user_id === selectedUserId);
-    if (recipient?.email) {
-      supabase.functions.invoke("send-rank-change-email", {
-        body: {
-          recipientEmail: recipient.email,
-          recipientName: recipient.display_name,
-          oldRank: cur,
-          newRank: rankChoice,
-          reason: rankReason.trim(),
-        },
-      }).catch(() => {});
-    }
-    // A rating change alters bonus-pot eligibility/points — recompute any pots
-    // already distributed so this person's share updates everywhere.
-    recalcAllBonusPots(user?.id).catch(() => {});
-    setSavingRank(false);
-    setRankDialogOpen(false);
-    toast({
-      title: "Performance rating updated",
-      description: recipient?.email ? `${recipient.display_name || "The staff member"} has been emailed the reason.` : undefined,
-    });
   };
 
   // Save the admin's "how to improve your rating" note for this staff member.

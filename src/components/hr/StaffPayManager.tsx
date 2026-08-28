@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusTenureYears, employedFraction, type Rank } from "./PerformanceRankBadge";
 import { cn } from "@/lib/utils";
 import { recalcAllBonusPots, POT_DESC_TAG, peakCover, monthlyBonusPoints, potRecordDescription, isPeakMonth } from "@/lib/bonusPot";
+import { schedulePendingRatingChange, describeEffectiveDate } from "@/lib/pendingRating";
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 const HOLIDAY_ALLOWANCE_DEFAULT = 15;
@@ -527,6 +528,8 @@ export function StaffPayManager({ onSummaryComputed }: {
     setRankDialogOpen(true);
   };
 
+  // Ratings are decided now and applied on the 2nd of next month, after
+  // payroll. Nothing moves today — see @/lib/pendingRating for why.
   const savePayrollRankChange = async () => {
     if (!rankUserId || !rankChoice || !rankReason.trim()) return;
     const userId = rankUserId;
@@ -536,34 +539,25 @@ export function StaffPayManager({ onSummaryComputed }: {
       toast({ title: "Choose a different rating", description: "The rating hasn't changed.", variant: "destructive" });
       return;
     }
-    const next = rankChoice;
     setSavingRank(true);
-    setHRProfilesFull(prev => prev.map(h => h.user_id === userId ? { ...h, performance_rating: next } : h));
-    const { error } = await supabase.from('hr_profiles').update({ performance_rating: next }).eq('user_id', userId);
-    if (error) {
-      setHRProfilesFull(prev => prev.map(h => h.user_id === userId ? { ...h, performance_rating: cur } : h));
+    try {
+      const { effectiveDate } = await schedulePendingRatingChange({
+        userId,
+        previousRating: cur,
+        newRating: rankChoice,
+        reason: rankReason.trim(),
+        createdBy: user?.id ?? null,
+      });
       setSavingRank(false);
-      toast({ title: "Couldn't update rating", description: error.message, variant: "destructive" });
-      return;
+      setRankDialogOpen(false);
+      toast({
+        title: `Rating change scheduled for ${describeEffectiveDate(effectiveDate)}`,
+        description: "Nothing changes until then — they will not see it, and the email goes out on the day.",
+      });
+    } catch (e) {
+      setSavingRank(false);
+      toast({ title: "Couldn't schedule the rating change", description: String((e as Error).message), variant: "destructive" });
     }
-    setSavingRank(false);
-    setRankDialogOpen(false);
-    const recipient = userProfiles.find(u => u.user_id === userId);
-    if (recipient?.email) {
-      supabase.functions.invoke("send-rank-change-email", {
-        body: {
-          recipientEmail: recipient.email,
-          recipientName: recipient.display_name,
-          oldRank: cur,
-          newRank: next,
-          reason: rankReason.trim(),
-        },
-      }).catch(() => {});
-    }
-    // A rating change alters bonus-pot eligibility/points — recompute any pots
-    // that were already distributed so this person's share updates (e.g. a new
-    // D rating drops them out and redistributes to eligible staff).
-    void resyncAllBonusPots();
   };
 
   const fetchData = async () => {

@@ -1423,6 +1423,48 @@ export type Database = {
         }
         Relationships: []
       }
+      pending_rating_changes: {
+        Row: {
+          applied_at: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          created_at: string
+          created_by: string | null
+          effective_date: string
+          id: string
+          new_rating: string
+          previous_rating: string | null
+          reason: string
+          user_id: string
+        }
+        Insert: {
+          applied_at?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          effective_date: string
+          id?: string
+          new_rating: string
+          previous_rating?: string | null
+          reason: string
+          user_id: string
+        }
+        Update: {
+          applied_at?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          effective_date?: string
+          id?: string
+          new_rating?: string
+          previous_rating?: string | null
+          reason?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
