@@ -7,6 +7,7 @@ import { MyHRProfile } from "./MyHRProfile";
 import { OnboardingManager } from "./OnboardingManager";
 import { StaffOnboardingForm } from "./StaffOnboardingForm";
 import { MyContracts } from "./contracts/MyContracts";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { TrainingMatrix } from "./training/TrainingMatrix";
 import { IncidentsSection } from "../incidents/IncidentsSection";
 import { StaffMeetingsSection } from "../meetings/StaffMeetingsSection";
@@ -161,7 +162,9 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
               and an admin going through onboarding needs to reach their own
               contract too. MyContracts only ever loads the signed-in person's. */}
           <TabsContent value="my-contracts" className="mt-0">
-            <MyContracts />
+            <ErrorBoundary area="My Contracts">
+              <MyContracts />
+            </ErrorBoundary>
           </TabsContent>
 
           <TabsContent value="onboarding" className="mt-0">

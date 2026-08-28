@@ -209,7 +209,7 @@ export function MyContracts() {
       )}
 
       <Dialog open={!!active} onOpenChange={(o) => !o && setActive(null)}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="w-[95vw] max-w-[880px] sm:max-w-[880px]">
           <DialogHeader>
             <DialogTitle>{active?.title}</DialogTitle>
             <DialogDescription>
@@ -220,7 +220,7 @@ export function MyContracts() {
           </DialogHeader>
 
           {active && (
-            <div className="max-h-[60vh] overflow-y-auto pr-1">
+            <div className="max-h-[72vh] overflow-y-auto pr-1">
               <ContractDocument
                 bodyHtml={active.body_html}
                 signedName={active.status === "signed" ? active.signed_name : undefined}

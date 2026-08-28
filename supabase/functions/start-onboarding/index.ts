@@ -243,16 +243,67 @@ serve(async (req: Request): Promise<Response> => {
     if (settings?.contract_enabled && settings.contract_template_id && !hr?.onboarding_contract_id) {
       const { data: tpl } = await admin
         .from("contract_templates")
-        .select("id, name, body_html")
+        .select("id, name, body_html, is_archived")
         .eq("id", settings.contract_template_id)
         .maybeSingle();
-      if (tpl) {
+
+      // A template that has been archived is one somebody deliberately took out
+      // of use. Issuing from it anyway is how a retired draft reaches a new
+      // starter months after it was replaced.
+      if (tpl?.is_archived) {
+        failures.push("the contract template configured for onboarding has been archived");
+        await alertAdminsOfFailure(
+          resendApiKey,
+          `their employment contract — the template configured for onboarding ("${tpl.name}") has been archived. Point Onboarding Automation at a current template.`,
+          `${starterName} (${profile.email})`,
+        );
+      } else if (tpl) {
+        // Fill in what the contract says about this person before it is stored.
+        // The stored body is what they sign and what is kept, so a placeholder
+        // left in it would be signed as-is — and later profile edits must not
+        // be able to rewrite an agreement after the fact.
+        const { data: hrDetail } = await admin
+          .from("hr_profiles").select("job_title, start_date").eq("user_id", user.id).maybeSingle();
+        const { data: pay } = await admin
+          .from("staff_salaries").select("base_salary, base_currency").eq("user_id", user.id).maybeSingle();
+
+        const SYMBOL: Record<string, string> = { GBP: "£", EUR: "€", USD: "$", NGN: "₦", INR: "₹", ZAR: "R" };
+        const fee = Number(pay?.base_salary ?? 0) > 0
+          ? `${SYMBOL[(pay!.base_currency || "GBP").toUpperCase()] ?? `${pay!.base_currency} `}${Number(pay!.base_salary).toLocaleString("en-GB")}`
+          : "";
+        const started = hrDetail?.start_date
+          ? new Date(hrDetail.start_date).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+          : "";
+        const values: Record<string, string> = {
+          full_name: profile.display_name ?? "",
+          job_title: (hrDetail?.job_title ?? "").trim(),
+          monthly_fee: fee,
+          start_date: started,
+        };
+
+        const filled = tpl.body_html.replace(/\{\{(\w+)\}\}/g, (whole: string, name: string) =>
+          values[name] !== undefined ? values[name] : whole);
+
+        // Job title and fee are what the agreement is actually about. Sending a
+        // contract with either blank is worse than not sending one, so the
+        // starter keeps their offer and an admin is told what to fill in.
+        const missing = (["job_title", "monthly_fee"] as const)
+          .filter((f) => tpl.body_html.includes(`{{${f}}}`) && !values[f]);
+        if (missing.length > 0) {
+          const words = missing.map((f) => (f === "job_title" ? "job title" : "salary")).join(" and ");
+          failures.push(`their contract could not be issued — no ${words} on their profile`);
+          await alertAdminsOfFailure(
+            resendApiKey,
+            `their employment contract — their ${words} is not set on their HR profile, and the contract states it. Fill it in, then send the contract from Contracts.`,
+            `${starterName} (${profile.email})`,
+          );
+        } else {
         const { data: contract } = await admin
           .from("contracts")
           .insert({
             template_id: tpl.id,
             title: tpl.name,
-            body_html: tpl.body_html,
+            body_html: filled,
             recipient_user_id: user.id,
             recipient_email: profile.email,
             recipient_name: profile.display_name,
@@ -294,6 +345,7 @@ serve(async (req: Request): Promise<Response> => {
             `their employment contract — it could not be created`,
             `${starterName} (${profile.email})`,
           );
+        }
         }
       } else {
         // Template lookup failed: contract sending is switched on but the

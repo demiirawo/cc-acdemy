@@ -43,7 +43,7 @@ export function ContractDocument({
   }, [signatureImageUrl]);
 
   return (
-    <div className="rounded-md border bg-white p-6 text-foreground shadow-sm">
+    <div className="mx-auto w-full max-w-[794px] rounded-md border bg-white px-8 py-10 text-[15px] leading-relaxed text-foreground shadow-sm sm:px-14 sm:py-16">
       <div
         className="cc-rich max-w-none"
         dangerouslySetInnerHTML={{ __html: bodyHtml }}

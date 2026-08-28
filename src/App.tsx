@@ -16,6 +16,7 @@ import { PublicLiveView } from "./components/PublicLiveView";
 import { PublicTrainingMatrix } from "./components/PublicTrainingMatrix";
 import { CandidateApplyPage } from "./components/recruitment/CandidateApplyPage";
 import { PublicStaffMeeting } from "./components/PublicStaffMeeting";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
@@ -25,6 +26,9 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        {/* A component that throws must not take the whole app down with it —
+            that is what turns a small bug into "I got thrown out". */}
+        <ErrorBoundary>
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/page/:pageId" element={<Index />} />
@@ -44,6 +48,7 @@ const App = () => (
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </ErrorBoundary>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
