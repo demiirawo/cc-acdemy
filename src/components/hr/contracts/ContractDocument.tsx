@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { formatDateTime } from "./contractStatus";
 
+/** Matches the handwriting stack the Company's signature uses in the body. */
+const SIGNATURE_FONT = '"Segoe Script", "Brush Script MT", "Snell Roundhand", cursive';
+
 interface ContractDocumentProps {
   bodyHtml: string;
   signedName?: string | null;
@@ -48,20 +51,30 @@ export function ContractDocument({
         className="cc-rich max-w-none"
         dangerouslySetInnerHTML={{ __html: bodyHtml }}
       />
-      {(signedName || signatureImageUrl) && (
-        <div className="mt-8 border-t pt-6">
-          <p className="mb-2 text-sm font-medium text-muted-foreground">Signed by</p>
-          {sigSrc && (
-            <img
-              src={sigSrc}
-              alt="Signature"
-              className="mb-2 max-h-24 rounded border bg-white p-1"
-            />
+      {/* The Contractor's side of the signature block. The body above ends with
+          "Signed by the Contractor", so this continues the document rather than
+          announcing itself — same layout as the Company's signature, so the two
+          read as one execution block whichever way round they were added. */}
+      {signedName || signatureImageUrl ? (
+        <div className="mt-2">
+          {sigSrc ? (
+            <img src={sigSrc} alt={`Signature of ${signedName ?? "the Contractor"}`} className="mb-1 max-h-20" />
+          ) : (
+            <p className="text-[30px] leading-tight" style={{ fontFamily: SIGNATURE_FONT }}>
+              {signedName}
+            </p>
           )}
-          <p className="text-lg font-semibold" style={{ fontFamily: "cursive" }}>
-            {signedName}
-          </p>
-          <p className="text-xs text-muted-foreground">Signed on {formatDateTime(signedAt)}</p>
+          <div className="max-w-[280px] border-t pt-1.5">
+            <p>{signedName}</p>
+            <p className="text-sm text-muted-foreground">Signed {formatDateTime(signedAt)}</p>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2">
+          <div className="h-12" />
+          <div className="max-w-[280px] border-t pt-1.5">
+            <p className="text-muted-foreground">Not yet signed</p>
+          </div>
         </div>
       )}
     </div>
