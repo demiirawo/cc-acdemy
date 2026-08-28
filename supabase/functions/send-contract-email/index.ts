@@ -158,11 +158,13 @@ async function alertAdminsOfFailure(
 // ============================================================================
 
 interface ContractEmailRequest {
-  type: "contract_sent" | "contract_signed";
+  type: "contract_sent" | "contract_reminder" | "contract_signed";
   contractId: string;
   contractTitle: string;
   recipientName?: string | null;
   recipientEmail?: string | null;
+  /** Reminders only: whole days the contract has been waiting. */
+  daysWaiting?: number | null;
 }
 
 const CONTRACTS_LINK = `${APP_URL}/view/hr?tab=my-contracts`;
@@ -218,6 +220,53 @@ serve(async (req) => {
           "Your contract is ready to sign",
           content,
           "You're receiving this because a contract was sent to you to sign at Care Cuddle.",
+        ),
+      });
+      if (error) throw error;
+    }
+
+    if (type === "contract_reminder") {
+      const to = body.recipientEmail;
+      if (!to) {
+        return new Response(JSON.stringify({ skipped: "no recipient email" }), {
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // A reminder that repeats the first email word for word reads like a
+      // broken robot by day four. This one says how long it has been waiting,
+      // which is the only new information there is.
+      const days = Number(body.daysWaiting) || 0;
+      const waited =
+        days <= 0 ? "since yesterday"
+        : days === 1 ? "since yesterday"
+        : days < 7 ? `for ${days} days`
+        : days < 14 ? "for over a week"
+        : `for ${Math.floor(days / 7)} weeks`;
+
+      const content =
+        greeting(recipientName) +
+        paragraph(
+          `Your contract — <strong>${contractTitle}</strong> — has been waiting for your signature ${waited}.`
+        ) +
+        paragraph(
+          `It only takes a minute: read it through, type your name and draw your signature at the bottom. If something in it doesn't look right, reply to this email rather than signing.`
+        ) +
+        button("Read and sign your contract", CONTRACTS_LINK) +
+        mutedParagraph(
+          `If the button doesn't work, copy this link into your browser:<br/>${CONTRACTS_LINK}<br/><br/>You'll stop receiving these as soon as it's signed.`
+        );
+
+      const { error } = await resend.emails.send({
+        from: EMAIL_SENDER,
+        to: [to],
+        subject: days >= 7
+          ? `Still waiting: please sign your contract`
+          : `A reminder to sign your contract`,
+        html: emailShell(
+          "Your contract is still waiting",
+          content,
+          "You're receiving this because a contract sent to you at Care Cuddle hasn't been signed yet.",
         ),
       });
       if (error) throw error;
