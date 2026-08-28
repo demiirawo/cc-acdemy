@@ -17,6 +17,7 @@ import { PublicTrainingMatrix } from "./components/PublicTrainingMatrix";
 import { CandidateApplyPage } from "./components/recruitment/CandidateApplyPage";
 import { PublicStaffMeeting } from "./components/PublicStaffMeeting";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ContractPage } from "./components/hr/contracts/ContractPage";
 
 const queryClient = new QueryClient();
 
@@ -35,6 +36,7 @@ const App = () => (
           <Route path="/view/:viewName" element={<Index />} />
           <Route path="/payroll" element={<Navigate to="/view/hr?tab=payroll" replace />} />
           
+          <Route path="/contract/:contractId" element={<ContractPage />} />
           <Route path="/acknowledge-shift-change" element={<AcknowledgeShiftChangePage />} />
           <Route path="/acknowledge-feedback" element={<AcknowledgeFeedbackPage />} />
           <Route path="/public/schedule/:clientName" element={<PublicClientSchedule />} />

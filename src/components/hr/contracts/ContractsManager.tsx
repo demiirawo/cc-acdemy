@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -48,10 +49,10 @@ interface ContractRow {
 
 export function ContractsManager() {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [contracts, setContracts] = useState<ContractRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [sendOpen, setSendOpen] = useState(false);
-  const [viewing, setViewing] = useState<ContractRow | null>(null);
   const [cancelTarget, setCancelTarget] = useState<ContractRow | null>(null);
 
   const load = async () => {
@@ -177,7 +178,7 @@ export function ContractsManager() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button size="sm" variant="ghost" onClick={() => setViewing(c)} title="View">
+                        <Button size="sm" variant="ghost" onClick={() => navigate(`/contract/${c.id}`)} title="Open contract">
                           <Eye className="h-4 w-4" />
                         </Button>
                         {(c.status === "sent" || c.status === "viewed") && (
@@ -201,28 +202,6 @@ export function ContractsManager() {
       )}
 
       <SendContractDialog open={sendOpen} onOpenChange={setSendOpen} onSent={load} />
-
-      {/* View contract dialog */}
-      <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-4 w-4" />
-              {viewing?.title}
-            </DialogTitle>
-          </DialogHeader>
-          {viewing && (
-            <div className="max-h-[70vh] overflow-y-auto">
-              <ContractDocument
-                bodyHtml={viewing.body_html}
-                signedName={viewing.signed_name}
-                signatureImageUrl={viewing.signature_image_url}
-                signedAt={viewing.signed_at}
-              />
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
       <AlertDialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}>
         <AlertDialogContent>
