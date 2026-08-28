@@ -166,7 +166,7 @@ interface ContractEmailRequest {
   /** Reminders only: whole days the contract has been waiting. */
   daysWaiting?: number | null;
   /** Digest only: everyone who has been sitting on a contract for over a week. */
-  overdue?: Array<{ name: string | null; email: string | null; days: number; opened: boolean }>;
+  overdue?: Array<{ name: string | null; email: string | null; days: number; opened: boolean; chase?: boolean }>;
 }
 
 const CONTRACTS_LINK = `${APP_URL}/view/hr?tab=my-contracts`;
@@ -295,28 +295,34 @@ serve(async (req) => {
 
       const list = rows.map((r) => `
         <tr>
-          <td style="padding:6px 12px 6px 0;color:#111827;font-size:14px;">${r.name ?? r.email ?? "Unknown"}</td>
-          <td style="padding:6px 12px 6px 0;color:#6b7280;font-size:14px;white-space:nowrap;">${r.days} days</td>
+          <td style="padding:6px 12px 6px 0;font-size:14px;${r.chase ? "color:#b45309;font-weight:600;" : "color:#111827;"}">${r.name ?? r.email ?? "Unknown"}</td>
+          <td style="padding:6px 12px 6px 0;font-size:14px;white-space:nowrap;${r.chase ? "color:#b45309;font-weight:600;" : "color:#6b7280;"}">${r.days === 0 ? "today" : `${r.days} day${r.days === 1 ? "" : "s"}`}</td>
           <td style="padding:6px 0;color:#6b7280;font-size:14px;">${r.opened ? "opened, not signed" : "never opened"}</td>
         </tr>`).join("");
 
+      const chasing = rows.filter((r) => r.chase).length;
       const neverOpened = rows.filter((r) => !r.opened).length;
 
       const content =
         greeting(null) +
         paragraph(
-          `${rows.length} ${rows.length === 1 ? "person has" : "people have"} had a contract waiting for over a week. They are being reminded every morning, but at this point a conversation will probably do more than another email.`
+          `${rows.length} contract${rows.length === 1 ? " is" : "s are"} still unsigned. Everyone below was reminded this morning and will be again tomorrow.`
         ) +
+        (chasing > 0
+          ? paragraph(`<strong>${chasing}</strong> ${chasing === 1 ? "has" : "have"} been waiting over a week — marked below. At that point another email is unlikely to be what does it.`)
+          : "") +
         `<table role="presentation" style="border-collapse:collapse;margin:8px 0 16px;">${list}</table>` +
         (neverOpened > 0
-          ? paragraph(`${neverOpened} of them ${neverOpened === 1 ? "has" : "have"} never opened it — worth checking the reminders are reaching them at all.`)
+          ? paragraph(`${neverOpened} ${neverOpened === 1 ? "has" : "have"} never opened it — worth checking the reminders are reaching them at all.`)
           : "") +
         button("Open contracts", `${APP_URL}/view/hr?tab=my-contracts`);
 
       const { error } = await resend.emails.send({
         from: EMAIL_SENDER,
         to,
-        subject: `${rows.length} contract${rows.length === 1 ? "" : "s"} unsigned for over a week`,
+        subject: chasing > 0
+          ? `${rows.length} contracts unsigned — ${chasing} over a week`
+          : `${rows.length} contract${rows.length === 1 ? "" : "s"} still unsigned`,
         html: emailShell(
           "Contracts still unsigned",
           content,
