@@ -45,12 +45,18 @@ export function MyContracts() {
   const padRef = useRef<SignaturePadHandle>(null);
 
   const load = async () => {
+    if (!user?.id) return;
     setLoading(true);
+    // Filtered by recipient explicitly. For staff, RLS already allows nothing
+    // else — but an admin's policy covers every contract, so without this the
+    // page would quietly show them the whole company's and offer a signature
+    // box on somebody else's agreement.
     const { data, error } = await supabase
       .from("contracts")
       .select(
         "id, title, body_html, status, sent_at, viewed_at, signed_at, signed_name, signature_image_url"
       )
+      .eq("recipient_user_id", user.id)
       .order("sent_at", { ascending: false });
     if (error) {
       toast({ title: "Could not load your contracts", description: error.message, variant: "destructive" });
@@ -62,7 +68,8 @@ export function MyContracts() {
 
   useEffect(() => {
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const open = async (c: MyContract) => {
     setActive(c);

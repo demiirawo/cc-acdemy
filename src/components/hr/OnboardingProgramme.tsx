@@ -33,7 +33,7 @@ interface OnboardingStep {
 
 const STEP_TYPE: Record<string, { label: string; icon: typeof FileText }> = {
   internal_page: { label: "Academy page — requires acknowledgement", icon: FileText },
-  external_link: { label: "External resource", icon: ExternalLink },
+  external_link: { label: "Link to open", icon: ExternalLink },
   task: { label: "Task to complete", icon: Check },
   acknowledgement: { label: "Read and acknowledge", icon: CheckCircle2 },
   training: { label: "Training", icon: GraduationCap },
@@ -212,16 +212,25 @@ export function OnboardingProgramme() {
                                       View page
                                     </Button>
                                   )}
-                                  {step.step_type === "external_link" && step.external_url && (
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => window.open(step.external_url!, "_blank", "noopener,noreferrer")}
-                                    >
-                                      <ExternalLink className="h-4 w-4 mr-2" />
-                                      Open link
-                                    </Button>
-                                  )}
+                                  {step.step_type === "external_link" && step.external_url && (() => {
+                                    // A URL starting with "/" is somewhere in the Academy, so it
+                                    // is navigated to rather than thrown into a new tab.
+                                    const inApp = step.external_url.startsWith("/");
+                                    return (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => inApp
+                                          ? navigate(step.external_url!)
+                                          : window.open(step.external_url!, "_blank", "noopener,noreferrer")}
+                                      >
+                                        {inApp
+                                          ? <FileText className="h-4 w-4 mr-2" />
+                                          : <ExternalLink className="h-4 w-4 mr-2" />}
+                                        {inApp ? "Open" : "Open link"}
+                                      </Button>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             </div>

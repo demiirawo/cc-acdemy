@@ -93,6 +93,7 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
 
   const adminTabs = [
     { value: "my-profile", label: "Staff Profile" },
+    { value: "my-contracts", label: "My Contracts" },
     { value: "onboarding", label: "Onboarding" },
     { value: "onboarding-form", label: "My Details" },
     { value: "training", label: "Training" },
@@ -156,11 +157,12 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
             <MyHRProfile initialUserId={profileUserId} />
           </TabsContent>
 
-          {!isAdmin && (
-            <TabsContent value="my-contracts" className="mt-0">
-              <MyContracts />
-            </TabsContent>
-          )}
+          {/* Everyone has this, admins included: the onboarding step links here,
+              and an admin going through onboarding needs to reach their own
+              contract too. MyContracts only ever loads the signed-in person's. */}
+          <TabsContent value="my-contracts" className="mt-0">
+            <MyContracts />
+          </TabsContent>
 
           <TabsContent value="onboarding" className="mt-0">
             <OnboardingManager />

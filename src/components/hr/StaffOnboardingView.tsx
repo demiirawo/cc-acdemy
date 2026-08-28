@@ -440,10 +440,17 @@ export function StaffOnboardingView({ userId, personName }: StaffOnboardingViewP
                                       </>
                                     )}
                                     {step.step_type === 'external_link' && (
-                                      <>
-                                        <ExternalLink className="h-4 w-4" />
-                                        <span>External Resource</span>
-                                      </>
+                                      step.external_url?.startsWith('/') ? (
+                                        <>
+                                          <FileText className="h-4 w-4" />
+                                          <span>Opens elsewhere in the Academy</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <ExternalLink className="h-4 w-4" />
+                                          <span>External Resource</span>
+                                        </>
+                                      )
                                     )}
                                     {step.step_type === 'task' && (
                                       <>
