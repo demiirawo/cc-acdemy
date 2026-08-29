@@ -1423,6 +1423,57 @@ export type Database = {
         }
         Relationships: []
       }
+      pending_salary_changes: {
+        Row: {
+          applied_at: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          created_at: string
+          created_by: string | null
+          effective_date: string
+          id: string
+          new_currency: string
+          new_salary: number
+          notified_at: string | null
+          previous_currency: string | null
+          previous_salary: number | null
+          reason: string | null
+          user_id: string
+        }
+        Insert: {
+          applied_at?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          effective_date: string
+          id?: string
+          new_currency: string
+          new_salary: number
+          notified_at?: string | null
+          previous_currency?: string | null
+          previous_salary?: number | null
+          reason?: string | null
+          user_id: string
+        }
+        Update: {
+          applied_at?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          effective_date?: string
+          id?: string
+          new_currency?: string
+          new_salary?: number
+          notified_at?: string | null
+          previous_currency?: string | null
+          previous_salary?: number | null
+          reason?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       pending_rating_changes: {
         Row: {
           applied_at: string | null

@@ -18,6 +18,8 @@ import {
 import { Shield, Infinity, Plus, X, Loader2, Coins } from "lucide-react";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { recalcAllBonusPots } from "@/lib/bonusPot";
+import { useAuth } from "@/hooks/useAuth";
+import { scheduleSalaryChange, describeSalaryEffectiveDate } from "@/lib/pendingSalary";
 import { useUserRole } from "@/hooks/useUserRole";
 
 // Per-staff settings editor, shared between the Staffing Settings roster and
@@ -98,10 +100,14 @@ interface StaffSettingsDialogProps {
 export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: StaffSettingsDialogProps) {
   const { toast } = useToast();
   const { isAdmin } = useUserRole();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [existingHRId, setExistingHRId] = useState<string | null>(null);
   const [staffEmail, setStaffEmail] = useState<string | null>(null);
+  // What they are on now. A salary change is deferred past payday rather than
+  // written straight away, so the save needs to know whether it actually moved.
+  const [currentSalary, setCurrentSalary] = useState<{ amount: number | null; currency: string } | null>(null);
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [allClients, setAllClients] = useState<{ id: string; name: string }[]>([]);
   const [staffClients, setStaffClients] = useState<string[]>([]);
@@ -124,6 +130,10 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
         ]);
         if (cancelled) return;
         setStaffEmail(profile?.email ?? null);
+        // staff_salaries isn't in the generated types, so it is read once here
+        // and used typed below rather than cast at each mention.
+        const pay = (salary ?? null) as { base_salary: number | null; base_currency: string | null } | null;
+        setCurrentSalary({ amount: pay?.base_salary ?? null, currency: pay?.base_currency ?? 'GBP' });
         setExistingHRId(hr?.id ?? null);
         setAllClients(clients || []);
         setStaffClients((assignments || []).map(a => a.client_name));
@@ -136,8 +146,8 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
           work_phone: (hr as any)?.work_phone || '',
           start_date: hr?.start_date || '',
           employment_end_date: (hr as any)?.employment_end_date || '',
-          base_currency: (salary as any)?.base_currency || 'GBP',
-          base_salary: (salary as any)?.base_salary || 0,
+          base_currency: pay?.base_currency || 'GBP',
+          base_salary: pay?.base_salary || 0,
           pay_frequency: hr?.pay_frequency || 'monthly',
           annual_holiday_allowance: hr?.annual_holiday_allowance || 28,
           unlimited_holiday: hr?.unlimited_holiday || false,
@@ -224,12 +234,41 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
         if (error) throw error;
       }
 
-      // Salary — admins only (RLS also blocks non-admins from writing staff_salaries).
+      // Salary — admins only (RLS also blocks non-admins from writing
+      // staff_salaries). A change does not land here: payroll runs on the 1st,
+      // so writing a new figure mid-month would pay it for a month worked at
+      // the old rate. It is scheduled for the 2nd instead, and the person is
+      // emailed now. See @/lib/pendingSalary.
+      let salaryLands: Date | null = null;
       if (isAdmin) {
-        const { error: salErr } = await (supabase as any)
-          .from('staff_salaries')
-          .upsert({ user_id: userId, base_salary: formData.base_salary || null, base_currency: formData.base_currency, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-        if (salErr) throw salErr;
+        const nextAmount = formData.base_salary || null;
+        const nextCurrency = formData.base_currency;
+        const wasAmount = currentSalary?.amount ?? null;
+        const wasCurrency = currentSalary?.currency ?? 'GBP';
+        const moved = nextAmount !== wasAmount || nextCurrency !== wasCurrency;
+
+        if (moved && nextAmount && nextAmount > 0 && wasAmount && wasAmount > 0) {
+          // A real change to an existing salary: defer it past payday.
+          const { effectiveDate } = await scheduleSalaryChange({
+            userId,
+            previousSalary: wasAmount,
+            previousCurrency: wasCurrency,
+            newSalary: nextAmount,
+            newCurrency: nextCurrency,
+            createdBy: user?.id ?? null,
+            recipientEmail: staffEmail,
+            recipientName: formData.display_name || staffEmail,
+          });
+          salaryLands = effectiveDate;
+        } else if (moved) {
+          // Setting a first salary, or clearing one, is not a change to what
+          // somebody is being paid this month — there is nothing to protect the
+          // payroll run from, so it applies now.
+          const { error: salErr } = await (supabase as any)
+            .from('staff_salaries')
+            .upsert({ user_id: userId, base_salary: nextAmount, base_currency: nextCurrency, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+          if (salErr) throw salErr;
+        }
       }
 
       const { error: deleteError } = await supabase
@@ -287,7 +326,14 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
       // Pay/pots are admin-only (HR can't read salaries to recompute).
       if (isAdmin) recalcAllBonusPots().catch(() => {});
 
-      toast({ title: "Success", description: existingHRId ? "Staff settings updated" : "Staff profile created" });
+      toast(
+        salaryLands
+          ? {
+              title: `Pay change scheduled for ${describeSalaryEffectiveDate(salaryLands)}`,
+              description: `${formData.display_name || "They"} have been emailed. Their profile and payroll keep the current figure until then, so the next run is unaffected.`,
+            }
+          : { title: "Success", description: existingHRId ? "Staff settings updated" : "Staff profile created" }
+      );
       onOpenChange(false);
       onSaved?.();
     } catch (error: any) {
