@@ -90,8 +90,15 @@ export const SCOPE_AHEAD_DAYS = 28;
  */
 export const MONITORING_SHIFT_TYPE = "Call Monitoring";
 
-/** Whether this shift is one to check. */
-export function isMonitoringShift(shiftType: string | null): boolean {
+/**
+ * Whether this shift is one to check.
+ *
+ * Overtime is excluded: covering somebody else's monitoring shift now and again
+ * is not the same as holding one, and checking a person on the strength of an
+ * occasional Saturday says more about the rota than about them.
+ */
+export function isMonitoringShift(shiftType: string | null, isOvertime?: boolean | null): boolean {
+  if (isOvertime) return false;
   return (shiftType ?? "").trim().toLowerCase() === MONITORING_SHIFT_TYPE.toLowerCase();
 }
 

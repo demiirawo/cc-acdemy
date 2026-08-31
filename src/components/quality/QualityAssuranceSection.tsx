@@ -61,11 +61,13 @@ export function QualityAssuranceSection() {
 
   const load = async () => {
     setLoading(true);
-    const [{ data: qa }, { data: profiles }, { data: patterns }] = await Promise.all([
+    const [{ data: qa }, { data: profiles }, { data: hr }, { data: patterns }] = await Promise.all([
       supabase.from("qa_checks").select("*").order("checked_at", { ascending: false }).limit(200),
       supabase.from("profiles").select("user_id, display_name, email").order("display_name"),
+      // Somebody whose last day has passed is not on any shift to be checked on.
+      supabase.from("hr_profiles").select("user_id, employment_end_date"),
       supabase.from("recurring_shift_patterns")
-        .select("user_id, client_name, shift_type, start_time, end_time, start_date, end_date, days_of_week"),
+        .select("user_id, client_name, shift_type, is_overtime, start_time, end_time, start_date, end_date, days_of_week"),
     ]);
 
     setChecks((qa ?? []) as QaCheck[]);
@@ -74,13 +76,19 @@ export function QualityAssuranceSection() {
       return p?.display_name || p?.email || "Unknown";
     };
 
+    const todayIso = format(new Date(), "yyyy-MM-dd");
+    const gone = new Set((hr ?? [])
+      .filter((h) => h.employment_end_date && h.employment_end_date < todayIso)
+      .map((h) => h.user_id));
+
     // In scope: on a monitoring shift — out-of-hours cover rather than the
     // ordinary desk day — at some point in the next four weeks.
     const from = new Date();
     const to = addDays(from, SCOPE_AHEAD_DAYS);
     const byUser = new Map<string, { clients: Set<string>; windows: Set<string> }>();
     for (const p of patterns ?? []) {
-      if (!isMonitoringShift(p.shift_type)) continue;
+      if (!isMonitoringShift(p.shift_type, p.is_overtime)) continue;
+      if (gone.has(p.user_id)) continue;
       const clientName = (p.client_name ?? "").trim();
       if (!runsBetween(p, from, to)) continue;
       if (!byUser.has(p.user_id)) byUser.set(p.user_id, { clients: new Set(), windows: new Set() });

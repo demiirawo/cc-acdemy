@@ -1720,6 +1720,41 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   ).map(([clientId, items]) => ({ clientId, clientName: clientNameById(clientId), items }))
    .sort((a, b) => a.clientName.localeCompare(b.clientName));
 
+  /** Feedback is acknowledged by the person it is about, and nobody else. */
+  const isOwnProfile = selectedUserId === user?.id;
+
+  const [ackOpen, setAckOpen] = useState<string | null>(null);
+  const [ackComment, setAckComment] = useState("");
+  const [ackSaving, setAckSaving] = useState(false);
+
+  /**
+   * Confirm you have read a piece of feedback, with an optional reply.
+   *
+   * The emailed link has always done this; doing it here too means somebody who
+   * deleted the email is not stuck, and that the profile shows what is still
+   * outstanding rather than only the manager's inbox knowing.
+   */
+  const acknowledgeFeedback = async (id: string) => {
+    setAckSaving(true);
+    const now = new Date().toISOString();
+    // Through a function, not a direct update: staff have no write access to
+    // staff_warnings, and giving them one would let them edit the feedback
+    // itself rather than only confirm they have read it.
+    const { error } = await (supabase as any)
+      .rpc('acknowledge_feedback', { _id: id, _comment: ackComment.trim() || null });
+    setAckSaving(false);
+    if (error) {
+      toast({ title: "Couldn't acknowledge that", description: error.message, variant: "destructive" });
+      return;
+    }
+    setWarnings(prev => prev.map(w => w.id === id
+      ? { ...w, acknowledged_at: now, acknowledgement_comment: ackComment.trim() || null }
+      : w));
+    setAckOpen(null);
+    setAckComment("");
+    toast({ title: "Thank you — that is recorded" });
+  };
+
   const renderFeedbackCard = (w: StaffWarning) => {
     const kind = asFeedbackKind(w.kind);
     const st = FEEDBACK_KINDS[kind];
@@ -1744,6 +1779,49 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
             <span className="text-xs text-muted-foreground">{format(parseISO(w.issued_at), "d MMM yyyy")}</span>
           </div>
           <p className="text-sm mt-1 whitespace-pre-wrap break-words">{w.reason}</p>
+
+          {/* Acknowledgement, in the app as well as by email. Every kind gets
+              it, not only warnings: praise nobody confirmed reading is praise
+              that may never have landed. Replying stays optional. */}
+          {w.acknowledged_at ? (
+            <div className="mt-2 rounded-md bg-muted/50 px-2.5 py-2">
+              <p className="text-xs text-muted-foreground">
+                Acknowledged {format(parseISO(w.acknowledged_at), "d MMM yyyy")}
+                {!isOwnProfile && " by them"}
+              </p>
+              {w.acknowledgement_comment && (
+                <p className="mt-1 text-xs italic text-foreground">&ldquo;{w.acknowledgement_comment}&rdquo;</p>
+              )}
+            </div>
+          ) : isOwnProfile ? (
+            ackOpen === w.id ? (
+              <div className="mt-2 space-y-2 rounded-md border p-2.5">
+                <Textarea
+                  rows={2}
+                  value={ackComment}
+                  onChange={(e) => setAckComment(e.target.value)}
+                  placeholder="Anything you want to say back? Optional."
+                  className="text-sm"
+                />
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => acknowledgeFeedback(w.id)} disabled={ackSaving}>
+                    {ackSaving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                    Confirm I have read this
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => { setAckOpen(null); setAckComment(""); }}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button size="sm" variant="outline" className="mt-2 h-7 text-xs"
+                onClick={() => { setAckOpen(w.id); setAckComment(""); }}>
+                Acknowledge
+              </Button>
+            )
+          ) : (
+            <p className="mt-2 text-xs text-amber-600">Not yet acknowledged</p>
+          )}
         </div>
         {canManageHR && (
           <Button variant="ghost" size="icon" className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-destructive" onClick={() => deleteWarning(w.id)}>
@@ -2174,12 +2252,28 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         // new points join the pool everyone is measured against. For someone on
         // D that pool currently excludes them entirely, so the points have to be
         // added in or the figure promises more than the pot can pay.
+        const shareAt = (rank: Rank | null): number | null => {
+          if (pot === null) return null;
+          const points = flagEligible ? bonusPoints(rank, myYears) : 0;
+          // Moving rank changes the pool, not only this slice: their new points
+          // join the total everyone is measured against, and their old ones
+          // leave it. Without that the figures add up to more than the pot.
+          const denominator = teamTotalPoints - effPoints + points;
+          return denominator > 0 ? (pot * points) / denominator : 0;
+        };
+
+        // Every rank, not only the next one up. Somebody on D wants to know what
+        // the top of the ladder is worth, not just the first rung — and somebody
+        // on A wants to see what they would lose by slipping.
+        const ladder = RANK_ORDER.map((rank) => ({
+          rank,
+          points: bonusPoints(rank, myYears),
+          share: shareAt(rank),
+          isMine: rank === myRank,
+        }));
+
         const nextPoints = nextUp ? bonusPoints(nextUp, myYears) : 0;
-        const nextDenominator = teamTotalPoints - effPoints + nextPoints;
-        const nextShare =
-          nextUp && pot !== null && nextDenominator > 0
-            ? (pot * nextPoints) / nextDenominator
-            : null;
+        const nextShare = nextUp ? shareAt(nextUp) : null;
 
         const overallTone: StatusTone = myRank ? 'success' : 'neutral';
 
