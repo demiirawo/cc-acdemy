@@ -15,7 +15,7 @@ import { differenceInCalendarDays } from "date-fns";
 export type Answered = "answered" | "no_answer" | "voicemail" | "engaged";
 export type Etiquette = "followed" | "partly" | "not_followed" | "not_applicable";
 export type Noise = "none" | "some" | "disruptive" | "not_applicable";
-export type Outcome = "pass" | "concerns" | "fail";
+export type Outcome = "outstanding" | "good" | "requires_improvement" | "inadequate";
 
 export interface QaCheck {
   id: string;
@@ -59,10 +59,20 @@ export const NOISE_LABELS: Record<Noise, string> = {
   not_applicable: "—",
 };
 
+/** The CQC scale, so a check is read in the language the whole sector uses. */
 export const OUTCOME_LABELS: Record<Outcome, string> = {
-  pass: "Pass",
-  concerns: "Concerns",
-  fail: "Fail",
+  outstanding: "Outstanding",
+  good: "Good",
+  requires_improvement: "Requires Improvement",
+  inadequate: "Inadequate",
+};
+
+/** What each rating means here, so nobody has to infer it. */
+export const OUTCOME_HINTS: Record<Outcome, string> = {
+  outstanding: "Went beyond the standard — handled something well that they did not have to.",
+  good: "Everything as it should be.",
+  requires_improvement: "Reachable and safe, but something needs saying.",
+  inadequate: "Did not answer, or the call was handled in a way a client would notice.",
 };
 
 /** Everyone on a monitoring shift is checked once a month. */
@@ -72,65 +82,21 @@ export const CHECK_DUE_AFTER_DAYS = 30;
 export const SCOPE_AHEAD_DAYS = 28;
 
 /**
- * The ordinary admin day. A shift that sits inside it is desk work; one that
- * starts before it or runs past it is out-of-hours cover, which is what the
- * monitoring shifts are.
+ * The rota already says which shifts these are, so nothing is inferred.
  *
- * This is a rule about the rota rather than a flag on it, because nothing in
- * the data says "monitoring" — but the shape is unmistakable. 09:00–17:00 is
- * the standard shift across every client; the early and late cover belongs to
- * the handful of clients who are watched outside office hours. Change these two
- * times if the working day changes.
+ * An earlier version worked it out from the hours — anything outside the office
+ * day — which landed on roughly the right people for the wrong reason and would
+ * have drifted the moment somebody scheduled a monitoring shift at noon.
  */
-export const OFFICE_DAY_START = "09:00";
-export const OFFICE_DAY_END = "17:00";
+export const MONITORING_SHIFT_TYPE = "Call Monitoring";
 
-/**
- * The hours that mark a client out as monitored rather than merely staffed.
- *
- * Somebody starting at 07:00 or still on at 21:00 is covering a visit run;
- * somebody finishing at 17:30 is finishing late. The gap between these and the
- * office day is deliberate — it is what separates a client with genuine
- * out-of-hours cover from one whose day happens to be shifted by half an hour.
- */
-export const OUT_OF_HOURS_BEFORE = "08:00";
-export const OUT_OF_HOURS_AFTER = "20:00";
-
-interface ClientShift { client_name: string | null; start_time: string | null; end_time: string | null }
-
-/**
- * Which clients are actually monitored: the ones somebody covers well outside
- * the office day.
- *
- * Judged per client rather than per shift, because a monitoring client's middle
- * shift is still a monitoring shift. Doing it the other way round pulled in an
- * ordinary day that happened to run to 17:30 and missed nothing in return.
- */
-export function monitoringClients(shifts: ClientShift[]): Set<string> {
-  const out = new Set<string>();
-  for (const s of shifts) {
-    const name = (s.client_name ?? "").trim();
-    if (!name || name.toLowerCase() === "care cuddle") continue;
-    const from = s.start_time?.slice(0, 5), to = s.end_time?.slice(0, 5);
-    if ((from && from < OUT_OF_HOURS_BEFORE) || (to && to > OUT_OF_HOURS_AFTER)) out.add(name);
-  }
-  return out;
-}
-
-/**
- * Whether this particular shift is one to check: outside the office day, for a
- * client that is monitored out of hours.
- */
-export function isMonitoringShift(
-  startTime: string | null, endTime: string | null,
-  clientName?: string | null, monitored?: Set<string>,
-): boolean {
-  if (!startTime || !endTime) return false;
-  if (monitored && !monitored.has((clientName ?? "").trim())) return false;
-  return startTime.slice(0, 5) < OFFICE_DAY_START || endTime.slice(0, 5) > OFFICE_DAY_END;
+/** Whether this shift is one to check. */
+export function isMonitoringShift(shiftType: string | null): boolean {
+  return (shiftType ?? "").trim().toLowerCase() === MONITORING_SHIFT_TYPE.toLowerCase();
 }
 
 export interface ShiftPattern {
+  shift_type?: string | null;
   start_time: string | null;
   end_time: string | null;
   start_date: string | null;
@@ -209,15 +175,24 @@ export function etiquetteFromChecklist(ticks: Partial<Record<EtiquettePoint, boo
  * that is a judgement, so the person doing the check can override this.
  */
 export function suggestOutcome(a: Answered, e: Etiquette, n: Noise): Outcome {
-  if (a !== "answered") return "fail";
-  if (e === "not_followed" || n === "disruptive") return "fail";
-  if (e === "partly" || n === "some") return "concerns";
-  return "pass";
+  if (a !== "answered") return "inadequate";
+  if (e === "not_followed" || n === "disruptive") return "inadequate";
+  if (e === "partly" || n === "some") return "requires_improvement";
+  // Good is the best the form can work out on its own. Outstanding means
+  // somebody did more than the standard asks, which is a judgement only the
+  // person who heard the call can make — so it is never suggested, only chosen.
+  return "good";
 }
 
 /** Whether this check is one somebody should be spoken to about. */
 export function worthRaising(check: Pick<QaCheck, "outcome" | "raised_warning_id">): boolean {
-  return check.outcome !== "pass" && !check.raised_warning_id;
+  return (check.outcome === "requires_improvement" || check.outcome === "inadequate")
+    && !check.raised_warning_id;
+}
+
+/** A rating below Good has to be explained — the note is what gets said to them. */
+export function needsExplaining(outcome: Outcome | ""): boolean {
+  return outcome === "requires_improvement" || outcome === "inadequate";
 }
 
 export interface DueRow {

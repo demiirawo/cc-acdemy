@@ -19,9 +19,9 @@ import { format, parseISO, addDays } from "date-fns";
 import { Loader2, PhoneCall, AlertTriangle, Plus } from "lucide-react";
 import {
   ANSWERED_LABELS, ETIQUETTE_LABELS, NOISE_LABELS, OUTCOME_LABELS, ETIQUETTE_POINTS,
-  CHECK_DUE_AFTER_DAYS, SCOPE_AHEAD_DAYS, OFFICE_DAY_START, OFFICE_DAY_END,
-  suggestOutcome, worthRaising, orderByOverdue, daysSince, isDue,
-  isMonitoringShift, monitoringClients, runsBetween, describeWindow, etiquetteFromChecklist,
+  CHECK_DUE_AFTER_DAYS, SCOPE_AHEAD_DAYS, MONITORING_SHIFT_TYPE, OUTCOME_HINTS,
+  suggestOutcome, worthRaising, orderByOverdue, daysSince, isDue, needsExplaining,
+  isMonitoringShift, runsBetween, describeWindow, etiquetteFromChecklist,
   type Answered, type Noise, type Outcome, type QaCheck, type DueRow, type EtiquettePoint,
 } from "@/lib/qualityAssurance";
 
@@ -50,7 +50,7 @@ export function QualityAssuranceSection() {
   const [ticks, setTicks] = useState<Partial<Record<EtiquettePoint, boolean>>>({});
   const [noise, setNoise] = useState<Noise>("none");
   const [notes, setNotes] = useState("");
-  const [outcome, setOutcome] = useState<Outcome>("pass");
+  const [outcome, setOutcome] = useState<Outcome | "">("");
   const [outcomeTouched, setOutcomeTouched] = useState(false);
 
   const [raising, setRaising] = useState<QaCheck | null>(null);
@@ -65,7 +65,7 @@ export function QualityAssuranceSection() {
       supabase.from("qa_checks").select("*").order("checked_at", { ascending: false }).limit(200),
       supabase.from("profiles").select("user_id, display_name, email").order("display_name"),
       supabase.from("recurring_shift_patterns")
-        .select("user_id, client_name, start_time, end_time, start_date, end_date, days_of_week, is_overtime"),
+        .select("user_id, client_name, shift_type, start_time, end_time, start_date, end_date, days_of_week"),
     ]);
 
     setChecks((qa ?? []) as QaCheck[]);
@@ -78,14 +78,10 @@ export function QualityAssuranceSection() {
     // ordinary desk day — at some point in the next four weeks.
     const from = new Date();
     const to = addDays(from, SCOPE_AHEAD_DAYS);
-    // Which clients are watched out of hours at all — a monitoring client's
-    // middle shift counts, an ordinary client's late finish does not.
-    const monitored = monitoringClients(patterns ?? []);
     const byUser = new Map<string, { clients: Set<string>; windows: Set<string> }>();
     for (const p of patterns ?? []) {
+      if (!isMonitoringShift(p.shift_type)) continue;
       const clientName = (p.client_name ?? "").trim();
-      if (!clientName || clientName.toLowerCase() === "care cuddle") continue;
-      if (!isMonitoringShift(p.start_time, p.end_time, clientName, monitored)) continue;
       if (!runsBetween(p, from, to)) continue;
       if (!byUser.has(p.user_id)) byUser.set(p.user_id, { clients: new Set(), windows: new Set() });
       byUser.get(p.user_id)!.clients.add(clientName);
@@ -128,17 +124,22 @@ export function QualityAssuranceSection() {
   const reachable = answered === "answered";
   const etiquette = reachable ? etiquetteFromChecklist(ticks) : "not_applicable";
 
-  useEffect(() => {
-    if (!outcomeTouched) setOutcome(suggestOutcome(answered, etiquette, reachable ? noise : "not_applicable"));
-  }, [answered, etiquette, noise, reachable, outcomeTouched]);
+  const suggested = suggestOutcome(answered, etiquette, reachable ? noise : "not_applicable");
+  // Everything a check must have before it is worth keeping.
+  const missing: string[] = [];
+  if (!forStaff) missing.push("who you rang");
+  if (!outcome) missing.push("a rating");
+  if (needsExplaining(outcome) && !notes.trim()) missing.push("a note saying what was wrong");
 
   const resetForm = () => {
     setForStaff(""); setClient(""); setAnswered("answered"); setTicks({});
-    setNoise("none"); setNotes(""); setOutcome("pass"); setOutcomeTouched(false);
+    setNoise("none"); setNotes(""); setOutcome(""); setOutcomeTouched(false);
   };
 
   const save = async () => {
-    if (!forStaff) return toast({ title: "Pick who you rang", variant: "destructive" });
+    if (missing.length > 0) {
+      return toast({ title: `Still needs ${missing.join(", ")}`, variant: "destructive" });
+    }
     setSaving(true);
     const { error } = await supabase.from("qa_checks").insert({
       staff_user_id: forStaff,
@@ -148,16 +149,16 @@ export function QualityAssuranceSection() {
       etiquette,
       background_noise: reachable ? noise : "not_applicable",
       notes: notes.trim() || null,
-      outcome,
+      outcome: outcome as Outcome,
       ...(reachable ? Object.fromEntries(ETIQUETTE_POINTS.map(p => [p.key, ticks[p.key] ?? null])) : {}),
     });
     setSaving(false);
     if (error) return toast({ title: "Could not save the check", description: error.message, variant: "destructive" });
     toast({
       title: "Check recorded",
-      description: outcome === "pass"
-        ? "Nothing further to do."
-        : "Use Raise on the row below to put it on their record.",
+      description: outcome === "requires_improvement" || outcome === "inadequate"
+        ? "Use Raise on the row below to put it on their record."
+        : "Nothing further to do.",
     });
     setOpen(false); resetForm(); load();
   };
@@ -186,10 +187,11 @@ export function QualityAssuranceSection() {
 
 
   const outcomeBadge = (o: Outcome) => (
-    <Badge variant="outline" className={cn("text-[10px]",
-      o === "pass" && "border-emerald-300 text-emerald-600",
-      o === "concerns" && "border-amber-300 text-amber-600",
-      o === "fail" && "border-destructive/40 text-destructive")}>
+    <Badge variant="outline" className={cn("whitespace-nowrap text-[10px]",
+      o === "outstanding" && "border-primary/40 bg-primary/5 text-primary",
+      o === "good" && "border-emerald-300 text-emerald-600",
+      o === "requires_improvement" && "border-amber-300 text-amber-600",
+      o === "inadequate" && "border-destructive/40 text-destructive")}>
       {OUTCOME_LABELS[o]}
     </Badge>
   );
@@ -268,13 +270,14 @@ export function QualityAssuranceSection() {
           <div className="border-b px-4 py-3">
             <h3 className="text-sm font-semibold">Who to ring</h3>
             <p className="text-xs text-muted-foreground">
-              People on an out-of-hours monitoring shift in the next {SCOPE_AHEAD_DAYS} days — anything
-              starting before {OFFICE_DAY_START} or running past {OFFICE_DAY_END}. Longest since a check first.
+              Everyone rostered on a <span className="font-medium">{MONITORING_SHIFT_TYPE}</span> shift
+              in the next {SCOPE_AHEAD_DAYS} days, taken from the schedule. Longest since a check first.
             </p>
           </div>
           {due.length === 0 ? (
             <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-              Nobody is on a monitoring shift in the next four weeks, so there is nothing to check.
+              Nobody is rostered on a {MONITORING_SHIFT_TYPE} shift in the next four weeks, so there is
+              nothing to check.
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -446,32 +449,41 @@ export function QualityAssuranceSection() {
             )}
 
             <div className="grid gap-1.5">
-              <Label htmlFor="qa-notes">Anything worth noting</Label>
+              <Label htmlFor="qa-notes">
+                {needsExplaining(outcome)
+                  ? <>What was wrong <span className="text-destructive">*</span></>
+                  : "Anything worth noting"}
+              </Label>
               <Textarea id="qa-notes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)}
                 placeholder="What you heard, in enough detail that it could be repeated back to them" />
             </div>
 
             <div className="grid gap-1.5">
-              <Label>Outcome</Label>
+              <Label>Rating <span className="text-destructive">*</span></Label>
               <Select value={outcome} onValueChange={(v) => { setOutcome(v as Outcome); setOutcomeTouched(true); }}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Choose a rating" /></SelectTrigger>
                 <SelectContent>
                   {(Object.keys(OUTCOME_LABELS) as Outcome[]).map((k) => (
-                    <SelectItem key={k} value={k}>{OUTCOME_LABELS[k]}</SelectItem>
+                    <SelectItem key={k} value={k}>
+                      <span className="font-medium">{OUTCOME_LABELS[k]}</span>
+                      <span className="block text-xs text-muted-foreground">{OUTCOME_HINTS[k]}</span>
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {/* Suggested rather than pre-filled: a rating that arrives already
+                  chosen is one nobody has to think about before saving. */}
               <p className="text-xs text-muted-foreground">
-                {outcomeTouched
-                  ? "You have set this yourself."
-                  : "Worked out from your answers above — change it if you disagree."}
+                {outcome
+                  ? OUTCOME_HINTS[outcome as Outcome]
+                  : `From your answers this looks like ${OUTCOME_LABELS[suggested]} — but you have to choose it.`}
               </p>
             </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>Cancel</Button>
-            <Button onClick={save} disabled={saving || !forStaff}>
+            <Button onClick={save} disabled={saving || missing.length > 0}>
               {saving && <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />} Save check
             </Button>
           </DialogFooter>

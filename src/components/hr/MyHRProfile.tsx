@@ -2446,7 +2446,12 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                             {new Date(c.checked_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
                           </span>
                           {c.client_name && <span className="text-muted-foreground">{c.client_name}</span>}
-                          <StatusPill tone={c.outcome === 'pass' ? 'success' : c.outcome === 'concerns' ? 'warning' : 'danger'}>
+                          <StatusPill tone={
+                            c.outcome === 'outstanding' ? 'info'
+                            : c.outcome === 'good' ? 'success'
+                            : c.outcome === 'requires_improvement' ? 'warning'
+                            : 'danger'
+                          }>
                             {OUTCOME_LABELS[c.outcome]}
                           </StatusPill>
                           {c.raised_warning_id && <StatusPill tone="info">Raised</StatusPill>}
