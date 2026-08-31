@@ -1520,6 +1520,7 @@ export type Database = {
         Row: {
           answered: string
           background_noise: string
+          called_back: string
           check_type: string
           checked_at: string
           checked_by: string | null
@@ -1536,6 +1537,7 @@ export type Database = {
         Insert: {
           answered: string
           background_noise?: string
+          called_back?: string
           check_type?: string
           checked_at?: string
           checked_by?: string | null
@@ -1552,6 +1554,7 @@ export type Database = {
         Update: {
           answered?: string
           background_noise?: string
+          called_back?: string
           check_type?: string
           checked_at?: string
           checked_by?: string | null

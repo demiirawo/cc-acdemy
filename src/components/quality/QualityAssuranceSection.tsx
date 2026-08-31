@@ -5,8 +5,6 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -16,13 +14,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { format, parseISO, addDays } from "date-fns";
-import { Loader2, PhoneCall, AlertTriangle, Plus } from "lucide-react";
+import { Loader2, PhoneCall, AlertTriangle, Plus, ExternalLink } from "lucide-react";
 import {
-  ANSWERED_LABELS, ETIQUETTE_LABELS, NOISE_LABELS, OUTCOME_LABELS, ETIQUETTE_POINTS,
+  ANSWERED_LABELS, ETIQUETTE_LABELS, NOISE_LABELS, OUTCOME_LABELS, CALLED_BACK_LABELS,
   CHECK_DUE_AFTER_DAYS, SCOPE_AHEAD_DAYS, MONITORING_SHIFT_TYPE, OUTCOME_HINTS,
+  ETIQUETTE_GUIDE_URL, ETIQUETTE_GUIDE_TITLE,
   suggestOutcome, worthRaising, orderByOverdue, daysSince, isDue, needsExplaining,
-  isMonitoringShift, runsBetween, describeWindow, etiquetteFromChecklist,
-  type Answered, type Noise, type Outcome, type QaCheck, type DueRow, type EtiquettePoint,
+  isMonitoringShift, runsBetween, describeWindow,
+  assignmentKey, nextDueDate,
+  type Answered, type CalledBack, type Etiquette, type Noise, type Outcome, type QaCheck, type DueRow,
 } from "@/lib/qualityAssurance";
 
 /**
@@ -40,14 +40,17 @@ export function QualityAssuranceSection() {
 
   const [loading, setLoading] = useState(true);
   const [checks, setChecks] = useState<QaCheck[]>([]);
-  const [staff, setStaff] = useState<Array<{ userId: string; name: string; clients: string[]; windows: string[] }>>([]);
+  // One entry per line to be checked — a person on one client's shift — so a
+  // client is never shown next to another client's hours.
+  const [lines, setLines] = useState<Array<{ userId: string; name: string; client: string; windows: string[] }>>([]);
 
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [forStaff, setForStaff] = useState("");
   const [client, setClient] = useState("");
   const [answered, setAnswered] = useState<Answered>("answered");
-  const [ticks, setTicks] = useState<Partial<Record<EtiquettePoint, boolean>>>({});
+  const [calledBack, setCalledBack] = useState<CalledBack>("not_applicable");
+  const [professional, setProfessional] = useState<Etiquette>("followed");
   const [noise, setNoise] = useState<Noise>("none");
   const [notes, setNotes] = useState("");
   const [outcome, setOutcome] = useState<Outcome | "">("");
@@ -85,21 +88,24 @@ export function QualityAssuranceSection() {
     // ordinary desk day — at some point in the next four weeks.
     const from = new Date();
     const to = addDays(from, SCOPE_AHEAD_DAYS);
-    const byUser = new Map<string, { clients: Set<string>; windows: Set<string> }>();
+    // Keyed by person AND client: the hours are a property of the client's
+    // shift, not of the person, so they are collected per pair.
+    const byLine = new Map<string, { userId: string; client: string; windows: Set<string> }>();
     for (const p of patterns ?? []) {
       if (!isMonitoringShift(p.shift_type, p.is_overtime)) continue;
       if (gone.has(p.user_id)) continue;
-      const clientName = (p.client_name ?? "").trim();
       if (!runsBetween(p, from, to)) continue;
-      if (!byUser.has(p.user_id)) byUser.set(p.user_id, { clients: new Set(), windows: new Set() });
-      byUser.get(p.user_id)!.clients.add(clientName);
-      byUser.get(p.user_id)!.windows.add(describeWindow(p.start_time, p.end_time));
+      const clientName = (p.client_name ?? "").trim() || "No client set";
+      const key = assignmentKey(p.user_id, clientName);
+      if (!byLine.has(key)) byLine.set(key, { userId: p.user_id, client: clientName, windows: new Set() });
+      const w = describeWindow(p.start_time, p.end_time);
+      if (w) byLine.get(key)!.windows.add(w);
     }
 
-    setStaff([...byUser.entries()].map(([userId, v]) => ({
-      userId,
-      name: nameFor(userId),
-      clients: [...v.clients].sort(),
+    setLines([...byLine.values()].map((v) => ({
+      userId: v.userId,
+      name: nameFor(v.userId),
+      client: v.client,
       windows: [...v.windows].sort(),
     })));
     setLoading(false);
@@ -108,17 +114,28 @@ export function QualityAssuranceSection() {
   useEffect(() => { load(); }, []);
 
   const nameOf = (userId: string) =>
-    staff.find((s) => s.userId === userId)?.name ?? "Unknown";
+    lines.find((l) => l.userId === userId)?.name ?? "Unknown";
 
-  const due: DueRow[] = useMemo(() => orderByOverdue(staff.map((s) => {
-    const last = checks.find((c) => c.staff_user_id === s.userId) ?? null;
+  /** The clients one person covers — what the dialog offers once they are picked. */
+  const clientsFor = (userId: string) =>
+    lines.filter((l) => l.userId === userId).map((l) => l.client);
+
+  /** The hours for one line, so the dialog can show when to ring. */
+  const windowsFor = (userId: string, clientName: string) =>
+    lines.find((l) => l.userId === userId && l.client === clientName)?.windows ?? [];
+
+  const due: DueRow[] = useMemo(() => orderByOverdue(lines.map((l) => {
+    // checks arrive newest first, so the first match is the last check — and it
+    // must match the client too, or one line's check would clear the other.
+    const last = checks.find((c) => c.staff_user_id === l.userId && (c.client_name ?? "") === l.client) ?? null;
     return {
-      userId: s.userId, name: s.name, clients: s.clients, windows: s.windows,
+      userId: l.userId, name: l.name, client: l.client, windows: l.windows,
       lastCheckedAt: last?.checked_at ?? null,
       lastOutcome: (last?.outcome as Outcome) ?? null,
       daysSince: daysSince(last?.checked_at ?? null),
+      nextDueAt: nextDueDate(last?.checked_at ?? null),
     };
-  })), [staff, checks]);
+  })), [lines, checks]);
 
   const thisMonth = useMemo(() => {
     const from = format(new Date(new Date().getFullYear(), new Date().getMonth(), 1), "yyyy-MM-dd");
@@ -130,18 +147,22 @@ export function QualityAssuranceSection() {
     : null;
 
   const reachable = answered === "answered";
-  const etiquette = reachable ? etiquetteFromChecklist(ticks) : "not_applicable";
+  // Questions 3 and 4 are about a conversation. If there was no conversation
+  // there is nothing to judge, so they are not asked and not recorded.
+  const etiquette: Etiquette = reachable ? professional : "not_applicable";
+  const effectiveCallback: CalledBack = reachable ? "not_applicable" : calledBack;
 
-  const suggested = suggestOutcome(answered, etiquette, reachable ? noise : "not_applicable");
+  const suggested = suggestOutcome(answered, effectiveCallback, etiquette, reachable ? noise : "not_applicable");
   // Everything a check must have before it is worth keeping.
   const missing: string[] = [];
   if (!forStaff) missing.push("who you rang");
+  if (!client) missing.push("which client's line");
   if (!outcome) missing.push("a rating");
   if (needsExplaining(outcome) && !notes.trim()) missing.push("a note saying what was wrong");
 
   const resetForm = () => {
-    setForStaff(""); setClient(""); setAnswered("answered"); setTicks({});
-    setNoise("none"); setNotes(""); setOutcome(""); setOutcomeTouched(false);
+    setForStaff(""); setClient(""); setAnswered("answered"); setCalledBack("not_applicable");
+    setProfessional("followed"); setNoise("none"); setNotes(""); setOutcome(""); setOutcomeTouched(false);
   };
 
   const save = async () => {
@@ -154,11 +175,11 @@ export function QualityAssuranceSection() {
       client_name: client || null,
       checked_by: user?.id ?? null,
       answered,
+      called_back: effectiveCallback,
       etiquette,
       background_noise: reachable ? noise : "not_applicable",
       notes: notes.trim() || null,
       outcome: outcome as Outcome,
-      ...(reachable ? Object.fromEntries(ETIQUETTE_POINTS.map(p => [p.key, ticks[p.key] ?? null])) : {}),
     });
     setSaving(false);
     if (error) return toast({ title: "Could not save the check", description: error.message, variant: "destructive" });
@@ -216,8 +237,8 @@ export function QualityAssuranceSection() {
         <div className="max-w-2xl">
           <h2 className="text-xl font-bold">Quality Assurance</h2>
           <p className="text-sm text-muted-foreground">
-            Once a month, ring each person covering an out-of-hours monitoring shift and record what
-            happened. You do not need to have done this before — everything you need is on this page.
+            Once a fortnight, ring each client&rsquo;s monitoring line and record what happened. You do
+            not need to have done this before — everything you need is on this page.
           </p>
         </div>
         <Button onClick={() => { resetForm(); setOpen(true); }}>
@@ -231,8 +252,8 @@ export function QualityAssuranceSection() {
           <h3 className="text-sm font-semibold">How to do a check</h3>
           <ol className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              { n: 1, t: "Pick someone who is due", d: "The list below is ordered by who has gone longest without one. Anyone never checked is at the top." },
-              { n: 2, t: "Ring them during their shift", d: "Their monitoring window is shown next to their name. Ringing outside it proves nothing — they are not on duty." },
+              { n: 1, t: "Pick a line that is due", d: "The list below shows when each was last checked and when it falls due again. Anything never checked is at the top." },
+              { n: 2, t: "Ring during that client's hours", d: "The window is on the row. Ringing outside it proves nothing — they are not on duty for that client." },
               { n: 3, t: "Be an ordinary caller", d: "Do not announce that it is a check. You are listening for what a client or a carer would get." },
               { n: 4, t: "Record it straight away", d: "While you can still remember the detail. The form asks only what you just heard." },
             ].map((s) => (
@@ -248,8 +269,18 @@ export function QualityAssuranceSection() {
           <p className="mt-4 rounded-md bg-background/60 p-3 text-xs text-muted-foreground">
             <span className="font-medium text-foreground">What to say when they pick up:</span>{" "}
             &ldquo;Hi, it&rsquo;s [your name] from Care Cuddle — is now a good time? I&rsquo;m just checking in
-            on the monitoring shift.&rdquo; Then let them talk. You are listening for the five things in the
+            on the monitoring shift.&rdquo; Then let them talk. You are listening for the things on the
             form, not testing them with questions.
+          </p>
+          {/* The form is a summary of the guide. Whoever is doing the checks
+              should be able to reach the thing they are checking against. */}
+          <p className="mt-2 text-xs text-muted-foreground">
+            Every point on the form comes from the{" "}
+            <a href={ETIQUETTE_GUIDE_URL} target="_blank" rel="noreferrer"
+               className="font-medium text-primary underline underline-offset-2">
+              {ETIQUETTE_GUIDE_TITLE} <ExternalLink className="inline h-3 w-3 align-[-1px]" />
+            </a>{" "}
+            — the same standard the admins were given. Read it before your first check.
           </p>
         </CardContent>
       </Card>
@@ -278,8 +309,9 @@ export function QualityAssuranceSection() {
           <div className="border-b px-4 py-3">
             <h3 className="text-sm font-semibold">Who to ring</h3>
             <p className="text-xs text-muted-foreground">
-              Everyone rostered on a <span className="font-medium">{MONITORING_SHIFT_TYPE}</span> shift
-              in the next {SCOPE_AHEAD_DAYS} days, taken from the schedule. Longest since a check first.
+              One row per client line: everyone rostered on a <span className="font-medium">{MONITORING_SHIFT_TYPE}</span>{" "}
+              shift in the next {SCOPE_AHEAD_DAYS} days, taken from the schedule. Somebody covering two
+              clients is checked on each separately. Longest since a check first.
             </p>
           </div>
           {due.length === 0 ? (
@@ -294,28 +326,50 @@ export function QualityAssuranceSection() {
                   <TableHead>Staff</TableHead>
                   <TableHead>Client</TableHead>
                   <TableHead>When they are on</TableHead>
-                  <TableHead>Last checked</TableHead>
+                  <TableHead>Last completed</TableHead>
+                  <TableHead>Next due</TableHead>
                   <TableHead className="text-right">Check</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
                   {due.map((d) => (
-                    <TableRow key={d.userId} className={cn(isDue(d.daysSince) && "bg-amber-500/5")}>
+                    <TableRow key={`${d.userId}|${d.client}`} className={cn(isDue(d.daysSince) && "bg-amber-500/5")}>
                       <TableCell className="font-medium">{d.name}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{d.clients.join(", ")}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{d.client}</TableCell>
                       <TableCell className="whitespace-nowrap text-sm tabular-nums">{d.windows.join(", ")}</TableCell>
-                      <TableCell className="text-sm">
+                      <TableCell className="whitespace-nowrap text-sm">
                         {d.lastCheckedAt ? (
                           <>
-                            {format(parseISO(d.lastCheckedAt), "d MMM")}
-                            <span className={cn("ml-1.5 text-xs", isDue(d.daysSince) ? "font-medium text-amber-600" : "text-muted-foreground")}>
+                            {format(parseISO(d.lastCheckedAt), "d MMM yyyy")}
+                            <span className="ml-1.5 text-xs text-muted-foreground">
                               {d.daysSince === 0 ? "today" : `${d.daysSince}d ago`}
                             </span>
                           </>
-                        ) : <span className="font-medium text-amber-600">Never checked</span>}
+                        ) : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      {/* Never checked is not a date in the future — it is due
+                          now, and saying so is more use than a made-up one. */}
+                      <TableCell className="whitespace-nowrap text-sm">
+                        {d.nextDueAt === null ? (
+                          <span className="font-medium text-amber-600">Now — never checked</span>
+                        ) : isDue(d.daysSince) ? (
+                          <span className="font-medium text-amber-600">
+                            {format(d.nextDueAt, "d MMM yyyy")}
+                            <span className="ml-1.5 text-xs font-normal">
+                              overdue by {(d.daysSince ?? 0) - CHECK_DUE_AFTER_DAYS}d
+                            </span>
+                          </span>
+                        ) : (
+                          <>
+                            {format(d.nextDueAt, "d MMM yyyy")}
+                            <span className="ml-1.5 text-xs text-muted-foreground">
+                              in {CHECK_DUE_AFTER_DAYS - (d.daysSince ?? 0)}d
+                            </span>
+                          </>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button size="sm" variant="outline" onClick={() => {
-                          resetForm(); setForStaff(d.userId); setClient(d.clients[0] ?? ""); setOpen(true);
+                          resetForm(); setForStaff(d.userId); setClient(d.client); setOpen(true);
                         }}>
                           <PhoneCall className="mr-1.5 h-3.5 w-3.5" /> Record
                         </Button>
@@ -339,7 +393,7 @@ export function QualityAssuranceSection() {
               <Table>
                 <TableHeader><TableRow>
                   <TableHead>When</TableHead><TableHead>Staff</TableHead><TableHead>Client</TableHead>
-                  <TableHead>Answered</TableHead><TableHead>Etiquette</TableHead><TableHead>Line</TableHead>
+                  <TableHead>Picked up</TableHead><TableHead>Professional</TableHead><TableHead>Heard clearly</TableHead>
                   <TableHead>Outcome</TableHead><TableHead className="text-right">On record</TableHead>
                 </TableRow></TableHeader>
                 <TableBody>
@@ -348,8 +402,16 @@ export function QualityAssuranceSection() {
                       <TableCell className="whitespace-nowrap text-sm">{format(parseISO(c.checked_at), "d MMM, HH:mm")}</TableCell>
                       <TableCell className="font-medium">{nameOf(c.staff_user_id)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">{c.client_name ?? "—"}</TableCell>
+                      {/* A missed call that was returned is a different result
+                          from one that was not, so the row says which. */}
                       <TableCell className={cn("text-sm", c.answered !== "answered" && "font-medium text-destructive")}>
                         {ANSWERED_LABELS[c.answered]}
+                        {c.answered !== "answered" && c.called_back !== "not_applicable" && (
+                          <span className={cn("block text-xs font-normal",
+                            c.called_back === "yes" ? "text-muted-foreground" : "text-destructive")}>
+                            {CALLED_BACK_LABELS[c.called_back]}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm">{ETIQUETTE_LABELS[c.etiquette]}</TableCell>
                       <TableCell className="text-sm">{NOISE_LABELS[c.background_noise]}</TableCell>
@@ -384,20 +446,41 @@ export function QualityAssuranceSection() {
             <div className="grid gap-1.5">
               <Label>Who did you ring?</Label>
               <Select value={forStaff} onValueChange={(v) => {
-                setForStaff(v); setClient(staff.find((s) => s.userId === v)?.clients[0] ?? "");
+                setForStaff(v); setClient(clientsFor(v)[0] ?? "");
               }}>
                 <SelectTrigger><SelectValue placeholder="Select a staff member" /></SelectTrigger>
                 <SelectContent>
-                  {staff.map((s) => (
-                    <SelectItem key={s.userId} value={s.userId}>{s.name} · {s.windows.join(", ")}</SelectItem>
-                  ))}
+                  {[...new Map(lines.map((l) => [l.userId, l.name])).entries()]
+                    .sort((a, b) => a[1].localeCompare(b[1]))
+                    .map(([userId, name]) => (
+                      <SelectItem key={userId} value={userId}>{name}</SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
 
+            {/* The client picks the hours, so it cannot be free text. Typing a
+                client here used to leave the check attached to a line the
+                person does not actually cover. */}
             <div className="grid gap-1.5">
-              <Label htmlFor="qa-client">Which client&rsquo;s shift</Label>
-              <Input id="qa-client" value={client} onChange={(e) => setClient(e.target.value)} />
+              <Label>Which client&rsquo;s shift</Label>
+              <Select value={client} onValueChange={setClient} disabled={!forStaff}>
+                <SelectTrigger>
+                  <SelectValue placeholder={forStaff ? "Select the client" : "Pick who you rang first"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {clientsFor(forStaff).map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {forStaff && client && (
+                <p className="text-xs text-muted-foreground">
+                  On this line {windowsFor(forStaff, client).length > 0
+                    ? <>at <span className="font-medium tabular-nums text-foreground">{windowsFor(forStaff, client).join(", ")}</span> — ring inside those hours.</>
+                    : "— no hours are set on the rota for it."}
+                </p>
+              )}
             </div>
 
             <div className="grid gap-1.5">
@@ -410,36 +493,57 @@ export function QualityAssuranceSection() {
                   ))}
                 </SelectContent>
               </Select>
-              {!reachable && (
-                <p className="rounded-md bg-destructive/10 p-2.5 text-xs text-destructive">
-                  Not picking up during a monitoring shift is a fail on its own — being reachable is the
-                  whole job of it. Note below what you tried and at what time, then raise it.
-                </p>
-              )}
             </div>
+
+            {/* Q2 — only asked when there was something to call back from. */}
+            {!reachable && (
+              <div className="grid gap-1.5">
+                <Label>Did they call you back?</Label>
+                <Select value={calledBack} onValueChange={(v) => setCalledBack(v as CalledBack)}>
+                  <SelectTrigger><SelectValue placeholder="Choose one" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="yes">Yes — they rang back</SelectItem>
+                    <SelectItem value="no">No — never heard from them</SelectItem>
+                    <SelectItem value="not_applicable">Too soon to say</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="rounded-md bg-destructive/10 p-2.5 text-xs text-destructive">
+                  Being reachable is the whole job of the shift. A call that was returned quickly is a
+                  lapse; one never returned is what the shift exists to prevent. Note below what you
+                  tried and at what time.
+                </p>
+              </div>
+            )}
 
             {reachable && (
               <>
-                <div className="grid gap-2">
-                  <Label>What did you hear? Tick what they did</Label>
-                  <p className="-mt-1 text-xs text-muted-foreground">
-                    Leave a box blank if it never came up. Blanks are not counted against anyone.
+                {/* Q3 — the whole guide in one question. Seven tick-boxes were
+                    an audit; nobody who was half of the conversation can answer
+                    an audit honestly afterwards. This they can. */}
+                <div className="grid gap-1.5">
+                  <Label>Did they answer in a professional manner?</Label>
+                  <Select value={professional} onValueChange={(v) => setProfessional(v as Etiquette)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="followed">
+                        <span className="font-medium">Yes</span>
+                        <span className="block text-xs text-muted-foreground">Named themselves and Care Cuddle, checked who you were, calm and clear.</span>
+                      </SelectItem>
+                      <SelectItem value="partly">
+                        <span className="font-medium">Mostly — something was off</span>
+                        <span className="block text-xs text-muted-foreground">Say what in the notes, so it can be repeated back to them.</span>
+                      </SelectItem>
+                      <SelectItem value="not_followed">
+                        <span className="font-medium">No</span>
+                        <span className="block text-xs text-muted-foreground">A client would have noticed.</span>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    What good sounds like is set out in the{" "}
+                    <a href={ETIQUETTE_GUIDE_URL} target="_blank" rel="noreferrer"
+                       className="text-primary underline underline-offset-2">{ETIQUETTE_GUIDE_TITLE}</a>.
                   </p>
-                  <div className="space-y-2.5 rounded-md border p-3">
-                    {ETIQUETTE_POINTS.map((p) => (
-                      <label key={p.key} className="flex cursor-pointer items-start gap-2.5">
-                        <Checkbox
-                          checked={ticks[p.key] === true}
-                          onCheckedChange={(v) => setTicks((t) => ({ ...t, [p.key]: v === true ? true : false }))}
-                          className="mt-0.5"
-                        />
-                        <span>
-                          <span className="text-sm font-medium">{p.label}</span>
-                          <span className="block text-xs text-muted-foreground">{p.hint}</span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
                 </div>
 
                 <div className="grid gap-1.5">
@@ -450,6 +554,7 @@ export function QualityAssuranceSection() {
                       <SelectItem value="none">Quiet — no background at all</SelectItem>
                       <SelectItem value="some">Some noise, but the call worked</SelectItem>
                       <SelectItem value="disruptive">Disruptive — hard to hear, or others audible</SelectItem>
+                      <SelectItem value="driving">Sounded like they were driving</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -460,7 +565,7 @@ export function QualityAssuranceSection() {
               <Label htmlFor="qa-notes">
                 {needsExplaining(outcome)
                   ? <>What was wrong <span className="text-destructive">*</span></>
-                  : "Anything worth noting"}
+                  : "Anything else worth noting"}
               </Label>
               <Textarea id="qa-notes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)}
                 placeholder="What you heard, in enough detail that it could be repeated back to them" />

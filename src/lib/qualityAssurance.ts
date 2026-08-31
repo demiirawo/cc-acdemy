@@ -3,18 +3,29 @@ import { differenceInCalendarDays } from "date-fns";
 /**
  * Quality assurance spot checks on the people covering monitoring shifts.
  *
- * A check is one call: somebody rings the admin who is on shift and records
- * what happened. Three questions, in the order they matter — did they answer,
- * was the call handled properly, and could you hear them over the background.
+ * A check is one call: somebody rings the line an admin is covering and records
+ * what happened. Five questions, and no more — a checker who was half of the
+ * conversation can answer these honestly from memory, which is the only kind of
+ * answer worth recording.
  *
- * The standards being checked are not new. They are the phone etiquette guide
- * and clause 11 of the contract; what was missing was anybody writing down
- * whether they were met.
+ *   1. Did they pick up?
+ *   2. If not straight away, did they call back?
+ *   3. Did they answer in a professional manner?
+ *   4. Could you hear them clearly?
+ *   5. Anything else worth noting?
+ *
+ * Question 3 is the whole Admin Phone Etiquette Guide in one question. The
+ * guide is linked from the form rather than restated as a checklist: it is the
+ * definition of professional here, and the standard has not changed — what the
+ * form asks for is a judgement, not an audit.
  */
 
 export type Answered = "answered" | "no_answer" | "voicemail" | "engaged";
+/** Whether a missed call was returned — only meaningful when they missed it. */
+export type CalledBack = "yes" | "no" | "not_applicable";
+
 export type Etiquette = "followed" | "partly" | "not_followed" | "not_applicable";
-export type Noise = "none" | "some" | "disruptive" | "not_applicable";
+export type Noise = "none" | "some" | "disruptive" | "driving" | "not_applicable";
 export type Outcome = "outstanding" | "good" | "requires_improvement" | "inadequate";
 
 export interface QaCheck {
@@ -25,17 +36,13 @@ export interface QaCheck {
   checked_at: string;
   checked_by: string | null;
   answered: Answered;
+  called_back: CalledBack;
   rings_to_answer: number | null;
   etiquette: Etiquette;
   background_noise: Noise;
   notes: string | null;
   outcome: Outcome;
   raised_warning_id: string | null;
-  etq_within_three_rings?: boolean | null;
-  etq_gave_name_and_company?: boolean | null;
-  etq_verified_caller?: boolean | null;
-  etq_specific_callback?: boolean | null;
-  etq_calm_and_professional?: boolean | null;
 }
 
 export const ANSWERED_LABELS: Record<Answered, string> = {
@@ -45,10 +52,17 @@ export const ANSWERED_LABELS: Record<Answered, string> = {
   engaged: "Engaged",
 };
 
+export const CALLED_BACK_LABELS: Record<CalledBack, string> = {
+  yes: "Called back",
+  no: "Never called back",
+  not_applicable: "—",
+};
+
+/** Question 3, in the words it is asked in: was this handled professionally? */
 export const ETIQUETTE_LABELS: Record<Etiquette, string> = {
-  followed: "Followed",
-  partly: "Partly followed",
-  not_followed: "Not followed",
+  followed: "Professional",
+  partly: "Mostly",
+  not_followed: "Not professional",
   not_applicable: "—",
 };
 
@@ -56,6 +70,7 @@ export const NOISE_LABELS: Record<Noise, string> = {
   none: "Quiet",
   some: "Some noise",
   disruptive: "Disruptive",
+  driving: "Driving",
   not_applicable: "—",
 };
 
@@ -75,8 +90,17 @@ export const OUTCOME_HINTS: Record<Outcome, string> = {
   inadequate: "Did not answer, or the call was handled in a way a client would notice.",
 };
 
-/** Everyone on a monitoring shift is checked once a month. */
-export const CHECK_DUE_AFTER_DAYS = 30;
+/** Every monitoring line is checked once a fortnight. */
+export const CHECK_DUE_AFTER_DAYS = 14;
+
+/**
+ * Where the standard being checked is written down.
+ *
+ * The checklist below is a summary of this page, not a separate rulebook. When
+ * the two disagree, the guide is right and the checklist needs updating.
+ */
+export const ETIQUETTE_GUIDE_URL = "/public/51999292-c701-45c5-a4db-37efee32e66d";
+export const ETIQUETTE_GUIDE_TITLE = "Admin Phone Etiquette Guide";
 
 /** How far ahead the rota is read when deciding who is in scope. */
 export const SCOPE_AHEAD_DAYS = 28;
@@ -136,54 +160,21 @@ export function describeWindow(startTime: string | null, endTime: string | null)
 }
 
 /**
- * The five things you can hear on a call, from the phone etiquette guide, in
- * the order they happen.
- *
- * Written as a checklist rather than a judgement because whoever is doing the
- * checks this month may never have done one before. Reading these while the
- * call happens is the training — there is nothing else to brief them on.
- */
-export const ETIQUETTE_POINTS = [
-  { key: "etq_within_three_rings", label: "Picked up within three rings",
-    hint: "Longer than that and a worried caller starts to think nobody is there." },
-  { key: "etq_gave_name_and_company", label: "Gave their name and said Care Cuddle",
-    hint: "Not just \u201chello\u201d. The caller should know who they have reached." },
-  { key: "etq_verified_caller", label: "Checked who they were speaking to",
-    hint: "Before discussing anything about a service user \u2014 name, and relationship to them." },
-  { key: "etq_specific_callback", label: "Gave a specific time for any callback",
-    hint: "\u201cBy 2pm\u201d, not \u201cshortly\u201d. Only counts if a callback came up." },
-  { key: "etq_calm_and_professional", label: "Sounded calm and unhurried",
-    hint: "No sense of being caught out or wanting the call to end." },
-] as const;
-
-export type EtiquettePoint = (typeof ETIQUETTE_POINTS)[number]["key"];
-
-/**
- * Turn the ticks into the one-word summary stored alongside them.
- *
- * A point left blank is one that did not come up — a callback time cannot be
- * judged on a call where nothing needed calling back — so blanks are ignored
- * rather than counted against anybody.
- */
-export function etiquetteFromChecklist(ticks: Partial<Record<EtiquettePoint, boolean | null>>): Etiquette {
-  const answered = ETIQUETTE_POINTS.map(p => ticks[p.key]).filter(v => v === true || v === false);
-  if (answered.length === 0) return "not_applicable";
-  const missed = answered.filter(v => v === false).length;
-  if (missed === 0) return "followed";
-  if (missed === 1) return "partly";
-  return "not_followed";
-}
-
-/**
  * What the check adds up to, offered as a starting point rather than imposed.
  *
- * No answer is a fail on its own — being reachable is the whole job of the
- * shift, and nothing else on the form can make up for it. Everything short of
- * that is a judgement, so the person doing the check can override this.
+ * Missing a call and missing a call are not the same thing. One where they rang
+ * back a few minutes later is a lapse; one where the phone simply went
+ * unanswered and stayed that way is the failure the whole shift exists to
+ * prevent. The old form flattened both into "no answer", which is exactly the
+ * distinction this asks about — so it is the distinction the rating turns on.
+ *
+ * Everything short of that is a judgement, so it can be overridden.
  */
-export function suggestOutcome(a: Answered, e: Etiquette, n: Noise): Outcome {
-  if (a !== "answered") return "inadequate";
-  if (e === "not_followed" || n === "disruptive") return "inadequate";
+export function suggestOutcome(a: Answered, cb: CalledBack, e: Etiquette, n: Noise): Outcome {
+  if (a !== "answered") return cb === "yes" ? "requires_improvement" : "inadequate";
+  // Driving is not a shade of background noise. The guide bans it outright —
+  // unsafe, illegal on a mobile, and poor call quality — so it fails on its own.
+  if (e === "not_followed" || n === "disruptive" || n === "driving") return "inadequate";
   if (e === "partly" || n === "some") return "requires_improvement";
   // Good is the best the form can work out on its own. Outstanding means
   // somebody did more than the standard asks, which is a judgement only the
@@ -202,15 +193,46 @@ export function needsExplaining(outcome: Outcome | ""): boolean {
   return outcome === "requires_improvement" || outcome === "inadequate";
 }
 
+/**
+ * One line to be checked: a person on one client's monitoring shift.
+ *
+ * Not one row per person. An admin who covers two clients is answering two
+ * different lines at two different times, and being reachable on one says
+ * nothing about the other — so each is checked, and falls due, separately.
+ * Rolling them into a single row per person also silently mispaired the
+ * columns, listing one client's hours against another client's name.
+ */
 export interface DueRow {
   userId: string;
   name: string;
-  clients: string[];
-  /** The monitoring windows they cover, so a checker knows when to ring. */
+  /** The one client whose line this row is about. */
+  client: string;
+  /** That client's monitoring windows, so a checker knows when to ring. */
   windows: string[];
   lastCheckedAt: string | null;
   lastOutcome: Outcome | null;
   daysSince: number | null;
+  /** When the next check falls due — a fortnight after the last one. */
+  nextDueAt: Date | null;
+}
+
+/** A row is identified by the line, not the person. */
+export function assignmentKey(userId: string, client: string): string {
+  return `${userId}|${client}`;
+}
+
+/**
+ * When this line is next due, given when it was last checked.
+ *
+ * Null means it has never been checked, which is not "due in a fortnight" but
+ * due now — the caller renders that as its own state rather than showing a
+ * date invented from an employment start or the day the page was opened.
+ */
+export function nextDueDate(lastCheckedAt: string | null): Date | null {
+  if (!lastCheckedAt) return null;
+  const d = new Date(lastCheckedAt);
+  d.setDate(d.getDate() + CHECK_DUE_AFTER_DAYS);
+  return d;
 }
 
 /**
@@ -222,7 +244,9 @@ export interface DueRow {
  */
 export function orderByOverdue(rows: DueRow[]): DueRow[] {
   return [...rows].sort((a, b) => {
-    if (a.daysSince === null && b.daysSince === null) return a.name.localeCompare(b.name);
+    if (a.daysSince === null && b.daysSince === null) {
+      return a.name.localeCompare(b.name) || a.client.localeCompare(b.client);
+    }
     if (a.daysSince === null) return -1;
     if (b.daysSince === null) return 1;
     return b.daysSince - a.daysSince;

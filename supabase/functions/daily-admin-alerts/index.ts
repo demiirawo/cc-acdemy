@@ -1541,6 +1541,92 @@ const endingSoon = regularPatterns
       }
     }
 
+    // ===== 11. QUALITY ASSURANCE CHECKS OUTSTANDING =====
+    // One line, not a list. The page is where you find out who — this is only
+    // here so nobody has to open the page to learn there is nothing to do.
+    //
+    // The scope has to match the page exactly or the two disagree in public:
+    // Call Monitoring shifts only, no overtime cover, no leavers, running in
+    // the next four weeks, counted per client line rather than per person.
+    {
+      const SCOPE_AHEAD_DAYS = 28;
+      const CHECK_DUE_AFTER_DAYS = 14;
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const horizonIso = new Date(Date.now() + SCOPE_AHEAD_DAYS * 86_400_000).toISOString().slice(0, 10);
+
+      const [{ data: patterns }, { data: qaChecks }, { data: hrEnds }] = await Promise.all([
+        supabaseClient.from("recurring_shift_patterns")
+          .select("user_id, client_name, shift_type, is_overtime, start_date, end_date, days_of_week"),
+        supabaseClient.from("qa_checks")
+          .select("staff_user_id, client_name, checked_at").order("checked_at", { ascending: false }),
+        supabaseClient.from("hr_profiles").select("user_id, employment_end_date"),
+      ]);
+
+      const gone = new Set((hrEnds || [])
+        .filter((h: { employment_end_date: string | null }) => h.employment_end_date && h.employment_end_date < todayIso)
+        .map((h: { user_id: string }) => h.user_id));
+
+      const lines = new Set<string>();
+      for (const p of patterns || []) {
+        const pat = p as {
+          user_id: string; client_name: string | null; shift_type: string | null;
+          is_overtime: boolean | null; start_date: string | null; end_date: string | null;
+          days_of_week: number[] | null;
+        };
+        if (pat.is_overtime) continue;
+        if ((pat.shift_type || "").trim().toLowerCase() !== "call monitoring") continue;
+        if (gone.has(pat.user_id)) continue;
+        if (!pat.days_of_week?.length) continue;
+        if (pat.end_date && pat.end_date < todayIso) continue;
+        if (pat.start_date && pat.start_date > horizonIso) continue;
+        lines.add(`${pat.user_id}|${(pat.client_name || "").trim() || "No client set"}`);
+      }
+
+      // Newest first, so the first hit for a line is its last check.
+      const lastChecked = new Map<string, string>();
+      for (const c of qaChecks || []) {
+        const chk = c as { staff_user_id: string; client_name: string | null; checked_at: string };
+        const key = `${chk.staff_user_id}|${(chk.client_name || "").trim() || "No client set"}`;
+        if (!lastChecked.has(key)) lastChecked.set(key, chk.checked_at);
+      }
+
+      let neverChecked = 0;
+      let overdue = 0;
+      for (const key of lines) {
+        const last = lastChecked.get(key);
+        if (!last) { neverChecked += 1; continue; }
+        const days = Math.floor((Date.now() - new Date(last).getTime()) / 86_400_000);
+        if (days >= CHECK_DUE_AFTER_DAYS) overdue += 1;
+      }
+      const outstanding = neverChecked + overdue;
+
+      if (lines.size > 0) {
+        // Said in full even at zero — "nothing outstanding" is the useful
+        // version of this line, and a section that vanishes when it is
+        // healthy reads as a section that broke.
+        const detail = outstanding === 0
+          ? `All ${lines.size} monitoring ${lines.size === 1 ? "line is" : "lines are"} checked and in date.`
+          : neverChecked > 0 && overdue > 0
+            ? `${neverChecked} never checked, ${overdue} overdue.`
+            : neverChecked > 0
+              ? `${neverChecked === 1 ? "It has" : "They have"} never been checked.`
+              : `Last checked over ${CHECK_DUE_AFTER_DAYS} days ago.`;
+
+        sections.push({
+          type: "qa_checks_due",
+          title: "Quality assurance",
+          icon: "\u260E\uFE0F",
+          accentColor: outstanding > 0 ? "#b45309" : "#5F17EB",
+          itemsHtml: [
+            outstanding === 0
+              ? `<strong>No checks outstanding.</strong> ${detail}`
+              : `<strong>${outstanding} of ${lines.size}</strong> monitoring ${lines.size === 1 ? "line is" : "lines are"} due a call check. ${detail}`,
+          ],
+          summary: outstanding === 0 ? "all in date" : `${outstanding} due`,
+        });
+      }
+    }
+
     // ===== SEND THE DIGEST =====
     // One email per admin recipient — never one email with every address in to:.
     let digestSent = false;
