@@ -9,7 +9,7 @@ import { differenceInCalendarDays } from "date-fns";
  * answer worth recording.
  *
  *   1. Did they pick up?
- *   2. If not straight away, did they call back?
+ *   2. If they did not pick up, did they return your call?
  *   3. Did they answer in a professional manner?
  *   4. Could you hear them clearly?
  *   5. Anything else worth noting?
@@ -21,7 +21,13 @@ import { differenceInCalendarDays } from "date-fns";
  */
 
 export type Answered = "answered" | "no_answer" | "voicemail" | "engaged";
-/** Whether a missed call was returned — only meaningful when they missed it. */
+/**
+ * Whether a missed call was returned.
+ *
+ * Only asked when they did not pick up — there is nothing to return when they
+ * answered — which is why the form appears to be missing it until the first
+ * question says otherwise.
+ */
 export type CalledBack = "yes" | "no" | "not_applicable";
 
 export type Etiquette = "followed" | "partly" | "not_followed" | "not_applicable";
@@ -53,8 +59,8 @@ export const ANSWERED_LABELS: Record<Answered, string> = {
 };
 
 export const CALLED_BACK_LABELS: Record<CalledBack, string> = {
-  yes: "Called back",
-  no: "Never called back",
+  yes: "Returned the call",
+  no: "Never returned it",
   not_applicable: "—",
 };
 

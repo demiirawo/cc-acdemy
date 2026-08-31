@@ -498,13 +498,13 @@ export function QualityAssuranceSection() {
             {/* Q2 — only asked when there was something to call back from. */}
             {!reachable && (
               <div className="grid gap-1.5">
-                <Label>Did they call you back?</Label>
+                <Label>Did they return your call?</Label>
                 <Select value={calledBack} onValueChange={(v) => setCalledBack(v as CalledBack)}>
                   <SelectTrigger><SelectValue placeholder="Choose one" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="yes">Yes — they rang back</SelectItem>
                     <SelectItem value="no">No — never heard from them</SelectItem>
-                    <SelectItem value="not_applicable">Too soon to say</SelectItem>
+                    <SelectItem value="not_applicable">Too soon to say — only just rang</SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="rounded-md bg-destructive/10 p-2.5 text-xs text-destructive">
