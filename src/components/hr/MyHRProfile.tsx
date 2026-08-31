@@ -2467,17 +2467,46 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                     ) : (
                     <>
                     <div className="flex justify-between gap-2">
-                      <span className="text-muted-foreground">Bonus share based on your current rating</span>
-                      <span className="font-medium tabular-nums">≈ {oneValue(myShare)}</span>
+                      <span className="text-muted-foreground">Your share at each rating</span>
                     </div>
-                    {nextUp && nextShare !== null && (
-                      <div className="flex justify-between gap-2 pt-1.5 border-t text-primary">
-                        <span>Bonus if you were to get {nextUp} rating</span>
-                        <span className="font-medium tabular-nums">≈ {oneValue(nextShare)}</span>
-                      </div>
-                    )}
+
+                    {/* Every rung, not only the next one. What the top is worth
+                        is the part somebody actually wants to know, and seeing
+                        the whole ladder makes the gaps between ratings real. */}
+                    <div className="space-y-0.5 pt-1">
+                      {ladder.map(({ rank, share, isMine }) => {
+                        const gap = share !== null && myShare !== null ? share - myShare : null;
+                        return (
+                          <div
+                            key={rank}
+                            className={cn(
+                              "flex items-center justify-between gap-2 rounded-md px-2 py-1.5",
+                              isMine ? "bg-primary/10 font-medium" : "text-muted-foreground"
+                            )}
+                          >
+                            <span className="flex items-center gap-2">
+                              <PerformanceRankBadge rank={rank} years={myYears} size="sm" />
+                              {isMine && <span className="text-[11px] text-primary">you are here</span>}
+                            </span>
+                            <span className="flex items-baseline gap-2 tabular-nums">
+                              <span className={cn(!isMine && "text-foreground")}>
+                                {share === null || share === 0 ? "No bonus" : `≈ ${oneValue(share)}`}
+                              </span>
+                              {gap !== null && Math.round(gap) !== 0 && (
+                                <span className={cn("text-[11px]", gap > 0 ? "text-emerald-600" : "text-muted-foreground")}>
+                                  {gap > 0 ? "+" : "−"}{oneValue(Math.abs(gap))}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
                     <p className="text-[11px] text-muted-foreground pt-1">
-                      Worked out from this month's pot of {oneValue(pot)}, shared across the team by rating and time served.
+                      Worked out from this month's pot of {oneValue(pot)}, shared across the team by rating
+                      and time served — so these move as the team and the pot change. Figures are at your
+                      current {myYears} year{myYears === 1 ? "" : "s"} of service.
                     </p>
                     </>
                     )}
