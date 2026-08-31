@@ -2272,8 +2272,40 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
           isMine: rank === myRank,
         }));
 
-        const nextPoints = nextUp ? bonusPoints(nextUp, myYears) : 0;
-        const nextShare = nextUp ? shareAt(nextUp) : null;
+        // Rendered in both branches below. A D-rated person needs the ladder
+        // more than anyone — every rung is the argument for climbing — so it
+        // cannot live only on the eligible side.
+        const ladderRows = (
+          <div className="space-y-0.5 pt-1">
+            {ladder.map(({ rank, share, isMine }) => {
+              const gap = share !== null && myShare !== null ? share - myShare : null;
+              return (
+                <div
+                  key={rank}
+                  className={cn(
+                    "flex items-center justify-between gap-2 rounded-md px-2 py-1.5",
+                    isMine ? "bg-primary/10 font-medium" : "text-muted-foreground"
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <PerformanceRankBadge rank={rank} years={myYears} size="sm" />
+                    {isMine && <span className="text-[11px] text-primary">you are here</span>}
+                  </span>
+                  <span className="flex items-baseline gap-2 tabular-nums">
+                    <span className={cn(!isMine && "text-foreground")}>
+                      {share === null || share === 0 ? "No bonus" : `≈ ${oneValue(share)}`}
+                    </span>
+                    {gap !== null && Math.round(gap) !== 0 && (
+                      <span className={cn("text-[11px]", gap > 0 ? "text-emerald-600" : "text-muted-foreground")}>
+                        {gap > 0 ? "+" : "−"}{oneValue(Math.abs(gap))}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        );
 
         const overallTone: StatusTone = myRank ? 'success' : 'neutral';
 
@@ -2470,38 +2502,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                       <span className="text-muted-foreground">Your share at each rating</span>
                     </div>
 
-                    {/* Every rung, not only the next one. What the top is worth
-                        is the part somebody actually wants to know, and seeing
-                        the whole ladder makes the gaps between ratings real. */}
-                    <div className="space-y-0.5 pt-1">
-                      {ladder.map(({ rank, share, isMine }) => {
-                        const gap = share !== null && myShare !== null ? share - myShare : null;
-                        return (
-                          <div
-                            key={rank}
-                            className={cn(
-                              "flex items-center justify-between gap-2 rounded-md px-2 py-1.5",
-                              isMine ? "bg-primary/10 font-medium" : "text-muted-foreground"
-                            )}
-                          >
-                            <span className="flex items-center gap-2">
-                              <PerformanceRankBadge rank={rank} years={myYears} size="sm" />
-                              {isMine && <span className="text-[11px] text-primary">you are here</span>}
-                            </span>
-                            <span className="flex items-baseline gap-2 tabular-nums">
-                              <span className={cn(!isMine && "text-foreground")}>
-                                {share === null || share === 0 ? "No bonus" : `≈ ${oneValue(share)}`}
-                              </span>
-                              {gap !== null && Math.round(gap) !== 0 && (
-                                <span className={cn("text-[11px]", gap > 0 ? "text-emerald-600" : "text-muted-foreground")}>
-                                  {gap > 0 ? "+" : "−"}{oneValue(Math.abs(gap))}
-                                </span>
-                              )}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    {ladderRows}
 
                     <p className="text-[11px] text-muted-foreground pt-1">
                       Worked out from this month's pot of {oneValue(pot)}, shared across the team by rating
@@ -2512,6 +2513,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                     )}
                   </div>
                   ) : (
+                  <>
                   <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 space-y-1.5 text-sm">
                     <p className="font-medium text-amber-700 dark:text-amber-300">
                       {!flagEligible
@@ -2521,12 +2523,28 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                     {flagEligible && nextUp && (
                       <p className="text-muted-foreground">
                         Reaching <strong className="text-foreground">{RANK_STYLES[nextUp].label}</strong> would make you eligible
-                        {nextShare === null || peakMonth
-                          ? " for a share of the monthly bonus pot."
-                          : <> — worth ≈ <strong className="text-foreground">{oneValue(nextShare)}</strong> at your current tenure, based on this month's pot of {oneValue(pot)}.</>}
+                        {!peakMonth && pot !== null
+                          ? " — every rating's share is shown below."
+                          : " for a share of the monthly bonus pot."}
                       </p>
                     )}
                   </div>
+
+                  {/* The full ladder, ineligible or not. The old version showed
+                      one figure for the first eligible rank, which answered the
+                      least interesting question on the page. */}
+                  {!peakMonth && pot !== null && (
+                    <div className="rounded-lg border bg-muted/20 p-3 space-y-1.5 text-sm">
+                      <div className="flex justify-between gap-2">
+                        <span className="text-muted-foreground">What each rating would be worth</span>
+                      </div>
+                      {ladderRows}
+                      <p className="text-[11px] text-muted-foreground pt-1">
+                        Worked out from this month's pot of {oneValue(pot)}, at your current {myYears} year{myYears === 1 ? "" : "s"} of service.
+                      </p>
+                    </div>
+                  )}
+                  </>
                   )}
                 </div>
                 )}
