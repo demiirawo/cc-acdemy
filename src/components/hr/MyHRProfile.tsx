@@ -27,6 +27,9 @@ import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { StaffSettingsDialog } from "./StaffSettingsDialog";
 import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusPoints, rankBonusMult, bonusEligible, LOWEST_ELIGIBLE_RANK, type Rank } from "./PerformanceRankBadge";
 import { peakCover, isPeakMonth, type PeakLeaveRow } from "@/lib/bonusPot";
+import {
+  ANSWERED_LABELS, ETIQUETTE_LABELS, NOISE_LABELS, OUTCOME_LABELS, type QaCheck,
+} from "@/lib/qualityAssurance";
 import { schedulePendingRatingChange, describeEffectiveDate } from "@/lib/pendingRating";
 import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
@@ -483,7 +486,11 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   const [savingWarning, setSavingWarning] = useState(false);
   const [clientOptions, setClientOptions] = useState<{ id: string; name: string }[]>([]);
   const [staffIncidents, setStaffIncidents] = useState<StaffIncident[]>([]);
-  const [feedbackTab, setFeedbackTab] = useState<'feedback' | 'incidents'>('feedback');
+  const [feedbackTab, setFeedbackTab] = useState<'feedback' | 'incidents' | 'quality'>('feedback');
+  // Quality assurance checks on this person. HR and admins only — RLS refuses
+  // them to anybody else, so a staff member viewing their own profile simply
+  // gets an empty list rather than an error.
+  const [qaChecks, setQaChecks] = useState<QaCheck[]>([]);
   const [gbpRates, setGbpRates] = useState<Record<string, number>>(FALLBACK_GBP_RATES);
 
   // Signed URL for the profile photo — the onboarding bucket is private, so the
@@ -733,6 +740,16 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         ascending: false
       });
       setHolidays(holidayData || []);
+
+      // Quality assurance checks. Returns nothing for a non-HR viewer, which is
+      // the intended outcome rather than a failure.
+      const { data: qaData } = await supabase
+        .from('qa_checks')
+        .select('*')
+        .eq('staff_user_id', targetUserId)
+        .order('checked_at', { ascending: false })
+        .limit(25);
+      setQaChecks((qaData ?? []) as QaCheck[]);
 
       // Calculate total holidays taken this holiday year (June 1 to May 31)
       const now = new Date();
@@ -2399,7 +2416,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   const warnCount = countOf('warning');
                   const kindStyle = FEEDBACK_KINDS[fbKind];
                   return (
-                <Tabs value={feedbackTab} onValueChange={(v) => setFeedbackTab(v as 'feedback' | 'incidents')} className="space-y-2">
+                <Tabs value={feedbackTab} onValueChange={(v) => setFeedbackTab(v as 'feedback' | 'incidents' | 'quality')} className="space-y-2">
                   <TabsList className="h-8">
                     <TabsTrigger value="feedback" className="text-xs gap-1.5">
                       Feedback
@@ -2409,7 +2426,40 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                       Incidents
                       {staffIncidents.length > 0 && <span className="rounded-full bg-muted px-1.5 text-[10px] font-semibold">{staffIncidents.length}</span>}
                     </TabsTrigger>
+                    {qaChecks.length > 0 && (
+                      <TabsTrigger value="quality" className="text-xs gap-1.5">
+                        Quality checks
+                        <span className="rounded-full bg-muted px-1.5 text-[10px] font-semibold">{qaChecks.length}</span>
+                      </TabsTrigger>
+                    )}
                   </TabsList>
+
+                  <TabsContent value="quality" className="space-y-2 mt-2">
+                    <p className="text-xs text-muted-foreground">
+                      Spot checks made while {selectedUserName} was on a monitoring shift. Anything
+                      raised from one appears under Feedback, where they can see and acknowledge it.
+                    </p>
+                    {qaChecks.map(c => (
+                      <div key={c.id} className="rounded-lg border p-3 text-sm">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium">
+                            {new Date(c.checked_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                          </span>
+                          {c.client_name && <span className="text-muted-foreground">{c.client_name}</span>}
+                          <StatusPill tone={c.outcome === 'pass' ? 'success' : c.outcome === 'concerns' ? 'warning' : 'danger'}>
+                            {OUTCOME_LABELS[c.outcome]}
+                          </StatusPill>
+                          {c.raised_warning_id && <StatusPill tone="info">Raised</StatusPill>}
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {ANSWERED_LABELS[c.answered]}
+                          {c.etiquette !== 'not_applicable' && ` · Etiquette: ${ETIQUETTE_LABELS[c.etiquette]}`}
+                          {c.background_noise !== 'not_applicable' && ` · Line: ${NOISE_LABELS[c.background_noise]}`}
+                        </p>
+                        {c.notes && <p className="mt-1.5 text-xs">{c.notes}</p>}
+                      </div>
+                    ))}
+                  </TabsContent>
 
                   <TabsContent value="feedback" className="space-y-2 mt-2">
                   <div className="flex items-center gap-2 flex-wrap">

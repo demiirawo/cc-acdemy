@@ -8,6 +8,7 @@ import { OnboardingManager } from "./OnboardingManager";
 import { StaffOnboardingForm } from "./StaffOnboardingForm";
 import { MyContracts } from "./contracts/MyContracts";
 import { ContractsManager } from "./contracts/ContractsManager";
+import { QualityAssuranceSection } from "@/components/quality/QualityAssuranceSection";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { TrainingMatrix } from "./training/TrainingMatrix";
 import { IncidentsSection } from "../incidents/IncidentsSection";
@@ -39,6 +40,8 @@ const TAB_ALIASES: Record<string, string> = {
   feedback: "feedback",
   "feedback-log": "feedback",
   supervisions: "supervisions",
+  quality: "quality",
+  "quality-assurance": "quality",
   recruitment: "recruitment",
 };
 
@@ -103,6 +106,7 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
     { value: "incidents", label: "Incidents" },
     { value: "feedback", label: "Feedback Log" },
     { value: "supervisions", label: "Supervisions" },
+    { value: "quality", label: "Quality Assurance" },
     { value: "recruitment", label: "Recruitment" },
   ];
   const staffTabs = [
@@ -178,6 +182,18 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
               </ErrorBoundary>
             )}
           </TabsContent>
+
+          {/* HR and admins only — a spot check somebody can read is a spot
+              check somebody can predict. RLS enforces the same thing. */}
+          {canManageHR && (
+            <TabsContent value="quality" className={sectionBreakout}>
+              <div className="p-4 md:p-6">
+                <ErrorBoundary area="Quality Assurance">
+                  <QualityAssuranceSection />
+                </ErrorBoundary>
+              </div>
+            </TabsContent>
+          )}
 
           <TabsContent value="onboarding" className="mt-0">
             <OnboardingManager />

@@ -1516,6 +1516,57 @@ export type Database = {
         }
         Relationships: []
       }
+      qa_checks: {
+        Row: {
+          answered: string
+          background_noise: string
+          check_type: string
+          checked_at: string
+          checked_by: string | null
+          client_name: string | null
+          created_at: string
+          etiquette: string
+          id: string
+          notes: string | null
+          outcome: string
+          raised_warning_id: string | null
+          rings_to_answer: number | null
+          staff_user_id: string
+        }
+        Insert: {
+          answered: string
+          background_noise?: string
+          check_type?: string
+          checked_at?: string
+          checked_by?: string | null
+          client_name?: string | null
+          created_at?: string
+          etiquette?: string
+          id?: string
+          notes?: string | null
+          outcome: string
+          raised_warning_id?: string | null
+          rings_to_answer?: number | null
+          staff_user_id: string
+        }
+        Update: {
+          answered?: string
+          background_noise?: string
+          check_type?: string
+          checked_at?: string
+          checked_by?: string | null
+          client_name?: string | null
+          created_at?: string
+          etiquette?: string
+          id?: string
+          notes?: string | null
+          outcome?: string
+          raised_warning_id?: string | null
+          rings_to_answer?: number | null
+          staff_user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
