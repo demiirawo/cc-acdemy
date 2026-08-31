@@ -37,6 +37,7 @@ import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItems
 import { allTrainingUpToDate } from "@/lib/trainingStatus";
 import { computeHolidayHandoverStatus, patternDatesInWindow, PATTERN_WINDOW_COLS, type PatternWindow, coverAppliesToClient } from "@/lib/handoverStatus";
 import { groupByStage, orderStages } from "@/lib/onboardingStages";
+import { annualAllowanceFor, HOLIDAY_ALLOWANCE_FIRST_YEAR } from "@/lib/holidayAllowance";
 interface UserProfile {
   user_id: string;
   display_name: string | null;
@@ -1463,19 +1464,19 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         // June payroll reconciles the holiday year that JUST ENDED (June prev → May current).
         // Use the FULL annual allowance for that completed year, pro-rated only if the
         // employee started mid-year. This matches StaffPayManager's logic.
-        const DEFAULT_ALLOWANCE = 15;
-        const INCREASED_ALLOWANCE = 18;
+        const DEFAULT_ALLOWANCE = HOLIDAY_ALLOWANCE_FIRST_YEAR;
         const totalDaysInYear = Math.ceil((holidayYearEnd.getTime() - holidayYearStart.getTime()) / (1000 * 60 * 60 * 24));
 
         // Tenure-based: 15 days default, 18 after 1+ year of employment as of the START
-        // of the holiday year being reconciled.
+        // of the holiday year being reconciled. The comment always said START; the
+        // code measured at the END, which is what let this disagree with the
+        // figure on the profile above it. Both now ask @/lib/holidayAllowance.
         let accruedAllowance = 0;
         let annualAllowanceForYear = DEFAULT_ALLOWANCE;
         let monthsWorkedInYear = 12;
         if (hrProfile.start_date) {
           const start = parseISO(hrProfile.start_date);
-          const yearsEmployedAtYearEnd = (holidayYearEnd.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
-          annualAllowanceForYear = yearsEmployedAtYearEnd >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
+          annualAllowanceForYear = annualAllowanceFor(start, holidayYearStart);
 
           if (start > holidayYearEnd) {
             accruedAllowance = 0;

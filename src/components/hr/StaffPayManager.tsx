@@ -21,8 +21,6 @@ import { recalcAllBonusPots, POT_DESC_TAG, peakCover, monthlyBonusPoints, potRec
 import { schedulePendingRatingChange, describeEffectiveDate } from "@/lib/pendingRating";
 
 const DAY_MS = 1000 * 60 * 60 * 24;
-const HOLIDAY_ALLOWANCE_DEFAULT = 15;
-const HOLIDAY_ALLOWANCE_AFTER_1_YEAR = 18;
 
 /**
  * Days of holiday allowance earned by `upTo`, within one holiday year.
@@ -39,24 +37,6 @@ const HOLIDAY_ALLOWANCE_AFTER_1_YEAR = 18;
  * Returns 0 when the two dates don't overlap the year at all, so someone who
  * joined after it ended, or left before it began, accrues nothing.
  */
-function accruedHolidayDays(
-  employmentStart: Date, hyStart: Date, hyEnd: Date, upTo: Date, rateAsOf: Date,
-): number {
-  const annual = (rateAsOf.getTime() - employmentStart.getTime()) / (DAY_MS * 365) >= 1
-    ? HOLIDAY_ALLOWANCE_AFTER_1_YEAR
-    : HOLIDAY_ALLOWANCE_DEFAULT;
-  const accrualStart = employmentStart > hyStart ? employmentStart : hyStart;
-  if (upTo <= accrualStart) return 0;
-  const totalDaysInYear = Math.ceil((hyEnd.getTime() - hyStart.getTime()) / DAY_MS);
-  const daysAccruing = Math.max(0, Math.ceil((upTo.getTime() - accrualStart.getTime()) / DAY_MS));
-  return Math.round(annual * Math.min(daysAccruing / totalDaysInYear, 1) * 10) / 10;
-}
-
-/** The holiday year (1 June – 31 May) that the given date falls inside. */
-function holidayYearOf(d: Date): { start: Date; end: Date } {
-  const startYear = d.getFullYear() - (d.getMonth() < 5 ? 1 : 0);
-  return { start: new Date(startYear, 5, 1), end: new Date(startYear + 1, 4, 31) };
-}
 
 // Monthly bonus pot: each staff member's slice is proportional to
 // (1 + tenure years) × rank multiplier — except in December and January, which
@@ -71,6 +51,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { downloadInvoicePdf, type InvoiceData } from "@/lib/invoice/generatePdf";
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO, eachDayOfInterval, differenceInCalendarDays } from "date-fns";
 import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
+import { accruedHolidayDays, holidayYearOf } from "@/lib/holidayAllowance";
 
 interface PublicHoliday {
   date: string;
@@ -1320,7 +1301,7 @@ export function StaffPayManager({ onSummaryComputed }: {
           const employmentEndStr = userHRFull?.employment_end_date || null;
           const employmentEnd = employmentEndStr ? parseISO(employmentEndStr) : null;
           const effectiveYearEnd = employmentEnd && employmentEnd < holidayYearEnd ? employmentEnd : holidayYearEnd;
-          accruedAllowance = accruedHolidayDays(start, holidayYearStart, holidayYearEnd, effectiveYearEnd, holidayYearEnd);
+          accruedAllowance = accruedHolidayDays(start, holidayYearStart, holidayYearEnd, effectiveYearEnd);
         }
 
         const holidayBalance = accruedAllowance - userHolidaysTaken;
@@ -1364,7 +1345,7 @@ export function StaffPayManager({ onSummaryComputed }: {
         // settled the old one separately. The two windows never overlap.
         const hy = holidayYearOf(leaverEnd);
 
-        leaverHolidayAccrued = accruedHolidayDays(leaverStart, hy.start, hy.end, leaverEnd, leaverEnd);
+        leaverHolidayAccrued = accruedHolidayDays(leaverStart, hy.start, hy.end, leaverEnd);
         leaverHolidayTaken = staffHolidays.filter(h => {
           if (h.user_id !== hr.user_id) return false;
           if (h.status !== 'approved') return false;

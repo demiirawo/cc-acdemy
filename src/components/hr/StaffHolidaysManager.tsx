@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Check, X, Calendar } from "lucide-react";
 import { format } from "date-fns";
 import { computeHolidayHandoverStatusBatch, handoverClientsSummary, HANDOVER_STATUS_LABEL, type HolidayHandoverStatus } from "@/lib/handoverStatus";
+import { annualAllowanceFor, HOLIDAY_ALLOWANCE_FIRST_YEAR } from "@/lib/holidayAllowance";
 
 interface Holiday {
   id: string;
@@ -42,8 +43,9 @@ interface HRProfile {
   annual_holiday_allowance: number | null;
 }
 
-// Calculate holiday allowance based on employment length
-// 15 days for first year, increases to 18 days after 1+ year of employment
+// Calculate holiday allowance for the current holiday year.
+// 15 days, or 18 for anyone who had already completed a year when the holiday
+// year began on 1 June — see @/lib/holidayAllowance, which owns that rule.
 // Accrual is pro-rated from employee start date (or June 1 if they started before current holiday year)
 export const calculateHolidayAllowance = (startDate: string | null): { 
   annualAllowance: number; 
@@ -54,8 +56,7 @@ export const calculateHolidayAllowance = (startDate: string | null): {
   daysElapsedInYear: number;
   totalDaysInYear: number;
 } => {
-  const DEFAULT_ALLOWANCE = 15;
-  const INCREASED_ALLOWANCE = 18;
+  const DEFAULT_ALLOWANCE = HOLIDAY_ALLOWANCE_FIRST_YEAR;
   
   const now = new Date();
   const currentYear = now.getFullYear();
@@ -89,9 +90,11 @@ export const calculateHolidayAllowance = (startDate: string | null): {
   
   const start = new Date(startDate);
   const yearsEmployed = (now.getTime() - start.getTime()) / (1000 * 60 * 60 * 24 * 365);
-  
-  // Determine annual allowance based on years employed
-  const annualAllowance = yearsEmployed >= 1 ? INCREASED_ALLOWANCE : DEFAULT_ALLOWANCE;
+
+  // Fixed on 1 June by the service already held, so the figure somebody is
+  // quoted in December is the one they are still held to in January. Asking
+  // "as of today" instead made it step up mid-year, and disagree with payroll.
+  const annualAllowance = annualAllowanceFor(start, holidayYearStart);
   
   // Calculate accrual start date: the later of (employee start date, holiday year start)
   const accrualStartDate = start > holidayYearStart ? start : holidayYearStart;
