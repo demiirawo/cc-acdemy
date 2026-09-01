@@ -145,19 +145,6 @@ const CURRENCIES = [
   { code: 'NGN', symbol: '₦' },
 ];
 
-// Fallback rates if API fails
-const FALLBACK_RATES: ExchangeRates = {
-  GBP: 1,
-  EUR: 0.85,
-  USD: 0.79,
-  INR: 0.0095,
-  AED: 0.21,
-  AUD: 0.52,
-  CAD: 0.58,
-  PHP: 0.014,
-  ZAR: 0.044,
-  NGN: 0.00052,
-};
 
 interface RecurringBonus {
   id: string;
@@ -208,7 +195,6 @@ export function StaffPayManager({ onSummaryComputed }: {
   const [invoiceDescriptions, setInvoiceDescriptions] = useState<Record<string, string>>({});
   const [descDialog, setDescDialog] = useState<{ open: boolean; userId: string; name: string; value: string } | null>(null);
   const [quickInvoiceBusy, setQuickInvoiceBusy] = useState<string | null>(null);
-  const [exchangeRates, setExchangeRates] = useState<ExchangeRates>(FALLBACK_RATES);
   const [manualRates, setManualRates] = useState<ExchangeRates>({});
   // Manual rates arrive from the database a moment after mount. Until they do,
   // conversions would silently fall back to the API/fallback rate — and the
@@ -217,7 +203,6 @@ export function StaffPayManager({ onSummaryComputed }: {
   // pot when read back in GBP. Nothing that converts money may run until this
   // is true.
   const [ratesLoaded, setRatesLoaded] = useState(false);
-  const [ratesDate, setRatesDate] = useState<string | null>(null);
   const [loadingRates, setLoadingRates] = useState(false);
   const [adjustmentEdit, setAdjustmentEdit] = useState<AdjustmentEditState | null>(null);
   const [adjustmentDialogOpen, setAdjustmentDialogOpen] = useState(false);
@@ -347,7 +332,6 @@ export function StaffPayManager({ onSummaryComputed }: {
 
   useEffect(() => {
     fetchData();
-    fetchExchangeRates();
     fetchManualRates();
     fetchPublicHolidays(holidaysYear);
   }, []);
@@ -430,25 +414,6 @@ export function StaffPayManager({ onSummaryComputed }: {
     }
   };
 
-  const fetchExchangeRates = async () => {
-    setLoadingRates(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('get-exchange-rates');
-      
-      if (error) throw error;
-      
-      if (data?.rates) {
-        setExchangeRates(data.rates);
-        setRatesDate(data.date || null);
-        console.log('Exchange rates loaded:', data);
-      }
-    } catch (error) {
-      console.error('Error fetching exchange rates:', error);
-      // Keep using fallback rates
-    } finally {
-      setLoadingRates(false);
-    }
-  };
 
   // Get currencies used in the current payroll
   const currenciesInPayroll = useMemo(() => {
@@ -519,16 +484,35 @@ export function StaffPayManager({ onSummaryComputed }: {
     }
   };
 
-  // Convert amount from source currency to GBP using manual rate if set, otherwise API rate
+  /**
+   * Convert to GBP at the rate payroll is actually sent at.
+   *
+   * Only the rate entered for this month is used — the one read off LemFi, who
+   * process the payment. There is deliberately no API fallback: the page used
+   * to prefer a manual rate and quietly fall back to a mid-market API rate when
+   * the manual one had not loaded, so the same August payroll showed £9,973 or
+   * £10,158 depending on nothing more than whether that fetch succeeded. One
+   * source means one answer.
+   *
+   * A missing rate returns null rather than defaulting to 1. Treating 1 as a
+   * rate would read a ₦330,000 salary as £330,000, and a silently absurd total
+   * is far worse than a blank one.
+   */
+  const rateFor = (currency: string, override?: ExchangeRates): number | null => {
+    if (currency === "GBP") return 1;
+    const rate = override?.[currency] ?? manualRates[currency];
+    return rate !== undefined && rate > 0 ? rate : null;
+  };
+
   const convertToGBP = (amount: number, currency: string, override?: ExchangeRates): number => {
-    const rate = override?.[currency] ?? manualRates[currency] ?? exchangeRates[currency] ?? 1;
-    return amount * rate;
+    const rate = rateFor(currency, override);
+    return rate === null ? 0 : amount * rate;
   };
 
   // Inverse: convert a GBP amount into the given currency (for the bonus pot).
   const gbpToCurrency = (amountGbp: number, currency: string, override?: ExchangeRates): number => {
-    const rate = override?.[currency] ?? manualRates[currency] ?? exchangeRates[currency] ?? 1;
-    return rate > 0 ? amountGbp / rate : amountGbp;
+    const rate = rateFor(currency, override);
+    return rate === null ? 0 : amountGbp / rate;
   };
 
   // Open the rating dialog for a staff member. Clicking the badge used to cycle
@@ -1554,7 +1538,7 @@ export function StaffPayManager({ onSummaryComputed }: {
         proRataDeduction: 0,
       };
     });
-  }, [hrProfiles, userProfiles, monthRecords, exchangeRates, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses, staffHolidays, hrProfilesFull, selectedMonth, approvedOvertimeRequests, unpaidHolidayRequests, approvedLeaveRequests]);
+  }, [hrProfiles, userProfiles, monthRecords, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses, staffHolidays, hrProfilesFull, selectedMonth, approvedOvertimeRequests, unpaidHolidayRequests, approvedLeaveRequests]);
 
   // Staff for the monthly bonus pot — everyone on this month's payroll. Rank
   // and tenure drive the distribution in most months; in December and January
@@ -1608,7 +1592,7 @@ export function StaffPayManager({ onSummaryComputed }: {
       .sort((a, b) => b.points - a.points);
     return { potGbp, totalPoints, items };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [potStaff, bonusPotInput, manualRates, exchangeRates]);
+  }, [potStaff, bonusPotInput, manualRates]);
 
   // --- Monthly bonus pot input (beside Total Payroll) ---------------------
   // Typing a pot amount auto-writes each staff member's share as a bonus
@@ -1735,6 +1719,32 @@ export function StaffPayManager({ onSummaryComputed }: {
   const totalPayroll = useMemo(() => {
     return payrollSummary.reduce((sum, s) => sum + s.totalPayInGBP, 0);
   }, [payrollSummary]);
+
+  /**
+   * The rate every figure on this page was actually converted at, and where it
+   * came from — read from the same expression convertToGBP uses, so the label
+   * cannot drift from the arithmetic.
+   *
+   * This exists because the page used to show the rate box and the total
+   * independently: the box could read 1,861 while the total had been computed
+   * at the API's 1,830, and nothing on screen said which. The same August
+   * payroll then showed £9,973 or £10,158 depending only on whether the API
+   * call happened to succeed on that page load.
+   */
+  const activeRates = useMemo(() => {
+    return currenciesInPayroll
+      .filter((c) => c !== "GBP")
+      .map((currency) => {
+        const rate = manualRates[currency];
+        return {
+          currency,
+          perGbp: rate !== undefined && rate > 0 ? 1 / rate : null,
+          symbol: CURRENCIES.find((c) => c.code === currency)?.symbol ?? currency,
+        };
+      });
+  }, [currenciesInPayroll, manualRates]);
+
+  const missingRates = activeRates.filter((r) => r.perGbp === null);
 
   // Publish the fully-computed per-staff GBP totals to any parent (e.g. Finance),
   // so the P&L / per-staff cost reflect holiday overtime, bonuses, deductions and
@@ -2396,7 +2406,9 @@ export function StaffPayManager({ onSummaryComputed }: {
             Add Adjustment
           </Button>
           {readyStaffCount > 0 && (
-            <Button onClick={handleRunAllPayroll} disabled={monthLocked} className="flex-1 md:flex-none">
+            <Button onClick={handleRunAllPayroll} disabled={monthLocked || missingRates.length > 0}
+              title={missingRates.length > 0 ? "Set the LemFi rate first — the total is not converted" : undefined}
+              className="flex-1 md:flex-none">
               <Calculator className="h-4 w-4 mr-2" />
               Run Payroll ({readyStaffCount})
             </Button>
@@ -2424,16 +2436,23 @@ export function StaffPayManager({ onSummaryComputed }: {
 
       {/* Exchange Rate Info */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <span>Exchange rates: {ratesDate ? `Updated ${ratesDate}` : 'Using fallback rates'}</span>
-        <Button 
-          variant="ghost" 
-          size="sm" 
-          onClick={fetchExchangeRates} 
-          disabled={loadingRates}
-          className="h-7 px-2"
-        >
-          <RefreshCw className={`h-3 w-3 ${loadingRates ? 'animate-spin' : ''}`} />
-        </Button>
+        <span>
+          {missingRates.length > 0 ? (
+            <span className="font-medium text-destructive">
+              No rate set for {missingRates.map((r) => r.currency).join(", ")} — enter LemFi&rsquo;s rate below before running payroll.
+            </span>
+          ) : (
+            <>
+              Converted at{" "}
+              {activeRates.map((r, i) => (
+                <span key={r.currency} className="font-medium text-foreground tabular-nums">
+                  {i > 0 && ", "}£1 = {r.symbol}{r.perGbp!.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </span>
+              ))}
+              {" "}— LemFi&rsquo;s rate for {format(selectedMonth, "MMMM yyyy")}, entered by you. No live rate is used.
+            </>
+          )}
+        </span>
       </div>
 
       {/* Summary Cards */}
@@ -2442,7 +2461,16 @@ export function StaffPayManager({ onSummaryComputed }: {
           <CardContent className="p-4">
             <div className="text-xs text-muted-foreground">Total Payroll (GBP)</div>
             <div className="text-2xl font-bold tabular-nums">£{totalPayroll.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-            <div className="text-xs text-muted-foreground mt-1">Converted from all currencies</div>
+            {/* The rate sits with the figure it produced. Reading the total in
+                one place and the rate in another is how the same payroll came
+                to look like two different numbers. */}
+            <div className="text-xs text-muted-foreground mt-1">
+              {missingRates.length > 0 ? (
+                <span className="font-medium text-destructive">Rate not set — total is incomplete</span>
+              ) : (
+                <>at {activeRates.map((r) => `${r.symbol}${r.perGbp!.toLocaleString(undefined, { maximumFractionDigits: 2 })}`).join(", ")} to £1 · LemFi</>
+              )}
+            </div>
             <div className="mt-2 pt-2 border-t space-y-0.5 text-xs">
               <div className="flex justify-between"><span className="text-success">Paid</span><span className="font-medium">£{payrollTotalsByStatus.paid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
               <div className="flex justify-between"><span className="text-blue-500">Ready</span><span className="font-medium">£{payrollTotalsByStatus.ready.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
@@ -2595,7 +2623,7 @@ export function StaffPayManager({ onSummaryComputed }: {
             <div className="flex flex-wrap gap-4">
               {currenciesInPayroll.map(currency => {
                 const currInfo = CURRENCIES.find(c => c.code === currency);
-                const currentRateToGBP = manualRates[currency] ?? exchangeRates[currency] ?? 0;
+                const currentRateToGBP = manualRates[currency] ?? 0;
                 // Inverted: how many units of `currency` per 1 GBP
                 const invertedRate = currentRateToGBP > 0 ? 1 / currentRateToGBP : 0;
                 const isManual = currency in manualRates;
@@ -2645,7 +2673,7 @@ export function StaffPayManager({ onSummaryComputed }: {
               })}
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              Enter how many units of the currency equal £1 — check LemFi before each run. Leave empty to fall back to the mid-market API rate, which is not a rate you can transact at.
+              Enter how many units of the currency equal £1, read from LemFi before each run. This is the only rate used — nothing is fetched live, so this figure and the total can never disagree.
             </p>
           </CardContent>
         </Card>
