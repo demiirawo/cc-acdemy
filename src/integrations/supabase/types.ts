@@ -1363,6 +1363,33 @@ export type Database = {
           },
         ]
       }
+      payroll_month_rates: {
+        Row: {
+          currency_code: string
+          month: string
+          rate_to_gbp: number
+          source: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          currency_code: string
+          month: string
+          rate_to_gbp: number
+          source?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          currency_code?: string
+          month?: string
+          rate_to_gbp?: number
+          source?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       payroll_ready_status: {
         Row: {
           created_at: string

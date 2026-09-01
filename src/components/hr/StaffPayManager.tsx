@@ -309,21 +309,41 @@ export function StaffPayManager({ onSummaryComputed }: {
     pay_date: new Date().toISOString().split('T')[0]
   });
 
-  // Load persisted manual currency rates from DB
-  const fetchManualRates = async () => {
+  // Load the rate for the month being viewed.
+  //
+  // Payroll is sent through LemFi, so the rate that counts is LemFi's on the
+  // day the money moves — not the mid-market rate the API returns, which is not
+  // a rate anybody can transact at. Whatever was used for a month is frozen
+  // against that month: change September's rate and August, already paid, stays
+  // exactly as it was paid. Before this the single global rate re-valued every
+  // past month the moment it was edited.
+  const fetchManualRates = async (forMonth?: string) => {
+    const monthKey = forMonth ?? format(startOfMonth(selectedMonth), "yyyy-MM-dd");
     try {
-      const { data } = await supabase
-        .from('manual_currency_rates')
-        .select('currency_code, rate_to_gbp');
+      const [{ data: monthRates }, { data: globalRates }] = await Promise.all([
+        supabase.from('payroll_month_rates')
+          .select('currency_code, rate_to_gbp').eq('month', monthKey),
+        supabase.from('manual_currency_rates').select('currency_code, rate_to_gbp'),
+      ]);
       const rates: ExchangeRates = {};
-      (data || []).forEach((r: any) => { rates[r.currency_code] = Number(r.rate_to_gbp); });
-      // Anything the admin has already typed wins over the load that was still
-      // in flight when they typed it.
-      setManualRates(prev => ({ ...rates, ...prev }));
+      const apply = (rows: Array<{ currency_code: string; rate_to_gbp: number }> | null) =>
+        (rows || []).forEach((r) => { rates[r.currency_code] = Number(r.rate_to_gbp); });
+      // The global rate is the starting point for a month nobody has set yet,
+      // so a new month opens at the last rate used rather than at the API's.
+      apply(globalRates);
+      apply(monthRates);
+      setManualRates(rates);
     } finally {
       setRatesLoaded(true);
     }
   };
+
+  // Re-read when the month changes, so each month shows its own rate.
+  useEffect(() => {
+    if (!ratesLoaded) return;
+    fetchManualRates(format(startOfMonth(selectedMonth), "yyyy-MM-dd"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMonth]);
 
   useEffect(() => {
     fetchData();
@@ -450,24 +470,38 @@ export function StaffPayManager({ onSummaryComputed }: {
       // Upsert to DB
       const { data: userData } = await supabase.auth.getUser();
       if (userData.user) {
-        await supabase
-          .from('manual_currency_rates')
-          .upsert({
+        const monthKey = format(startOfMonth(selectedMonth), "yyyy-MM-dd");
+        await Promise.all([
+          // The month being viewed — this is the one payroll actually uses.
+          supabase.from('payroll_month_rates').upsert({
+            month: monthKey,
+            currency_code: currency,
+            rate_to_gbp: numValue,
+            source: 'lemfi',
+            updated_by: userData.user.id,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'month,currency_code' }),
+          // ...and the global default, so next month opens at this rate rather
+          // than dropping back to the mid-market one.
+          supabase.from('manual_currency_rates').upsert({
             currency_code: currency,
             rate_to_gbp: numValue,
             updated_by: userData.user.id,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'currency_code' });
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'currency_code' }),
+        ]);
       }
     } else if (value === '') {
       // Clear manual rate - delete from DB
       nextRates = { ...manualRates };
       delete nextRates[currency];
       setManualRates(nextRates);
-      await supabase
-        .from('manual_currency_rates')
-        .delete()
-        .eq('currency_code', currency);
+      const monthKey = format(startOfMonth(selectedMonth), "yyyy-MM-dd");
+      await Promise.all([
+        supabase.from('payroll_month_rates').delete()
+          .eq('month', monthKey).eq('currency_code', currency),
+        supabase.from('manual_currency_rates').delete().eq('currency_code', currency),
+      ]);
     } else {
       return;
     }
@@ -2552,7 +2586,12 @@ export function StaffPayManager({ onSummaryComputed }: {
       {currenciesInPayroll.length > 0 && (
         <Card>
           <CardContent className="p-4">
-            <div className="text-sm font-medium mb-3">Manual Currency Conversion Rates (from GBP)</div>
+            <div className="text-sm font-medium mb-1">Payroll Exchange Rate (from GBP)</div>
+            <div className="text-xs text-muted-foreground mb-3">
+              The rate <span className="font-medium">LemFi</span> gives on the day you send it — that is what
+              payroll actually costs. Saved against {format(selectedMonth, "MMMM yyyy")} alone, so a paid
+              month is never re-valued when you update it for the next one.
+            </div>
             <div className="flex flex-wrap gap-4">
               {currenciesInPayroll.map(currency => {
                 const currInfo = CURRENCIES.find(c => c.code === currency);
@@ -2606,7 +2645,7 @@ export function StaffPayManager({ onSummaryComputed }: {
               })}
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              Leave empty to use API rates. Enter how many units of the currency equal £1.
+              Enter how many units of the currency equal £1 — check LemFi before each run. Leave empty to fall back to the mid-market API rate, which is not a rate you can transact at.
             </p>
           </CardContent>
         </Card>
