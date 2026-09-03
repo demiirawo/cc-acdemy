@@ -15,6 +15,7 @@ import { UpcomingBirthdaysCard } from "./UpcomingBirthdaysCard";
 import { UpcomingAnniversariesCard } from "./UpcomingAnniversariesCard";
 import { DashboardLiveViewWrapper } from "./DashboardLiveViewWrapper";
 import { HandoverTrackerSummaryCard } from "./HandoverTrackerSummaryCard";
+import { QuickFeedbackCard } from "./QuickFeedbackCard";
 interface Page {
   id: string;
   title: string;
@@ -60,7 +61,7 @@ export function RealDashboard({
   const {
     toast
   } = useToast();
-  const { isAdmin } = useUserRole();
+  const { isAdmin, canManageHR } = useUserRole();
 
   // Utility function to strip HTML tags and get clean text, excluding bold content
   const stripHtmlTags = (html: string): string => {
@@ -325,6 +326,10 @@ export function RealDashboard({
               </div>}
           </div>
         </div>
+
+        {/* Feedback in three actions, on the page already open. Admins and HR
+            only — it writes to someone else's record. */}
+        {canManageHR && <QuickFeedbackCard />}
 
         {/* Active Handover Trackers - Admin only */}
         {isAdmin && <HandoverTrackerSummaryCard />}

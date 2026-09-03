@@ -2844,6 +2844,65 @@ export type Database = {
         }
         Relationships: []
       }
+      staff_warnings: {
+        Row: {
+          ack_token: string
+          acknowledged_at: string | null
+          acknowledged_via: string | null
+          acknowledgement_comment: string | null
+          category: string | null
+          client_id: string | null
+          created_at: string
+          id: string
+          issued_at: string
+          issued_by: string | null
+          kind: string
+          reason: string
+          severity: string
+          user_id: string
+        }
+        Insert: {
+          ack_token?: string
+          acknowledged_at?: string | null
+          acknowledged_via?: string | null
+          acknowledgement_comment?: string | null
+          category?: string | null
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          issued_at?: string
+          issued_by?: string | null
+          kind?: string
+          reason: string
+          severity?: string
+          user_id: string
+        }
+        Update: {
+          ack_token?: string
+          acknowledged_at?: string | null
+          acknowledged_via?: string | null
+          acknowledgement_comment?: string | null
+          category?: string | null
+          client_id?: string | null
+          created_at?: string
+          id?: string
+          issued_at?: string
+          issued_by?: string | null
+          kind?: string
+          reason?: string
+          severity?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "staff_warnings_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       training_items: {
         Row: {
           category: string | null
