@@ -165,10 +165,6 @@ export async function computeHolidayHandoverStatus(
   const { data: tasks } = await supabase
     .from("client_handover_tasks")
     .select("client_name, progress")
-    // Departure handovers live in the same table, tagged with the leaver. They
-    // are a different piece of work from holiday cover and must not count
-    // towards — or drag down — a holiday's handover progress.
-    .is("leaver_user_id", null)
     .in("client_name", clientNames);
 
   const clients = aggregateTasks(tasks || [], clientNames);
@@ -233,7 +229,7 @@ export async function computeHolidayHandoverStatusBatch(
   }
 
   const { data: allTasks } = allClientNames.size > 0
-    ? await supabase.from("client_handover_tasks").select("client_name, progress").is("leaver_user_id", null).in("client_name", Array.from(allClientNames))
+    ? await supabase.from("client_handover_tasks").select("client_name, progress").in("client_name", Array.from(allClientNames))
     : { data: [] as { client_name: string; progress: number | null }[] };
 
   const tasksByClient = new Map<string, { sum: number; count: number }>();
@@ -273,6 +269,13 @@ export function handoverClientsSummary(s: HolidayHandoverStatus): string | null 
 }
 
 export interface UpcomingClientLeave {
+  /**
+   * Why this client needs handing over: somebody is on leave, or somebody is
+   * leaving for good. Both are the same job — the same clients handed to the
+   * same colleagues against the same per-client tracker — so they are the same
+   * object, and only the wording differs where it is shown.
+   */
+  kind?: "leave" | "departure";
   userId: string;
   staffName: string;
   staffEmail: string | null;
@@ -563,6 +566,80 @@ export async function getUpcomingLeaveByAllClients(): Promise<Map<string, Upcomi
         ongoing: daysUntil < 0,
         coverNames,
       });
+    }
+  }
+
+  // Departures, built exactly as the holidays above were.
+  //
+  // A last day is a leave window that never ends, so the same derivation
+  // applies: the clients this person still holds, the same per-client tracker,
+  // the same progress. Only people whose handover was actually requested are
+  // included — a dismissal must not surface in a list scanned every morning.
+  //
+  // Holidays are added first and win a contested client: somebody going on
+  // leave next week is a more immediate gap than the same client changing
+  // hands next month.
+  const { data: leavers } = await supabase
+    .from("hr_profiles")
+    .select("user_id, employment_end_date")
+    .eq("departure_handover_required", true)
+    .not("employment_end_date", "is", null);
+
+  const pendingLeavers = (leavers || []).filter(l => l.employment_end_date);
+  if (pendingLeavers.length > 0) {
+    const leaverIds = pendingLeavers.map(l => l.user_id);
+    const [{ data: leaverPatterns }, { data: leaverProfiles }] = await Promise.all([
+      supabase.from("recurring_shift_patterns").select(PATTERN_WINDOW_COLS).in("user_id", leaverIds),
+      supabase.from("profiles").select("user_id, display_name, email").in("user_id", leaverIds),
+    ]);
+
+    const byLeaver = new Map<string, (PatternWindow & { user_id: string })[]>();
+    ((leaverPatterns || []) as (PatternWindow & { user_id: string })[]).forEach(p => {
+      if (!byLeaver.has(p.user_id)) byLeaver.set(p.user_id, []);
+      byLeaver.get(p.user_id)!.push(p);
+    });
+
+    for (const l of pendingLeavers) {
+      const lastDay = l.employment_end_date as string;
+      const byClient = patternsByClient(byLeaver.get(l.user_id) || []);
+      const daysUntil = differenceInCalendarDays(new Date(lastDay), today);
+      const prof = (leaverProfiles || []).find(p => p.user_id === l.user_id);
+
+      for (const [client, ps] of byClient.entries()) {
+        if (result.has(client)) continue;
+        // Only clients they are still on between now and their last day.
+        if (patternDatesInWindow(ps[0], todayISO, lastDay).length === 0 &&
+            !ps.some(p => patternDatesInWindow(p, todayISO, lastDay).length > 0)) continue;
+
+        // Whoever already has a pattern on this client starting after the
+        // leaver's last day is the person taking it on — the rota records the
+        // succession, so nobody has to type it twice.
+        const { data: successors } = await supabase
+          .from("recurring_shift_patterns")
+          .select("user_id")
+          .eq("client_name", client)
+          .gt("start_date", lastDay);
+        const successorIds = Array.from(new Set((successors || [])
+          .map(r => r.user_id).filter(id => id !== l.user_id)));
+        let coverNames: string[] = [];
+        if (successorIds.length > 0) {
+          const { data: sp } = await supabase
+            .from("profiles").select("user_id, display_name, email").in("user_id", successorIds);
+          coverNames = (sp || []).map(p => (p.display_name || p.email || "Unknown").trim());
+        }
+
+        result.set(client, {
+          kind: "departure",
+          userId: l.user_id,
+          staffName: (prof?.display_name || prof?.email || "Unknown").trim(),
+          staffEmail: prof?.email ?? null,
+          startDate: lastDay,
+          endDate: lastDay,
+          daysUntil,
+          ongoing: daysUntil < 0,
+          coverNames,
+        });
+      }
     }
   }
 

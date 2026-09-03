@@ -203,7 +203,6 @@ export type Database = {
           handed_over_by: string | null
           handed_over_to: string | null
           id: string
-          leaver_user_id: string | null
           link: string | null
           progress: number
           sort_order: number | null
@@ -220,7 +219,6 @@ export type Database = {
           handed_over_by?: string | null
           handed_over_to?: string | null
           id?: string
-          leaver_user_id?: string | null
           link?: string | null
           progress?: number
           sort_order?: number | null
@@ -237,7 +235,6 @@ export type Database = {
           handed_over_by?: string | null
           handed_over_to?: string | null
           id?: string
-          leaver_user_id?: string | null
           link?: string | null
           progress?: number
           sort_order?: number | null

@@ -1628,9 +1628,12 @@ const endingSoon = regularPatterns
     }
 
     // ===== 12. DEPARTURE HANDOVERS =====
-    // Only people whose handover was actually requested. Somebody with an end
-    // date and the request turned off must never appear here — the digest goes
-    // to several admins, and a dismissal is not announced by an email.
+    // Same derivation as the handover card: the clients a leaver still holds,
+    // measured against those clients' shared trackers. No per-leaver tasks
+    // exist — a departure handover is a handover, not a separate object.
+    //
+    // Only people whose handover was requested. The digest reaches several
+    // admins, and a dismissal is not announced by an email.
     {
       const CHASE_WITHIN_DAYS = 14;
       const todayIso = new Date().toISOString().slice(0, 10);
@@ -1641,58 +1644,63 @@ const endingSoon = regularPatterns
         .eq("departure_handover_required", true)
         .not("employment_end_date", "is", null);
 
-      if (leavers && leavers.length > 0) {
-        const ids = leavers.map((l: { user_id: string }) => l.user_id);
-        const { data: tasks } = await supabaseClient
-          .from("client_handover_tasks")
-          .select("leaver_user_id, client_name, progress")
-          .in("leaver_user_id", ids);
+      const pending = (leavers ?? []).filter((l: { employment_end_date: string | null }) => l.employment_end_date);
+      if (pending.length > 0) {
+        const ids = pending.map((l: { user_id: string }) => l.user_id);
+        const { data: patterns } = await supabaseClient
+          .from("recurring_shift_patterns")
+          .select("user_id, client_name, end_date")
+          .in("user_id", ids);
+
+        const clientsByUser = new Map<string, Set<string>>();
+        for (const p of (patterns ?? []) as Array<{ user_id: string; client_name: string | null; end_date: string | null }>) {
+          const name = (p.client_name || "").trim();
+          if (!name || name === "Care Cuddle") continue;
+          if (p.end_date && p.end_date < todayIso) continue;
+          if (!clientsByUser.has(p.user_id)) clientsByUser.set(p.user_id, new Set());
+          clientsByUser.get(p.user_id)!.add(name);
+        }
+
+        const allClients = [...new Set([...clientsByUser.values()].flatMap(s => [...s]))];
+        const { data: tasks } = allClients.length > 0
+          ? await supabaseClient.from("client_handover_tasks")
+              .select("client_name, progress").in("client_name", allClients)
+          : { data: [] };
+
+        // Per-client average, then the average of those — a client with no
+        // tasks counts as nothing done, matching the card and the holiday view.
+        const pctByClient = new Map<string, number>();
+        for (const c of allClients) {
+          const mine = (tasks ?? []).filter((t: { client_name: string }) => t.client_name === c);
+          pctByClient.set(c, mine.length === 0 ? 0
+            : Math.round(mine.reduce((s: number, t: { progress: number | null }) => s + (Number(t.progress) || 0), 0) / mine.length));
+        }
 
         const rows: Array<{ name: string; days: number; pct: number; clients: number; blank: number }> = [];
-        for (const l of leavers as Array<{ user_id: string; employment_end_date: string }>) {
-          const mine = (tasks ?? []).filter(
-            (t: { leaver_user_id: string }) => t.leaver_user_id === l.user_id);
-
-          // Group by client, then average the clients — a client with no tasks
-          // counts as nothing done, so handing over one and forgetting the
-          // other cannot read as finished.
-          const byClient = new Map<string, number[]>();
-          for (const t of mine as Array<{ client_name: string; progress: number | null }>) {
-            if (!byClient.has(t.client_name)) byClient.set(t.client_name, []);
-            byClient.get(t.client_name)!.push(Number(t.progress) || 0);
-          }
-          const perClient = [...byClient.values()].map(
-            (v) => Math.round(v.reduce((a, b) => a + b, 0) / v.length));
-          const pct = perClient.length === 0 ? 0
-            : Math.round(perClient.reduce((a, b) => a + b, 0) / perClient.length);
-          if (pct >= 100 && perClient.length > 0) continue;   // done
-
-          const days = Math.round(
-            (new Date(l.employment_end_date).getTime() - new Date(todayIso).getTime()) / 86_400_000);
+        for (const l of pending as Array<{ user_id: string; employment_end_date: string }>) {
+          const cs = [...(clientsByUser.get(l.user_id) ?? [])];
+          if (cs.length === 0) continue;
+          const pcts = cs.map(c => pctByClient.get(c) ?? 0);
+          const pct = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
+          if (pct >= 100) continue;
           rows.push({
             name: profileMap.get(l.user_id) || "Unknown",
-            days, pct,
-            clients: byClient.size,
-            blank: perClient.filter((p) => p === 0).length,
+            days: Math.round((new Date(l.employment_end_date).getTime() - new Date(todayIso).getTime()) / 86_400_000),
+            pct, clients: cs.length, blank: pcts.filter(p => p === 0).length,
           });
         }
 
         if (rows.length > 0) {
           rows.sort((a, b) => a.days - b.days);
-          const pressing = rows.filter((r) => r.days <= CHASE_WITHIN_DAYS);
-
-          const items = rows.map((r) => {
+          const pressing = rows.filter(r => r.days <= CHASE_WITHIN_DAYS);
+          const items = rows.map(r => {
             const when = r.days < 0 ? `<span style="color:#b91c1c;font-weight:600;">left ${Math.abs(r.days)} day${Math.abs(r.days) === 1 ? "" : "s"} ago</span>`
               : r.days === 0 ? '<span style="color:#b91c1c;font-weight:600;">last day today</span>'
               : r.days <= CHASE_WITHIN_DAYS ? `<span style="color:#b45309;font-weight:600;">${r.days} day${r.days === 1 ? "" : "s"} left</span>`
               : `${r.days} days left`;
-            const detail = r.clients === 0
-              ? "no clients on the rota to hand over"
-              : `${r.pct}% done across ${r.clients} client${r.clients === 1 ? "" : "s"}` +
-                (r.blank > 0 ? `, ${r.blank} with nothing recorded` : "");
-            return `<strong>${r.name}</strong> — ${when}, ${detail}`;
+            return `<strong>${r.name}</strong> — ${when}, ${r.pct}% across ${r.clients} client${r.clients === 1 ? "" : "s"}` +
+              (r.blank > 0 ? `, ${r.blank} not started` : "");
           });
-
           sections.push({
             type: "departure_handovers",
             title: "Departure handovers outstanding",

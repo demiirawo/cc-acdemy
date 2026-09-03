@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { seedDepartureTasks } from '@/lib/departureHandover';
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -238,30 +237,6 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
         if (error) throw error;
       }
 
-      // Build the departure checklist only on the transition into "required".
-      // Never on save generally, and never on turning it off: switching it off
-      // hides the checklist but keeps whatever has already been handed over, so
-      // a decision reversed in the morning does not destroy an afternoon's work.
-      if (formData.departure_handover_required && formData.employment_end_date) {
-        try {
-          const created = await seedDepartureTasks(
-            userId, formData.employment_end_date, (await supabase.auth.getUser()).data.user?.id ?? null);
-          if (created > 0) {
-            toast({
-              title: "Handover checklist created",
-              description: `${created} task${created === 1 ? "" : "s"} across the clients they still cover. They can see it on their profile.`,
-            });
-          }
-        } catch (e) {
-          // The profile change itself has saved; say so rather than failing the
-          // whole dialog over the checklist.
-          toast({
-            title: "Saved, but the handover checklist could not be built",
-            description: e instanceof Error ? e.message : String(e), variant: "destructive",
-          });
-        }
-      }
-
       // Salary — admins only (RLS also blocks non-admins from writing
       // staff_salaries). A change does not land here: payroll runs on the 1st,
       // so writing a new figure mid-month would pay it for a month worked at
@@ -460,8 +435,8 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
                     <div className="min-w-0">
                       <Label htmlFor="departure-handover" className="cursor-pointer">Ask them to complete a handover</Label>
                       <p className="text-xs text-muted-foreground mt-0.5">
-                        Builds a checklist from your handover templates for every client they still
-                        cover before {formData.employment_end_date}, and shows it on their profile.
+                        Puts them on the handover tracker for every client they still cover before{" "}
+                        {formData.employment_end_date}, exactly as going on leave does.
                       </p>
                       <p className="text-xs text-amber-600 mt-1">
                         Leave this off if they have not been told they are leaving — turning it on is
