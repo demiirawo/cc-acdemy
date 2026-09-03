@@ -1627,6 +1627,86 @@ const endingSoon = regularPatterns
       }
     }
 
+    // ===== 12. DEPARTURE HANDOVERS =====
+    // Only people whose handover was actually requested. Somebody with an end
+    // date and the request turned off must never appear here — the digest goes
+    // to several admins, and a dismissal is not announced by an email.
+    {
+      const CHASE_WITHIN_DAYS = 14;
+      const todayIso = new Date().toISOString().slice(0, 10);
+
+      const { data: leavers } = await supabaseClient
+        .from("hr_profiles")
+        .select("user_id, employment_end_date")
+        .eq("departure_handover_required", true)
+        .not("employment_end_date", "is", null);
+
+      if (leavers && leavers.length > 0) {
+        const ids = leavers.map((l: { user_id: string }) => l.user_id);
+        const { data: tasks } = await supabaseClient
+          .from("client_handover_tasks")
+          .select("leaver_user_id, client_name, progress")
+          .in("leaver_user_id", ids);
+
+        const rows: Array<{ name: string; days: number; pct: number; clients: number; blank: number }> = [];
+        for (const l of leavers as Array<{ user_id: string; employment_end_date: string }>) {
+          const mine = (tasks ?? []).filter(
+            (t: { leaver_user_id: string }) => t.leaver_user_id === l.user_id);
+
+          // Group by client, then average the clients — a client with no tasks
+          // counts as nothing done, so handing over one and forgetting the
+          // other cannot read as finished.
+          const byClient = new Map<string, number[]>();
+          for (const t of mine as Array<{ client_name: string; progress: number | null }>) {
+            if (!byClient.has(t.client_name)) byClient.set(t.client_name, []);
+            byClient.get(t.client_name)!.push(Number(t.progress) || 0);
+          }
+          const perClient = [...byClient.values()].map(
+            (v) => Math.round(v.reduce((a, b) => a + b, 0) / v.length));
+          const pct = perClient.length === 0 ? 0
+            : Math.round(perClient.reduce((a, b) => a + b, 0) / perClient.length);
+          if (pct >= 100 && perClient.length > 0) continue;   // done
+
+          const days = Math.round(
+            (new Date(l.employment_end_date).getTime() - new Date(todayIso).getTime()) / 86_400_000);
+          rows.push({
+            name: profileMap.get(l.user_id) || "Unknown",
+            days, pct,
+            clients: byClient.size,
+            blank: perClient.filter((p) => p === 0).length,
+          });
+        }
+
+        if (rows.length > 0) {
+          rows.sort((a, b) => a.days - b.days);
+          const pressing = rows.filter((r) => r.days <= CHASE_WITHIN_DAYS);
+
+          const items = rows.map((r) => {
+            const when = r.days < 0 ? `<span style="color:#b91c1c;font-weight:600;">left ${Math.abs(r.days)} day${Math.abs(r.days) === 1 ? "" : "s"} ago</span>`
+              : r.days === 0 ? '<span style="color:#b91c1c;font-weight:600;">last day today</span>'
+              : r.days <= CHASE_WITHIN_DAYS ? `<span style="color:#b45309;font-weight:600;">${r.days} day${r.days === 1 ? "" : "s"} left</span>`
+              : `${r.days} days left`;
+            const detail = r.clients === 0
+              ? "no clients on the rota to hand over"
+              : `${r.pct}% done across ${r.clients} client${r.clients === 1 ? "" : "s"}` +
+                (r.blank > 0 ? `, ${r.blank} with nothing recorded` : "");
+            return `<strong>${r.name}</strong> — ${when}, ${detail}`;
+          });
+
+          sections.push({
+            type: "departure_handovers",
+            title: "Departure handovers outstanding",
+            icon: "\uD83D\uDCE4",
+            accentColor: pressing.length > 0 ? "#b45309" : "#5F17EB",
+            itemsHtml: items,
+            summary: pressing.length > 0
+              ? `${rows.length} outstanding · ${pressing.length} close to leaving`
+              : `${rows.length} outstanding`,
+          });
+        }
+      }
+    }
+
     // ===== SEND THE DIGEST =====
     // One email per admin recipient — never one email with every address in to:.
     let digestSent = false;

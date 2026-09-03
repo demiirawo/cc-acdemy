@@ -9,6 +9,7 @@ import { StaffOnboardingForm } from "./StaffOnboardingForm";
 import { MyContracts } from "./contracts/MyContracts";
 import { ContractsManager } from "./contracts/ContractsManager";
 import { QualityAssuranceSection } from "@/components/quality/QualityAssuranceSection";
+import { LeaversHandoverSection } from "@/components/hr/leavers/LeaversHandoverSection";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { TrainingMatrix } from "./training/TrainingMatrix";
 import { IncidentsSection } from "../incidents/IncidentsSection";
@@ -107,6 +108,7 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
     { value: "feedback", label: "Feedback Log" },
     { value: "supervisions", label: "Supervisions" },
     { value: "quality", label: "Quality Assurance" },
+    { value: "leavers", label: "Leavers" },
     { value: "recruitment", label: "Recruitment" },
   ];
   const staffTabs = [
@@ -190,6 +192,18 @@ export function HRSection({ initialUserId }: HRSectionProps = {}) {
               <div className="p-4 md:p-6">
                 <ErrorBoundary area="Quality Assurance">
                   <QualityAssuranceSection />
+                </ErrorBoundary>
+              </div>
+            </TabsContent>
+          )}
+
+          {/* HR and admins only. Lists only people whose handover was actually
+              requested, so it never becomes the place a dismissal is found out. */}
+          {canManageHR && (
+            <TabsContent value="leavers" className={sectionBreakout}>
+              <div className="p-4 md:p-6">
+                <ErrorBoundary area="Leavers">
+                  <LeaversHandoverSection />
                 </ErrorBoundary>
               </div>
             </TabsContent>
