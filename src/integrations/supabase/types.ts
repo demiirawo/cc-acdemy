@@ -323,6 +323,47 @@ export type Database = {
         }
         Relationships: []
       }
+      client_price_changes: {
+        Row: {
+          client_id: string
+          created_at: string
+          created_by: string | null
+          effective_date: string
+          id: string
+          new_mrr: number
+          previous_mrr: number | null
+          reason: string | null
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          effective_date: string
+          id?: string
+          new_mrr: number
+          previous_mrr?: number | null
+          reason?: string | null
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          effective_date?: string
+          id?: string
+          new_mrr?: number
+          previous_mrr?: number | null
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_price_changes_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_whiteboards: {
         Row: {
           client_name: string

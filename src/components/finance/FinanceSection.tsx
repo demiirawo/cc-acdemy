@@ -18,6 +18,7 @@ import {
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { rebuildChain, baseFee, currentFee, feeOn, sortChanges } from "@/lib/priceTimeline";
 import { Loader2, Plus, Trash2, ChevronDown, ChevronRight, Lock, RefreshCw, ChevronLeft, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { ComposedChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { ExpenseTrendPanel } from "./ExpenseTrendPanel";
@@ -57,7 +58,7 @@ const SALES_STAGES = [
 const stageMeta = (v: string | null) => SALES_STAGES.find(s => s.value === (v || "active")) ?? SALES_STAGES[0];
 
 interface ClientRow { id: string; name: string; mrr: number | null; software: string | null; status: string | null; contract_start_date: string | null; contract_end_date: string | null; service_line: string | null; }
-interface PriceChange { id: string; client_id: string; previous_mrr: number | null; new_mrr: number; effective_date: string; reason: string | null; }
+interface PriceChange { id: string; client_id: string; previous_mrr: number | null; new_mrr: number; effective_date: string; reason: string | null; created_at?: string; }
 interface ClientChange { id: string; client_id: string; field: "status" | "contract_end_date"; previous_value: string | null; new_value: string | null; effective_date: string; reason: string | null; }
 interface StaffPay { user_id: string; base_salary: number; base_currency: string; }
 interface HrRow { user_id: string; pay_frequency: string | null; employment_end_date: string | null; start_date: string | null; created_at: string | null; }
@@ -201,7 +202,7 @@ export function FinanceSection() {
       (supabase as any).from("freeagent_oauth")
         .select("last_invoice_sync_at, last_invoice_sync_status, last_invoice_sync_detail")
         .eq("id", true).maybeSingle(),
-      (supabase as any).from("client_price_changes")
+      supabase.from("client_price_changes")
         .select("id, client_id, previous_mrr, new_mrr, effective_date, reason")
         .order("effective_date", { ascending: true }),
       (supabase as any).from("client_change_log")
@@ -709,34 +710,88 @@ export function FinanceSection() {
     await load();
   };
 
-  // Cancel a scheduled fee change, or undo one that already applied. The chart
-  // derives each month's fee from this log, so an entry that is currently
-  // setting the price has to take the live fee back with it — otherwise the
-  // table would show one number and the chart another.
-  const removePriceChange = async (client: ClientTableRow, change: PriceChange, revertFee: boolean) => {
-    const { error } = await (supabase as any).from("client_price_changes").delete().eq("id", change.id);
+  /**
+   * Re-derive a client's whole fee timeline after any add, edit or delete.
+   *
+   * Every change is re-linked to the one before it, and the live fee is set to
+   * whatever the timeline says is in force today. Nothing else writes mrr, so a
+   * backdated correction, a deletion in the middle, and a scheduled rise all
+   * settle to the same answer instead of depending on the order they were typed.
+   */
+  const rebuildPriceTimeline = async (clientId: string) => {
+    const { data: rows } = await (supabase as any)
+      .from("client_price_changes")
+      .select("id, client_id, previous_mrr, new_mrr, effective_date, reason, created_at")
+      .eq("client_id", clientId);
+    const changes = (rows ?? []) as PriceChange[];
+    const client = clients.find(c => c.id === clientId);
+    const liveMrr = Number(client?.mrr ?? 0);
+
+    const base = baseFee(changes, liveMrr);
+    const fixes = rebuildChain(changes, base);
+    for (const f of fixes) {
+      await supabase.from("client_price_changes")
+        .update({ previous_mrr: f.previous_mrr }).eq("id", f.id);
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const shouldBe = currentFee(changes.map(c => {
+      const fix = fixes.find(f => f.id === c.id);
+      return fix ? { ...c, previous_mrr: fix.previous_mrr } : c;
+    }), liveMrr, today);
+    if (shouldBe !== liveMrr) await patchClient(clientId, { mrr: shouldBe });
+  };
+
+  // Remove one change from the timeline. There is no longer a question of
+  // whether to move the live fee: the timeline decides it, so deleting a change
+  // in the middle of a contract's history reprices from that point forward
+  // rather than only affecting the most recent entry.
+  const removePriceChange = async (client: ClientTableRow, change: PriceChange) => {
+    const { error } = await supabase.from("client_price_changes").delete().eq("id", change.id);
     if (error) {
       toast({ title: "Couldn't remove the fee change", description: error.message, variant: "destructive" });
       return;
     }
-    const scheduled = change.effective_date > new Date().toISOString().slice(0, 10);
-    if (revertFee) await patchClient(client.id, { mrr: Number(change.previous_mrr ?? 0) });
+    await rebuildPriceTimeline(client.id);
     toast({
-      title: scheduled ? "Scheduled change cancelled" : "Fee change undone",
-      description: revertFee
-        ? `${client.name} is back to ${gbp2(Number(change.previous_mrr ?? 0))}/mo.`
-        : `${client.name} stays at ${gbp2(Number(client.mrr))}/mo.`,
+      title: change.effective_date > new Date().toISOString().slice(0, 10)
+        ? "Scheduled change cancelled" : "Fee change removed",
+      description: `${client.name}'s fee history has been re-linked.`,
     });
     await load();
   };
 
-  // Record a fee change. The live mrr only moves once the effective date has
-  // arrived — a rise agreed today for next month must not restate this month's
-  // revenue, but it should still show in the projection, which reads the log.
+  // Correct a change already on the timeline — its amount, when it took effect,
+  // or why. Editing the earliest change's "from" figure is how the original
+  // contract fee gets set, since that is where the timeline is anchored.
+  const editPriceChange = async (
+    client: ClientTableRow, change: PriceChange,
+    patch: { new_mrr?: number; effective_date?: string; reason?: string | null; previous_mrr?: number },
+  ) => {
+    const { error } = await supabase.from("client_price_changes").update(patch).eq("id", change.id);
+    if (error) {
+      toast({ title: "Couldn't update the fee change", description: error.message, variant: "destructive" });
+      return;
+    }
+    await rebuildPriceTimeline(client.id);
+    toast({ title: "Fee change updated", description: `${client.name}'s fee history has been re-linked.` });
+    await load();
+  };
+
+  /**
+   * Record a fee change at any date — today, backdated, or scheduled.
+   *
+   * The "from" figure is read off the timeline at that date rather than taken
+   * from the live fee, which is what makes a backdated change possible: adding
+   * an uplift that happened in 2024 now links to what they were actually paying
+   * in 2024, not to what they pay today.
+   */
   const applyPriceChange = async (client: ClientTableRow, newMrr: number, effectiveDate: string, reason: string) => {
-    const { error } = await (supabase as any).from("client_price_changes").insert({
+    const mine = priceChanges.filter(pc => pc.client_id === client.id);
+    const previous = feeOn(effectiveDate, mine, Number(client.mrr));
+    const { error } = await supabase.from("client_price_changes").insert({
       client_id: client.id,
-      previous_mrr: client.mrr,
+      previous_mrr: previous,
       new_mrr: newMrr,
       effective_date: effectiveDate,
       reason: reason || null,
@@ -746,13 +801,13 @@ export function FinanceSection() {
       toast({ title: "Couldn't record the fee change", description: error.message, variant: "destructive" });
       return;
     }
-    const startsToday = effectiveDate <= new Date().toISOString().slice(0, 10);
-    if (startsToday) await patchClient(client.id, { mrr: newMrr });
+    await rebuildPriceTimeline(client.id);
+    const today = new Date().toISOString().slice(0, 10);
+    const when = new Date(effectiveDate).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
     toast({
-      title: startsToday ? "Fee updated" : "Fee change scheduled",
-      description: startsToday
-        ? `${client.name} is now ${gbp2(newMrr)}/mo.`
-        : `${client.name} moves to ${gbp2(newMrr)}/mo from ${new Date(effectiveDate).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}.`,
+      title: effectiveDate > today ? "Fee change scheduled"
+           : effectiveDate < today ? "Historic fee change recorded" : "Fee updated",
+      description: `${client.name}: ${gbp2(previous)} → ${gbp2(newMrr)} from ${when}.`,
     });
     await load();
   };
@@ -1004,7 +1059,7 @@ export function FinanceSection() {
 
           {/* ---- Clients ---- */}
           <TabsContent value="clients" className="mt-0">
-            <ClientsTable rows={model.clientRows} onPatch={patchClient} onPriceChange={applyPriceChange} onSetInitialPrice={setInitialPrice} onRemovePriceChange={removePriceChange}
+            <ClientsTable rows={model.clientRows} onPatch={patchClient} onPriceChange={applyPriceChange} onSetInitialPrice={setInitialPrice} onRemovePriceChange={removePriceChange} onEditPriceChange={editPriceChange}
               onFieldChange={applyFieldChange} priceChanges={priceChanges} changeLog={changeLog} />
           </TabsContent>
 
@@ -1331,11 +1386,13 @@ function clientTenure(contractStart: string | null, lastUplift: string | null) {
 
 type ClientTableRow = ClientRow & { mrr: number; netRevenue: number | null; processor: "zoho" | "freeagent" | "other"; service: ServiceKey; profit: number | null; margin: number | null };
 
-function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemovePriceChange, onFieldChange, priceChanges, changeLog }: {
+function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemovePriceChange, onEditPriceChange, onFieldChange, priceChanges, changeLog }: {
   rows: ClientTableRow[];
   onPatch: (id: string, patch: Partial<ClientRow>) => void;
   onSetInitialPrice: (client: ClientTableRow, mrr: number) => Promise<void>;
-  onRemovePriceChange: (client: ClientTableRow, change: PriceChange, revertFee: boolean) => Promise<void>;
+  onRemovePriceChange: (client: ClientTableRow, change: PriceChange) => Promise<void>;
+  onEditPriceChange: (client: ClientTableRow, change: PriceChange,
+    patch: { new_mrr?: number; effective_date?: string; reason?: string | null; previous_mrr?: number }) => Promise<void>;
   onPriceChange: (client: ClientTableRow, newMrr: number, effectiveDate: string, reason: string) => Promise<void>;
   onFieldChange: (client: ClientTableRow, field: "status" | "contract_end_date", newValue: string | null, effectiveDate: string, reason: string) => Promise<void>;
   priceChanges: PriceChange[];
@@ -1361,6 +1418,15 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemov
   // Fee history for one client, where a change can be cancelled or undone.
   const [historyFor, setHistoryFor] = useState<ClientTableRow | null>(null);
   const [removingChange, setRemovingChange] = useState<string | null>(null);
+  // Editing one entry in place, and adding one anywhere on the timeline. Both
+  // live in the history dialog because that is where the sequence is visible —
+  // a change is only judged against the ones either side of it.
+  const [editingChange, setEditingChange] = useState<string | null>(null);
+  const [editFee, setEditFee] = useState("");
+  const [editDate, setEditDate] = useState("");
+  const [editReason, setEditReason] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [addingChange, setAddingChange] = useState(false);
   const [priceValue, setPriceValue] = useState("");
   const [priceDate, setPriceDate] = useState("");
   const [priceReason, setPriceReason] = useState("");
@@ -1645,8 +1711,10 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemov
                         {c.mrr > 0 ? gbp2(c.mrr) : (
                           <span className="text-amber-600 text-xs font-medium">No price set</span>
                         )}
-                        {/* Only offered when there's something to undo. */}
-                        {priceChanges.some(pc => pc.client_id === c.id) && !pendingOf(c.id) && (
+                        {/* Always reachable when there is any history. It used to
+                            hide whenever a change was scheduled, which is exactly
+                            when somebody wants to check what came before it. */}
+                        {priceChanges.some(pc => pc.client_id === c.id) && (
                           <button type="button" onClick={e => { e.stopPropagation(); setHistoryFor(c); }}
                             className="block ml-auto text-[10px] text-muted-foreground hover:text-primary hover:underline">
                             fee history
@@ -1678,7 +1746,7 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemov
           })}
         </table>
         <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
-          Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the month it falls in, in both the history and the projection. Inactive clients are grouped separately whichever way you group. Use “Group by” to read the book by billing system or by service line — each group sum is that group’s active monthly revenue. Click a fee to set or change it — an existing fee asks when the new price takes effect and is logged on the chart; a first fee is just recorded. Click a scheduled change or "fee history" to cancel or undo one. Click the billing pill to say whether Zoho or FreeAgent invoices them · click the service pill to say whether they buy admin + compliance or CCFORMS · double-click either contract date to edit · click the stage pill to change it · click a group header to collapse it.
+          Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the month it falls in, in both the history and the projection. Inactive clients are grouped separately whichever way you group. Use “Group by” to read the book by billing system or by service line — each group sum is that group’s active monthly revenue. Click a fee to set or change it — an existing fee asks when the new price takes effect and is logged on the chart; a first fee is just recorded. Click "fee history" to see the full timeline, where a change can be edited, removed, or added at any date — including backdated ones for contracts that pre-date the Academy. The fee shown in the table is always whatever the timeline says is in force today. Click the billing pill to say whether Zoho or FreeAgent invoices them · click the service pill to say whether they buy admin + compliance or CCFORMS · double-click either contract date to edit · click the stage pill to change it · click a group header to collapse it.
         </p>
 
         {/* Fee history — where a scheduled change is cancelled and an applied one
@@ -1710,7 +1778,8 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemov
                   const isInForce = inForce?.id === pc.id;
                   const up = Number(pc.new_mrr) > Number(pc.previous_mrr ?? 0);
                   return (
-                    <div key={pc.id} className="flex items-start gap-3 rounded-lg border px-3 py-2">
+                    <div key={pc.id} className="space-y-2">
+                    <div className="flex items-start gap-3 rounded-lg border px-3 py-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-medium tabular-nums">
@@ -1738,22 +1807,121 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemov
                           </p>
                         )}
                       </div>
-                      <Button
-                        variant="outline" size="sm" className="flex-shrink-0"
-                        disabled={removingChange === pc.id}
-                        onClick={async () => {
-                          setRemovingChange(pc.id);
-                          await onRemovePriceChange(historyFor, pc, isInForce);
-                          setRemovingChange(null);
-                          setHistoryFor(null);
-                        }}
-                      >
-                        {removingChange === pc.id ? "Removing…" : scheduled ? "Cancel" : "Undo"}
-                      </Button>
+                      <div className="flex flex-shrink-0 gap-1.5">
+                        <Button
+                          variant="ghost" size="sm"
+                          onClick={() => {
+                            setEditingChange(pc.id);
+                            setEditFee(String(pc.new_mrr));
+                            setEditDate(pc.effective_date);
+                            setEditReason(pc.reason ?? "");
+                          }}
+                        >Edit</Button>
+                        <Button
+                          variant="outline" size="sm"
+                          disabled={removingChange === pc.id}
+                          onClick={async () => {
+                            setRemovingChange(pc.id);
+                            await onRemovePriceChange(historyFor, pc);
+                            setRemovingChange(null);
+                          }}
+                        >
+                          {removingChange === pc.id ? "Removing…" : "Remove"}
+                        </Button>
+                      </div>
+                    </div>
+                    {editingChange === pc.id && (
+                      <div className="rounded-lg border border-primary/30 bg-primary/[0.03] px-3 py-3 space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs">New fee</Label>
+                            <Input type="number" step="0.01" value={editFee}
+                              onChange={e => setEditFee(e.target.value)} className="h-8 text-right text-sm" />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Effective from</Label>
+                            <Input type="date" value={editDate}
+                              onChange={e => setEditDate(e.target.value)} className="h-8 text-sm" />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Reason</Label>
+                          <Input value={editReason} onChange={e => setEditReason(e.target.value)}
+                            className="h-8 text-sm" placeholder="e.g. annual uplift" />
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          Changing the date re-orders the timeline — the fees either side are re-linked automatically.
+                        </p>
+                        <div className="flex justify-end gap-2">
+                          <Button variant="ghost" size="sm" onClick={() => setEditingChange(null)}
+                            disabled={savingEdit}>Cancel</Button>
+                          <Button size="sm" disabled={savingEdit || isNaN(parseFloat(editFee)) || !editDate}
+                            onClick={async () => {
+                              setSavingEdit(true);
+                              await onEditPriceChange(historyFor, pc, {
+                                new_mrr: parseFloat(editFee),
+                                effective_date: editDate,
+                                reason: editReason.trim() || null,
+                              });
+                              setSavingEdit(false);
+                              setEditingChange(null);
+                            }}>{savingEdit ? "Saving…" : "Save"}</Button>
+                        </div>
+                      </div>
+                    )}
                     </div>
                   );
                 });
               })()}
+
+              {/* Add anywhere on the timeline, not only "from today". A contract
+                  that pre-dates the Academy has a history worth recording, and
+                  it can only be entered by backdating. */}
+              {historyFor && (addingChange ? (
+                <div className="rounded-lg border border-dashed border-primary/40 bg-primary/[0.03] px-3 py-3 space-y-2">
+                  <p className="text-sm font-medium">Add a fee change</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">New fee</Label>
+                      <Input type="number" step="0.01" value={editFee}
+                        onChange={e => setEditFee(e.target.value)} className="h-8 text-right text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Effective from</Label>
+                      <Input type="date" value={editDate}
+                        onChange={e => setEditDate(e.target.value)} className="h-8 text-sm" />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Reason</Label>
+                    <Input value={editReason} onChange={e => setEditReason(e.target.value)}
+                      className="h-8 text-sm" placeholder="e.g. annual uplift, dropped a service" />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Any date — past, today or future. The fee it changes <em>from</em> is taken from the
+                    timeline at that date, so a backdated change links to what they were actually paying then.
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => setAddingChange(false)}
+                      disabled={savingEdit}>Cancel</Button>
+                    <Button size="sm" disabled={savingEdit || isNaN(parseFloat(editFee)) || !editDate}
+                      onClick={async () => {
+                        setSavingEdit(true);
+                        await onPriceChange(historyFor, parseFloat(editFee), editDate, editReason.trim());
+                        setSavingEdit(false);
+                        setAddingChange(false);
+                      }}>{savingEdit ? "Adding…" : "Add change"}</Button>
+                  </div>
+                </div>
+              ) : (
+                <Button variant="outline" size="sm" className="w-full"
+                  onClick={() => {
+                    setAddingChange(true); setEditingChange(null);
+                    setEditFee(""); setEditDate(""); setEditReason("");
+                  }}>
+                  Add a change
+                </Button>
+              ))}
             </div>
           </DialogContent>
         </Dialog>
