@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { seedDepartureTasks } from '@/lib/departureHandover';
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,7 +16,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Shield, Infinity, Plus, X, Loader2, Coins } from "lucide-react";
+import { Shield, Infinity, Plus, X, Loader2, Coins, ClipboardList } from "lucide-react";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { recalcAllBonusPots } from "@/lib/bonusPot";
 import { useAuth } from "@/hooks/useAuth";
@@ -81,6 +82,7 @@ const EMPTY_FORM = {
   pay_frequency: 'monthly',
   annual_holiday_allowance: 28,
   unlimited_holiday: false,
+  departure_handover_required: false,
   public_holiday_pay_disabled: false,
   bonus_pot_eligible: true,
   notes: '',
@@ -151,6 +153,7 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
           pay_frequency: hr?.pay_frequency || 'monthly',
           annual_holiday_allowance: hr?.annual_holiday_allowance || 28,
           unlimited_holiday: hr?.unlimited_holiday || false,
+          departure_handover_required: hr?.departure_handover_required || false,
           public_holiday_pay_disabled: (hr as any)?.public_holiday_pay_disabled || false,
           bonus_pot_eligible: (hr as any)?.bonus_pot_eligible !== false,
           notes: hr?.notes || '',
@@ -216,6 +219,7 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
         department: null,
         start_date: formData.start_date || null,
         employment_end_date: formData.employment_end_date || null,
+        departure_handover_required: formData.departure_handover_required,
         pay_frequency: formData.pay_frequency || 'monthly',
         annual_holiday_allowance: formData.annual_holiday_allowance,
         unlimited_holiday: formData.unlimited_holiday,
@@ -232,6 +236,30 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
       } else {
         const { error } = await supabase.from('hr_profiles').insert(profileData as any);
         if (error) throw error;
+      }
+
+      // Build the departure checklist only on the transition into "required".
+      // Never on save generally, and never on turning it off: switching it off
+      // hides the checklist but keeps whatever has already been handed over, so
+      // a decision reversed in the morning does not destroy an afternoon's work.
+      if (formData.departure_handover_required && formData.employment_end_date) {
+        try {
+          const created = await seedDepartureTasks(
+            userId, formData.employment_end_date, (await supabase.auth.getUser()).data.user?.id ?? null);
+          if (created > 0) {
+            toast({
+              title: "Handover checklist created",
+              description: `${created} task${created === 1 ? "" : "s"} across the clients they still cover. They can see it on their profile.`,
+            });
+          }
+        } catch (e) {
+          // The profile change itself has saved; say so rather than failing the
+          // whole dialog over the checklist.
+          toast({
+            title: "Saved, but the handover checklist could not be built",
+            description: e instanceof Error ? e.message : String(e), variant: "destructive",
+          });
+        }
       }
 
       // Salary — admins only (RLS also blocks non-admins from writing
@@ -419,6 +447,35 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
                   <p className="text-xs text-muted-foreground">Leave blank if currently employed</p>
                 </div>
               </div>
+
+              {/* Opt-in, and deliberately off by default. Setting an end date is
+                  how every departure is recorded, including dismissals — and a
+                  checklist appearing in someone's profile would tell them they
+                  are leaving before a manager has, in writing. So this is a
+                  separate, explicit decision, made at the moment the date is set. */}
+              {formData.employment_end_date && (
+                <div className="flex items-start justify-between gap-4 p-4 border rounded-lg bg-muted/30">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <ClipboardList className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <Label htmlFor="departure-handover" className="cursor-pointer">Ask them to complete a handover</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Builds a checklist from your handover templates for every client they still
+                        cover before {formData.employment_end_date}, and shows it on their profile.
+                      </p>
+                      <p className="text-xs text-amber-600 mt-1">
+                        Leave this off if they have not been told they are leaving — turning it on is
+                        visible to them.
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    id="departure-handover"
+                    checked={formData.departure_handover_required}
+                    onCheckedChange={(v) => setFormData({ ...formData, departure_handover_required: v })}
+                  />
+                </div>
+              )}
 
               <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/30">
                 <div className="flex items-center gap-3">

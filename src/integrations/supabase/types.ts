@@ -203,6 +203,7 @@ export type Database = {
           handed_over_by: string | null
           handed_over_to: string | null
           id: string
+          leaver_user_id: string | null
           link: string | null
           progress: number
           sort_order: number | null
@@ -219,6 +220,7 @@ export type Database = {
           handed_over_by?: string | null
           handed_over_to?: string | null
           id?: string
+          leaver_user_id?: string | null
           link?: string | null
           progress?: number
           sort_order?: number | null
@@ -235,6 +237,7 @@ export type Database = {
           handed_over_by?: string | null
           handed_over_to?: string | null
           id?: string
+          leaver_user_id?: string | null
           link?: string | null
           progress?: number
           sort_order?: number | null
@@ -815,8 +818,12 @@ export type Database = {
       hr_profiles: {
         Row: {
           annual_holiday_allowance: number | null
+          bonus_pot_eligible: boolean
           created_at: string
           department: string | null
+          departure_handover_requested_at: string | null
+          departure_handover_requested_by: string | null
+          departure_handover_required: boolean
           employee_id: string | null
           employment_end_date: string | null
           employment_status: Database["public"]["Enums"]["employment_status"]
@@ -827,6 +834,7 @@ export type Database = {
           onboarding_contract_id: string | null
           onboarding_started_at: string | null
           pay_frequency: string | null
+          performance_guidance: string | null
           performance_rating: string | null
           public_holiday_pay_disabled: boolean
           scheduling_role: string
@@ -838,8 +846,12 @@ export type Database = {
         }
         Insert: {
           annual_holiday_allowance?: number | null
+          bonus_pot_eligible?: boolean
           created_at?: string
           department?: string | null
+          departure_handover_requested_at?: string | null
+          departure_handover_requested_by?: string | null
+          departure_handover_required?: boolean
           employee_id?: string | null
           employment_end_date?: string | null
           employment_status?: Database["public"]["Enums"]["employment_status"]
@@ -850,6 +862,7 @@ export type Database = {
           onboarding_contract_id?: string | null
           onboarding_started_at?: string | null
           pay_frequency?: string | null
+          performance_guidance?: string | null
           performance_rating?: string | null
           public_holiday_pay_disabled?: boolean
           scheduling_role?: string
@@ -861,8 +874,12 @@ export type Database = {
         }
         Update: {
           annual_holiday_allowance?: number | null
+          bonus_pot_eligible?: boolean
           created_at?: string
           department?: string | null
+          departure_handover_requested_at?: string | null
+          departure_handover_requested_by?: string | null
+          departure_handover_required?: boolean
           employee_id?: string | null
           employment_end_date?: string | null
           employment_status?: Database["public"]["Enums"]["employment_status"]
@@ -873,6 +890,7 @@ export type Database = {
           onboarding_contract_id?: string | null
           onboarding_started_at?: string | null
           pay_frequency?: string | null
+          performance_guidance?: string | null
           performance_rating?: string | null
           public_holiday_pay_disabled?: boolean
           scheduling_role?: string

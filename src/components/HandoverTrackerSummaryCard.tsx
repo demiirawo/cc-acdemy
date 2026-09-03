@@ -80,7 +80,8 @@ export function HandoverTrackerSummaryCard() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("client_handover_tasks")
-        .select("id, client_name, progress, target_date");
+        .select("id, client_name, progress, target_date")
+        .is("leaver_user_id", null);
       if (error) throw error;
       return (data || []) as HandoverTaskRow[];
     },

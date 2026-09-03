@@ -576,6 +576,9 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
       const { data, error } = await supabase
         .from("client_handover_tasks")
         .select("*")
+        // Departure checklists share this table, tagged with the leaver. They
+        // belong to that person's exit, not to this client's cover rota.
+        .is("leaver_user_id", null)
         .eq("client_name", clientName)
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true });
@@ -679,7 +682,7 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
 
   const clearAllMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from("client_handover_tasks").delete().eq("client_name", clientName);
+      const { error } = await supabase.from("client_handover_tasks").delete().is("leaver_user_id", null).eq("client_name", clientName);
       if (error) throw error;
     },
     onSuccess: () => {

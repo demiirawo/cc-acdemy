@@ -165,6 +165,10 @@ export async function computeHolidayHandoverStatus(
   const { data: tasks } = await supabase
     .from("client_handover_tasks")
     .select("client_name, progress")
+    // Departure handovers live in the same table, tagged with the leaver. They
+    // are a different piece of work from holiday cover and must not count
+    // towards — or drag down — a holiday's handover progress.
+    .is("leaver_user_id", null)
     .in("client_name", clientNames);
 
   const clients = aggregateTasks(tasks || [], clientNames);
@@ -229,7 +233,7 @@ export async function computeHolidayHandoverStatusBatch(
   }
 
   const { data: allTasks } = allClientNames.size > 0
-    ? await supabase.from("client_handover_tasks").select("client_name, progress").in("client_name", Array.from(allClientNames))
+    ? await supabase.from("client_handover_tasks").select("client_name, progress").is("leaver_user_id", null).in("client_name", Array.from(allClientNames))
     : { data: [] as { client_name: string; progress: number | null }[] };
 
   const tasksByClient = new Map<string, { sum: number; count: number }>();
