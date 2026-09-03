@@ -10,10 +10,11 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Trash2, ClipboardList, Plane, MessageCircle, Mail, Loader2, CheckCircle2 } from "lucide-react";
+import { Trash2, ClipboardList, Plane, MessageCircle, Mail, Loader2, CheckCircle2, UserMinus } from "lucide-react";
 import { toast } from "sonner";
 import { ClientHandoverTracker } from "./ClientHandoverTracker";
 import { getUpcomingLeaveByAllClients, type UpcomingClientLeave } from "@/lib/handoverStatus";
+import { clientsToHandOver, summarise, type DepartureClientProgress } from "@/lib/departureHandover";
 
 const APP_URL = "https://www.care-cuddle-academy.co.uk";
 const HANDOVER_VIDEO_URL = "https://www.youtube.com/watch?v=VGzR7cR1npA";
@@ -32,6 +33,88 @@ interface GroupItem {
   latestTargetDate: string | null;
   leave: UpcomingClientLeave | null;
   notStarted: boolean;
+}
+
+/**
+ * One leaver's row, in the same list as the holiday ones.
+ *
+ * Deliberately reads differently from a holiday: a person going on leave comes
+ * back and their cover is temporary, where a leaver's clients need a permanent
+ * owner. So the badge says "Leaving", the date is a last day rather than a
+ * range, and once that day has passed it turns red and says so — an unfinished
+ * handover matters more after somebody has gone, not less.
+ */
+function DepartureRow({ dep }: {
+  dep: {
+    userId: string; staffName: string; lastDay: string; daysUntil: number;
+    clients: DepartureClientProgress[]; overallProgress: number;
+  };
+}) {
+  const gone = dep.daysUntil < 0;
+  const urgent = gone || dep.daysUntil <= 3;
+  const soon = !urgent && dep.daysUntil <= 14;
+  const nothingRecorded = dep.clients.filter(c => c.taskCount === 0).length;
+
+  return (
+    <AccordionItem
+      value={`dep-${dep.userId}`}
+      className={`border rounded-lg px-3 ${urgent ? "border-destructive/40" : soon ? "border-amber-500/40" : ""}`}
+    >
+      <AccordionTrigger className="flex-1 hover:no-underline py-3">
+        <div className="flex items-center justify-between gap-2 w-full pr-2">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <UserMinus className={`h-4 w-4 flex-shrink-0 ${
+              urgent ? "text-destructive" : soon ? "text-amber-600 dark:text-amber-400" : "text-primary"}`} />
+            <span className="font-semibold text-foreground">{dep.staffName}</span>
+            <Badge variant="outline" className={`font-normal ${
+              urgent ? "bg-destructive/10 text-destructive border-destructive/30"
+              : soon ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
+              : "bg-primary/5 text-primary border-primary/20"}`}>
+              {gone ? `Left ${Math.abs(dep.daysUntil)}d ago`
+                : dep.daysUntil === 0 ? "Leaves today"
+                : `Leaving in ${dep.daysUntil}d`}
+            </Badge>
+            <span className="text-xs text-muted-foreground hidden sm:inline">
+              Last day {fmtDate(dep.lastDay)}
+            </span>
+            <Badge variant="secondary" className="font-normal">
+              {dep.clients.length} client{dep.clients.length === 1 ? "" : "s"}
+            </Badge>
+            {nothingRecorded > 0 && (
+              <Badge variant="outline" className="font-normal bg-destructive/10 text-destructive border-destructive/30">
+                {nothingRecorded} not started
+              </Badge>
+            )}
+          </div>
+          <span className="text-sm font-medium tabular-nums text-muted-foreground flex-shrink-0">
+            {dep.overallProgress}%
+          </span>
+        </div>
+      </AccordionTrigger>
+      <AccordionContent className="pb-3">
+        {dep.clients.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No clients on the rota before their last day, so there is nothing to hand over.
+          </p>
+        ) : (
+          <div className="space-y-1.5">
+            {dep.clients.map(c => (
+              <div key={c.client} className="flex items-center justify-between gap-3 text-sm">
+                <span className="min-w-0 truncate">{c.client}</span>
+                <span className={`tabular-nums flex-shrink-0 ${
+                  c.taskCount === 0 ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                  {c.taskCount === 0 ? "nothing recorded" : `${c.avgProgress}%`}
+                </span>
+              </div>
+            ))}
+            <p className="text-xs text-muted-foreground pt-1">
+              Departure handover — manage it under HR Management &rsaquo; Leavers.
+            </p>
+          </div>
+        )}
+      </AccordionContent>
+    </AccordionItem>
+  );
 }
 
 const fmtDate = (d: string) =>
@@ -202,6 +285,65 @@ export function HandoverTrackerSummaryCard() {
   // holiday can need several handovers (one per client), and this shows them
   // as a single unit of work. Clients with no linked leave sit in a trailing
   // "no upcoming leave" group.
+  /**
+   * Departures, shown in the same list as holiday cover.
+   *
+   * A leaver's handover is the same job as a holiday handover — the same
+   * clients, handed to the same colleagues — so it belongs in the same place
+   * rather than in a tab somebody has to remember to open. It is labelled
+   * differently because the deadline is different: leave ends and the person
+   * comes back, a departure does not.
+   *
+   * Only people whose handover was actually requested are fetched. This card is
+   * admin-only, but a dismissal still should not surface in a list somebody
+   * scans every morning for holiday cover.
+   */
+  const { data: departureGroups = [], isLoading: departuresLoading } = useQuery({
+    queryKey: ["departure-handover-groups"],
+    queryFn: async () => {
+      const today = new Date();
+      const todayIso = today.toISOString().slice(0, 10);
+      const { data: hr } = await supabase
+        .from("hr_profiles")
+        .select("user_id, employment_end_date")
+        .eq("departure_handover_required", true)
+        .not("employment_end_date", "is", null);
+      const leavers = (hr ?? []).filter(h => h.employment_end_date);
+      if (leavers.length === 0) return [];
+
+      const ids = leavers.map(l => l.user_id);
+      const [{ data: profiles }, { data: depTasks }] = await Promise.all([
+        supabase.from("profiles").select("user_id, display_name, email").in("user_id", ids),
+        supabase.from("client_handover_tasks")
+          .select("client_name, progress, leaver_user_id").in("leaver_user_id", ids),
+      ]);
+
+      const out: Array<{
+        userId: string; staffName: string; lastDay: string; daysUntil: number;
+        clients: DepartureClientProgress[]; overallProgress: number;
+      }> = [];
+      for (const l of leavers) {
+        const lastDay = l.employment_end_date as string;
+        const clients = await clientsToHandOver(l.user_id, lastDay, today);
+        const mine = (depTasks ?? []).filter(t => t.leaver_user_id === l.user_id);
+        const sum = summarise(mine, clients);
+        if (sum.status === "complete") continue;   // done — nothing to chase
+        const p = (profiles ?? []).find(x => x.user_id === l.user_id);
+        out.push({
+          userId: l.user_id,
+          staffName: p?.display_name || p?.email || "Unknown",
+          lastDay,
+          daysUntil: Math.round(
+            (new Date(lastDay).getTime() - new Date(todayIso).getTime()) / 86_400_000),
+          clients: sum.clients,
+          overallProgress: sum.overallProgress,
+        });
+      }
+      return out;
+    },
+    staleTime: 60_000,
+  });
+
   const staffGroups = useMemo(() => {
     const map = new Map<string, { staffName: string | null; leave: UpcomingClientLeave | null; items: typeof grouped }>();
     for (const g of grouped) {
@@ -217,7 +359,35 @@ export function HandoverTrackerSummaryCard() {
     // urgent staff group first and the no-leave group last.
   }, [grouped]);
 
-  if (isLoading || leaveLoading || grouped.length === 0) return null;
+  /**
+   * Holidays and departures in one list, ordered by whichever deadline lands
+   * first. A departure three days out matters more than a holiday in seventy,
+   * and reading the two as separate lists is how the nearer one gets missed.
+   */
+  const orderedGroups = useMemo(() => {
+    type Row =
+      | { kind: "leave"; urgency: number; key: string; staffName: string | null;
+          leave: UpcomingClientLeave | null; items: typeof grouped }
+      | { kind: "departure"; urgency: number; key: string;
+          dep: (typeof departureGroups)[number] };
+
+    const rows: Row[] = [
+      ...staffGroups.map((g, i) => ({
+        kind: "leave" as const,
+        // No linked leave means no deadline, so it sorts last — as it did before.
+        urgency: g.leave ? (g.leave.ongoing ? -1 : g.leave.daysUntil) : Number.MAX_SAFE_INTEGER,
+        key: g.staffName ?? `__no_leave__${i}`,
+        staffName: g.staffName, leave: g.leave, items: g.items,
+      })),
+      ...departureGroups.map(d => ({
+        kind: "departure" as const, urgency: d.daysUntil, key: `dep-${d.userId}`, dep: d,
+      })),
+    ];
+    return rows.sort((a, b) => a.urgency - b.urgency);
+  }, [staffGroups, departureGroups]);
+
+  if (isLoading || leaveLoading || departuresLoading) return null;
+  if (grouped.length === 0 && departureGroups.length === 0) return null;
 
   return (
     <Card className="mb-6">
@@ -226,13 +396,17 @@ export function HandoverTrackerSummaryCard() {
           <ClipboardList className="h-5 w-5" />
           Active Handover Trackers
           <Badge variant="secondary" className="ml-1">
-            {grouped.length}
+            {grouped.length + departureGroups.length}
           </Badge>
         </CardTitle>
       </CardHeader>
       <CardContent>
         <Accordion type="multiple" className="w-full space-y-3">
-          {staffGroups.map(({ staffName, leave, items }) => {
+          {orderedGroups.map((row) => {
+            if (row.kind === "departure") {
+              return <DepartureRow key={row.key} dep={row.dep} />;
+            }
+            const { staffName, leave, items } = row;
             const groupKey = staffName ?? "__no_leave__";
             const notStartedCount = items.filter((i) => i.notStarted || i.overallProgress === 0).length;
             const avgProgress = items.length
