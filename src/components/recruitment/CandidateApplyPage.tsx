@@ -20,7 +20,10 @@ const QUALIFYING_QUESTIONS = [
   "This role may involve working on weekends due to client requirements. Are you able to meet this requirement?",
 ];
 
-const SNAPSHOT_INTERVAL_MS = 15000;
+// One photograph a minute. At fifteen seconds a single twenty-five minute
+// assessment produced a hundred images, and 6,275 candidates produced 72 GB —
+// four times the proctoring evidence anyone would ever look at.
+const SNAPSHOT_INTERVAL_MS = 60000;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
 
