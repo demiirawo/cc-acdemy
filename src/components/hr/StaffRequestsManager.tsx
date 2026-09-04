@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Check, X, Clock, Palmtree, RefreshCw, Eye, Trash2, ChevronLeft, ChevronRight, Bell, BellOff } from "lucide-react";
+import { Check, X, Clock, Palmtree, RefreshCw, Eye, Trash2, ChevronLeft, ChevronRight, Bell, BellOff, UserMinus } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -20,7 +20,7 @@ import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 import { computeHolidayHandoverStatusBatch, handoverClientsSummary, HANDOVER_STATUS_LABEL } from "@/lib/handoverStatus";
 import { RequestsTimeline } from "./RequestsTimeline";
 
-type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
+type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap' | 'departure';
 
 interface StaffRequest {
   id: string;
@@ -91,6 +91,14 @@ const REQUEST_TYPE_INFO: Record<string, { label: string; icon: typeof Clock; col
     label: "Shift Cover",
     icon: RefreshCw,
     color: "text-blue-600"
+  },
+  // Tracked here for the same reason a holiday is: somebody has to take the
+  // work on and the client has to be told. Only admins can read these rows —
+  // every other policy on staff_requests excludes the type.
+  departure: {
+    label: "Leaving",
+    icon: UserMinus,
+    color: "text-red-600"
   }
 };
 
@@ -644,6 +652,13 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                                       {isNested && <span className="text-purple-500">↳</span>}
                                       <span>{getStaffName(req.user_id)}</span>
                                     </div>
+                                    {req.request_type === 'departure' && (
+                                      <p className="text-xs text-muted-foreground">
+                                        {req.swap_with_user_id
+                                          ? <>Taking over: {getStaffName(req.swap_with_user_id)}</>
+                                          : <span className="text-amber-600">Nobody taking over yet</span>}
+                                      </p>
+                                    )}
                                     {req.request_type === 'shift_swap' && req.swap_with_user_id && (
                                       <span className="text-xs text-muted-foreground">
                                         Covering: {getStaffName(req.swap_with_user_id)}
@@ -865,6 +880,20 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                 </div>
               </div>
 
+              {selectedRequest.request_type === 'departure' && (
+                <div>
+                  <p className="text-sm text-muted-foreground">Taking over their clients</p>
+                  <p className="font-medium">
+                    {selectedRequest.swap_with_user_id
+                      ? getStaffName(selectedRequest.swap_with_user_id)
+                      : <span className="text-amber-600">Not assigned yet</span>}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Read from the rota &mdash; whoever holds their clients after the last day.
+                    Move the shifts across and this fills in.
+                  </p>
+                </div>
+              )}
               {selectedRequest.request_type === 'shift_swap' && selectedRequest.swap_with_user_id && (
                 <div>
                   <Label className="text-muted-foreground">Covering For</Label>

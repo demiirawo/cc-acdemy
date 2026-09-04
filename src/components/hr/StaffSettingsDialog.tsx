@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { upsertDepartureRequest, clearDepartureRequest } from '@/lib/departureRequest';
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -235,6 +236,23 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
       } else {
         const { error } = await supabase.from('hr_profiles').insert(profileData as any);
         if (error) throw error;
+      }
+
+      // A departure belongs on the requests board for the same reason a holiday
+      // does: somebody has to take the work on and the client has to be told.
+      // Created whenever a last day is set, cleared when one is removed, and
+      // never duplicated when a date is corrected. Only admins can read it.
+      try {
+        if (formData.employment_end_date) {
+          await upsertDepartureRequest(userId, formData.employment_end_date);
+        } else {
+          await clearDepartureRequest(userId);
+        }
+      } catch (e) {
+        toast({
+          title: "Saved, but the departure could not be added to requests",
+          description: e instanceof Error ? e.message : String(e), variant: "destructive",
+        });
       }
 
       // Salary — admins only (RLS also blocks non-admins from writing
