@@ -85,23 +85,39 @@ serve(async (req: Request): Promise<Response> => {
     }
 
     // Old snapshots first — that is the bulk — then rejected candidates'.
-    const { data: oldRows, error: oldErr } = await supabase
-      .from("recruitment_snapshots")
-      .select("id, storage_path, attempt_id")
-      .lt("taken_at", cutoff)
-      .limit(BATCH_LIMIT);
-    if (oldErr) return json({ error: oldErr.message });
+    //
+    // Fetched a page at a time. PostgREST caps a response at its db-max-rows
+    // setting, which is 1000 here, so a bare .limit(20000) silently returns a
+    // fortieth of what was asked for: the first fourteen runs of this job
+    // deleted about 940 files each instead of 20,000, which would have taken
+    // twenty-six days to clear the backlog rather than one.
+    const PAGE = 1000;
 
-    let rows = oldRows ?? [];
+    const page = async (
+      apply: (q: ReturnType<typeof buildBase>) => ReturnType<typeof buildBase>,
+      want: number,
+    ) => {
+      const out: Array<{ id: string; storage_path: string; attempt_id: string }> = [];
+      while (out.length < want) {
+        const from = out.length;
+        const { data, error } = await apply(buildBase()).range(from, from + PAGE - 1);
+        if (error) throw new Error(error.message);
+        const batch = data ?? [];
+        out.push(...batch);
+        if (batch.length < PAGE) break;   // exhausted
+      }
+      return out.slice(0, want);
+    };
+    const buildBase = () =>
+      supabase.from("recruitment_snapshots").select("id, storage_path, attempt_id");
+
+    let rows = await page(q => q.lt("taken_at", cutoff), BATCH_LIMIT);
+
     if (rows.length < BATCH_LIMIT && rejectedIds.size > 0) {
       const room = BATCH_LIMIT - rows.length;
-      const { data: rejRows } = await supabase
-        .from("recruitment_snapshots")
-        .select("id, storage_path, attempt_id")
-        .gte("taken_at", cutoff)
-        .in("attempt_id", [...rejectedIds].slice(0, 200))
-        .limit(room);
-      rows = rows.concat(rejRows ?? []);
+      const ids = [...rejectedIds].slice(0, 200);
+      const rejRows = await page(q => q.gte("taken_at", cutoff).in("attempt_id", ids), room);
+      rows = rows.concat(rejRows);
     }
 
     if (rows.length === 0) {
