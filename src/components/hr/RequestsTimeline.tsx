@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronLeft, ChevronRight, Palmtree, Check, AlertCircle, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronLeft, ChevronRight, Palmtree, Check, AlertCircle, ZoomIn, ZoomOut, UserMinus } from "lucide-react";
 import {
   addDays,
   addMonths,
@@ -49,6 +49,10 @@ const ROW_GAP = 10;
 const LANE_PADDING = 16;
 const MIN_LANES = 6;
 const HOLIDAY_TYPES = ["holiday", "holiday_paid", "holiday_unpaid"];
+// A last day belongs on the same chart. It is not a holiday — nobody comes
+// back — but it is the same question for whoever plans the month: who is on,
+// who is not, and has the client been told.
+const TIMELINE_TYPES = [...HOLIDAY_TYPES, "departure"];
 const ZOOM_STEPS = [0.5, 0.75, 1, 1.5, 2, 3, 4];
 const BASE_DAY_WIDTH = 40; // base px per day at zoom=1
 
@@ -75,7 +79,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
       .filter(
         (r) =>
           r.status !== "rejected" &&
-          HOLIDAY_TYPES.includes(r.request_type) &&
+          TIMELINE_TYPES.includes(r.request_type) &&
           r.start_date <= monthEndStr &&
           r.end_date >= monthStartStr
       )
@@ -262,7 +266,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
             Who's On Holiday
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            One month at a time. Use the arrows to navigate, zoom to fit.
+            Holidays and last days, one month at a time. Use the arrows to navigate, zoom to fit.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -373,6 +377,50 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                     const isUnpaid = req.request_type === "holiday_unpaid";
                     const covers = coversByHoliday.get(req.id) || [];
                     const name = getName(req.user_id);
+
+                    // A departure is one date, not a span of working days, and
+                    // it must show whether or not that date is a working one —
+                    // a last day often falls on a day the person does not work,
+                    // and segmentsFor would return nothing at all for it.
+                    if (req.request_type === "departure") {
+                      const off = dayOffsetInMonth(req.start_date);
+                      if (off < 0) return null;
+                      const successor = req.swap_with_user_id ? getName(req.swap_with_user_id) : null;
+                      const notified = !!req.client_informed;
+                      return (
+                        <Tooltip key={req.id}>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={() => onSelectRequest?.(req.id)}
+                              className={`absolute rounded-md border-2 bg-slate-200 dark:bg-slate-800 border-slate-600 text-slate-900 dark:text-slate-50 ${
+                                notified
+                                  ? "outline outline-2 outline-offset-1 outline-blue-500"
+                                  : "outline outline-2 outline-offset-1 outline-red-500"
+                              } flex items-center gap-2 px-2.5 text-xs font-medium overflow-hidden hover:ring-2 hover:ring-primary hover:z-10 transition`}
+                              style={{ left: off * DAY_WIDTH + 2, top, width: DAY_WIDTH * 3 - 4, height: ROW_HEIGHT }}
+                            >
+                              <UserMinus className="h-4 w-4 flex-shrink-0" />
+                              <span className="truncate flex-1 text-left">{name}</span>
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-xs">
+                            <div className="font-semibold">{name}</div>
+                            <div>Last day &mdash; {format(parseISO(req.start_date), "dd MMM yyyy")}</div>
+                            <div className="mt-1 pt-1 border-t">
+                              {successor
+                                ? <span className="text-cyan-700 dark:text-cyan-300">Taking over: {successor}</span>
+                                : <span className="text-rose-600 dark:text-rose-400">Nobody taking over yet</span>}
+                            </div>
+                            <div className="mt-1">
+                              {notified
+                                ? <span className="text-blue-600 dark:text-blue-400">Client notified &#10003;</span>
+                                : <span className="text-red-600 dark:text-red-400">Client not notified</span>}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      );
+                    }
 
                     // Working-day segments within the visible month
                     const segments = segmentsFor(req);
@@ -541,6 +589,10 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded border-2 border-dashed border-muted-foreground" />
             Pending
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded border-2 bg-slate-200 border-slate-600" />
+            Last day
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded outline outline-2 outline-offset-1 outline-blue-500" />
