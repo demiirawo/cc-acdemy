@@ -2517,11 +2517,22 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   <>
                   <div className="rounded-lg border border-amber-400/40 bg-amber-500/10 p-3 space-y-1.5 text-sm">
                     <p className="font-medium text-amber-700 dark:text-amber-300">
+                      {/* Three ways to be out, and they mean different things.
+                          Not yet rated is the one that is nobody's fault, so it
+                          must not read like the D message. */}
                       {!flagEligible
                         ? "You're currently excluded from the monthly bonus pot. Speak to your manager if you think this is a mistake."
+                        : myRank === null
+                        ? "You don't have a performance rating yet, so you aren't in the monthly bonus pot. A share of the pot reflects how the month went, and nobody has assessed yours yet."
                         : `Your ${myRank} rating isn't eligible for the monthly bonus pot — this applies regardless of how long you've been here.`}
                     </p>
-                    {flagEligible && nextUp && (
+                    {flagEligible && myRank === null && (
+                      <p className="text-muted-foreground">
+                        Once your first rating is set you&rsquo;ll join the pot from that month
+                        {!peakMonth && pot !== null ? " — what each rating is worth is shown below." : "."}
+                      </p>
+                    )}
+                    {flagEligible && myRank !== null && nextUp && (
                       <p className="text-muted-foreground">
                         Reaching <strong className="text-foreground">{RANK_STYLES[nextUp].label}</strong> would make you eligible
                         {!peakMonth && pot !== null

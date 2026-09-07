@@ -18,14 +18,35 @@ export const RANK_STYLES: Record<Rank, { label: string; tile: string; glow: stri
 // The rank spread is deliberately a little wider than the gaps between tenure
 // years, so a higher rating counts for slightly more than an extra year served.
 export const RANK_BONUS_MULT: Record<Rank, number> = { S: 2.4, A: 1.95, B: 1.5, C: 1.2, D: 1.0 };
-export const UNRATED_BONUS_MULT = 1.5;
+
+/**
+ * What an unrated person is worth to the pot: nothing, until somebody rates
+ * them.
+ *
+ * This used to be 1.5 — the B multiplier — so anybody without a rating was paid
+ * as a solid performer by default. A new joiner in their first week took a share
+ * of a pot meant to reward a month's work nobody had yet assessed, and the
+ * money came out of the people who had been.
+ *
+ * Kept as a named constant rather than deleted so the intent is legible where
+ * the number is used, instead of a bare zero.
+ */
+export const UNRATED_BONUS_MULT = 0;
 export const rankBonusMult = (rank: Rank | null): number =>
   rank && RANK_BONUS_MULT[rank] ? RANK_BONUS_MULT[rank] : UNRATED_BONUS_MULT;
 
 // Ranks that receive NO share of the monthly bonus pot, regardless of tenure.
 export const BONUS_INELIGIBLE_RANKS: Rank[] = ['D'];
+
+/**
+ * Whether this person shares in the pot at all.
+ *
+ * Two ways to be out: rated D, or not rated. The second is not a judgement —
+ * it means nobody has made one yet, and a share of the pot is a statement about
+ * performance that cannot be made in advance of assessing it.
+ */
 export const bonusEligible = (rank: Rank | null): boolean =>
-  !(rank && BONUS_INELIGIBLE_RANKS.includes(rank));
+  rank !== null && !BONUS_INELIGIBLE_RANKS.includes(rank);
 /** Lowest rank that still earns a pot share — the threshold to become eligible. */
 export const LOWEST_ELIGIBLE_RANK: Rank = 'C';
 
