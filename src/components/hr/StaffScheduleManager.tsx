@@ -224,7 +224,6 @@ export function StaffScheduleManager() {
   const [showLiveView, setShowLiveView] = useState(false);
   const [isRecurringDialogOpen, setIsRecurringDialogOpen] = useState(false);
   const [isEditPatternDialogOpen, setIsEditPatternDialogOpen] = useState(false);
-  const [editingPattern, setEditingPattern] = useState<RecurringPattern | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; isPattern: boolean; patternId?: string; exceptionDate?: string } | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<string[]>([]);
@@ -275,22 +274,6 @@ export function StaffScheduleManager() {
   const [isDeleteHolidayConfirmOpen, setIsDeleteHolidayConfirmOpen] = useState(false);
 
   // Edit pattern form state
-  const [editPatternForm, setEditPatternForm] = useState({
-    user_id: "",
-    client_name: "",
-    start_time: "09:00",
-    end_time: "17:00",
-    selected_days: [] as number[],
-    is_overtime: false,
-    overtime_subtype: "" as string,
-    notes: "",
-    hourly_rate: "",
-    currency: "GBP",
-    start_date: "",
-    end_date: "",
-    recurrence_interval: "weekly" as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off',
-    shift_type: ""
-  });
 
   // Recurring schedule form state
   const [recurringForm, setRecurringForm] = useState({
@@ -890,56 +873,6 @@ export function StaffScheduleManager() {
   });
 
   // Update recurring pattern mutation
-  const updatePatternMutation = useMutation({
-    mutationFn: async (data: typeof editPatternForm & { id: string }) => {
-      // Calculate days_of_week based on recurrence interval
-      let daysOfWeek: number[];
-      if (data.recurrence_interval === 'daily') {
-        daysOfWeek = [0, 1, 2, 3, 4, 5, 6];
-      } else if (data.recurrence_interval === 'one_off') {
-        // For one-off, calculate days from date range
-        const startDate = parseISO(data.start_date);
-        const endDate = data.end_date ? parseISO(data.end_date) : startDate;
-        const daysInRange = eachDayOfInterval({ start: startDate, end: endDate });
-        daysOfWeek = [...new Set(daysInRange.map(day => getDay(day)))];
-      } else {
-        daysOfWeek = data.selected_days;
-      }
-
-      const { error } = await supabase
-        .from("recurring_shift_patterns")
-        .update({
-          // Assigning somebody to a placeholder is an ordinary edit — the same
-          // form, the same field, the shift already in place.
-          user_id: data.user_id === UNALLOCATED ? null : data.user_id,
-          client_name: data.client_name,
-          days_of_week: daysOfWeek,
-          start_time: data.start_time,
-          end_time: data.end_time,
-          hourly_rate: data.hourly_rate ? parseFloat(data.hourly_rate) : null,
-          currency: data.currency,
-          is_overtime: data.is_overtime,
-          overtime_subtype: data.is_overtime ? (data.overtime_subtype || 'standard') : null,
-          notes: data.notes || null,
-          start_date: data.start_date,
-          end_date: data.end_date || null,
-          recurrence_interval: data.recurrence_interval,
-          shift_type: data.shift_type || null
-        })
-        .eq("id", data.id);
-
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["recurring-shift-patterns"] });
-      setIsEditPatternDialogOpen(false);
-      setEditingPattern(null);
-      toast.success("Pattern updated");
-    },
-    onError: (error) => {
-      toast.error("Failed to update pattern: " + error.message);
-    }
-  });
 
   // Create shift exception mutation (for deleting single shift from pattern)
   const createExceptionMutation = useMutation({
@@ -1206,41 +1139,6 @@ export function StaffScheduleManager() {
         ? prev.selected_days.filter(d => d !== day)
         : [...prev.selected_days, day]
     }));
-  };
-
-  const toggleEditPatternDay = (day: number) => {
-    setEditPatternForm(prev => ({
-      ...prev,
-      selected_days: prev.selected_days.includes(day)
-        ? prev.selected_days.filter(d => d !== day)
-        : [...prev.selected_days, day]
-    }));
-  };
-
-  const openEditPatternDialog = (patternId: string) => {
-    const pattern = recurringPatterns.find(p => p.id === patternId);
-    if (!pattern) return;
-    
-    setEditingPattern(pattern);
-    setEditPatternForm({
-      // An unallocated shift opens with the placeholder selected, so the picker
-      // shows what is true rather than an empty box that looks like a mistake.
-      user_id: pattern.user_id ?? UNALLOCATED,
-      client_name: pattern.client_name,
-      start_time: pattern.start_time,
-      end_time: pattern.end_time,
-      selected_days: pattern.days_of_week || [],
-      is_overtime: pattern.is_overtime,
-      overtime_subtype: pattern.overtime_subtype || "",
-      notes: pattern.notes || "",
-      hourly_rate: pattern.hourly_rate?.toString() || "",
-      currency: pattern.currency,
-      start_date: pattern.start_date,
-      end_date: pattern.end_date || "",
-      recurrence_interval: (pattern.recurrence_interval || "weekly") as 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off',
-      shift_type: pattern.shift_type || ""
-    });
-    setIsEditPatternDialogOpen(true);
   };
 
   const handleScheduleClick = (schedule: Schedule) => {
@@ -2524,7 +2422,6 @@ export function StaffScheduleManager() {
           </div>
         </CardContent>
       </Card>
-
 
       {/* Gantt-style Timeline or Live View */}
       <Card className={showLiveView ? "border-primary/50" : ""}>
