@@ -1,0 +1,9 @@
+# Single-page app: every path is handled by the router in the browser, so the
+# server must return index.html for anything that is not a real file rather
+# than a 404.
+#
+# Without this, every deep link breaks on a static host — a client opening
+# /public/schedule/Lorablooms, a staff member opening a /contract/... link from
+# their email, or anyone refreshing a page that is not "/". The Lovable host
+# does this implicitly; Cloudflare Pages and Netlify need it written down.
+/*    /index.html   200
