@@ -1,14 +1,14 @@
-User-agent: Googlebot
-Allow: /
-
-User-agent: Bingbot
-Allow: /
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: facebookexternalhit
-Allow: /
-
+# The Academy is a private staff and client system. Nothing here is intended to
+# be found in a search engine: it carries staff names, client schedules and
+# company policy.
+#
+# Crawling is deliberately still ALLOWED. That looks backwards, but a crawler
+# blocked here never fetches the page and so never sees the noindex header in
+# public/_headers — Google will keep an already-indexed URL listed, showing it
+# without a description, indefinitely. Letting it fetch and read "noindex" is
+# what actually removes a page.
+#
+# Once the site is out of the index, this can be tightened to Disallow: / to
+# stop crawling as well.
 User-agent: *
 Allow: /

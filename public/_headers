@@ -1,0 +1,12 @@
+# Keep the Academy out of search results.
+#
+# X-Robots-Tag is applied by the server to every response, so it covers the
+# whole app including deep links a meta tag in index.html would still cover but
+# which are easier to miss. noindex removes the page from results; nofollow
+# stops the links on it being followed on to client schedules and policies.
+/*
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
+  # Standard hardening while we are setting headers at all.
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: SAMEORIGIN
