@@ -93,6 +93,9 @@ export function QualityAssuranceSection() {
     const byLine = new Map<string, { userId: string; client: string; windows: Set<string> }>();
     for (const p of patterns ?? []) {
       if (!isMonitoringShift(p.shift_type, p.is_overtime)) continue;
+      // An unallocated shift has nobody to check. It is a gap in the rota, not
+      // a person, and listing it would put a phantom row on the call list.
+      if (!p.user_id) continue;
       if (gone.has(p.user_id)) continue;
       if (!runsBetween(p, from, to)) continue;
       const clientName = (p.client_name ?? "").trim() || "No client set";

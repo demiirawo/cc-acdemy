@@ -22,6 +22,7 @@ import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, 
 import { UnifiedShiftEditor, ShiftToEdit } from "./UnifiedShiftEditor";
 import { invalidateAllCoverageQueries, filterSchedulesByCoverageMetadata, isShiftCoveredByRequest } from "@/lib/coverageUtils";
 import { LiveTimelineView } from "./LiveTimelineView";
+import { UNALLOCATED } from "./UnifiedShiftEditor";
 
 interface Schedule {
   id: string;
@@ -825,7 +826,7 @@ export function StaffScheduleManager() {
 
       // Store as a pattern - this gives consistent editing experience
       const { error } = await supabase.from("recurring_shift_patterns").insert({
-        user_id: data.user_id,
+        user_id: data.user_id === UNALLOCATED ? null : data.user_id,
         client_name: data.client_name,
         days_of_week: daysOfWeek,
         start_time: data.start_time,
@@ -908,7 +909,9 @@ export function StaffScheduleManager() {
       const { error } = await supabase
         .from("recurring_shift_patterns")
         .update({
-          user_id: data.user_id,
+          // Assigning somebody to a placeholder is an ordinary edit — the same
+          // form, the same field, the shift already in place.
+          user_id: data.user_id === UNALLOCATED ? null : data.user_id,
           client_name: data.client_name,
           days_of_week: daysOfWeek,
           start_time: data.start_time,
@@ -1220,7 +1223,9 @@ export function StaffScheduleManager() {
     
     setEditingPattern(pattern);
     setEditPatternForm({
-      user_id: pattern.user_id,
+      // An unallocated shift opens with the placeholder selected, so the picker
+      // shows what is true rather than an empty box that looks like a mistake.
+      user_id: pattern.user_id ?? UNALLOCATED,
       client_name: pattern.client_name,
       start_time: pattern.start_time,
       end_time: pattern.end_time,
@@ -1446,7 +1451,11 @@ export function StaffScheduleManager() {
     setCurrentWeekStart(prev => addDays(prev, direction === "next" ? 7 : -7));
   };
 
-  const getStaffName = (userId: string) => {
+  const getStaffName = (userId: string | null) => {
+    // An unallocated shift has no name to look up, and must not read as
+    // "Unknown" — unknown suggests a person the app failed to identify, where
+    // this is a shift nobody has been put on yet.
+    if (!userId) return "Unallocated";
     const staff = staffMembers.find(s => s.user_id === userId);
     return staff?.display_name || staff?.email || "Unknown";
   };
@@ -2251,6 +2260,13 @@ export function StaffScheduleManager() {
                           <SelectValue placeholder="Select staff" />
                         </SelectTrigger>
                         <SelectContent className="bg-background z-50">
+                          {/* A shift is a commitment to the client; who covers it
+                              is a later decision. Leaving it unallocated puts it
+                              on the rota now and keeps it visible until somebody
+                              is named. */}
+                          <SelectItem value={UNALLOCATED}>
+                            Unallocated &mdash; decide later
+                          </SelectItem>
                           {staffMembers.map(staff => (
                             <SelectItem key={staff.user_id} value={staff.user_id}>
                               {staff.display_name || staff.email}
@@ -2258,6 +2274,12 @@ export function StaffScheduleManager() {
                           ))}
                         </SelectContent>
                       </Select>
+                      {recurringForm.user_id === UNALLOCATED && (
+                        <p className="text-xs text-amber-600 mt-1">
+                          This shift will show on the rota as unallocated. It is not assigned to anyone,
+                          so it is not paid and nobody is expected on it until you fill it in.
+                        </p>
+                      )}
                     </div>
                     <div>
                       <Label>Client</Label>

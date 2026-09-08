@@ -13,6 +13,16 @@ import { toast } from "sonner";
 import { format, parseISO, getDay, eachDayOfInterval, parse, subDays } from "date-fns";
 import { Trash2, Repeat, Calendar } from "lucide-react";
 
+/**
+ * What the staff picker holds when nobody is on the shift yet.
+ *
+ * A sentinel rather than an empty string, because the Select cannot take "" as
+ * a value; and kept distinct from the null that goes to the database, so an
+ * unallocated shift reads as a decision rather than a form somebody failed to
+ * finish.
+ */
+export const UNALLOCATED = "__unallocated__";
+
 interface StaffMember {
   user_id: string;
   display_name: string;
@@ -155,7 +165,7 @@ export function UnifiedShiftEditor({
   useEffect(() => {
     if (shift) {
       setForm({
-        user_id: pattern?.user_id || shift.userId,
+        user_id: pattern?.user_id ?? shift.userId ?? UNALLOCATED,
         client_name: pattern?.client_name || shift.clientName,
         start_time: pattern?.start_time || shift.startTime,
         end_time: pattern?.end_time || shift.endTime,
@@ -172,6 +182,7 @@ export function UnifiedShiftEditor({
   }, [shift, pattern]);
 
   const getStaffName = (userId: string) => {
+    if (!userId || userId === UNALLOCATED) return "Unallocated";
     const staff = staffMembers.find(s => s.user_id === userId);
     return staff?.display_name || staff?.email?.split('@')[0] || 'Unknown';
   };
@@ -206,7 +217,8 @@ export function UnifiedShiftEditor({
       const { error } = await supabase
         .from("recurring_shift_patterns")
         .update({
-          user_id: form.user_id,
+          // Allocating a placeholder is an ordinary edit: same form, same field.
+          user_id: form.user_id === UNALLOCATED ? null : form.user_id,
           client_name: form.client_name,
           days_of_week: daysOfWeek,
           start_time: form.start_time,
@@ -504,6 +516,10 @@ export function UnifiedShiftEditor({
                   <SelectValue placeholder="Select staff" />
                 </SelectTrigger>
                 <SelectContent className="bg-background z-50">
+                  {/* A shift is a commitment to the client; who covers it can be
+                      decided later. Leaving it unallocated puts it on the rota
+                      now and keeps the gap visible until somebody is named. */}
+                  <SelectItem value={UNALLOCATED}>Unallocated &mdash; decide later</SelectItem>
                   {staffMembers.map(staff => (
                     <SelectItem key={staff.user_id} value={staff.user_id}>
                       {staff.display_name || staff.email}
