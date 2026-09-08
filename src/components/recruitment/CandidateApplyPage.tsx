@@ -24,8 +24,17 @@ const QUALIFYING_QUESTIONS = [
 // assessment produced a hundred images, and 6,275 candidates produced 72 GB —
 // four times the proctoring evidence anyone would ever look at.
 const SNAPSHOT_INTERVAL_MS = 60000;
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+// Fall back to the same values the Supabase client is built from, exactly as
+// DocumentPreviewDialog already does. Reading these from the environment alone
+// meant the candidate assessment page — the one 6,275 applicants have used —
+// broke silently on any host that had not been told to set two variables, while
+// the rest of the app carried on working. The values are not secret: they are
+// the project URL and the publishable key, already committed in
+// integrations/supabase/client.ts and served in every copy of the bundle.
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string)
+  || "https://pavwwgfgpykakbqkxsal.supabase.co";
+const SUPABASE_ANON = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
+  || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBhdnd3Z2ZncHlrYWticWt4c2FsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI2OTI0MTgsImV4cCI6MjA2ODI2ODQxOH0.P_bXEqMgMBY3gAb3XX-NXGkFeIhi6w8BFJBPx8Qx0mc";
 
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
