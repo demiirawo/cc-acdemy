@@ -14,11 +14,17 @@ import { format, parseISO, getDay, eachDayOfInterval, parse, subDays } from "dat
 import { Trash2, Repeat, Calendar } from "lucide-react";
 
 /**
- * Re-exported so the editor's existing importers keep working; the definition,
- * the label and the styling live in @/lib/placeholderShift because five views
- * render shifts and they must agree on what a placeholder looks like.
+ * Imported for use here and re-exported so the editor's existing importers keep
+ * working; the definition, the label and the styling live in
+ * @/lib/placeholderShift because five views render shifts and they must agree
+ * on what a placeholder looks like.
+ *
+ * The import is load-bearing: `export { X } from "..."` re-exports without
+ * binding X locally, so the re-export alone left every use in this file
+ * referring to nothing.
  */
-export { PLACEHOLDER } from "@/lib/placeholderShift";
+import { PLACEHOLDER, PLACEHOLDER_LABEL, isPlaceholderShift } from "@/lib/placeholderShift";
+export { PLACEHOLDER };
 
 interface StaffMember {
   user_id: string;
