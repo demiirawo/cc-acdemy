@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
+import { PLACEHOLDER_LABEL, isPlaceholderShift, shiftDisplayName, placeholderSeriesInfo, placeholderInfoFor } from "@/lib/placeholderShift";
 import { filterSchedulesByCoverageMetadata } from "@/lib/coverageUtils";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -166,7 +167,13 @@ export function DashboardLiveView() {
       return (data || []) as StaffRequest[];
     }
   });
-  const getStaffName = (userId: string): string => {
+  // Numbered per client so two placeholders on the same rota can be told apart.
+  const placeholderNames = useMemo(() => placeholderSeriesInfo(recurringPatterns), [recurringPatterns]);
+
+  const getStaffName = (userId: string | null): string => {
+    // A placeholder has nobody on it yet; "Unknown" would read as a person the
+    // app failed to identify rather than a slot nobody has filled.
+    if (isPlaceholderShift(userId)) return PLACEHOLDER_LABEL;
     const staff = staffProfiles.find(s => s.user_id === userId);
     return staff?.display_name || staff?.email?.split("@")[0] || "Unknown";
   };
@@ -428,13 +435,14 @@ export function DashboardLiveView() {
                       const isCover = schedule.is_cover_shift;
                       const leftPercent = Math.max(0, differenceInMinutes(start, timelineStart) / (TIMELINE_HOURS * 60) * 100);
                       const widthPercent = Math.min(100 - leftPercent, differenceInMinutes(end, start) / (TIMELINE_HOURS * 60) * 100);
-                      const staffName = getStaffName(schedule.user_id);
-                      return <div key={schedule.id} className={`absolute top-1 bottom-1 rounded-md flex flex-col justify-center px-2 overflow-hidden text-xs ${isCurrentlyWorking ? 'ring-2 ring-green-500 shadow-lg z-10' : isPast ? 'opacity-60' : ''} ${isCover ? 'bg-cyan-100 border-2 border-cyan-500' : isFromPattern ? 'bg-violet-100 border-2 border-violet-400' : 'bg-primary/20 border-2 border-primary/60'}`} style={{
+                      const staffName = shiftDisplayName(schedule, placeholderNames, getStaffName);
+                      const ph = placeholderInfoFor(schedule, placeholderNames);
+                      return <div key={schedule.id} className={`absolute top-1 bottom-1 rounded-md flex flex-col justify-center px-2 overflow-hidden text-xs ${isCurrentlyWorking ? 'ring-2 ring-green-500 shadow-lg z-10' : isPast ? 'opacity-60' : ''} ${ph ? ph.style.timeline : isCover ? 'bg-cyan-100 border-2 border-cyan-500' : isFromPattern ? 'bg-violet-100 border-2 border-violet-400' : 'bg-primary/20 border-2 border-primary/60'}`} style={{
                         left: `${leftPercent}%`,
                         width: `${widthPercent}%`,
                         minWidth: '60px'
                       }} title={`${staffName}: ${format(start, "HH:mm")} - ${format(end, "HH:mm")}`}>
-                                    <div className="font-semibold truncate flex items-center gap-1">
+                                    <div className={`font-semibold truncate flex items-center gap-1 ${ph ? ph.style.text : ''}`}>
                                       {staffName}
                                       {isCover && <UserCheck className="h-3 w-3 text-cyan-600 flex-shrink-0" />}
                                       {isFromPattern && !isCover && <Infinity className="h-3 w-3 text-violet-500 flex-shrink-0" />}

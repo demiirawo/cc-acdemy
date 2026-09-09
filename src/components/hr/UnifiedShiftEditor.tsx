@@ -14,14 +14,11 @@ import { format, parseISO, getDay, eachDayOfInterval, parse, subDays } from "dat
 import { Trash2, Repeat, Calendar } from "lucide-react";
 
 /**
- * What the staff picker holds when nobody is on the shift yet.
- *
- * A sentinel rather than an empty string, because the Select cannot take "" as
- * a value; and kept distinct from the null that goes to the database, so an
- * unallocated shift reads as a decision rather than a form somebody failed to
- * finish.
+ * Re-exported so the editor's existing importers keep working; the definition,
+ * the label and the styling live in @/lib/placeholderShift because five views
+ * render shifts and they must agree on what a placeholder looks like.
  */
-export const UNALLOCATED = "__unallocated__";
+export { PLACEHOLDER } from "@/lib/placeholderShift";
 
 interface StaffMember {
   user_id: string;
@@ -165,7 +162,7 @@ export function UnifiedShiftEditor({
   useEffect(() => {
     if (shift) {
       setForm({
-        user_id: pattern?.user_id ?? shift.userId ?? UNALLOCATED,
+        user_id: pattern?.user_id ?? shift.userId ?? PLACEHOLDER,
         client_name: pattern?.client_name || shift.clientName,
         start_time: pattern?.start_time || shift.startTime,
         end_time: pattern?.end_time || shift.endTime,
@@ -182,7 +179,7 @@ export function UnifiedShiftEditor({
   }, [shift, pattern]);
 
   const getStaffName = (userId: string) => {
-    if (!userId || userId === UNALLOCATED) return "Unallocated";
+    if (isPlaceholderShift(userId)) return PLACEHOLDER_LABEL;
     const staff = staffMembers.find(s => s.user_id === userId);
     return staff?.display_name || staff?.email?.split('@')[0] || 'Unknown';
   };
@@ -218,7 +215,7 @@ export function UnifiedShiftEditor({
         .from("recurring_shift_patterns")
         .update({
           // Allocating a placeholder is an ordinary edit: same form, same field.
-          user_id: form.user_id === UNALLOCATED ? null : form.user_id,
+          user_id: form.user_id === PLACEHOLDER ? null : form.user_id,
           client_name: form.client_name,
           days_of_week: daysOfWeek,
           start_time: form.start_time,
@@ -517,9 +514,9 @@ export function UnifiedShiftEditor({
                 </SelectTrigger>
                 <SelectContent className="bg-background z-50">
                   {/* A shift is a commitment to the client; who covers it can be
-                      decided later. Leaving it unallocated puts it on the rota
-                      now and keeps the gap visible until somebody is named. */}
-                  <SelectItem value={UNALLOCATED}>Unallocated &mdash; decide later</SelectItem>
+                      decided later. Leaving it as a placeholder puts it on the
+                      rota now and keeps the gap visible until somebody is named. */}
+                  <SelectItem value={PLACEHOLDER}>Placeholder &mdash; decide later</SelectItem>
                   {staffMembers.map(staff => (
                     <SelectItem key={staff.user_id} value={staff.user_id}>
                       {staff.display_name || staff.email}

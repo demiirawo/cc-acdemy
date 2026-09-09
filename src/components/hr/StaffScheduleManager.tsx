@@ -22,7 +22,7 @@ import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, 
 import { UnifiedShiftEditor, ShiftToEdit } from "./UnifiedShiftEditor";
 import { invalidateAllCoverageQueries, filterSchedulesByCoverageMetadata, isShiftCoveredByRequest } from "@/lib/coverageUtils";
 import { LiveTimelineView } from "./LiveTimelineView";
-import { UNALLOCATED } from "./UnifiedShiftEditor";
+import { PLACEHOLDER, PLACEHOLDER_LABEL, isPlaceholderShift, shiftDisplayName, placeholderSeriesInfo, placeholderInfoFor } from "@/lib/placeholderShift";
 
 interface Schedule {
   id: string;
@@ -809,7 +809,7 @@ export function StaffScheduleManager() {
 
       // Store as a pattern - this gives consistent editing experience
       const { error } = await supabase.from("recurring_shift_patterns").insert({
-        user_id: data.user_id === UNALLOCATED ? null : data.user_id,
+        user_id: data.user_id === PLACEHOLDER ? null : data.user_id,
         client_name: data.client_name,
         days_of_week: daysOfWeek,
         start_time: data.start_time,
@@ -1345,15 +1345,18 @@ export function StaffScheduleManager() {
     }
   });
 
+  // Numbered per client so two placeholders on the same rota can be told apart.
+  const placeholderNames = useMemo(() => placeholderSeriesInfo(recurringPatterns), [recurringPatterns]);
+
   const navigateWeek = (direction: "prev" | "next") => {
     setCurrentWeekStart(prev => addDays(prev, direction === "next" ? 7 : -7));
   };
 
   const getStaffName = (userId: string | null) => {
-    // An unallocated shift has no name to look up, and must not read as
-    // "Unknown" — unknown suggests a person the app failed to identify, where
-    // this is a shift nobody has been put on yet.
-    if (!userId) return "Unallocated";
+    // A placeholder has no name to look up, and must not read as "Unknown" —
+    // unknown suggests a person the app failed to identify, where this is a
+    // shift nobody has been put on yet.
+    if (isPlaceholderShift(userId)) return PLACEHOLDER_LABEL;
     const staff = staffMembers.find(s => s.user_id === userId);
     return staff?.display_name || staff?.email || "Unknown";
   };
@@ -2159,11 +2162,11 @@ export function StaffScheduleManager() {
                         </SelectTrigger>
                         <SelectContent className="bg-background z-50">
                           {/* A shift is a commitment to the client; who covers it
-                              is a later decision. Leaving it unallocated puts it
-                              on the rota now and keeps it visible until somebody
-                              is named. */}
-                          <SelectItem value={UNALLOCATED}>
-                            Unallocated &mdash; decide later
+                              is a later decision. Leaving it as a placeholder
+                              puts it on the rota now and keeps it visible until
+                              somebody is named. */}
+                          <SelectItem value={PLACEHOLDER}>
+                            Placeholder &mdash; decide later
                           </SelectItem>
                           {staffMembers.map(staff => (
                             <SelectItem key={staff.user_id} value={staff.user_id}>
@@ -2172,10 +2175,11 @@ export function StaffScheduleManager() {
                           ))}
                         </SelectContent>
                       </Select>
-                      {recurringForm.user_id === UNALLOCATED && (
-                        <p className="text-xs text-amber-600 mt-1">
-                          This shift will show on the rota as unallocated. It is not assigned to anyone,
-                          so it is not paid and nobody is expected on it until you fill it in.
+                      {recurringForm.user_id === PLACEHOLDER && (
+                        <p className="text-xs text-yellow-700 mt-1">
+                          This shift will show on the rota as a placeholder, in yellow. It is not
+                          assigned to anyone, so it is not paid and nobody is expected on it until
+                          you fill it in.
                         </p>
                       )}
                     </div>
@@ -2835,23 +2839,26 @@ export function StaffScheduleManager() {
                                     
                                     const hasNonHolidayCover = nonHolidayCoverage && nonHolidayCoverage.length > 0;
                                     const unacked = isUnacknowledged(schedule);
+                                    const ph = placeholderInfoFor(schedule, placeholderNames);
                                     
                                     return (
                                       <div 
                                         key={schedule.id} 
                                         className={`rounded p-1.5 mb-1 text-xs group relative ${canEditSchedule ? 'cursor-pointer hover:ring-2 hover:ring-primary/50' : ''} border ${
-                                          staffOnHoliday 
-                                            ? 'bg-amber-50 border-amber-200' 
-                                            : hasNonHolidayCover
-                                              ? 'bg-cyan-50 border-cyan-200'
-                                              : `${colors.bg} ${colors.border}`
+                                          ph
+                                            ? ph.style.block
+                                            : staffOnHoliday 
+                                              ? 'bg-amber-50 border-amber-200' 
+                                              : hasNonHolidayCover
+                                                ? 'bg-cyan-50 border-cyan-200'
+                                                : `${colors.bg} ${colors.border}`
                                         } ${unacked ? 'ring-2 ring-red-500' : ''}`}
                                         onClick={() => handleScheduleClick(schedule)}
                                         onDoubleClick={() => handleScheduleClick(schedule)}
                                         title={scheduleEditHint}
                                       >
                                         {/* Staff name + time */}
-                                        <div className={`font-semibold truncate flex items-center gap-1 ${staffOnHoliday ? 'text-amber-800 line-through opacity-70' : hasNonHolidayCover ? 'text-cyan-800' : colors.text}`}>
+                                        <div className={`font-semibold truncate flex items-center gap-1 ${ph ? ph.style.text : staffOnHoliday ? 'text-amber-800 line-through opacity-70' : hasNonHolidayCover ? 'text-cyan-800' : colors.text}`}>
                                           {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-500 flex-shrink-0" />}
                                           {isFromPattern && !staffOnHoliday && (
                                             <Infinity className="h-3 w-3 opacity-60" />
@@ -2861,10 +2868,10 @@ export function StaffScheduleManager() {
                                               {schedule.overtime_subtype === 'double_up' ? 'OT (In)' : 'OT (Out)'}
                                             </span>
                                           )}
-                                          <span>{getStaffName(schedule.user_id)}</span>
+                                          <span>{shiftDisplayName(schedule, placeholderNames, getStaffName)}</span>
                                         </div>
                                         
-                                        <div className={`${staffOnHoliday ? 'text-amber-700' : hasNonHolidayCover ? 'text-cyan-700' : colors.text} opacity-80`}>
+                                        <div className={`${ph ? ph.style.text : staffOnHoliday ? 'text-amber-700' : hasNonHolidayCover ? 'text-cyan-700' : colors.text} opacity-80`}>
                                           {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
                                         </div>
                                         {unacked && (

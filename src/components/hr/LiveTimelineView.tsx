@@ -1,4 +1,5 @@
 import { format, parseISO, differenceInMinutes, startOfDay, endOfDay, isSameDay, isWithinInterval, getDay, differenceInWeeks, startOfWeek, isBefore, isAfter } from "date-fns";
+import { shiftDisplayName, placeholderSeriesInfo, placeholderInfoFor } from "@/lib/placeholderShift";
 import { filterSchedulesByCoverageMetadata } from "@/lib/coverageUtils";
 import { Infinity, UserCheck, Palmtree } from "lucide-react";
 import { useMemo } from "react";
@@ -60,7 +61,7 @@ interface LiveTimelineViewProps {
   filteredClients: string[];
   allSchedules: Schedule[];
   isStaffOnHoliday: (userId: string, date: Date) => boolean;
-  getStaffName: (userId: string) => string;
+  getStaffName: (userId: string | null) => string;
   holidays: Holiday[];
   staffRequests: StaffRequest[];
   recurringPatterns: RecurringPattern[];
@@ -77,6 +78,9 @@ export function LiveTimelineView({
   staffRequests,
   recurringPatterns,
 }: LiveTimelineViewProps) {
+  // Numbered per client so two placeholders on the same rota can be told apart.
+  const placeholderNames = useMemo(() => placeholderSeriesInfo(recurringPatterns), [recurringPatterns]);
+
   const now = new Date();
   const today = startOfDay(now);
   const todayEnd = endOfDay(now);
@@ -255,7 +259,7 @@ export function LiveTimelineView({
     // Skip very small bars
     if (widthPercent < 1) return null;
     
-    const displayName = showClientName ? schedule.client_name : getStaffName(schedule.user_id);
+    const displayName = showClientName ? schedule.client_name : shiftDisplayName(schedule, placeholderNames, getStaffName);
     const isPast = end < now;
     const isFuture = start > now;
     
@@ -660,7 +664,8 @@ export function LiveTimelineView({
                       if (widthPercent < 1) return null;
                       
                       const isFromPattern = schedule.id.startsWith('pattern-');
-                      const staffName = getStaffName(schedule.user_id);
+                      const staffName = shiftDisplayName(schedule, placeholderNames, getStaffName);
+                      const ph = placeholderInfoFor(schedule, placeholderNames);
                       
                       return (
                         <div
@@ -672,7 +677,9 @@ export function LiveTimelineView({
                               ? 'opacity-60'
                               : ''
                           } ${
-                            isFromPattern
+                            ph
+                              ? ph.style.timeline
+                              : isFromPattern
                               ? 'bg-violet-100 border-2 border-violet-400'
                               : 'bg-primary/20 border-2 border-primary/60'
                           }`}
@@ -683,9 +690,9 @@ export function LiveTimelineView({
                           }}
                           title={`${staffName}: ${format(start, "HH:mm")} - ${format(end, "HH:mm")}`}
                         >
-                          <div className="font-semibold truncate flex items-center gap-1">
+                          <div className={`font-semibold truncate flex items-center gap-1 ${ph ? ph.style.text : ''}`}>
                             {staffName}
-                            {isFromPattern && <Infinity className="h-3 w-3 text-violet-500 flex-shrink-0" />}
+                            {isFromPattern && !ph && <Infinity className="h-3 w-3 text-violet-500 flex-shrink-0" />}
                           </div>
                           <div className={`text-[10px] ${isCurrentlyWorking ? 'text-green-700 font-semibold' : 'text-muted-foreground'}`}>
                             {isCurrentlyWorking ? (

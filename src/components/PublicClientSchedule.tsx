@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { PLACEHOLDER_LABEL, isPlaceholderShift, shiftDisplayName, placeholderSeriesInfo, placeholderInfoFor } from "@/lib/placeholderShift";
 import { isShiftCoveredByRequest } from "@/lib/coverageUtils";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -351,7 +352,13 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
     },
   });
 
-  const getStaffName = (userId: string) => {
+  // Numbered per client so two placeholders on the same rota can be told apart.
+  const placeholderNames = useMemo(() => placeholderSeriesInfo(patterns), [patterns]);
+
+  const getStaffName = (userId: string | null) => {
+    // A placeholder has nobody on it yet. "Unknown" would tell the client we
+    // lost track of who is coming; "Placeholder" says the slot is held.
+    if (isPlaceholderShift(userId)) return PLACEHOLDER_LABEL;
     const staff = staffMembers.find(s => s.user_id === userId);
     return staff?.display_name || staff?.email?.split('@')[0] || 'Unknown';
   };
@@ -992,6 +999,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                     const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
                     const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
                     const isOvertime = schedule.is_pattern_overtime;
+                    const ph = placeholderInfoFor(schedule, placeholderNames);
                     
                     // Check for non-holiday shift cover
                     const nonHolidayCoverage = !staffOnHoliday ? getStandardShiftCoverage(schedule.user_id, schedule, day) : null;
@@ -1002,7 +1010,9 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                       <div 
                         key={schedule.id}
                         className={`p-3 rounded-lg border transition-shadow ${
-                          staffOnHoliday 
+                          ph
+                            ? ph.style.block
+                            : staffOnHoliday 
                             ? 'bg-amber-50 border-amber-200' 
                             : hasNonHolidayCover
                               ? 'bg-cyan-50 border-cyan-200'
@@ -1016,9 +1026,9 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                             {staffOnHoliday && <Palmtree className="h-4 w-4 text-amber-600 flex-shrink-0" />}
                             {isOvertime && !staffOnHoliday && <Clock className="h-4 w-4 text-orange-600 flex-shrink-0" />}
                             <span className={`font-medium truncate ${
-                              staffOnHoliday ? 'text-amber-900' : hasNonHolidayCover ? 'text-cyan-800' : isOvertime ? 'text-orange-900' : colors.text
+                              ph ? ph.style.text : staffOnHoliday ? 'text-amber-900' : hasNonHolidayCover ? 'text-cyan-800' : isOvertime ? 'text-orange-900' : colors.text
                             }`}>
-                              {getStaffName(schedule.user_id)}
+                              {shiftDisplayName(schedule, placeholderNames, getStaffName)}
                             </span>
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
@@ -1142,12 +1152,15 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                       const nonHolidayCoverage = !staffOnHoliday ? getStandardShiftCoverage(schedule.user_id, schedule, day) : null;
                       
                       const hasNonHolidayCover = nonHolidayCoverage && nonHolidayCoverage.length > 0;
+                      const ph = placeholderInfoFor(schedule, placeholderNames);
                       
                       return (
                         <div 
                           key={schedule.id} 
                           className={`rounded p-1.5 mb-1 text-xs border transition-shadow ${
-                            staffOnHoliday 
+                            ph
+                              ? ph.style.block
+                              : staffOnHoliday 
                               ? 'bg-amber-100 border-amber-300'
                               : hasNonHolidayCover
                                 ? 'bg-cyan-50 border-cyan-200'
@@ -1157,7 +1170,9 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                           }`}
                         >
                           <div className={`font-semibold truncate flex items-center gap-1 ${
-                            staffOnHoliday 
+                            ph
+                              ? ph.style.text
+                              : staffOnHoliday 
                               ? 'text-amber-900' 
                               : hasNonHolidayCover
                                 ? 'text-cyan-800'
@@ -1167,7 +1182,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                           }`}>
                             {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600 flex-shrink-0" />}
                             {isOvertime && !staffOnHoliday && <Clock className="h-3 w-3 text-orange-600 flex-shrink-0" />}
-                            {getStaffName(schedule.user_id)}
+                            {shiftDisplayName(schedule, placeholderNames, getStaffName)}
                             {isOvertime && !staffOnHoliday && (
                               <span className="text-[9px] bg-orange-200 text-orange-800 px-1 rounded ml-auto">OT</span>
                             )}
