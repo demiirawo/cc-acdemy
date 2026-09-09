@@ -9,34 +9,32 @@ const corsHeaders = {
 /**
  * Delete candidate assessment snapshots that are no longer needed.
  *
- * The proctoring camera writes a photograph of the candidate every minute of
- * their assessment. Nothing ever deleted one, so 6,275 attempts had accumulated
- * 633,717 photographs and 72 GB — around ninety per cent of everything the
- * Academy stores — almost all of it images of people who were never hired.
+ * The proctoring camera photographs the candidate once a minute. Nothing ever
+ * deleted one, so the bucket had grown to 72 GB — around ninety per cent of
+ * everything the Academy stores.
  *
- * Two rules, both deletions:
+ * The first version of this job deleted anything older than thirty days, and
+ * that was the wrong rule. It assumed applications get reviewed within thirty
+ * days; they do not. 580 candidates sit in Pending Review and the oldest are
+ * from July, so the job destroyed the evidence for decisions nobody had made
+ * yet — and, because it never looked at stage, for 19 of 22 candidates at
+ * interview and 7 of the 8 people who were hired. A snapshot exists to defend a
+ * hiring decision, so those were the last images that should have gone.
  *
- *   1. Anything older than RETENTION_DAYS. A snapshot exists to defend a
- *      hiring decision at the time it is made; a month is long enough for that
- *      and short enough to be proportionate for people who did not get the job.
+ * Retention now follows the candidate, not the calendar. The rules live in
+ * public.snapshots_to_prune() so they can be read and dry-run in SQL rather than
+ * inferred from this file; each returned row carries the rule that condemned it.
+ * Space is reclaimed by thinning kept attempts to ten evenly spaced frames past
+ * thirty days rather than by deleting them outright.
  *
- *   2. Anything belonging to a rejected candidate, once the rejection has
- *      settled. Not the moment reject is clicked: the rejection email is queued
- *      for twelve hours and cancelled if the stage moves back, so a rejection is
- *      reversible for half a day. Deleting inside that window would destroy the
- *      evidence for a decision that can still be undone, so a grace period runs
- *      past it.
- *
- * Resumable by design. The backlog is far too large for one invocation, so each
- * run deletes up to BATCH_LIMIT and reports what is left; the daily schedule
- * drains it and then keeps it flat.
+ * Resumable: each run takes up to BATCH_LIMIT and reports what is left.
  */
 
-const RETENTION_DAYS = 30;
-const REJECTED_GRACE_HOURS = 24;   // comfortably past the 12-hour undo window
-const BATCH_LIMIT = 20_000;        // per invocation
-const REMOVE_CHUNK = 500;          // paths per storage delete call
+const BATCH_LIMIT = 20_000;   // per invocation
+const REMOVE_CHUNK = 500;     // paths per storage delete call
 const BUCKET = "candidate-snapshots";
+
+type Doomed = { id: string; storage_path: string; reason: string };
 
 serve(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -52,110 +50,60 @@ serve(async (req: Request): Promise<Response> => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const cutoff = new Date(Date.now() - RETENTION_DAYS * 86_400_000).toISOString();
-    const rejectedCutoff = new Date(Date.now() - REJECTED_GRACE_HOURS * 3_600_000).toISOString();
-
-    // Rejected attempts whose rejection has settled.
-    //
-    // Dated from when the rejection happened, not from when the candidate
-    // applied — recruitment_attempts.created_at is the application. Using it
-    // would have deleted the snapshots of anyone who applied over a day ago the
-    // moment they were rejected, which is exactly the case the grace period is
-    // there to protect.
-    const { data: rejectionEvents } = await supabase
-      .from("recruitment_events")
-      .select("attempt_id, occurred_at, metadata")
-      .eq("event_type", "stage_changed")
-      .lt("occurred_at", rejectedCutoff);
-
-    const settledRejections = new Set(
-      (rejectionEvents ?? [])
-        .filter((e: { metadata: { stage?: string } | null }) => e.metadata?.stage === "rejected")
-        .map((e: { attempt_id: string }) => e.attempt_id));
-
-    // ...and still rejected now. Somebody moved back to interview keeps theirs.
-    let rejectedIds = new Set<string>();
-    if (settledRejections.size > 0) {
-      const { data: stillRejected } = await supabase
-        .from("recruitment_attempts")
-        .select("id")
-        .eq("status", "rejected")
-        .in("id", [...settledRejections].slice(0, 1000));
-      rejectedIds = new Set((stillRejected ?? []).map((r: { id: string }) => r.id));
+    // `dryRun` reports what would go without touching anything. The schedule
+    // never sets it; it is here so a change to the rules can be inspected
+    // against live data before it deletes a single photograph.
+    let dryRun = false;
+    if (req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      dryRun = body?.dryRun === true;
     }
 
-    // Old snapshots first — that is the bulk — then rejected candidates'.
-    //
-    // Fetched a page at a time. PostgREST caps a response at its db-max-rows
-    // setting, which is 1000 here, so a bare .limit(20000) silently returns a
-    // fortieth of what was asked for: the first fourteen runs of this job
-    // deleted about 940 files each instead of 20,000, which would have taken
-    // twenty-six days to clear the backlog rather than one.
-    const PAGE = 1000;
+    const { data, error } = await supabase.rpc("snapshots_to_prune", { p_limit: BATCH_LIMIT });
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as Doomed[];
 
-    const page = async (
-      apply: (q: ReturnType<typeof buildBase>) => ReturnType<typeof buildBase>,
-      want: number,
-    ) => {
-      const out: Array<{ id: string; storage_path: string; attempt_id: string }> = [];
-      while (out.length < want) {
-        const from = out.length;
-        const { data, error } = await apply(buildBase()).range(from, from + PAGE - 1);
-        if (error) throw new Error(error.message);
-        const batch = data ?? [];
-        out.push(...batch);
-        if (batch.length < PAGE) break;   // exhausted
-      }
-      return out.slice(0, want);
-    };
-    const buildBase = () =>
-      supabase.from("recruitment_snapshots").select("id, storage_path, attempt_id");
+    const byReason = rows.reduce<Record<string, number>>((acc, r) => {
+      acc[r.reason] = (acc[r.reason] ?? 0) + 1;
+      return acc;
+    }, {});
 
-    let rows = await page(q => q.lt("taken_at", cutoff), BATCH_LIMIT);
-
-    if (rows.length < BATCH_LIMIT && rejectedIds.size > 0) {
-      const room = BATCH_LIMIT - rows.length;
-      const ids = [...rejectedIds].slice(0, 200);
-      const rejRows = await page(q => q.gte("taken_at", cutoff).in("attempt_id", ids), room);
-      rows = rows.concat(rejRows);
+    if (dryRun) {
+      return json({ dryRun: true, wouldDelete: rows.length, byReason });
     }
-
     if (rows.length === 0) {
-      return json({ deleted: 0, message: "Nothing to prune", retentionDays: RETENTION_DAYS });
+      return json({ deleted: 0, message: "Nothing to prune" });
     }
 
-    // Storage first. A row removed while its file survives is an orphan nothing
-    // will ever find again; a file removed while its row survives is picked up
-    // by the next run, so this order fails safe.
+    // Storage first, then the row. A row removed while its file survives is an
+    // orphan nothing will ever find again; a file removed while its row survives
+    // is picked up by the next run, so this order fails safe.
     let removed = 0;
     const failures: string[] = [];
     for (let i = 0; i < rows.length; i += REMOVE_CHUNK) {
       const chunk = rows.slice(i, i + REMOVE_CHUNK);
-      const paths = chunk.map((r: { storage_path: string }) => r.storage_path).filter(Boolean);
+      const paths = chunk.map(r => r.storage_path).filter(Boolean);
       if (paths.length === 0) continue;
-      const { error } = await supabase.storage.from(BUCKET).remove(paths);
-      if (error) { failures.push(error.message); continue; }
+
+      const { error: rmErr } = await supabase.storage.from(BUCKET).remove(paths);
+      if (rmErr) { failures.push(rmErr.message); continue; }
+
       const { error: rowErr } = await supabase
-        .from("recruitment_snapshots")
-        .delete()
-        .in("id", chunk.map((r: { id: string }) => r.id));
+        .from("recruitment_snapshots").delete().in("id", chunk.map(r => r.id));
       if (rowErr) { failures.push(rowErr.message); continue; }
+
       removed += paths.length;
     }
 
-    const { count: remaining } = await supabase
-      .from("recruitment_snapshots")
-      .select("id", { count: "exact", head: true })
-      .lt("taken_at", cutoff);
+    const { data: left } = await supabase.rpc("snapshots_to_prune", { p_limit: BATCH_LIMIT });
+    const remaining = (left ?? []).length;
 
-    console.log(`prune-candidate-snapshots — removed ${removed}, ${remaining ?? 0} older-than-${RETENTION_DAYS}d remaining`);
-    return json({
-      deleted: removed,
-      remainingOverRetention: remaining ?? 0,
-      rejectedAttemptsConsidered: rejectedIds.size,
-      retentionDays: RETENTION_DAYS,
-      failures,
-    });
+    console.log(
+      `prune-candidate-snapshots — removed ${removed} ` +
+      `(${Object.entries(byReason).map(([k, v]) => `${k}:${v}`).join(", ")}), ` +
+      `${remaining}${remaining === BATCH_LIMIT ? "+" : ""} still eligible`,
+    );
+    return json({ deleted: removed, byReason, remaining, failures });
   } catch (err) {
     console.error("prune-candidate-snapshots error", err);
     return json({ error: String((err as Error)?.message ?? err) });
