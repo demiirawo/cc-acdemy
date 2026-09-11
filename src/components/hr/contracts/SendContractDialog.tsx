@@ -189,9 +189,13 @@ export function SendContractDialog({ open, onOpenChange, onSent }: SendContractD
       return;
     }
 
-    // Fire-and-forget email notification.
+    // Email them that it's waiting, and copy the admins. The contract exists
+    // whether or not the emails go, so a failure is said in the toast rather
+    // than treated as one: the morning catch-up job emails anyone still untold.
+    const retryNote = "The email couldn't be sent just now — they'll be emailed automatically tomorrow morning.";
+    let emailNote = "They've been emailed, and so has the admin team.";
     try {
-      await supabase.functions.invoke("send-contract-email", {
+      const { data: emailResult, error: emailError } = await supabase.functions.invoke("send-contract-email", {
         body: {
           type: "contract_sent",
           contractId: data.id,
@@ -200,14 +204,24 @@ export function SendContractDialog({ open, onOpenChange, onSent }: SendContractD
           recipientEmail: recipient.email,
         },
       });
+      // The function answers 200 with an error or skipped field for some
+      // failures rather than a non-2xx, so both have to be read from the body.
+      const result = (emailResult ?? null) as { error?: string; skipped?: string } | null;
+      if (emailError || result?.error) {
+        console.error("contract email failed", emailError ?? result?.error);
+        emailNote = retryNote;
+      } else if (result?.skipped) {
+        emailNote = "They have no email address on file, so they haven't been emailed — please tell them another way.";
+      }
     } catch (e) {
       console.error("contract email failed", e);
+      emailNote = retryNote;
     }
 
     setSending(false);
     toast({
       title: "Contract sent",
-      description: `${title.trim()} sent to ${recipient.display_name || recipient.email}.`,
+      description: `${title.trim()} sent to ${recipient.display_name || recipient.email}. ${emailNote}`,
     });
     reset();
     onOpenChange(false);

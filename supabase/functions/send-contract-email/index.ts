@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { Resend } from "npm:resend@2.0.0";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") ?? "";
@@ -165,9 +165,108 @@ interface ContractEmailRequest {
   recipientEmail?: string | null;
   /** Reminders only: whole days the contract has been waiting. */
   daysWaiting?: number | null;
+  /**
+   * contract_sent only: also email each admin that it has gone out. On unless
+   * told otherwise; the morning catch-up job passes false.
+   */
+  adminCopy?: boolean;
 }
 
+// Staff find their own contracts here. Admins see every sent contract beneath
+// their own on the same tab — there is no ?tab=contracts, that lands on an
+// empty page.
 const CONTRACTS_LINK = `${APP_URL}/view/hr?tab=my-contracts`;
+
+/**
+ * Copy each admin when a contract goes out: a receipt for whoever sent it, and
+ * a heads-up for the other admins. Runs only after the recipient's own email
+ * was accepted, so what it says is true. It must never fail the send — a lost
+ * admin copy is logged, and the daily digest lists every unsigned contract the
+ * next morning anyway.
+ */
+async function copyAdminsOnSent(
+  supabase: SupabaseClient,
+  contractId: string | undefined,
+  contractTitle: string,
+  recipientName: string | null | undefined,
+  recipientEmail: string,
+): Promise<void> {
+  type AdminRow = { user_id: string; email: string | null; display_name: string | null };
+  const { data: admins, error: adminsError } = await supabase
+    .from("profiles")
+    .select("user_id, email, display_name")
+    .eq("role", "admin")
+    .not("email", "is", null);
+  if (adminsError) {
+    console.error("send-contract-email: admin lookup failed, no admin copies sent", adminsError);
+    return;
+  }
+
+  // Who sent it, so the other admins know who to ask. Only admins can issue a
+  // contract, so the sender is normally in the list just fetched.
+  let sentBy: string | null = null;
+  if (contractId) {
+    const { data: contract } = await supabase
+      .from("contracts")
+      .select("created_by")
+      .eq("id", contractId)
+      .maybeSingle();
+    sentBy = typeof contract?.created_by === "string" ? contract.created_by : null;
+  }
+  const senderName: string | null = sentBy
+    ? ((admins ?? []) as AdminRow[]).find((a) => a.user_id === sentBy)?.display_name ?? null
+    : null;
+
+  // The recipient already has their own email — don't send them the admin
+  // copy as well if they happen to be an admin themselves.
+  const recipients = ((admins ?? []) as AdminRow[]).filter(
+    (a): a is AdminRow & { email: string } => !!a.email && a.email !== recipientEmail,
+  );
+  if (recipients.length === 0) {
+    console.error("send-contract-email: no admin email addresses on file — nobody to copy on the send");
+    return;
+  }
+
+  const who = recipientName ? `<strong>${recipientName}</strong>` : null;
+  const title = `<strong>${contractTitle}</strong>`;
+  const subject = recipientName
+    ? `${recipientName}'s contract has been sent and is ready to sign`
+    : "A contract has been sent and is ready to sign";
+
+  await Promise.all(recipients.map(async (admin) => {
+    const byYou = !!sentBy && admin.user_id === sentBy;
+    const sender = byYou ? "You've" : senderName ? `<strong>${senderName}</strong> has` : null;
+    const opening = sender
+      ? (who
+          ? `${sender} sent ${who} their contract, ${title} — it's ready for them to sign.`
+          : `${sender} sent the contract ${title} — it's ready to be signed.`)
+      : (who
+          ? `${who}'s contract, ${title}, has been sent and is ready for them to sign.`
+          : `The contract ${title} has been sent and is ready to be signed.`);
+
+    const content =
+      greeting(admin.display_name) +
+      paragraph(opening) +
+      paragraph(
+        `They've been emailed to say it's waiting for them. Nothing is needed from you for now: they'll be reminded each morning until it's signed, and you'll get an email as soon as they sign.`
+      ) +
+      button("See sent contracts", CONTRACTS_LINK);
+
+    const { error } = await resend.emails.send({
+      from: EMAIL_SENDER,
+      to: [admin.email],
+      subject,
+      html: emailShell(
+        "A contract has been sent",
+        content,
+        "You're receiving this because you're an admin at Care Cuddle.",
+      ),
+    });
+    if (error) {
+      console.error("send-contract-email: admin copy failed", admin.email, error);
+    }
+  }));
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -223,6 +322,29 @@ serve(async (req) => {
         ),
       });
       if (error) throw error;
+
+      // They have now been told. Recording it here, and not only in the
+      // morning catch-up job, is what stops that job sending this same notice
+      // again tomorrow — and what lets the daily reminders begin, since they
+      // only chase contracts the recipient is known to have heard about.
+      if (body.contractId) {
+        const { error: stampError } = await supabase
+          .from("contracts")
+          .update({ notified_at: new Date().toISOString() })
+          .eq("id", body.contractId)
+          .is("notified_at", null);          // a retry must not move the original date
+        if (stampError) {
+          console.error("send-contract-email: could not record notified_at", stampError);
+        }
+      }
+
+      // The admins hear too: a receipt for whoever sent it, a heads-up for the
+      // rest. The morning catch-up job opts out, because what it sends is in
+      // the daily digest an hour later and a bulk issue would otherwise arrive
+      // as one admin email per contract.
+      if (body.adminCopy !== false) {
+        await copyAdminsOnSent(supabase, body.contractId, contractTitle, recipientName, to);
+      }
     }
 
     if (type === "contract_reminder") {
@@ -373,7 +495,7 @@ serve(async (req) => {
                   : `The contract <strong>${contractTitle}</strong> has just been signed — nothing is waiting on you.`
               ) +
               paragraph(`The signed copy is saved in Care Cuddle if you'd like to read it.`) +
-              button("See the signed contract", `${APP_URL}/view/hr?tab=contracts`);
+              button("See the signed contract", CONTRACTS_LINK);
 
             const { error: adminError } = await resend.emails.send({
               from: EMAIL_SENDER,
@@ -412,7 +534,7 @@ serve(async (req) => {
     });
   } catch (err) {
     console.error("send-contract-email error", err);
-    return new Response(JSON.stringify({ error: String(err?.message ?? err) }), {
+    return new Response(JSON.stringify({ error: String((err as Error)?.message ?? err) }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

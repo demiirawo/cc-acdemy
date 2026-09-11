@@ -107,6 +107,11 @@ serve(async (req: Request): Promise<Response> => {
             recipientName: c.recipient_name,
             recipientEmail: c.recipient_email,
             daysWaiting,
+            // A contract sent from the app copies the admins at the time. One
+            // sent from here is a catch-up or a bulk issue, and the daily
+            // digest lists it an hour later — one email per contract would
+            // bury the admins on a morning forty go out.
+            adminCopy: false,
           },
         });
         // send-contract-email answers 200 with an error field rather than a

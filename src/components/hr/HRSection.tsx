@@ -32,7 +32,9 @@ const TAB_ALIASES: Record<string, string> = {
   "onboarding-form": "onboarding-form",
   "my-profile": "my-profile",
   me: "my-profile",
-  contracts: "contracts",
+  // The all-staff list lives beneath the admin's own contracts; there is no
+  // separate tab, so older email links to ?tab=contracts land there too.
+  contracts: "my-contracts",
   "my-contracts": "my-contracts",
   training: "training",
   "staff-meetings": "staff-meetings",
