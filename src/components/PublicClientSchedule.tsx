@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { PLACEHOLDER_LABEL, isPlaceholderShift, shiftDisplayName, placeholderSeriesInfo, placeholderInfoFor } from "@/lib/placeholderShift";
+import { buildStaffColourMap } from "@/lib/staffColours";
 import { isShiftCoveredByRequest } from "@/lib/coverageUtils";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -14,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay, differenceInCalendarDays } from "date-fns";
+import { patternOccursOn } from "@/lib/patternSchedule";
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2, Palmtree, AlertTriangle, Clock, GripVertical } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -52,6 +54,7 @@ interface Schedule {
   notes: string | null;
   shift_type: string | null;
   is_pattern_overtime?: boolean;
+  overtime_subtype?: string | null;
 }
 
 interface RecurringPattern {
@@ -62,6 +65,7 @@ interface RecurringPattern {
   start_time: string;
   end_time: string;
   is_overtime: boolean;
+  overtime_subtype?: string | null;
   notes: string | null;
   start_date: string;
   end_date: string | null;
@@ -103,9 +107,18 @@ interface StaffRequest {
   coverage_metadata: Record<string, unknown> | null;
 }
 
+// This page is public. That someone is off sick is health data (special
+// category under UK GDPR), so viewers are told only whether an absence is a
+// holiday: any other kind is "Absent", its notes never shown or kept. Were
+// only sickness "Absent", the word would give it away. Absences are read
+// through public_staff_absences, which already returns every absence but a
+// holiday as 'absent' with its notes blanked, to signed-in admins too. A raw
+// type is matched as well, in case one ever reaches this page.
+const isUndisclosedAbsence = (absenceType: string | null | undefined) => !!absenceType && absenceType !== 'holiday';
+
 const ABSENCE_TYPES = [
   { value: 'holiday', label: 'Holiday' },
-  { value: 'sick', label: 'Sick Leave' },
+  { value: 'sick', label: 'Sickness absence' },
   { value: 'personal', label: 'Personal Leave' },
   { value: 'maternity', label: 'Maternity Leave' },
   { value: 'paternity', label: 'Paternity Leave' },
@@ -220,13 +233,9 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
   // Holiday management state
   const [selectedHoliday, setSelectedHoliday] = useState<StaffHoliday | null>(null);
   const [holidayDialogOpen, setHolidayDialogOpen] = useState(false);
-  const [holidayDeleteConfirmOpen, setHolidayDeleteConfirmOpen] = useState(false);
   const [isEditingHoliday, setIsEditingHoliday] = useState(false);
   const [holidayFormData, setHolidayFormData] = useState({
     absence_type: 'holiday',
-    start_date: '',
-    end_date: '',
-    days_taken: 1,
     notes: '',
     no_cover_required: false
   });
@@ -399,13 +408,15 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
     setIsUnifiedEditorOpen(true);
   };
 
-  // Fetch approved holidays for the week
+  // Fetch approved holidays for the week. Through public_staff_absences, not
+  // the table: this page is open to anonymous visitors, and the table no longer
+  // shows them a sick row. The function returns it as 'absent', notes blanked,
+  // so the shifts still read as someone off.
   const { data: holidays = [], refetch: refetchHolidays } = useQuery({
     queryKey: ["public-staff-holidays", currentWeekStart.toISOString()],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("staff_holidays")
-        .select("id, user_id, start_date, end_date, status, absence_type, days_taken, notes, no_cover_required, no_cover_dates")
+        .rpc("public_staff_absences")
         .eq("status", "approved")
         .lte("start_date", format(currentWeekEnd, "yyyy-MM-dd"))
         .gte("end_date", format(currentWeekStart, "yyyy-MM-dd"));
@@ -420,9 +431,6 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
     setSelectedHoliday(holiday);
     setHolidayFormData({
       absence_type: holiday.absence_type,
-      start_date: holiday.start_date,
-      end_date: holiday.end_date,
-      days_taken: holiday.days_taken,
       notes: holiday.notes || '',
       no_cover_required: holiday.no_cover_required
     });
@@ -430,35 +438,21 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
     setHolidayDialogOpen(true);
   };
 
-  // Calculate days when dates change
-  const calculateDays = () => {
-    if (holidayFormData.start_date && holidayFormData.end_date) {
-      const start = new Date(holidayFormData.start_date);
-      const end = new Date(holidayFormData.end_date);
-      const diffTime = Math.abs(end.getTime() - start.getTime());
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-      setHolidayFormData(prev => ({ ...prev, days_taken: diffDays }));
-    }
-  };
-
-  useEffect(() => {
-    calculateDays();
-  }, [holidayFormData.start_date, holidayFormData.end_date]);
-
   // Update holiday mutation
   const updateHolidayMutation = useMutation({
     mutationFn: async () => {
       if (!isAdmin) throw new Error("Only an administrator can modify a holiday.");
       if (!selectedHoliday) throw new Error("No holiday selected");
 
+      // Only cover and notes are written from here. Payroll reads the request's
+      // type, dates and days, and a change made to this row alone never reached
+      // the request, so the two drifted apart. Nor are an 'absent' row's notes
+      // written: they reach this page blanked, and saving the blank would wipe
+      // what is really there.
       const { error } = await supabase
         .from("staff_holidays")
         .update({
-          absence_type: holidayFormData.absence_type as any,
-          start_date: holidayFormData.start_date,
-          end_date: holidayFormData.end_date,
-          days_taken: holidayFormData.days_taken,
-          notes: holidayFormData.notes || null,
+          ...(isUndisclosedAbsence(selectedHoliday.absence_type) ? {} : { notes: holidayFormData.notes || null }),
           no_cover_required: holidayFormData.no_cover_required
         })
         .eq("id", selectedHoliday.id);
@@ -473,30 +467,6 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
     },
     onError: (error: any) => {
       toast.error(error.message || "Failed to update holiday");
-    }
-  });
-
-  // Delete holiday mutation
-  const deleteHolidayMutation = useMutation({
-    mutationFn: async () => {
-      if (!isAdmin) throw new Error("Only an administrator can delete a holiday.");
-      if (!selectedHoliday) throw new Error("No holiday selected");
-
-      const { error } = await supabase
-        .from("staff_holidays")
-        .delete()
-        .eq("id", selectedHoliday.id);
-      
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      toast.success("Holiday deleted successfully");
-      setHolidayDeleteConfirmOpen(false);
-      setHolidayDialogOpen(false);
-      refetchHolidays();
-    },
-    onError: (error: any) => {
-      toast.error(error.message || "Failed to delete holiday");
     }
   });
 
@@ -711,6 +681,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
           notes: pattern.notes,
           shift_type: pattern.shift_type,
           is_pattern_overtime: pattern.is_overtime,
+          overtime_subtype: pattern.overtime_subtype ?? null,
         });
       });
     });
@@ -775,6 +746,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
           notes: pattern.notes,
           shift_type: pattern.shift_type,
           is_pattern_overtime: pattern.is_overtime,
+          overtime_subtype: pattern.overtime_subtype ?? null,
         });
       });
     });
@@ -904,6 +876,20 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
     ];
   }, [allSchedules]);
 
+  // One colour per person on this page, so names on the same row can be told
+  // apart without reading them. Built from the client's whole current team
+  // (its series, plus whoever has a shift this week), the same rule as the
+  // client view of the staff rota, so a person is the same colour on both
+  // and keeps it from week to week.
+  const colourTodayISO = format(new Date(), "yyyy-MM-dd");
+  const staffColours = buildStaffColourMap(
+    [
+      ...patterns.filter(p => !p.end_date || p.end_date >= colourTodayISO).map(p => p.user_id),
+      ...allSchedules.map(s => s.user_id),
+    ],
+    getStaffName
+  );
+
   const isLoading = schedulesLoading || patternsLoading || staffLoading;
 
   if (!decodedClientName) {
@@ -998,8 +984,9 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                     const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
                     const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
                     const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
-                    const isOvertime = schedule.is_pattern_overtime;
+                    const isOvertime = schedule.is_pattern_overtime && schedule.overtime_subtype !== 'bonus';
                     const ph = placeholderInfoFor(schedule, placeholderNames);
+                    const staffColour = staffColours.get(schedule.user_id);
                     
                     // Check for non-holiday shift cover
                     const nonHolidayCoverage = !staffOnHoliday ? getStandardShiftCoverage(schedule.user_id, schedule, day) : null;
@@ -1025,8 +1012,9 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                           <div className="flex items-center gap-2 min-w-0">
                             {staffOnHoliday && <Palmtree className="h-4 w-4 text-amber-600 flex-shrink-0" />}
                             {isOvertime && !staffOnHoliday && <Clock className="h-4 w-4 text-orange-600 flex-shrink-0" />}
+                            {staffColour && <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${staffColour.dot}`} />}
                             <span className={`font-medium truncate ${
-                              ph ? ph.style.text : staffOnHoliday ? 'text-amber-900' : hasNonHolidayCover ? 'text-cyan-800' : isOvertime ? 'text-orange-900' : colors.text
+                              staffColour ? staffColour.text : ph ? ph.style.text : staffOnHoliday ? 'text-amber-900' : hasNonHolidayCover ? 'text-cyan-800' : isOvertime ? 'text-orange-900' : colors.text
                             }`}>
                               {shiftDisplayName(schedule, placeholderNames, getStaffName)}
                             </span>
@@ -1061,7 +1049,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                               {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
                             </div>
                             <div className="text-sm text-amber-700 capitalize">
-                              {holidayInfo?.absence_type?.replace('_', ' ') || 'On holiday'}
+                              {isUndisclosedAbsence(holidayInfo?.absence_type) ? 'Absent' : holidayInfo?.absence_type?.replace('_', ' ') || 'On holiday'}
                             </div>
                             {coverage && coverage.length > 0 ? (
                               <div className="text-sm text-green-700 bg-green-100 rounded px-2 py-1">
@@ -1146,13 +1134,14 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                       const staffOnHoliday = isStaffOnHoliday(schedule.user_id, day);
                       const holidayInfo = staffOnHoliday ? getHolidayInfo(schedule.user_id, day) : null;
                       const coverage = staffOnHoliday ? getCoverageForHoliday(schedule.user_id, day) : null;
-                      const isOvertime = schedule.is_pattern_overtime;
+                      const isOvertime = schedule.is_pattern_overtime && schedule.overtime_subtype !== 'bonus';
                       
                       // Check for non-holiday shift cover
                       const nonHolidayCoverage = !staffOnHoliday ? getStandardShiftCoverage(schedule.user_id, schedule, day) : null;
                       
                       const hasNonHolidayCover = nonHolidayCoverage && nonHolidayCoverage.length > 0;
                       const ph = placeholderInfoFor(schedule, placeholderNames);
+                      const staffColour = staffColours.get(schedule.user_id);
                       
                       return (
                         <div 
@@ -1182,7 +1171,8 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                           }`}>
                             {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-600 flex-shrink-0" />}
                             {isOvertime && !staffOnHoliday && <Clock className="h-3 w-3 text-orange-600 flex-shrink-0" />}
-                            {shiftDisplayName(schedule, placeholderNames, getStaffName)}
+                            {staffColour && <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${staffColour.dot}`} />}
+                            <span className={staffColour?.text}>{shiftDisplayName(schedule, placeholderNames, getStaffName)}</span>
                             {isOvertime && !staffOnHoliday && (
                               <span className="text-[9px] bg-orange-200 text-orange-800 px-1 rounded ml-auto">OT</span>
                             )}
@@ -1206,7 +1196,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                                 {format(parseISO(schedule.start_datetime), "HH:mm")} - {format(parseISO(schedule.end_datetime), "HH:mm")}
                               </div>
                               <div className="text-[10px] text-amber-700 capitalize">
-                                {holidayInfo?.absence_type?.replace('_', ' ') || 'On holiday'}
+                                {isUndisclosedAbsence(holidayInfo?.absence_type) ? 'Absent' : holidayInfo?.absence_type?.replace('_', ' ') || 'On holiday'}
                               </div>
                               {coverage && coverage.length > 0 ? (
                                 <div className="text-[10px] text-green-700 bg-green-50 rounded px-1 py-0.5 mt-0.5">
@@ -1350,52 +1340,34 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
               <>
                 <div className="space-y-2">
                   <Label>Absence Type</Label>
-                  <Select
-                    value={holidayFormData.absence_type}
-                    onValueChange={(value) => setHolidayFormData({ ...holidayFormData, absence_type: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ABSENCE_TYPES.map(type => (
-                        <SelectItem key={type.value} value={type.value}>
-                          {type.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <p className="font-medium capitalize">
+                    {isUndisclosedAbsence(holidayFormData.absence_type) ? 'Absent' : ABSENCE_TYPES.find(t => t.value === holidayFormData.absence_type)?.label || holidayFormData.absence_type}
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Start Date</Label>
-                    <Input
-                      type="date"
-                      value={holidayFormData.start_date}
-                      onChange={(e) => setHolidayFormData({ ...holidayFormData, start_date: e.target.value })}
-                    />
+                    <p className="font-medium">
+                      {selectedHoliday?.start_date && format(parseISO(selectedHoliday.start_date), 'dd MMM yyyy')}
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <Label>End Date</Label>
-                    <Input
-                      type="date"
-                      value={holidayFormData.end_date}
-                      onChange={(e) => setHolidayFormData({ ...holidayFormData, end_date: e.target.value })}
-                    />
+                    <p className="font-medium">
+                      {selectedHoliday?.end_date && format(parseISO(selectedHoliday.end_date), 'dd MMM yyyy')}
+                    </p>
                   </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label>Days Taken</Label>
-                  <Input
-                    type="number"
-                    value={holidayFormData.days_taken}
-                    onChange={(e) => setHolidayFormData({ ...holidayFormData, days_taken: parseFloat(e.target.value) || 0 })}
-                    step="0.5"
-                  />
-                  <p className="text-xs text-muted-foreground">Auto-calculated from dates, adjust for half days</p>
+                  <p className="font-medium">{selectedHoliday?.days_taken}</p>
                 </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Dates, type and removal are changed on the request in the HR portal, so pay follows.
+                </p>
 
                 <div className="flex items-center space-x-2">
                   <Checkbox
@@ -1408,15 +1380,21 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                   </Label>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Notes</Label>
-                  <Textarea
-                    value={holidayFormData.notes}
-                    onChange={(e) => setHolidayFormData({ ...holidayFormData, notes: e.target.value })}
-                    placeholder="Additional notes..."
-                    rows={2}
-                  />
-                </div>
+                {isUndisclosedAbsence(holidayFormData.absence_type) ? (
+                  <p className="text-xs text-muted-foreground">
+                    This absence's notes aren't shown on this public schedule, and saving leaves them as they are.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <Label>Notes</Label>
+                    <Textarea
+                      value={holidayFormData.notes}
+                      onChange={(e) => setHolidayFormData({ ...holidayFormData, notes: e.target.value })}
+                      placeholder="Additional notes..."
+                      rows={2}
+                    />
+                  </div>
+                )}
               </>
             ) : (
               <>
@@ -1424,7 +1402,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                   <div>
                     <p className="text-sm text-muted-foreground">Type</p>
                     <p className="font-medium capitalize">
-                      {ABSENCE_TYPES.find(t => t.value === selectedHoliday?.absence_type)?.label || selectedHoliday?.absence_type}
+                      {isUndisclosedAbsence(selectedHoliday?.absence_type) ? 'Absent' : ABSENCE_TYPES.find(t => t.value === selectedHoliday?.absence_type)?.label || selectedHoliday?.absence_type}
                     </p>
                   </div>
                   <div>
@@ -1465,7 +1443,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
                   )}
                 </div>
 
-                {selectedHoliday?.notes && (
+                {selectedHoliday?.notes && !isUndisclosedAbsence(selectedHoliday.absence_type) && (
                   <div>
                     <p className="text-sm text-muted-foreground">Notes</p>
                     <p className="text-sm">{selectedHoliday.notes}</p>
@@ -1497,13 +1475,9 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
               <>
                 {isAdmin && (
                   <>
-                    <Button
-                      variant="destructive"
-                      onClick={() => setHolidayDeleteConfirmOpen(true)}
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete
-                    </Button>
+                    {/* No Delete here: it removed the rota row but not the request
+                        payroll reads, so the days were still deducted. An absence
+                        is removed by deleting its request in the HR portal. */}
                     <Button
                       variant="outline"
                       onClick={() => setIsEditingHoliday(true)}
@@ -1521,29 +1495,6 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={holidayDeleteConfirmOpen} onOpenChange={setHolidayDeleteConfirmOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete Holiday/Absence?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete this holiday/absence record. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => deleteHolidayMutation.mutate()}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {deleteHolidayMutation.isPending ? (
-                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Deleting...</>
-              ) : 'Delete'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Unified Shift Editor */}
       <UnifiedShiftEditor
@@ -1588,15 +1539,19 @@ const UpcomingHolidaysCard = ({
       if (assignError) throw assignError;
       if (patternError) throw patternError;
 
+      // A placeholder series has no admin yet (user_id null), and a null in an
+      // `in` filter makes PostgREST reject the whole query, so this card came
+      // back empty at any client with a placeholder.
       const staffUserIds = Array.from(new Set([
         ...(assignments || []).map(a => a.staff_user_id),
         ...(patternStaff || []).map(p => p.user_id),
-      ]));
+      ])).filter((id): id is string => Boolean(id));
       if (staffUserIds.length === 0) return [];
 
+      // Through public_staff_absences, so an anonymous visitor still sees a
+      // sick colleague's absence, as 'absent'.
       const { data, error } = await supabase
-        .from("staff_holidays")
-        .select("id, user_id, start_date, end_date, status, absence_type, days_taken, notes, no_cover_required, no_cover_dates")
+        .rpc("public_staff_absences")
         .eq("status", "approved")
         .in("user_id", staffUserIds)
         .gte("end_date", todayISO)
@@ -1633,6 +1588,9 @@ const UpcomingHolidaysCard = ({
       const { data, error } = await supabase
         .from("shift_pattern_exceptions")
         .select("pattern_id, exception_date")
+        // Only a cancelled occurrence stops a day being a working day. Per-day
+        // overtime overrides live in this table too, and the shift still happens.
+        .eq("exception_type", "deleted")
         .in("pattern_id", patternIds);
       
       if (error) throw error;
@@ -1686,26 +1644,6 @@ const UpcomingHolidaysCard = ({
     return Array.from(uniqueShiftTimes);
   };
 
-  // Helper to check if a date falls on an active recurrence schedule
-  const isDateOnRecurrenceSchedule = (currentDate: Date, patternStartDate: string, recurrenceInterval: string): boolean => {
-    if (recurrenceInterval === 'weekly') return true;
-    const patternStart = new Date(patternStartDate);
-    // Calendar days, not elapsed milliseconds: across a clock change the gap
-
-    // between two local midnights is 23 or 25 hours, so dividing by 24 loses a
-
-    // day and flips the odd/even week a biweekly pattern turns on.
-
-    const diffDays = differenceInCalendarDays(currentDate, patternStart);
-    const diffWeeks = Math.floor(diffDays / 7);
-    if (recurrenceInterval === 'biweekly') {
-      return diffWeeks % 2 === 0;
-    }
-    if (recurrenceInterval === 'monthly') {
-      return diffWeeks % 4 === 0;
-    }
-    return true;
-  };
 
   // Get day-by-day breakdown of affected shifts for a holiday
   const getDayByDayBreakdown = (userId: string, startDate: Date, endDate: Date): {
@@ -1731,8 +1669,8 @@ const UpcomingHolidaysCard = ({
         if (currentDateStr < pattern.start_date) return;
         if (pattern.end_date && currentDateStr > pattern.end_date) return;
         
-        // Check recurrence schedule
-        if (!isDateOnRecurrenceSchedule(currentDate, pattern.start_date, pattern.recurrence_interval || 'weekly')) return;
+        // Check recurrence, by the rota's rule
+        if (!patternOccursOn(pattern, parseISO(currentDateStr))) return;
         
         // Check for exceptions
         if (exceptionSet.has(`${pattern.id}:${currentDateStr}`)) return;
@@ -1786,29 +1724,6 @@ const UpcomingHolidaysCard = ({
     });
     
     return [...new Set(covers.map(c => getStaffName(c.user_id)))];
-  };
-
-  const getAbsenceLabel = (type: string) => {
-    const found = ABSENCE_TYPES.find(t => t.value === type);
-    return found?.label || type;
-  };
-
-  const getAbsenceBadgeColor = (type: string) => {
-    switch (type) {
-      case 'holiday':
-        return 'bg-amber-100 text-amber-800 border-amber-200';
-      case 'sick':
-        return 'bg-red-100 text-red-800 border-red-200';
-      case 'personal':
-        return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'maternity':
-      case 'paternity':
-        return 'bg-pink-100 text-pink-800 border-pink-200';
-      case 'unpaid':
-        return 'bg-gray-100 text-gray-800 border-gray-200';
-      default:
-        return 'bg-slate-100 text-slate-800 border-slate-200';
-    }
   };
 
   if (isLoading) {

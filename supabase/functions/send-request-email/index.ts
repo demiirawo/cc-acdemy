@@ -240,6 +240,8 @@ async function fetchTeamClashes(
   }
 }
 
+// Sickness is not holiday: no team-clash lookup runs for it, and nobody is
+// asked to hand over before falling ill.
 const isHolidayType = (rt: string | undefined): boolean =>
   ["holiday", "holiday_paid", "holiday_unpaid"].includes(rt || "");
 
@@ -252,6 +254,7 @@ const requestTypeNoun = (rt: string | undefined): string => {
     holiday_paid: "paid holiday",
     holiday_unpaid: "unpaid holiday",
     holiday: "holiday",
+    sickness: "sickness absence",
     shift_swap: "shift cover",
     overtime: "overtime",
     overtime_standard: "overtime",
@@ -343,6 +346,8 @@ const handler = async (req: Request): Promise<Response> => {
       let storySentence: string;
       if (isHolidayType(requestType)) {
         storySentence = `<strong>${requesterHtml}</strong> has asked for ${range ? `<strong>${range}</strong> off` : "time off"}${days ? ` — ${days} of ${noun}` : ""}.`;
+      } else if (requestType === "sickness") {
+        storySentence = `<strong>${requesterHtml}</strong> has reported ${noun}${range ? ` for <strong>${range}</strong>` : ""}${days ? ` — ${days}` : ""}.`;
       } else if (requestType === "shift_swap") {
         storySentence = `<strong>${requesterHtml}</strong> has asked for cover for their shifts${range ? ` on <strong>${range}</strong>` : ""}.`;
       } else if (isOvertimeType(requestType)) {
@@ -401,7 +406,7 @@ const handler = async (req: Request): Promise<Response> => {
 
       const { data: adminProfiles, error: adminError } = await supabaseClient
         .from("profiles")
-        .select("user_id, email, display_name")
+        .select("user_id, email, display_name, role")
         .in("role", recipientRoles);
 
       if (adminError) {
@@ -460,8 +465,9 @@ const handler = async (req: Request): Promise<Response> => {
       console.log("Sending new request notification to reviewers, individually:", adminRecipients.map((p) => p.email));
 
       const subjectNoun = isOvertimeType(requestType) ? "overtime" : noun;
+      // Nobody requests being ill; they report it.
       const subject = subjectNoun
-        ? `${requesterFirst} has requested ${subjectNoun}${shortRange ? ` — ${shortRange}` : ""}`
+        ? `${requesterFirst} has ${requestType === "sickness" ? "reported" : "requested"} ${subjectNoun}${shortRange ? ` — ${shortRange}` : ""}`
         : `${requesterFirst} has sent a new request`;
 
       // Warn the reviewer when someone covering the same client is already off
@@ -496,13 +502,28 @@ const handler = async (req: Request): Promise<Response> => {
       // One email per reviewer — never every address in one visible to: field.
       const results = [];
       for (const recipient of adminRecipients) {
+        // Only admins can open a sickness request. Anyone else sent one, HR
+        // included, is told it's in hand rather than sent to a page that won't
+        // open for them.
+        const canOpen = requestType !== "sickness" || recipient.role === "admin";
         const bodyContent =
           greeting(recipient.display_name) +
           paragraph(storySentence) +
-          (details ? paragraph(`In their words: &ldquo;${esc(details)}&rdquo;`) : "") +
+          // What someone writes about being ill is health data. These emails
+          // sit in shared admin and HR mailboxes and pass through the mail
+          // provider, so a sickness note stays in the portal.
+          (!canOpen
+            ? paragraph("An admin will confirm it; the dates will show on the rota.")
+            : details
+              ? paragraph(requestType === "sickness"
+                  ? "Open the request in the portal to read their note."
+                  : `In their words: &ldquo;${esc(details)}&rdquo;`)
+              : "") +
           clashHtml +
-          paragraph(`Please review it and let ${requesterFirst === "A staff member" ? "them" : esc(requesterFirst)} know.`) +
-          button(`Review ${requesterFirst === "A staff member" ? "this" : `${esc(requesterFirst)}'s`} request`, reviewLink);
+          (canOpen
+            ? paragraph(`Please review it and let ${requesterFirst === "A staff member" ? "them" : esc(requesterFirst)} know.`) +
+              button(`Review ${requesterFirst === "A staff member" ? "this" : `${esc(requesterFirst)}'s`} request`, reviewLink)
+            : "");
         const res = await sendOne(
           recipient.email as string,
           subject,
@@ -545,7 +566,8 @@ const handler = async (req: Request): Promise<Response> => {
           : "These days are now marked on your rota in the portal.";
         bodyContent =
           greeting(requesterName) +
-          paragraph(`Good news — ${approverHtml} approved your ${noun || "request"}${range ? ` for <strong>${range}</strong>` : ""}${days && noun ? ` (${days}${isHolidayType(requestType) ? ` of ${noun}` : ""})` : ""}.`) +
+          // Being off sick isn't good news, even once it's approved.
+          paragraph(`${requestType === "sickness" ? "" : "Good news — "}${approverHtml} approved your ${noun || "request"}${range ? ` for <strong>${range}</strong>` : ""}${days && noun ? ` (${days}${isHolidayType(requestType) ? ` of ${noun}` : ""})` : ""}.`) +
           paragraph(onRota) +
           (reviewNotes ? paragraph(`${approverHtml} added a note: &ldquo;${esc(reviewNotes)}&rdquo;`) : "") +
           (isHolidayType(requestType)

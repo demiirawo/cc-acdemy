@@ -4,6 +4,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useSchedulingRole } from "@/hooks/useSchedulingRole";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
+import { Constants } from "@/integrations/supabase/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,11 +19,13 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, isSameDay, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay, subDays } from "date-fns";
-import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, AlertCircle, Calendar, Link2, Check, X } from "lucide-react";
+import { Plus, ChevronLeft, ChevronRight, ChevronDown, Clock, Palmtree, Thermometer, CalendarX, Trash2, Users, Building2, Repeat, Infinity, RefreshCw, Send, AlertTriangle, AlertCircle, Calendar, Link2, Check, X } from "lucide-react";
 import { UnifiedShiftEditor, ShiftToEdit } from "./UnifiedShiftEditor";
 import { invalidateAllCoverageQueries, filterSchedulesByCoverageMetadata, isShiftCoveredByRequest } from "@/lib/coverageUtils";
 import { LiveTimelineView } from "./LiveTimelineView";
 import { PLACEHOLDER, PLACEHOLDER_LABEL, isPlaceholderShift, shiftDisplayName, placeholderSeriesInfo, placeholderInfoFor } from "@/lib/placeholderShift";
+import { patternOccursOn } from "@/lib/patternSchedule";
+import { buildStaffColourMap } from "@/lib/staffColours";
 
 interface Schedule {
   id: string;
@@ -100,7 +103,7 @@ interface Client {
 interface StaffRequest {
   id: string;
   user_id: string;
-  request_type: 'overtime_standard' | 'overtime_double_up' | 'overtime' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
+  request_type: 'overtime_standard' | 'overtime_double_up' | 'overtime' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'sickness' | 'shift_swap';
   swap_with_user_id: string | null;
   start_date: string;
   end_date: string;
@@ -113,6 +116,23 @@ interface StaffRequest {
 }
 
 type ViewMode = "staff" | "client";
+
+// Only admins, scheduling editors and the person themselves are given a raw
+// 'sick' row. Everyone else sees any absence but a holiday as 'absent', which
+// says the person is off and nothing about why, so it gets a neutral icon
+// rather than the thermometer.
+const absenceTypeLabel = (type: string | null | undefined) =>
+  type === 'sick' ? 'Sickness' : type === 'absent' ? 'Absent' : type || 'Holiday';
+
+const AbsenceTypeIcon = ({ type, className }: { type: string | null | undefined; className: string }) =>
+  type === 'sick' ? <Thermometer className={className} />
+    : type === 'absent' ? <CalendarX className={className} />
+    : <Palmtree className={className} />;
+
+// A real absence_type. 'absent' only ever comes from public_staff_absences or
+// the masking of colleagues' absences below, and the database refuses it.
+const isAbsenceType = (value: string): value is (typeof Constants.public.Enums.absence_type)[number] =>
+  (Constants.public.Enums.absence_type as readonly string[]).includes(value);
 
 const SHIFT_TYPES = [
   "Call Monitoring",
@@ -473,24 +493,79 @@ export function StaffScheduleManager() {
     }
   });
 
-  // Fetch holidays
-  const { data: holidays = [], refetch: refetchHolidays } = useQuery({
-    queryKey: ["staff-holidays-for-schedule", currentWeekStart.toISOString()],
+  // Fetch holidays. The table gives admins, editors and the person themselves
+  // the raw rows, pending ones included, and shows nobody else a sick row. So
+  // the approved rows from public_staff_absences are merged in behind them: a
+  // sick colleague the table hides still arrives, as 'absent', and the rota
+  // still shows them off and their shifts needing cover, without saying why.
+  const { data: fetchedHolidays = [], refetch: refetchHolidays } = useQuery({
+    // By viewer as well as week: the table returns different rows to different people.
+    queryKey: ["staff-holidays-for-schedule", currentWeekStart.toISOString(), user?.id],
     queryFn: async () => {
       const weekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 1 });
-      const { data, error } = await supabase
-        .from("staff_holidays")
-        .select("id, user_id, start_date, end_date, status, absence_type, notes, no_cover_required, no_cover_dates, days_taken")
-        .or(`start_date.lte.${format(weekEnd, "yyyy-MM-dd")},end_date.gte.${format(currentWeekStart, "yyyy-MM-dd")}`)
-        .in("status", ["approved", "pending"]);
-      
+      const weekFilter = `start_date.lte.${format(weekEnd, "yyyy-MM-dd")},end_date.gte.${format(currentWeekStart, "yyyy-MM-dd")}`;
+      const [{ data, error }, { data: absences, error: absencesError }] = await Promise.all([
+        supabase
+          .from("staff_holidays")
+          .select("id, user_id, start_date, end_date, status, absence_type, notes, no_cover_required, no_cover_dates, days_taken")
+          .or(weekFilter)
+          .in("status", ["approved", "pending"]),
+        supabase.rpc("public_staff_absences").or(weekFilter),
+      ]);
+
       if (error) throw error;
-      return data as Holiday[];
+      if (absencesError) throw absencesError;
+      const seen = new Set((data || []).map(h => h.id));
+      return [...(data || []), ...(absences || []).filter(h => !seen.has(h.id))] as Holiday[];
     }
   });
 
+  // What anyone but an admin or scheduling editor is told about a colleague's
+  // absence: a holiday, or 'absent' with no notes. The table still hands them
+  // a colleague's unpaid or personal leave under its own type, and only the
+  // sick rows it hides come back as 'absent', so "Absent" alone would still
+  // mean sick. Their own absences stay as they are. Done here, not in the
+  // fetch, so it follows the role, which loads separately.
+  const holidays = useMemo(() => {
+    if (isAdmin) return fetchedHolidays;
+    // A scheduling editor gets raw types only for staff at their own clients:
+    // the scope the database shows them raw sick rows for. For anyone else a
+    // sick row reaches the editor only through public_staff_absences, while the
+    // same person's unpaid leave comes raw from the table, so showing those raw
+    // would leave 'Absent' meaning sick after all.
+    const rawFor = new Set<string>();
+    if (canEditSchedule) {
+      const myClients = new Set(myClientAssignments);
+      for (const a of allClientAssignments) {
+        if (myClients.has(a.client_name)) rawFor.add(a.staff_user_id);
+      }
+    }
+    return fetchedHolidays.map((h): Holiday =>
+      h.user_id === user?.id || h.absence_type === 'holiday' || rawFor.has(h.user_id)
+        ? h
+        : { ...h, absence_type: 'absent', notes: null });
+  }, [fetchedHolidays, isAdmin, canEditSchedule, user?.id, myClientAssignments, allClientAssignments]);
+
+  // Pending sickness for the week. staff_requests shows a sickness request only
+  // to admins and the person themselves, but scheduling editors are the ones
+  // finding cover. pending_sickness gives them, and HR, the dates and nothing
+  // else; anyone else gets nothing back.
+  const { data: pendingSicknessRanges = [] } = useQuery({
+    queryKey: ["pending-sickness-for-schedule", currentWeekStart.toISOString(), user?.id],
+    queryFn: async () => {
+      const weekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 1 });
+      const { data, error } = await supabase.rpc("pending_sickness", {
+        p_from: format(currentWeekStart, "yyyy-MM-dd"),
+        p_to: format(weekEnd, "yyyy-MM-dd"),
+      });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
   // Fetch staff requests (pending and approved) with linked holiday info
-  const { data: staffRequests = [] } = useQuery({
+  const { data: staffRequests = [], isPending: staffRequestsLoading, isError: staffRequestsFailed } = useQuery({
     queryKey: ["staff-requests-for-schedule", currentWeekStart.toISOString()],
     queryFn: async () => {
       const weekEnd = endOfWeek(currentWeekStart, { weekStartsOn: 1 });
@@ -548,49 +623,13 @@ export function StaffScheduleManager() {
     });
     
     for (const pattern of recurringPatterns) {
-      const patternStartDate = parseISO(pattern.start_date);
-      const patternEndDate = pattern.end_date ? parseISO(pattern.end_date) : null;
-      const recurrenceInterval = pattern.recurrence_interval || 'weekly';
-      
       for (const day of weekDays) {
-        const dayOfWeek = getDay(day);
         const dateStr = format(day, "yyyy-MM-dd");
-        
-        // Check if day is within the pattern's date range
-        if (isBefore(day, patternStartDate)) continue;
-        if (patternEndDate && isAfter(day, patternEndDate)) continue;
-        
-        // Check recurrence interval
-        let shouldInclude = false;
-        
-        if (recurrenceInterval === 'one_off') {
-          // One-off: include if day is in days_of_week and within date range (already checked above)
-          shouldInclude = pattern.days_of_week.includes(dayOfWeek);
-        } else if (recurrenceInterval === 'daily') {
-          // Daily: include every day
-          shouldInclude = true;
-        } else if (recurrenceInterval === 'weekly') {
-          // Weekly: check if this day is in the pattern's days_of_week
-          shouldInclude = pattern.days_of_week.includes(dayOfWeek);
-        } else if (recurrenceInterval === 'biweekly') {
-          // Biweekly: check if this day is in the pattern's days_of_week AND it's an even week from start
-          if (pattern.days_of_week.includes(dayOfWeek)) {
-            const weeksDiff = differenceInWeeks(startOfWeek(day, { weekStartsOn: 1 }), startOfWeek(patternStartDate, { weekStartsOn: 1 }));
-            shouldInclude = weeksDiff % 2 === 0;
-          }
-        } else if (recurrenceInterval === 'monthly') {
-          // Monthly: check if this day is in the pattern's days_of_week AND it's the same week of the month as the start
-          if (pattern.days_of_week.includes(dayOfWeek)) {
-            const startDayOfMonth = getDate(patternStartDate);
-            const currentDayOfMonth = getDate(day);
-            // Same week number in month (1-7 = week 1, 8-14 = week 2, etc.)
-            const startWeekOfMonth = Math.ceil(startDayOfMonth / 7);
-            const currentWeekOfMonth = Math.ceil(currentDayOfMonth / 7);
-            shouldInclude = startWeekOfMonth === currentWeekOfMonth;
-          }
-        }
-        
-        if (!shouldInclude) continue;
+
+        // Range, weekday and recurrence: src/lib/patternSchedule.ts. This rule
+        // was written out here first, and payroll's copies drifted from it; it
+        // now lives in one place that the rota, payroll and the shift bonus share.
+        if (!patternOccursOn(pattern, day)) continue;
         
         // Check if there's a deletion exception for this date
         if (deletedExceptionKeys.has(`${pattern.id}-${dateStr}`)) continue;
@@ -1212,20 +1251,62 @@ export function StaffScheduleManager() {
     setIsEditHolidayDialogOpen(true);
   };
 
+  // Does this absence have a request behind it? Payroll deducts by the
+  // request's type and holiday allowance counts this row's, so the two are
+  // retyped together, on the request. Only a legacy absence with no request
+  // can still be retyped here.
+  const hasAbsenceRequest = (holiday: Holiday) =>
+    staffRequests.some(r =>
+      ['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(r.request_type) && (
+        r.linked_holiday_id === holiday.id ||
+        // Any live request of theirs that overlaps it, not only one on the very
+        // same dates: a row re-dated away from its request would slip the lock.
+        (r.user_id === holiday.user_id && r.status !== 'rejected' &&
+          r.start_date <= holiday.end_date && r.end_date >= holiday.start_date)
+      ));
+
+  // Until the requests have loaded, or if they failed to, nobody can tell
+  // whether one is behind an absence, so its type stays locked rather than
+  // failing open.
+  const absenceTypeLocked = (holiday: Holiday) =>
+    staffRequestsLoading || staffRequestsFailed || hasAbsenceRequest(holiday);
+
   // Update holiday mutation - also syncs to linked staff_requests
   const updateHolidayMutation = useMutation({
     mutationFn: async () => {
       if (!editingHoliday) throw new Error("No holiday selected");
       
+      // A sick row keeps no notes: staff_holidays can be read from the public
+      // client schedule, and why someone is off sick is health data. Nor is a
+      // sickness request's details overwritten from these notes, in either
+      // direction of a type change: they are the staff member's own report.
+      // A row that reached this viewer as 'absent' is one they aren't shown in
+      // full: its notes reached us blank, so they are left alone.
+      const isMasked = editingHoliday.absence_type === 'absent';
+      // A masked row is one this viewer can't see raw, so RLS won't let them
+      // update it either: the save would change nothing behind a success toast.
+      if (isMasked) throw new Error("Only an admin can change this absence.");
+      // Retyped only by an admin, only to a real type that differs, and only
+      // when it is known that no request carries the type that pay reads.
+      const newType = editHolidayForm.absence_type;
+      const retypeTo = isAdmin && isAbsenceType(newType) && newType !== editingHoliday.absence_type ? newType : null;
+      // Refuse, rather than save the rest and report success: the admin would
+      // believe the type had changed when it hadn't.
+      if (retypeTo && absenceTypeLocked(editingHoliday)) {
+        throw new Error("This absence's type can't be changed here: a request is behind it, or the requests didn't load. Change it on the request, so pay follows.");
+      }
+      const isSick = (retypeTo ?? editingHoliday.absence_type) === 'sick';
+      const syncDetails = !isSick && !isMasked && editingHoliday.absence_type !== 'sick';
+
       // Update the holiday
       const { error } = await supabase
         .from("staff_holidays")
         .update({
-          absence_type: editHolidayForm.absence_type as any,
+          ...(retypeTo ? { absence_type: retypeTo } : {}),
           start_date: editHolidayForm.start_date,
           end_date: editHolidayForm.end_date,
           days_taken: editHolidayForm.days_taken,
-          notes: editHolidayForm.notes || null,
+          ...(isMasked ? {} : { notes: isSick ? null : editHolidayForm.notes || null }),
           no_cover_required: editHolidayForm.no_cover_required,
           no_cover_dates: editHolidayForm.no_cover_dates
         })
@@ -1233,34 +1314,39 @@ export function StaffScheduleManager() {
       
       if (error) throw error;
       
-      // Also update any linked staff_requests (by linked_holiday_id)
+      // Also update any linked staff_requests (by linked_holiday_id). Not the
+      // cover rows: a colleague's cover is linked to the leave too, but its
+      // dates are the days they actually cover, which drive their pay.
       const { error: linkedRequestError } = await supabase
         .from("staff_requests")
         .update({
           start_date: editHolidayForm.start_date,
           end_date: editHolidayForm.end_date,
           days_requested: editHolidayForm.days_taken,
-          details: editHolidayForm.notes || null
+          ...(syncDetails ? { details: editHolidayForm.notes || null } : {})
         })
-        .eq("linked_holiday_id", editingHoliday.id);
+        .eq("linked_holiday_id", editingHoliday.id)
+        .neq("request_type", "shift_swap");
       
       if (linkedRequestError) {
         console.warn("Could not sync holiday update to requests:", linkedRequestError);
       }
       
-      // Also update matching staff requests by user_id and original date range
+      // Also update matching staff requests by user_id and original date range.
+      // Sickness is included so its days_requested, which payroll deducts,
+      // follows an edit to the dates here.
       const { error: matchingRequestError } = await supabase
         .from("staff_requests")
         .update({
           start_date: editHolidayForm.start_date,
           end_date: editHolidayForm.end_date,
           days_requested: editHolidayForm.days_taken,
-          details: editHolidayForm.notes || null
+          ...(syncDetails ? { details: editHolidayForm.notes || null } : {})
         })
         .eq("user_id", editingHoliday.user_id)
         .eq("start_date", editingHoliday.start_date)
         .eq("end_date", editingHoliday.end_date)
-        .in("request_type", ["holiday", "holiday_paid", "holiday_unpaid"]);
+        .in("request_type", ["holiday", "holiday_paid", "holiday_unpaid", "sickness"]);
       
       if (matchingRequestError) {
         console.warn("Could not sync holiday update to matching requests:", matchingRequestError);
@@ -1285,11 +1371,19 @@ export function StaffScheduleManager() {
     mutationFn: async () => {
       if (!editingHoliday) throw new Error("No holiday selected");
       
-      // First, delete any staff requests that are linked via linked_holiday_id
+      // As with an update: an 'absent' row is one this viewer isn't shown raw,
+      // so RLS won't let them delete it either, and nothing would go behind a
+      // success toast.
+      if (editingHoliday.absence_type === 'absent') throw new Error("Only an admin can delete this absence.");
+
+      // First, delete any staff requests that are linked via linked_holiday_id.
+      // Cover rows stay, as they always have: removing cover is done from the
+      // request page, which tells the people involved.
       const { error: linkedRequestsError } = await supabase
         .from("staff_requests")
         .delete()
-        .eq("linked_holiday_id", editingHoliday.id);
+        .eq("linked_holiday_id", editingHoliday.id)
+        .neq("request_type", "shift_swap");
       
       if (linkedRequestsError) throw linkedRequestsError;
       
@@ -1300,7 +1394,7 @@ export function StaffScheduleManager() {
         .eq("user_id", editingHoliday.user_id)
         .eq("start_date", editingHoliday.start_date)
         .eq("end_date", editingHoliday.end_date)
-        .in("request_type", ["holiday", "holiday_paid", "holiday_unpaid"]);
+        .in("request_type", ["holiday", "holiday_paid", "holiday_unpaid", "sickness"]);
       
       if (matchingRequestsError) throw matchingRequestsError;
       
@@ -1742,6 +1836,54 @@ export function StaffScheduleManager() {
       const end = parseISO(r.end_date);
       return isWithinInterval(day, { start, end }) || isSameDay(day, start) || isSameDay(day, end);
     });
+  };
+
+  // Any shift at all on this day: an occurrence of any of their patterns,
+  // overtime and bonus series included, or a one-off schedule. Sickness is
+  // labelled against this rather than isStandardWorkingDay, which skips
+  // overtime patterns, because payroll docks a sick person's bonus share for
+  // a day whose only shift is a bonus one.
+  const hasAnyShiftOnDay = (userId: string, day: Date): boolean => {
+    const dateStr = format(day, "yyyy-MM-dd");
+    const hasPatternShift = recurringPatterns.some(pattern =>
+      pattern.user_id === userId &&
+      patternOccursOn(pattern, day) &&
+      !shiftExceptions.some(e =>
+        e.pattern_id === pattern.id && e.exception_date === dateStr && e.exception_type === 'deleted')
+    );
+    return hasPatternShift || schedules.some(s =>
+      s.user_id === userId && format(parseISO(s.start_datetime), "yyyy-MM-dd") === dateStr);
+  };
+
+  // A sickness report still waiting for an admin to confirm it. It has no
+  // staff_holidays row until then, so without this the rota shows the person
+  // as working and nobody knows their shifts need cover. Unlike a holiday, it
+  // shows on any day they have a shift, not only a normal working day.
+  const hasPendingSicknessForDay = (userId: string, day: Date) => {
+    const coversDay = (r: { user_id: string; start_date: string; end_date: string }) => {
+      if (r.user_id !== userId) return false;
+      const start = parseISO(r.start_date);
+      const end = parseISO(r.end_date);
+      return isWithinInterval(day, { start, end }) || isSameDay(day, start) || isSameDay(day, end);
+    };
+    const pending =
+      staffRequests.some(r => r.request_type === 'sickness' && r.status === 'pending' && coversDay(r)) ||
+      pendingSicknessRanges.some(coversDay);
+    return pending && hasAnyShiftOnDay(userId, day);
+  };
+
+  // Confirmed sickness on a day whose only shifts are overtime or bonus ones.
+  // isStaffOnHoliday doesn't count that day, so it is drawn as a working day;
+  // this only puts the label on it. Cover, strike-through and the cover maths
+  // for those shifts are unchanged.
+  const getSicknessOnExtraShiftDay = (userId: string, day: Date) => {
+    const sickness = holidays.find(h => {
+      if (h.user_id !== userId) return false;
+      if (h.absence_type !== 'sick' && h.absence_type !== 'absent') return false;
+      return isWithinInterval(day, { start: startOfDay(parseISO(h.start_date)), end: endOfDay(parseISO(h.end_date)) });
+    });
+    if (!sickness || isStandardWorkingDay(userId, day) || !hasAnyShiftOnDay(userId, day)) return undefined;
+    return sickness;
   };
 
   // Get who is covering for a staff member on holiday for a specific day
@@ -2357,8 +2499,16 @@ export function StaffScheduleManager() {
                           <SelectItem value="none">Not Overtime</SelectItem>
                           <SelectItem value="standard">Overtime (Outside Normal Hours)</SelectItem>
                           <SelectItem value="double_up">Overtime (Inside Normal Hours)</SelectItem>
+                          <SelectItem value="bonus">Bonus shift (paid by the monthly shift bonus)</SelectItem>
                         </SelectContent>
                       </Select>
+                      {recurringForm.is_overtime && recurringForm.overtime_subtype === 'bonus' && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Never paid at the overtime rate. The admin's monthly shift bonus is paid in proportion to the
+                          bonus shifts they work — set it on the Payroll tab. Every day on this series becomes a bonus
+                          shift, so give weekday shifts their own series.
+                        </p>
+                      )}
                     </div>
 
                     <div>
@@ -2391,7 +2541,7 @@ export function StaffScheduleManager() {
                           const start = parseISO(recurringForm.start_date);
                           const end = parseISO(recurringForm.end_date);
                           const days = eachDayOfInterval({ start, end }).length;
-                          return `This will create ${days} ${recurringForm.is_overtime ? 'overtime' : 'schedule'} ${days === 1 ? 'entry' : 'entries'} from ${format(start, "MMM d, yyyy")}${days > 1 ? ` to ${format(end, "MMM d, yyyy")}` : ''}`;
+                          return `This will create ${days} ${recurringForm.is_overtime ? (recurringForm.overtime_subtype === 'bonus' ? 'bonus' : 'overtime') : 'schedule'} ${days === 1 ? 'entry' : 'entries'} from ${format(start, "MMM d, yyyy")}${days > 1 ? ` to ${format(end, "MMM d, yyyy")}` : ''}`;
                         })()
                       ) : recurringForm.is_indefinite ? (
                         <span className="flex items-center gap-1">
@@ -2399,7 +2549,7 @@ export function StaffScheduleManager() {
                           This will create a never-ending pattern starting from {recurringForm.start_date ? format(parseISO(recurringForm.start_date), "MMM d, yyyy") : "today"}
                         </span>
                       ) : (
-                        `This will create ${(recurringForm.recurrence_interval === 'daily' ? 7 : recurringForm.selected_days.length) * recurringForm.weeks_to_create} ${recurringForm.is_overtime ? 'overtime' : 'schedule'} entries starting from ${recurringForm.start_date ? format(parseISO(recurringForm.start_date), "MMM d, yyyy") : "today"}`
+                        `This will create ${(recurringForm.recurrence_interval === 'daily' ? 7 : recurringForm.selected_days.length) * recurringForm.weeks_to_create} ${recurringForm.is_overtime ? (recurringForm.overtime_subtype === 'bonus' ? 'bonus' : 'overtime') : 'schedule'} entries starting from ${recurringForm.start_date ? format(parseISO(recurringForm.start_date), "MMM d, yyyy") : "today"}`
                       )}
                     </div>
                     <Button 
@@ -2408,14 +2558,14 @@ export function StaffScheduleManager() {
                       className="w-full"
                     >
                       {recurringForm.recurrence_interval === 'one_off' ? (
-                        `Create ${recurringForm.is_overtime ? 'Overtime' : 'Shift'}`
+                        `Create ${recurringForm.is_overtime ? (recurringForm.overtime_subtype === 'bonus' ? 'Bonus Shift' : 'Overtime') : 'Shift'}`
                       ) : recurringForm.is_indefinite ? (
                         <>
                           <Infinity className="h-4 w-4 mr-2" />
                           Create Indefinite Pattern
                         </>
                       ) : (
-                        `Create Recurring ${recurringForm.is_overtime ? 'Overtime' : 'Schedule'}`
+                        `Create Recurring ${recurringForm.is_overtime ? (recurringForm.overtime_subtype === 'bonus' ? 'Bonus Shifts' : 'Overtime') : 'Schedule'}`
                       )}
                     </Button>
                   </div>
@@ -2484,6 +2634,8 @@ export function StaffScheduleManager() {
                     const holidayInfo = getHolidayInfo(staff.user_id, day);
                     const coverage = onHoliday ? getCoverageForHoliday(staff.user_id, day) : null;
                     const coveringFor = getCoveringForInfo(staff.user_id, day);
+                    const pendingSickness = !onHoliday && hasPendingSicknessForDay(staff.user_id, day);
+                    const sicknessOnExtraShift = getSicknessOnExtraShiftDay(staff.user_id, day);
 
                     const hasCoverage = coverage && coverage.length > 0;
                     const dayInNoCoverDates = Array.isArray(holidayInfo?.no_cover_dates) && holidayInfo.no_cover_dates.includes(format(day, "yyyy-MM-dd"));
@@ -2509,8 +2661,8 @@ export function StaffScheduleManager() {
                             onClick={() => handleHolidayClick(holidayInfo)}
                           >
                             <div className={`flex items-center gap-1 text-xs ${hasCoverage ? 'text-green-700' : needsCoverage ? 'text-red-700' : 'text-amber-700'}`}>
-                              <Palmtree className="h-3 w-3" />
-                              <span className="capitalize">{holidayInfo?.absence_type || 'Holiday'}</span>
+                              <AbsenceTypeIcon type={holidayInfo?.absence_type} className="h-3 w-3" />
+                              <span className="capitalize">{absenceTypeLabel(holidayInfo?.absence_type)}</span>
                               {holidayInfo?.status === 'pending' && (
                                 <Badge variant="outline" className="text-[10px] py-0 px-1">Pending</Badge>
                               )}
@@ -2546,6 +2698,28 @@ export function StaffScheduleManager() {
                                 <span>No cover assigned</span>
                               </div>
                             )}
+                          </div>
+                        )}
+
+                        {/* Sickness reported but not yet confirmed. The shifts below stay
+                            visible so cover can be found before it is approved. */}
+                        {pendingSickness && (
+                          <div className="bg-rose-50 border border-rose-200 border-dashed text-rose-700 rounded p-1 mb-1 text-xs">
+                            <div className="flex items-center gap-1 font-medium">
+                              <Thermometer className="h-3 w-3 flex-shrink-0" />
+                              <span className="truncate">Sickness (pending)</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Sickness on a day whose only shifts are overtime or bonus ones.
+                            A label only: cover and the shifts below are drawn as before. */}
+                        {sicknessOnExtraShift && (
+                          <div className="bg-amber-50 border border-amber-200 text-amber-700 rounded p-1 mb-1 text-xs">
+                            <div className="flex items-center gap-1 font-medium">
+                              <AbsenceTypeIcon type={sicknessOnExtraShift.absence_type} className="h-3 w-3 flex-shrink-0" />
+                              <span className="truncate">{absenceTypeLabel(sicknessOnExtraShift.absence_type)}</span>
+                            </div>
                           </div>
                         )}
 
@@ -2627,8 +2801,8 @@ export function StaffScheduleManager() {
                                   <Infinity className={`h-3 w-3 ${isPatternOvertime ? 'text-orange-500' : 'text-violet-500'}`} />
                                 )}
                                 {isPatternOvertime && !hasCover && (
-                                  <span className={`text-[9px] font-bold px-1 rounded ${schedule.overtime_subtype === 'double_up' ? 'bg-red-200 text-red-800' : 'bg-orange-200 text-orange-800'}`}>
-                                    {schedule.overtime_subtype === 'double_up' ? 'OT (In)' : 'OT (Out)'}
+                                  <span className={`text-[9px] font-bold px-1 rounded ${schedule.overtime_subtype === 'double_up' ? 'bg-red-200 text-red-800' : schedule.overtime_subtype === 'bonus' ? 'bg-green-200 text-green-800' : 'bg-orange-200 text-orange-800'}`}>
+                                    {schedule.overtime_subtype === 'double_up' ? 'OT (In)' : schedule.overtime_subtype === 'bonus' ? 'Bonus' : 'OT (Out)'}
                                   </span>
                                 )}
                               </div>
@@ -2732,8 +2906,9 @@ export function StaffScheduleManager() {
                         {/* Staff Requests - filter out holidays, overtime with linked holiday, and shift_swap on days without shifts */}
                         {getRequestsForStaffDay(staff.user_id, day)
                           .filter(r => {
-                            // Filter out holiday types
-                            if (['holiday', 'holiday_paid', 'holiday_unpaid'].includes(r.request_type)) return false;
+                            // Filter out holiday types and sickness: absences are drawn above, and
+                            // a sickness request's details are health data that don't belong here
+                            if (['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(r.request_type)) return false;
                             // Filter out overtime that's linked to a holiday (shown in "Covering" section)
                             if (['overtime', 'overtime_standard', 'overtime_double_up'].includes(r.request_type) && r.linked_holiday_id) return false;
                             // Filter out shift_swap requests - they are already shown in the "Covering for" section above
@@ -2765,7 +2940,7 @@ export function StaffScheduleManager() {
                           })}
 
                         {!onHoliday && daySchedules.length === 0 && dayOvertime.length === 0 && getRequestsForStaffDay(staff.user_id, day).filter(r => {
-                          if (['holiday', 'holiday_paid', 'holiday_unpaid'].includes(r.request_type)) return false;
+                          if (['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(r.request_type)) return false;
                           if (['overtime', 'overtime_standard', 'overtime_double_up'].includes(r.request_type) && r.linked_holiday_id) return false;
                           if (r.request_type === 'shift_swap' && r.swap_with_user_id) return false;
                           return true;
@@ -2785,6 +2960,26 @@ export function StaffScheduleManager() {
                 // Get all schedules for this client this week
                 const allClientSchedules = weekDays.flatMap(day => getSchedulesForClientDay(clientName, day));
                 const hasSchedules = allClientSchedules.length > 0;
+
+                // One colour per person in this client's block, so names on the
+                // same row can be told apart without reading them. The map is
+                // built from the client's whole current team (its series, plus
+                // whoever has a shift this week) so a person keeps their colour
+                // from week to week. Cover entries are drawn inside the shift
+                // they cover, not as cards of their own, so the people on them
+                // take no colour here.
+                const todayISO = format(new Date(), "yyyy-MM-dd");
+                const staffColours = buildStaffColourMap(
+                  [
+                    ...recurringPatterns
+                      .filter(p => (p.client_name || "").trim() === clientName.trim() && (!p.end_date || p.end_date >= todayISO))
+                      .map(p => p.user_id),
+                    ...allClientSchedules
+                      .filter(s => !('isCoverShift' in s && (s as any).isCoverShift))
+                      .map(s => s.user_id),
+                  ],
+                  getStaffName
+                );
                 
                 // Get unique shift types for this client (preserve order, put nulls at end)
                 const shiftTypesForClient = [...new Set(allClientSchedules.map(s => s.shift_type || "Other"))];
@@ -2840,6 +3035,9 @@ export function StaffScheduleManager() {
                                     const hasNonHolidayCover = nonHolidayCoverage && nonHolidayCoverage.length > 0;
                                     const unacked = isUnacknowledged(schedule);
                                     const ph = placeholderInfoFor(schedule, placeholderNames);
+                                    const staffColour = staffColours.get(schedule.user_id);
+                                    const pendingSickness = !staffOnHoliday && hasPendingSicknessForDay(schedule.user_id, day);
+                                    const sicknessOnExtraShift = !staffOnHoliday ? getSicknessOnExtraShiftDay(schedule.user_id, day) : undefined;
                                     
                                     return (
                                       <div 
@@ -2859,16 +3057,17 @@ export function StaffScheduleManager() {
                                       >
                                         {/* Staff name + time */}
                                         <div className={`font-semibold truncate flex items-center gap-1 ${ph ? ph.style.text : staffOnHoliday ? 'text-amber-800 line-through opacity-70' : hasNonHolidayCover ? 'text-cyan-800' : colors.text}`}>
-                                          {staffOnHoliday && <Palmtree className="h-3 w-3 text-amber-500 flex-shrink-0" />}
+                                          {staffOnHoliday && <AbsenceTypeIcon type={holidayInfo?.absence_type} className="h-3 w-3 text-amber-500 flex-shrink-0" />}
                                           {isFromPattern && !staffOnHoliday && (
                                             <Infinity className="h-3 w-3 opacity-60" />
                                           )}
                                           {isPatternOvertime && !staffOnHoliday && (
-                                            <span className={`text-[9px] font-bold px-1 rounded ${schedule.overtime_subtype === 'double_up' ? 'bg-red-200 text-red-800' : 'bg-orange-200 text-orange-800'}`}>
-                                              {schedule.overtime_subtype === 'double_up' ? 'OT (In)' : 'OT (Out)'}
+                                            <span className={`text-[9px] font-bold px-1 rounded ${schedule.overtime_subtype === 'double_up' ? 'bg-red-200 text-red-800' : schedule.overtime_subtype === 'bonus' ? 'bg-green-200 text-green-800' : 'bg-orange-200 text-orange-800'}`}>
+                                              {schedule.overtime_subtype === 'double_up' ? 'OT (In)' : schedule.overtime_subtype === 'bonus' ? 'Bonus' : 'OT (Out)'}
                                             </span>
                                           )}
-                                          <span>{shiftDisplayName(schedule, placeholderNames, getStaffName)}</span>
+                                          {staffColour && <span className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${staffColour.dot}`} />}
+                                          <span className={staffColour?.text}>{shiftDisplayName(schedule, placeholderNames, getStaffName)}</span>
                                         </div>
                                         
                                         <div className={`${ph ? ph.style.text : staffOnHoliday ? 'text-amber-700' : hasNonHolidayCover ? 'text-cyan-700' : colors.text} opacity-80`}>
@@ -2881,6 +3080,20 @@ export function StaffScheduleManager() {
                                           </div>
                                         )}
                                         
+                                        {pendingSickness && (
+                                          <div className="flex items-center gap-1 text-[10px] font-medium text-rose-700 mt-0.5">
+                                            <Thermometer className="h-2.5 w-2.5 flex-shrink-0" />
+                                            Sickness (pending)
+                                          </div>
+                                        )}
+
+                                        {sicknessOnExtraShift && (
+                                          <div className="flex items-center gap-1 text-[10px] font-medium text-amber-700 mt-0.5">
+                                            <AbsenceTypeIcon type={sicknessOnExtraShift.absence_type} className="h-2.5 w-2.5 flex-shrink-0" />
+                                            {absenceTypeLabel(sicknessOnExtraShift.absence_type)}
+                                          </div>
+                                        )}
+
                                         {/* Combined holiday + cover info in one box */}
                                         {staffOnHoliday && (
                                           <div className="mt-1 pt-1 border-t border-amber-200">
@@ -3125,16 +3338,20 @@ export function StaffScheduleManager() {
               <>
                 <div className="space-y-2">
                   <Label>Absence Type</Label>
+                  {/* Only an admin may retype (the database refuses anyone else), and only
+                      an absence with no request: one that has a request is retyped there. */}
                   <Select
                     value={editHolidayForm.absence_type}
                     onValueChange={(value) => setEditHolidayForm({ ...editHolidayForm, absence_type: value })}
+                    disabled={!isAdmin || (!!editingHoliday && absenceTypeLocked(editingHoliday))}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      {editHolidayForm.absence_type === 'absent' && <SelectItem value="absent">Absent</SelectItem>}
                       <SelectItem value="holiday">Holiday</SelectItem>
-                      <SelectItem value="sick">Sick Leave</SelectItem>
+                      <SelectItem value="sick">Sickness absence</SelectItem>
                       <SelectItem value="personal">Personal Leave</SelectItem>
                       <SelectItem value="maternity">Maternity Leave</SelectItem>
                       <SelectItem value="paternity">Paternity Leave</SelectItem>
@@ -3142,6 +3359,11 @@ export function StaffScheduleManager() {
                       <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>
+                  {editingHoliday && hasAbsenceRequest(editingHoliday) ? (
+                    <p className="text-xs text-muted-foreground">Change the type on the request, so pay follows.</p>
+                  ) : isAdmin && staffRequestsFailed && (
+                    <p className="text-xs text-muted-foreground">Couldn't check for a request behind this absence, so its type can't be changed just now.</p>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -3211,22 +3433,29 @@ export function StaffScheduleManager() {
                   );
                 })()}
 
-                <div className="space-y-2">
-                  <Label>Notes</Label>
-                  <Textarea
-                    value={editHolidayForm.notes}
-                    onChange={(e) => setEditHolidayForm({ ...editHolidayForm, notes: e.target.value })}
-                    placeholder="Additional notes..."
-                    rows={2}
-                  />
-                </div>
+                {/* An 'absent' row's notes were never sent to this viewer, and aren't saved */}
+                {editHolidayForm.absence_type === 'sick' ? (
+                  <p className="text-xs text-muted-foreground">
+                    Sickness absences don't keep notes, because absence records show on the public client schedules.
+                  </p>
+                ) : editHolidayForm.absence_type === 'absent' ? null : (
+                  <div className="space-y-2">
+                    <Label>Notes</Label>
+                    <Textarea
+                      value={editHolidayForm.notes}
+                      onChange={(e) => setEditHolidayForm({ ...editHolidayForm, notes: e.target.value })}
+                      placeholder="Additional notes..."
+                      rows={2}
+                    />
+                  </div>
+                )}
               </>
             ) : (
               <>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-muted-foreground">Type</p>
-                    <p className="font-medium capitalize">{editingHoliday?.absence_type}</p>
+                    <p className="font-medium capitalize">{editingHoliday && absenceTypeLabel(editingHoliday.absence_type)}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Days</p>

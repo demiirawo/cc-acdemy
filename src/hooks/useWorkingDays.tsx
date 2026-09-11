@@ -1,6 +1,7 @@
-import { differenceInCalendarDays } from "date-fns";
+import { parseISO } from "date-fns";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { patternOccursOn } from "@/lib/patternSchedule";
 
 interface ShiftPattern {
   id: string;
@@ -17,35 +18,6 @@ interface ShiftException {
   pattern_id: string;
   exception_date: string;
 }
-
-// Helper function to check if a date falls on an active recurrence week
-const isDateOnRecurrenceSchedule = (
-  currentDate: Date, 
-  patternStartDate: string, 
-  recurrenceInterval: string
-): boolean => {
-  if (recurrenceInterval === 'weekly') return true;
-  
-  const patternStart = new Date(patternStartDate);
-  // Calendar days, not elapsed milliseconds: across a clock change the gap
-
-  // between two local midnights is 23 or 25 hours, so dividing by 24 loses a
-
-  // day and flips the odd/even week a biweekly pattern turns on.
-
-  const diffDays = differenceInCalendarDays(currentDate, patternStart);
-  const diffWeeks = Math.floor(diffDays / 7);
-  
-  if (recurrenceInterval === 'biweekly') {
-    return diffWeeks % 2 === 0;
-  }
-  
-  if (recurrenceInterval === 'monthly') {
-    return diffWeeks % 4 === 0;
-  }
-  
-  return true;
-};
 
 // Calculate the number of unique working days for a date range based on shift patterns
 export const calculateWorkingDays = (
@@ -76,7 +48,10 @@ export const calculateWorkingDays = (
       if (!patternDays.includes(dayOfWeek)) continue;
       if (currentDateStr < pattern.start_date) continue;
       if (pattern.end_date && currentDateStr > pattern.end_date) continue;
-      if (!isDateOnRecurrenceSchedule(currentDate, pattern.start_date, pattern.recurrence_interval)) continue;
+      // The rota's rule (src/lib/patternSchedule.ts). This hook had its own, which
+      // disagreed with the rota for monthly series and for a fortnightly series
+      // whose start date isn't one of its weekdays.
+      if (!patternOccursOn(pattern, parseISO(currentDateStr))) continue;
       if (exceptionSet.has(`${pattern.id}:${currentDateStr}`)) continue;
       
       // If we reach here, this is a working day
@@ -121,6 +96,9 @@ export const useWorkingDays = (
       const { data, error } = await supabase
         .from("shift_pattern_exceptions")
         .select("pattern_id, exception_date")
+        // Only a cancelled occurrence stops a day being a working day. Per-day
+        // overtime overrides live in this table too, and the shift still happens.
+        .eq("exception_type", "deleted")
         .in("pattern_id", patternIds);
       if (error) throw error;
       return data as ShiftException[];
@@ -167,6 +145,9 @@ export const useBatchWorkingDays = (
       const { data, error } = await supabase
         .from("shift_pattern_exceptions")
         .select("pattern_id, exception_date")
+        // Only a cancelled occurrence stops a day being a working day. Per-day
+        // overtime overrides live in this table too, and the shift still happens.
+        .eq("exception_type", "deleted")
         .in("pattern_id", patternIds);
       if (error) throw error;
       return data as ShiftException[];

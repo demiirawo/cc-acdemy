@@ -1,0 +1,11 @@
+-- Sickness gets its own request type.
+--
+-- Until now the only way to report sickness was to file it as "Unpaid Holiday"
+-- and explain in the details, so it was recorded as holiday. absence_type
+-- already has 'sick'; nothing could write it. With this, staff report sickness
+-- from My Requests, an admin confirms it, and approval writes a staff_holidays
+-- row with absence_type 'sick'.
+--
+-- On its own because a new enum value cannot be used in the transaction that
+-- adds it; the policies that name 'sickness' follow in the next migration.
+alter type public.staff_request_type add value if not exists 'sickness';

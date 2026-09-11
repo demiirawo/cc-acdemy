@@ -1,23 +1,110 @@
 import { supabase } from "@/integrations/supabase/client";
 import { differenceInCalendarDays, differenceInWeeks, eachDayOfInterval, format, getDay, parseISO, startOfWeek } from "date-fns";
 
+/**
+ * HANDOVERS.
+ *
+ * A handover is one person handing ONE client to ONE colleague for ONE leave:
+ * Funmi → Mercy at Springs of Joy for 22–29 September. A holiday split between
+ * two coverers is two handovers, each with its own checklist, progress and
+ * "not required" decision; a person with two upcoming holidays has two sets.
+ * A departure is the same shape, with the leaver's last day as the window and
+ * whoever takes the client on as the recipient.
+ *
+ * Which handovers EXIST is worked out from the rota and the cover requests,
+ * not typed in: every approved leave still ahead, the clients that person has
+ * shifts at during it (patterns), and the approved covers scoped to each
+ * client. A client_handovers row is only written once somebody acts on one —
+ * adds a task, or marks it not required — and holds the checklist and the
+ * decision. So a handover can be shown before anyone has touched it, and a
+ * row whose leave or cover has since gone is shown as stale rather than
+ * silently kept alive.
+ *
+ * The tracker page, the dashboard card, the staff member's own profile, the
+ * request page and the leave lists all read from here, so they cannot
+ * disagree about what a handover is or whether it is done.
+ */
+
 // Handover status linked to a specific period of annual leave: "relevant"
 // clients are the ones this staff member actually has shifts for during the
 // leave window (via recurring_shift_patterns), not every client they've
 // ever worked. One holiday can therefore require SEVERAL handovers — one per
-// client — and the overall status only reads "complete" when every one of
-// them is done. A client with zero handover tasks recorded counts as
-// "not started" — the goal is a confirmed, successful handover, not merely
-// the absence of tracked tasks. A holiday marked no_cover_required needs no
-// handover at all ("not_required") — and the same applies per client when
-// every one of that client's shift dates in the window is listed in the
-// holiday's no_cover_dates.
+// client, and per coverer within a client — and the overall status only
+// reads "complete" when every one of them is done or marked not required. A
+// handover with zero tasks recorded counts as "not started" — the goal is a
+// confirmed, successful handover, not merely the absence of tracked tasks. A
+// holiday marked no_cover_required needs no handover at all ("not_required"),
+// and the same applies per client when every one of that client's shift dates
+// in the window is listed in the holiday's no_cover_dates.
 export type HandoverStatus = "none" | "not_required" | "not_started" | "in_progress" | "complete";
+
+export type HandoverKind = "leave" | "departure";
+export type HandoverRequirement = "required" | "not_required";
+
+export interface HandoverParty {
+  userId: string;
+  name: string;
+  email: string | null;
+}
+
+/** One handover: a person hands one client to one colleague for one leave. */
+export interface ClientHandover {
+  /** Stable identity, with or without a stored row. See {@link handoverKey}. */
+  key: string;
+  /** client_handovers.id once a row exists; null until somebody acts on it. */
+  id: string | null;
+  client: string;
+  kind: HandoverKind;
+  /** The person on leave, or leaving. */
+  from: HandoverParty;
+  /** Who it is handed to. null = no cover assigned yet. */
+  to: HandoverParty | null;
+  holidayId: string | null;
+  startDate: string;
+  endDate: string;
+  /** 0 = starts today, negative = the leave is already under way. */
+  daysUntil: number;
+  ongoing: boolean;
+  requirement: HandoverRequirement;
+  notRequiredReason: string | null;
+  /**
+   * true = the rota and cover requests say this handover exists now. false =
+   * only a stored row says so: the leave has passed, or the cover was changed,
+   * so the checklist is history (or needs moving to whoever covers now).
+   */
+  derived: boolean;
+  taskCount: number;
+  completedCount: number;
+  avgProgress: number;
+  latestTargetDate: string | null;
+  /** This client's shift dates in the window that this coverer covers. */
+  coveredDates: string[];
+}
+
+/** The handovers of one leave (or departure), for grouping on screen. */
+export interface LeaveHandoverGroup {
+  key: string;
+  kind: HandoverKind;
+  from: HandoverParty;
+  holidayId: string | null;
+  startDate: string;
+  endDate: string;
+  daysUntil: number;
+  ongoing: boolean;
+  handovers: ClientHandover[];
+}
 
 export interface ClientHandoverStatus {
   client: string;
+  /** Mean progress across this client's required handovers (0 when none). */
   avgProgress: number;
+  /** Tasks across this client's required handovers. */
   taskCount: number;
+  /** Every required handover here is complete (and at least one is required). */
+  ready: boolean;
+  /** Every handover here is marked not required. */
+  notRequired: boolean;
+  handovers: ClientHandover[];
 }
 
 export interface HolidayHandoverStatus {
@@ -36,6 +123,8 @@ export interface PatternWindow {
 }
 
 export const PATTERN_WINDOW_COLS = "user_id, client_name, days_of_week, start_date, end_date, recurrence_interval";
+
+type UserPattern = PatternWindow & { user_id: string | null };
 
 /** ISO dates within [windowStart, windowEnd] on which this pattern has a shift. */
 export function patternDatesInWindow(p: PatternWindow, windowStart: string, windowEnd: string): string[] {
@@ -81,32 +170,6 @@ function needsCoverInWindow(
   );
 }
 
-function overallStatus(clients: ClientHandoverStatus[]): HandoverStatus {
-  if (clients.length === 0) return "none";
-  const allComplete = clients.every(c => c.taskCount > 0 && c.avgProgress >= 100);
-  if (allComplete) return "complete";
-  const anyProgress = clients.some(c => c.avgProgress > 0);
-  return anyProgress ? "in_progress" : "not_started";
-}
-
-function aggregateTasks(
-  tasks: { client_name: string; progress: number | null }[],
-  clientNames: string[]
-): ClientHandoverStatus[] {
-  const grouped = new Map<string, { sum: number; count: number }>();
-  for (const t of tasks) {
-    if (!t.client_name) continue;
-    const cur = grouped.get(t.client_name) || { sum: 0, count: 0 };
-    cur.sum += t.progress ?? 0;
-    cur.count += 1;
-    grouped.set(t.client_name, cur);
-  }
-  return clientNames.map(client => {
-    const g = grouped.get(client);
-    return { client, avgProgress: g ? Math.round(g.sum / g.count) : 0, taskCount: g ? g.count : 0 };
-  });
-}
-
 /** Group patterns by trimmed client name, dropping bench/blank entries. */
 function patternsByClient(patterns: PatternWindow[]): Map<string, PatternWindow[]> {
   const map = new Map<string, PatternWindow[]>();
@@ -141,154 +204,6 @@ export async function getRelevantClientsForLeave(
     .filter(([, ps]) => needsCoverInWindow(ps, startDate, endDate, noCover))
     .map(([client]) => client)
     .sort((a, b) => a.localeCompare(b));
-}
-
-/** Handover status for a single staff member's leave window. */
-export async function computeHolidayHandoverStatus(
-  userId: string,
-  startDate: string,
-  endDate: string,
-  opts?: { noCoverRequired?: boolean; noCoverDates?: string[] | null }
-): Promise<HolidayHandoverStatus> {
-  if (opts?.noCoverRequired) return { status: "not_required", clients: [] };
-  const clientNames = await getRelevantClientsForLeave(userId, startDate, endDate, opts?.noCoverDates || []);
-  if (clientNames.length === 0) {
-    // Distinguish "no clients at all" from "every client's shifts are marked
-    // no-cover" so the UI can say handover isn't required rather than N/A.
-    if ((opts?.noCoverDates?.length ?? 0) > 0) {
-      const anyClients = await getRelevantClientsForLeave(userId, startDate, endDate);
-      if (anyClients.length > 0) return { status: "not_required", clients: [] };
-    }
-    return { status: "none", clients: [] };
-  }
-
-  const { data: tasks } = await supabase
-    .from("client_handover_tasks")
-    .select("client_name, progress")
-    .in("client_name", clientNames);
-
-  const clients = aggregateTasks(tasks || [], clientNames);
-  return { status: overallStatus(clients), clients };
-}
-
-export interface HolidayForHandoverBatch {
-  id: string;
-  userId: string;
-  startDate: string;
-  endDate: string;
-  /** staff_holidays.no_cover_required — no cover means no handover is needed. */
-  noCoverRequired?: boolean;
-  /** staff_holidays.no_cover_dates — per-date no-cover; a client whose every
-   * in-window shift date is listed needs no handover. */
-  noCoverDates?: string[] | null;
-}
-
-/**
- * Bulk variant for list views (schedule grid, holiday managers) — avoids N+1
- * queries by fetching all relevant patterns/tasks in two round trips total.
- */
-export async function computeHolidayHandoverStatusBatch(
-  holidays: HolidayForHandoverBatch[]
-): Promise<Map<string, HolidayHandoverStatus>> {
-  const result = new Map<string, HolidayHandoverStatus>();
-  if (holidays.length === 0) return result;
-
-  const userIds = Array.from(new Set(holidays.map(h => h.userId)));
-  const { data: allPatterns } = await supabase
-    .from("recurring_shift_patterns")
-    .select(PATTERN_WINDOW_COLS)
-    .in("user_id", userIds);
-
-  const patternsByUser = new Map<string, (PatternWindow & { user_id: string })[]>();
-  ((allPatterns || []) as (PatternWindow & { user_id: string })[]).forEach(p => {
-    if (!patternsByUser.has(p.user_id)) patternsByUser.set(p.user_id, []);
-    patternsByUser.get(p.user_id)!.push(p);
-  });
-
-  const relevantClientsByHoliday = new Map<string, string[]>();
-  // Holidays where per-date no-cover wiped out every client — "not required"
-  // rather than "no handover needed".
-  const allNoCoverHolidayIds = new Set<string>();
-  const allClientNames = new Set<string>();
-  for (const h of holidays) {
-    if (h.noCoverRequired) {
-      relevantClientsByHoliday.set(h.id, []);
-      continue;
-    }
-    const byClient = patternsByClient(patternsByUser.get(h.userId) || []);
-    const noCover = new Set(h.noCoverDates || []);
-    const clients = Array.from(byClient.entries())
-      .filter(([, ps]) => needsCoverInWindow(ps, h.startDate, h.endDate, noCover))
-      .map(([client]) => client);
-    if (clients.length === 0 && noCover.size > 0
-      && Array.from(byClient.values()).some(ps => needsCoverInWindow(ps, h.startDate, h.endDate, new Set()))) {
-      allNoCoverHolidayIds.add(h.id);
-    }
-    relevantClientsByHoliday.set(h.id, clients);
-    clients.forEach(c => allClientNames.add(c));
-  }
-
-  const { data: allTasks } = allClientNames.size > 0
-    ? await supabase.from("client_handover_tasks").select("client_name, progress").in("client_name", Array.from(allClientNames))
-    : { data: [] as { client_name: string; progress: number | null }[] };
-
-  const tasksByClient = new Map<string, { sum: number; count: number }>();
-  (allTasks || []).forEach(t => {
-    if (!t.client_name) return;
-    const cur = tasksByClient.get(t.client_name) || { sum: 0, count: 0 };
-    cur.sum += t.progress ?? 0;
-    cur.count += 1;
-    tasksByClient.set(t.client_name, cur);
-  });
-
-  for (const h of holidays) {
-    if (h.noCoverRequired || allNoCoverHolidayIds.has(h.id)) {
-      result.set(h.id, { status: "not_required", clients: [] });
-      continue;
-    }
-    const clientNames = relevantClientsByHoliday.get(h.id) || [];
-    const clients: ClientHandoverStatus[] = clientNames.map(client => {
-      const g = tasksByClient.get(client);
-      return { client, avgProgress: g ? Math.round(g.sum / g.count) : 0, taskCount: g ? g.count : 0 };
-    });
-    result.set(h.id, { status: overallStatus(clients), clients });
-  }
-
-  return result;
-}
-
-/**
- * "2 of 3 clients ready" — spelled-out multi-client progress. One holiday can
- * need several handovers (one per client the staff member works for), so a
- * bare status label undersells what's outstanding.
- */
-export function handoverClientsSummary(s: HolidayHandoverStatus): string | null {
-  if (s.clients.length <= 1) return null;
-  const ready = s.clients.filter(c => c.taskCount > 0 && c.avgProgress >= 100).length;
-  return `${ready} of ${s.clients.length} clients ready`;
-}
-
-export interface UpcomingClientLeave {
-  /**
-   * Why this client needs handing over: somebody is on leave, or somebody is
-   * leaving for good. Both are the same job — the same clients handed to the
-   * same colleagues against the same per-client tracker — so they are the same
-   * object, and only the wording differs where it is shown.
-   */
-  kind?: "leave" | "departure";
-  userId: string;
-  staffName: string;
-  staffEmail: string | null;
-  startDate: string;
-  endDate: string;
-  /** 0 = starts today, negative = leave is already underway. */
-  daysUntil: number;
-  ongoing: boolean;
-  /** Names of staff assigned to cover THIS client's shifts during the leave
-   * (client-scoped where the cover request records which clients it covers,
-   * else by covered-date overlap with this client's shift dates).
-   * Empty = no cover assigned yet. */
-  coverNames?: string[];
 }
 
 /** The subset of a cover (shift_swap) request needed to scope it to a client. */
@@ -349,302 +264,677 @@ export function coverAppliesToClient(
     : clientShiftDates.some(d => d >= req.start_date && d <= req.end_date);
 }
 
-/**
- * For each client, the soonest approved leave (upcoming or already underway)
- * among staff currently scheduled there via recurring_shift_patterns. Used to
- * surface "this handover relates to X's leave" context directly on the
- * per-client tracker, since client_handover_tasks itself has no staff/leave
- * linkage.
- */
-export async function getUpcomingLeaveForClients(
-  clientNames: string[]
-): Promise<Map<string, UpcomingClientLeave>> {
-  const names = Array.from(new Set(clientNames.map(c => (c || "").trim()).filter(Boolean)));
-  const result = new Map<string, UpcomingClientLeave>();
-  if (names.length === 0) return result;
-
-  const todayISO = new Date().toISOString().slice(0, 10);
-
-  const { data: patterns } = await supabase
-    .from("recurring_shift_patterns")
-    .select(PATTERN_WINDOW_COLS)
-    .in("client_name", names)
-    .or(`end_date.is.null,end_date.gte.${todayISO}`);
-
-  // Patterns per (user, client) so per-date no-cover can be checked per client.
-  const patternsByUserClient = new Map<string, PatternWindow[]>();
-  const userIdsByClient = new Map<string, Set<string>>();
-  for (const p of ((patterns || []) as (PatternWindow & { user_id: string })[])) {
-    const client = (p.client_name || "").trim();
-    if (!client) continue;
-    if (!userIdsByClient.has(client)) userIdsByClient.set(client, new Set());
-    userIdsByClient.get(client)!.add(p.user_id);
-    const key = `${p.user_id}|${client}`;
-    if (!patternsByUserClient.has(key)) patternsByUserClient.set(key, []);
-    patternsByUserClient.get(key)!.push(p);
+/** The dates of this client's shifts that one cover request actually covers. */
+function datesCoveredForClient(req: CoverRequestScope, clientName: string, clientShiftDates: string[]): string[] {
+  const meta = req.coverage_metadata as {
+    covered_dates?: string[];
+    shifts?: { date?: string; client_name?: string }[];
+  } | null;
+  const client = clientName.trim().toLowerCase();
+  if (Array.isArray(meta?.shifts) && meta!.shifts!.some(s => s?.client_name && s?.date)) {
+    const scoped = new Set(meta!.shifts!
+      .filter(s => (s.client_name || "").trim().toLowerCase() === client && s.date)
+      .map(s => s.date as string));
+    return clientShiftDates.filter(d => scoped.has(d));
   }
-
-  const allUserIds = Array.from(new Set(Array.from(userIdsByClient.values()).flatMap(s => Array.from(s))));
-  if (allUserIds.length === 0) return result;
-
-  const { data: rawHolidays } = await supabase
-    .from("staff_holidays")
-    .select("id, user_id, start_date, end_date, no_cover_required, no_cover_dates")
-    .in("user_id", allUserIds)
-    .eq("status", "approved")
-    .gte("end_date", todayISO)
-    .order("start_date", { ascending: true });
-  // No cover required → no handover needed → doesn't drive tracker banners.
-  const holidays = (rawHolidays || []).filter(h => !h.no_cover_required);
-  if (holidays.length === 0) return result;
-
-  const holidaysByUser = new Map<string, { id: string; start_date: string; end_date: string; no_cover_dates: string[] | null }[]>();
-  for (const h of holidays) {
-    if (!holidaysByUser.has(h.user_id)) holidaysByUser.set(h.user_id, []);
-    holidaysByUser.get(h.user_id)!.push(h);
-  }
-
-  // Each client's soonest relevant leave, keeping the holiday id + this client's
-  // shift patterns so we can work out who is covering it below.
-  interface Best { userId: string; holidayId: string; start_date: string; end_date: string; noCover: Set<string>; clientPatterns: PatternWindow[]; }
-  const bestByClient = new Map<string, Best>();
-  for (const [client, userIds] of userIdsByClient.entries()) {
-    let best: Best | null = null;
-    for (const uid of userIds) {
-      const clientPatterns = patternsByUserClient.get(`${uid}|${client}`) || [];
-      // Holidays are start_date ascending — first one where this client's
-      // shifts still need cover is that user's soonest relevant leave.
-      const h = (holidaysByUser.get(uid) || []).find(hol =>
-        needsCoverInWindow(clientPatterns, hol.start_date, hol.end_date, new Set(hol.no_cover_dates || []))
-      );
-      if (!h) continue;
-      if (!best || h.start_date < best.start_date) {
-        best = { userId: uid, holidayId: h.id, start_date: h.start_date, end_date: h.end_date, noCover: new Set(h.no_cover_dates || []), clientPatterns };
-      }
-    }
-    if (best) bestByClient.set(client, best);
-  }
-  if (bestByClient.size === 0) return result;
-
-  // Approved cover requests for the chosen holidays — used to name who each
-  // client's shifts are being handed over TO during the leave.
-  const bestList = Array.from(bestByClient.values());
-  const holidayIds = Array.from(new Set(bestList.map(b => b.holidayId)));
-  const leaveUserIds = Array.from(new Set(bestList.map(b => b.userId)));
-  const { data: coverRequests } = await supabase
-    .from("staff_requests")
-    .select("user_id, request_type, swap_with_user_id, linked_holiday_id, start_date, end_date, coverage_metadata")
-    .eq("status", "approved")
-    .or(`swap_with_user_id.in.(${leaveUserIds.join(",")}),linked_holiday_id.in.(${holidayIds.join(",")})`);
-
-  const coverUserIds = Array.from(new Set((coverRequests || []).map(r => r.user_id)));
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("user_id, display_name, email")
-    .in("user_id", Array.from(new Set([...leaveUserIds, ...coverUserIds])));
-  const nameByUser = new Map((profiles || []).map(p => [p.user_id, (p.display_name || p.email || "Unknown").trim()]));
-  const emailByUser = new Map((profiles || []).map(p => [p.user_id, p.email || null]));
-
-  const today = new Date(todayISO);
-  for (const [client, best] of bestByClient.entries()) {
-    const daysUntil = differenceInCalendarDays(new Date(best.start_date), today);
-    // This client's in-window shift dates that still need cover.
-    const clientDates = Array.from(new Set(
-      best.clientPatterns.flatMap(p => patternDatesInWindow(p, best.start_date, best.end_date)).filter(d => !best.noCover.has(d))
-    ));
-    const holidayCovers = (coverRequests || []).filter(r =>
-      r.swap_with_user_id === best.userId || r.linked_holiday_id === best.holidayId
-    );
-    const coverNames = Array.from(new Set(
-      holidayCovers
-        .filter(r => coverAppliesToClient(r, client, clientDates))
-        .map(r => nameByUser.get(r.user_id) || "Unknown")
-    ));
-    result.set(client, {
-      userId: best.userId,
-      staffName: nameByUser.get(best.userId) || "Unknown",
-      staffEmail: emailByUser.get(best.userId) ?? null,
-      startDate: best.start_date,
-      endDate: best.end_date,
-      daysUntil,
-      ongoing: daysUntil < 0,
-      coverNames,
-    });
-  }
-
-  return result;
+  const coveredDates = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0
+    ? new Set(meta!.covered_dates!)
+    : null;
+  return clientShiftDates.filter(d => coveredDates ? coveredDates.has(d) : d >= req.start_date && d <= req.end_date);
 }
 
-/** Single-client convenience wrapper around {@link getUpcomingLeaveForClients}. */
-export async function getUpcomingLeaveForClient(clientName: string): Promise<UpcomingClientLeave | null> {
-  const map = await getUpcomingLeaveForClients([clientName]);
-  return map.get(clientName.trim()) ?? null;
+// ---------------------------------------------------------------------------
+// Working out which handovers exist
+// ---------------------------------------------------------------------------
+
+/**
+ * A leave (or departure) window that may need handing over. Built by the
+ * entry points below from staff_holidays / hr_profiles, then turned into
+ * handovers by {@link buildHandovers}.
+ */
+interface LeaveWindow {
+  /** The staff_holidays id, or `departure:<user>` for a leaver. */
+  windowId: string;
+  kind: HandoverKind;
+  holidayId: string | null;
+  userId: string;
+  start: string;
+  end: string;
+  noCoverRequired: boolean;
+  noCoverDates: Set<string>;
+}
+
+interface CoverRow {
+  user_id: string;
+  request_type: string;
+  swap_with_user_id: string | null;
+  linked_holiday_id: string | null;
+  start_date: string;
+  end_date: string;
+  coverage_metadata: unknown;
+}
+
+interface StoredHandover {
+  id: string;
+  client_name: string;
+  kind: string;
+  from_user_id: string;
+  holiday_id: string | null;
+  to_user_id: string | null;
+  status: string;
+  not_required_reason: string | null;
 }
 
 /**
- * Same as {@link getUpcomingLeaveForClients} but scans every approved
- * upcoming/ongoing leave rather than being scoped to a known client list —
- * used to surface clients with pending leave whose handover hasn't been
- * initiated at all yet (so they'd never appear in a client_handover_tasks-
- * driven list).
+ * Stable identity of a handover, with or without a stored row: the same five
+ * things the database's unique index is on. The client is part of it — one
+ * leave at two clients is two handovers.
  */
-export async function getUpcomingLeaveByAllClients(): Promise<Map<string, UpcomingClientLeave>> {
-  const result = new Map<string, UpcomingClientLeave>();
-  const todayISO = new Date().toISOString().slice(0, 10);
+export function handoverKey(client: string, kind: HandoverKind, fromUserId: string, holidayId: string | null, toUserId: string | null): string {
+  return `${client.trim()}|${kind}|${fromUserId}|${holidayId ?? ""}|${toUserId ?? ""}`;
+}
 
-  const { data: rawHolidays } = await supabase
+const todayIso = () => format(new Date(), "yyyy-MM-dd");
+
+function toWindow(h: {
+  id: string; user_id: string; start_date: string; end_date: string;
+  no_cover_required: boolean | null; no_cover_dates: string[] | null;
+}): LeaveWindow {
+  return {
+    windowId: h.id,
+    kind: "leave",
+    holidayId: h.id,
+    userId: h.user_id,
+    start: h.start_date,
+    end: h.end_date,
+    noCoverRequired: !!h.no_cover_required,
+    noCoverDates: new Set(h.no_cover_dates || []),
+  };
+}
+
+const HOLIDAY_COLS = "id, user_id, start_date, end_date, absence_type, no_cover_required, no_cover_dates";
+
+/**
+ * Approved leaves still ahead or under way that could need a handover.
+ * Sickness never does — nobody hands over for it — and a leave marked
+ * no-cover-required is kept (its status reads "not required") only when asked.
+ */
+async function upcomingLeaveWindows(opts: { userIds?: string[]; keepNoCoverRequired?: boolean }): Promise<LeaveWindow[]> {
+  if (opts.userIds && opts.userIds.length === 0) return [];
+  let q = supabase
     .from("staff_holidays")
-    .select("id, user_id, start_date, end_date, no_cover_required, no_cover_dates")
+    .select(HOLIDAY_COLS)
     .eq("status", "approved")
-    .gte("end_date", todayISO)
+    .gte("end_date", todayIso())
+    .neq("absence_type", "sick")
     .order("start_date", { ascending: true });
-  // No cover required → no handover needed → doesn't create placeholder rows.
-  const holidays = (rawHolidays || []).filter(h => !h.no_cover_required);
-  if (holidays.length === 0) return result;
+  if (opts.userIds) q = q.in("user_id", opts.userIds);
+  const { data } = await q;
+  return (data || [])
+    .filter(h => opts.keepNoCoverRequired || !h.no_cover_required)
+    .map(h => toWindow(h as Parameters<typeof toWindow>[0]));
+}
 
-  const userIds = Array.from(new Set(holidays.map(h => h.user_id)));
-  const { data: patterns } = await supabase
-    .from("recurring_shift_patterns")
-    .select(PATTERN_WINDOW_COLS)
-    .in("user_id", userIds);
-
-  const patternsByUser = new Map<string, (PatternWindow & { user_id: string })[]>();
-  ((patterns || []) as (PatternWindow & { user_id: string })[]).forEach(p => {
-    if (!patternsByUser.has(p.user_id)) patternsByUser.set(p.user_id, []);
-    patternsByUser.get(p.user_id)!.push(p);
-  });
-
-  // Approved cover requests for these holidays: shift swaps covering the
-  // person, plus overtime linked to the holiday. Used to name who each
-  // client's tasks are being handed over TO.
-  const holidayIds = holidays.map(h => h.id);
-  const { data: coverRequests } = await supabase
-    .from("staff_requests")
-    .select("user_id, request_type, swap_with_user_id, linked_holiday_id, start_date, end_date, coverage_metadata")
-    .eq("status", "approved")
-    .or(`swap_with_user_id.in.(${userIds.join(",")}),linked_holiday_id.in.(${holidayIds.join(",")})`);
-
-  const coverUserIds = Array.from(new Set((coverRequests || []).map(r => r.user_id)));
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("user_id, display_name, email")
-    .in("user_id", Array.from(new Set([...userIds, ...coverUserIds])));
-  const nameByUser = new Map((profiles || []).map(p => [p.user_id, (p.display_name || p.email || "Unknown").trim()]));
-  const emailByUser = new Map((profiles || []).map(p => [p.user_id, p.email || null]));
-
-  const today = new Date(todayISO);
-  // Holidays are ordered by start_date ascending, so the first holiday that
-  // touches a given client is that client's soonest — later matches are
-  // skipped. Clients whose every in-window shift date is marked no-cover
-  // don't need a handover for that holiday.
-  for (const h of holidays) {
-    const byClient = patternsByClient(patternsByUser.get(h.user_id) || []);
-    const noCover = new Set((h.no_cover_dates as string[] | null) || []);
-    const daysUntil = differenceInCalendarDays(new Date(h.start_date), today);
-    const holidayCovers = (coverRequests || []).filter(r =>
-      r.swap_with_user_id === h.user_id || r.linked_holiday_id === h.id
-    );
-    for (const [client, ps] of byClient.entries()) {
-      if (result.has(client)) continue;
-      if (!needsCoverInWindow(ps, h.start_date, h.end_date, noCover)) continue;
-      // This client's shift dates during the leave that still need cover.
-      const clientDates = Array.from(new Set(
-        ps.flatMap(p => patternDatesInWindow(p, h.start_date, h.end_date)).filter(d => !noCover.has(d))
-      ));
-      const coverNames = Array.from(new Set(
-        holidayCovers
-          .filter(r => coverAppliesToClient(r, client, clientDates))
-          .map(r => nameByUser.get(r.user_id) || "Unknown")
-      ));
-      result.set(client, {
-        userId: h.user_id,
-        staffName: nameByUser.get(h.user_id) || "Unknown",
-        staffEmail: emailByUser.get(h.user_id) ?? null,
-        startDate: h.start_date,
-        endDate: h.end_date,
-        daysUntil,
-        ongoing: daysUntil < 0,
-        coverNames,
-      });
-    }
-  }
-
-  // Departures, built exactly as the holidays above were.
-  //
-  // A last day is a leave window that never ends, so the same derivation
-  // applies: the clients this person still holds, the same per-client tracker,
-  // the same progress. Only people whose handover was actually requested are
-  // included — a dismissal must not surface in a list scanned every morning.
-  //
-  // Holidays are added first and win a contested client: somebody going on
-  // leave next week is a more immediate gap than the same client changing
-  // hands next month.
-  const { data: leavers } = await supabase
+/**
+ * Leavers whose departure handover was requested. A last day is a leave
+ * window that never ends. Anonymous readers (the client's public page) cannot
+ * see hr_profiles, and get none; the tracker there simply shows no departures.
+ */
+async function departureWindows(opts: { userIds?: string[] }): Promise<LeaveWindow[]> {
+  if (opts.userIds && opts.userIds.length === 0) return [];
+  let q = supabase
     .from("hr_profiles")
     .select("user_id, employment_end_date")
     .eq("departure_handover_required", true)
     .not("employment_end_date", "is", null);
+  if (opts.userIds) q = q.in("user_id", opts.userIds);
+  const { data } = await q;
+  return (data || [])
+    .filter(l => l.employment_end_date)
+    .map(l => ({
+      windowId: `departure:${l.user_id}`,
+      kind: "departure" as const,
+      holidayId: null,
+      userId: l.user_id,
+      start: l.employment_end_date as string,
+      end: l.employment_end_date as string,
+      noCoverRequired: false,
+      noCoverDates: new Set<string>(),
+    }));
+}
 
-  const pendingLeavers = (leavers || []).filter(l => l.employment_end_date);
-  if (pendingLeavers.length > 0) {
-    const leaverIds = pendingLeavers.map(l => l.user_id);
-    const [{ data: leaverPatterns }, { data: leaverProfiles }] = await Promise.all([
-      supabase.from("recurring_shift_patterns").select(PATTERN_WINDOW_COLS).in("user_id", leaverIds),
-      supabase.from("profiles").select("user_id, display_name, email").in("user_id", leaverIds),
-    ]);
+/** A leave that still needs handing over, or has passed but whose handover rows remain. */
+export interface WindowBuildResult {
+  handovers: ClientHandover[];
+  /** windowId → whether the person had any client shifts in the window at all (before no-cover dates). */
+  hadClients: Map<string, boolean>;
+}
 
-    const byLeaver = new Map<string, (PatternWindow & { user_id: string })[]>();
-    ((leaverPatterns || []) as (PatternWindow & { user_id: string })[]).forEach(p => {
-      if (!byLeaver.has(p.user_id)) byLeaver.set(p.user_id, []);
-      byLeaver.get(p.user_id)!.push(p);
-    });
+/**
+ * Turn leave windows into handovers: for each window, the clients the person
+ * has shifts at that still need cover, and for each client the colleagues
+ * whose approved cover touches it — one handover per (client, coverer), or one
+ * "cover not assigned yet" handover when nobody covers it. Then stored rows
+ * (the checklist and any "not required" decision) are laid over the top.
+ *
+ * `clientFilter` limits which clients are produced (the per-client tracker);
+ * the windows themselves are whatever the caller chose.
+ */
+async function buildHandovers(
+  windows: LeaveWindow[],
+  opts: { clientFilter?: Set<string>; includeStale?: boolean } = {},
+): Promise<WindowBuildResult> {
+  const hadClients = new Map<string, boolean>();
+  if (windows.length === 0 && !opts.includeStale) return { handovers: [], hadClients };
 
-    for (const l of pendingLeavers) {
-      const lastDay = l.employment_end_date as string;
-      const byClient = patternsByClient(byLeaver.get(l.user_id) || []);
-      const daysUntil = differenceInCalendarDays(new Date(lastDay), today);
-      const prof = (leaverProfiles || []).find(p => p.user_id === l.user_id);
+  const today = todayIso();
+  const userIds = Array.from(new Set(windows.map(w => w.userId)));
 
-      for (const [client, ps] of byClient.entries()) {
-        if (result.has(client)) continue;
-        // Only clients they are still on between now and their last day.
-        if (patternDatesInWindow(ps[0], todayISO, lastDay).length === 0 &&
-            !ps.some(p => patternDatesInWindow(p, todayISO, lastDay).length > 0)) continue;
+  // The person's patterns, at every client (the filter is applied per window).
+  const { data: patternRows } = userIds.length > 0
+    ? await supabase.from("recurring_shift_patterns").select(PATTERN_WINDOW_COLS).in("user_id", userIds)
+    : { data: [] as UserPattern[] };
+  const patternsByUser = new Map<string, PatternWindow[]>();
+  for (const p of (patternRows || []) as UserPattern[]) {
+    if (!p.user_id) continue;
+    if (!patternsByUser.has(p.user_id)) patternsByUser.set(p.user_id, []);
+    patternsByUser.get(p.user_id)!.push(p);
+  }
 
-        // Whoever already has a pattern on this client starting after the
-        // leaver's last day is the person taking it on — the rota records the
-        // succession, so nobody has to type it twice.
-        const { data: successors } = await supabase
+  // Approved covers for these people, and anything explicitly linked to these
+  // leaves. Only shift cover counts: a departure row also names a colleague in
+  // swap_with_user_id (the successor), and an overtime row can too, and
+  // neither is somebody covering this leave.
+  const holidayIds = windows.map(w => w.holidayId).filter((id): id is string => !!id);
+  const orParts: string[] = [];
+  if (userIds.length > 0) orParts.push(`and(request_type.eq.shift_swap,swap_with_user_id.in.(${userIds.join(",")}))`);
+  if (holidayIds.length > 0) orParts.push(`linked_holiday_id.in.(${holidayIds.join(",")})`);
+  const { data: coverRows } = orParts.length > 0
+    ? await supabase
+        .from("staff_requests")
+        .select("user_id, request_type, swap_with_user_id, linked_holiday_id, start_date, end_date, coverage_metadata")
+        .eq("status", "approved")
+        .or(orParts.join(","))
+    : { data: [] as CoverRow[] };
+  const covers = ((coverRows || []) as CoverRow[]).filter(r => r.request_type !== "departure" && r.request_type !== "sickness");
+
+  // Who takes a leaver's clients on: whoever has a pattern there that starts
+  // after the last day. The rota records the succession, so nobody types it twice.
+  const departures = windows.filter(w => w.kind === "departure");
+  const successorsByClient = new Map<string, Set<string>>();
+  if (departures.length > 0) {
+    const leaverClients = Array.from(new Set(departures.flatMap(w =>
+      Array.from(patternsByClient(patternsByUser.get(w.userId) || []).keys()))));
+    const earliestLastDay = departures.map(w => w.end).sort()[0];
+    const { data: successorRows } = leaverClients.length > 0
+      ? await supabase
           .from("recurring_shift_patterns")
-          .select("user_id")
-          .eq("client_name", client)
-          .gt("start_date", lastDay);
-        const successorIds = Array.from(new Set((successors || [])
-          .map(r => r.user_id).filter(id => id !== l.user_id)));
-        let coverNames: string[] = [];
-        if (successorIds.length > 0) {
-          const { data: sp } = await supabase
-            .from("profiles").select("user_id, display_name, email").in("user_id", successorIds);
-          coverNames = (sp || []).map(p => (p.display_name || p.email || "Unknown").trim());
-        }
-
-        result.set(client, {
-          kind: "departure",
-          userId: l.user_id,
-          staffName: (prof?.display_name || prof?.email || "Unknown").trim(),
-          staffEmail: prof?.email ?? null,
-          startDate: lastDay,
-          endDate: lastDay,
-          daysUntil,
-          ongoing: daysUntil < 0,
-          coverNames,
-        });
-      }
+          .select("user_id, client_name, start_date")
+          .in("client_name", leaverClients)
+          .gt("start_date", earliestLastDay)
+      : { data: [] as { user_id: string | null; client_name: string | null; start_date: string }[] };
+    for (const r of successorRows || []) {
+      const client = (r.client_name || "").trim();
+      if (!client || !r.user_id) continue;
+      if (!successorsByClient.has(client)) successorsByClient.set(client, new Set());
+      successorsByClient.get(client)!.add(`${r.user_id}|${r.start_date}`);
     }
   }
 
+  // Derive.
+  interface Derived {
+    window: LeaveWindow; client: string; toUserId: string | null; coveredDates: string[];
+  }
+  const derived: Derived[] = [];
+  for (const w of windows) {
+    const byClient = patternsByClient(patternsByUser.get(w.userId) || []);
+    let anyClient = false;
+    for (const [client, ps] of byClient.entries()) {
+      if (opts.clientFilter && !opts.clientFilter.has(client)) continue;
+      const windowStart = w.kind === "departure" ? (today < w.end ? today : w.end) : w.start;
+      const allDates = Array.from(new Set(ps.flatMap(p => patternDatesInWindow(p, windowStart, w.end))));
+      if (allDates.length === 0) continue;
+      anyClient = true;
+      const clientDates = allDates.filter(d => !w.noCoverDates.has(d)).sort();
+      if (clientDates.length === 0) continue; // every shift marked no-cover
+
+      if (w.kind === "departure") {
+        const successors = Array.from(successorsByClient.get(client) || [])
+          .map(s => ({ userId: s.split("|")[0], start: s.split("|")[1] }))
+          .filter(s => s.userId !== w.userId && s.start > w.end)
+          .map(s => s.userId);
+        const unique = Array.from(new Set(successors));
+        if (unique.length === 0) derived.push({ window: w, client, toUserId: null, coveredDates: clientDates });
+        for (const uid of unique) derived.push({ window: w, client, toUserId: uid, coveredDates: clientDates });
+        continue;
+      }
+
+      const forThisLeave = covers.filter(r =>
+        (r.swap_with_user_id === w.userId || r.linked_holiday_id === w.holidayId)
+        && r.user_id !== w.userId
+        && coverAppliesToClient(r, client, clientDates));
+      const datesByCoverer = new Map<string, Set<string>>();
+      for (const r of forThisLeave) {
+        if (!datesByCoverer.has(r.user_id)) datesByCoverer.set(r.user_id, new Set());
+        datesCoveredForClient(r, client, clientDates).forEach(d => datesByCoverer.get(r.user_id)!.add(d));
+      }
+      if (datesByCoverer.size === 0) {
+        derived.push({ window: w, client, toUserId: null, coveredDates: clientDates });
+      }
+      for (const [uid, dates] of datesByCoverer.entries()) {
+        derived.push({ window: w, client, toUserId: uid, coveredDates: Array.from(dates).sort() });
+      }
+    }
+    hadClients.set(w.windowId, anyClient);
+  }
+
+  // Stored rows: for these leaves and leavers, plus — for a per-client page —
+  // every row at the client, so stale ones can be shown and cleaned up.
+  const storedQueries: Promise<{ data: StoredHandover[] | null }>[] = [];
+  if (holidayIds.length > 0) {
+    storedQueries.push(supabase.from("client_handovers").select("*").in("holiday_id", holidayIds) as unknown as Promise<{ data: StoredHandover[] | null }>);
+  }
+  const leaverIds = departures.map(w => w.userId);
+  if (leaverIds.length > 0) {
+    storedQueries.push(supabase.from("client_handovers").select("*").eq("kind", "departure").in("from_user_id", leaverIds) as unknown as Promise<{ data: StoredHandover[] | null }>);
+  }
+  if (opts.includeStale && opts.clientFilter && opts.clientFilter.size > 0) {
+    storedQueries.push(supabase.from("client_handovers").select("*").in("client_name", Array.from(opts.clientFilter)) as unknown as Promise<{ data: StoredHandover[] | null }>);
+  }
+  const storedById = new Map<string, StoredHandover>();
+  for (const { data } of await Promise.all(storedQueries)) {
+    for (const row of data || []) storedById.set(row.id, row);
+  }
+  const stored = Array.from(storedById.values());
+  const storedByKey = new Map(stored.map(s => [handoverKey(s.client_name, s.kind as HandoverKind, s.from_user_id, s.holiday_id, s.to_user_id), s]));
+
+  // Tasks per stored handover.
+  const storedIds = stored.map(s => s.id);
+  const { data: taskRows } = storedIds.length > 0
+    ? await supabase.from("client_handover_tasks").select("handover_id, progress, target_date").in("handover_id", storedIds)
+    : { data: [] as { handover_id: string | null; progress: number | null; target_date: string | null }[] };
+  const agg = new Map<string, { count: number; done: number; sum: number; latest: string | null }>();
+  for (const t of taskRows || []) {
+    if (!t.handover_id) continue;
+    const cur = agg.get(t.handover_id) || { count: 0, done: 0, sum: 0, latest: null };
+    cur.count += 1;
+    cur.sum += t.progress ?? 0;
+    if ((t.progress ?? 0) >= 100) cur.done += 1;
+    if (t.target_date && (!cur.latest || t.target_date > cur.latest)) cur.latest = t.target_date;
+    agg.set(t.handover_id, cur);
+  }
+
+  // Stale stored rows need their leave's dates for display; they may be past.
+  const derivedKeys = new Set(derived.map(d => handoverKey(d.client, d.window.kind, d.window.userId, d.window.holidayId, d.toUserId)));
+  const staleRows = stored.filter(s => !derivedKeys.has(handoverKey(s.client_name, s.kind as HandoverKind, s.from_user_id, s.holiday_id, s.to_user_id)));
+  const windowById = new Map(windows.map(w => [w.windowId, w]));
+  const staleHolidayIds = Array.from(new Set(staleRows.map(s => s.holiday_id).filter((id): id is string => !!id && !windowById.has(id))));
+  const { data: staleHolidays } = staleHolidayIds.length > 0
+    ? await supabase.from("staff_holidays").select("id, user_id, start_date, end_date").in("id", staleHolidayIds)
+    : { data: [] as { id: string; user_id: string; start_date: string; end_date: string }[] };
+  const staleHolidayById = new Map((staleHolidays || []).map(h => [h.id, h]));
+
+  // Names and emails for everyone involved.
+  const partyIds = new Set<string>();
+  derived.forEach(d => { partyIds.add(d.window.userId); if (d.toUserId) partyIds.add(d.toUserId); });
+  stored.forEach(s => { partyIds.add(s.from_user_id); if (s.to_user_id) partyIds.add(s.to_user_id); });
+  const { data: profiles } = partyIds.size > 0
+    ? await supabase.from("profiles").select("user_id, display_name, email").in("user_id", Array.from(partyIds))
+    : { data: [] as { user_id: string; display_name: string | null; email: string | null }[] };
+  const profileById = new Map((profiles || []).map(p => [p.user_id, p]));
+  const party = (userId: string): HandoverParty => {
+    const p = profileById.get(userId);
+    return { userId, name: (p?.display_name || p?.email || "Unknown").trim(), email: p?.email ?? null };
+  };
+
+  const todayDate = parseISO(today);
+  const make = (
+    client: string, kind: HandoverKind, fromUserId: string, holidayId: string | null, toUserId: string | null,
+    start: string, end: string, isDerived: boolean, coveredDates: string[],
+  ): ClientHandover => {
+    const key = handoverKey(client, kind, fromUserId, holidayId, toUserId);
+    const row = storedByKey.get(key);
+    const a = row ? agg.get(row.id) : undefined;
+    const daysUntil = differenceInCalendarDays(parseISO(start), todayDate);
+    return {
+      key,
+      id: row?.id ?? null,
+      client,
+      kind,
+      from: party(fromUserId),
+      to: toUserId ? party(toUserId) : null,
+      holidayId,
+      startDate: start,
+      endDate: end,
+      daysUntil,
+      ongoing: daysUntil < 0,
+      requirement: row?.status === "not_required" ? "not_required" : "required",
+      notRequiredReason: row?.not_required_reason ?? null,
+      derived: isDerived,
+      taskCount: a?.count ?? 0,
+      completedCount: a?.done ?? 0,
+      avgProgress: a && a.count > 0 ? Math.round(a.sum / a.count) : 0,
+      latestTargetDate: a?.latest ?? null,
+      coveredDates,
+    };
+  };
+
+  const handovers: ClientHandover[] = derived.map(d =>
+    make(d.client, d.window.kind, d.window.userId, d.window.holidayId, d.toUserId, d.window.start, d.window.end, true, d.coveredDates));
+
+  for (const s of staleRows) {
+    // A stale row is one the rota no longer produces: only shown on the
+    // per-client tracker, where it can be moved or cleared.
+    if (!opts.includeStale) continue;
+    if (opts.clientFilter && !opts.clientFilter.has(s.client_name)) continue;
+    const kind = s.kind as HandoverKind;
+    const w = s.holiday_id ? windowById.get(s.holiday_id) : windowById.get(`departure:${s.from_user_id}`);
+    const hol = s.holiday_id ? staleHolidayById.get(s.holiday_id) : undefined;
+    const start = w?.start ?? hol?.start_date ?? today;
+    const end = w?.end ?? hol?.end_date ?? start;
+    handovers.push(make(s.client_name, kind, s.from_user_id, s.holiday_id, s.to_user_id, start, end, false, []));
+  }
+
+  return { handovers, hadClients };
+}
+
+const partySort = (a: ClientHandover, b: ClientHandover) => {
+  // Soonest leave first; within a leave, coverers by name, unassigned last.
+  if (a.startDate !== b.startDate) return a.startDate < b.startDate ? -1 : 1;
+  if (a.from.userId !== b.from.userId) return a.from.name.localeCompare(b.from.name);
+  if (!a.to !== !b.to) return a.to ? -1 : 1;
+  return (a.to?.name || "").localeCompare(b.to?.name || "") || a.client.localeCompare(b.client);
+};
+
+/** Group handovers by the leave (or departure) they belong to, soonest first. */
+export function groupHandoversByLeave(handovers: ClientHandover[]): LeaveHandoverGroup[] {
+  const groups = new Map<string, LeaveHandoverGroup>();
+  for (const h of [...handovers].sort(partySort)) {
+    const key = `${h.kind}|${h.from.userId}|${h.holidayId ?? ""}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key, kind: h.kind, from: h.from, holidayId: h.holidayId,
+        startDate: h.startDate, endDate: h.endDate, daysUntil: h.daysUntil, ongoing: h.ongoing, handovers: [],
+      });
+    }
+    groups.get(key)!.handovers.push(h);
+  }
+  return Array.from(groups.values());
+}
+
+// ---------------------------------------------------------------------------
+// Entry points
+// ---------------------------------------------------------------------------
+
+/**
+ * Every handover at one client: each upcoming or ongoing leave of anyone with
+ * shifts there, per coverer; departures likewise; plus stale stored rows
+ * (a leave that has passed, or a cover that changed) so they can be moved or
+ * cleared. This is what the client's tracker page shows.
+ */
+export async function getClientHandovers(clientName: string): Promise<ClientHandover[]> {
+  const client = (clientName || "").trim();
+  if (!client) return [];
+  const { data: patterns } = await supabase
+    .from("recurring_shift_patterns")
+    .select("user_id")
+    .eq("client_name", client)
+    .or(`end_date.is.null,end_date.gte.${todayIso()}`);
+  const userIds = Array.from(new Set((patterns || []).map(p => p.user_id).filter((id): id is string => !!id)));
+  const [leaves, departures] = await Promise.all([
+    upcomingLeaveWindows({ userIds }),
+    departureWindows({ userIds }),
+  ]);
+  const { handovers } = await buildHandovers([...leaves, ...departures], { clientFilter: new Set([client]), includeStale: true });
+  return handovers.sort(partySort);
+}
+
+/**
+ * Every handover the rota currently calls for, across all clients: the
+ * dashboard's list of what is outstanding before people go.
+ */
+export async function getAllHandovers(): Promise<ClientHandover[]> {
+  const [leaves, departures] = await Promise.all([
+    upcomingLeaveWindows({}),
+    departureWindows({}),
+  ]);
+  const { handovers } = await buildHandovers([...leaves, ...departures]);
+  return handovers.sort(partySort);
+}
+
+/** Per-client status from a window's handovers. */
+function clientStatuses(handovers: ClientHandover[]): ClientHandoverStatus[] {
+  const byClient = new Map<string, ClientHandover[]>();
+  for (const h of handovers) {
+    if (!byClient.has(h.client)) byClient.set(h.client, []);
+    byClient.get(h.client)!.push(h);
+  }
+  return Array.from(byClient.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([client, hs]) => {
+      const required = hs.filter(h => h.requirement === "required");
+      const taskCount = required.reduce((s, h) => s + h.taskCount, 0);
+      const avgProgress = required.length > 0
+        ? Math.round(required.reduce((s, h) => s + h.avgProgress, 0) / required.length)
+        : 0;
+      const notRequired = required.length === 0;
+      const ready = !notRequired && required.every(h => h.taskCount > 0 && h.avgProgress >= 100);
+      return { client, avgProgress, taskCount, ready, notRequired, handovers: hs };
+    });
+}
+
+function overallStatus(clients: ClientHandoverStatus[]): HandoverStatus {
+  if (clients.length === 0) return "none";
+  if (clients.every(c => c.notRequired)) return "not_required";
+  const live = clients.filter(c => !c.notRequired);
+  if (live.every(c => c.ready)) return "complete";
+  const anyProgress = live.some(c => c.handovers.some(h => h.requirement === "required" && h.avgProgress > 0));
+  return anyProgress ? "in_progress" : "not_started";
+}
+
+function statusForWindow(handovers: ClientHandover[], noCoverRequired: boolean, hadClients: boolean): HolidayHandoverStatus {
+  if (noCoverRequired) return { status: "not_required", clients: [] };
+  const clients = clientStatuses(handovers.filter(h => h.derived));
+  if (clients.length === 0) {
+    // Distinguish "no clients at all" from "every client's shifts are marked
+    // no-cover" so the UI can say handover isn't required rather than N/A.
+    return { status: hadClients ? "not_required" : "none", clients: [] };
+  }
+  return { status: overallStatus(clients), clients };
+}
+
+/** Find the staff_holidays row a request or leave list refers to. */
+async function resolveHolidayWindow(
+  userId: string, startDate: string, endDate: string, holidayId?: string | null,
+): Promise<LeaveWindow> {
+  let row: Parameters<typeof toWindow>[0] | null = null;
+  if (holidayId) {
+    const { data } = await supabase.from("staff_holidays").select(HOLIDAY_COLS).eq("id", holidayId).maybeSingle();
+    row = (data as Parameters<typeof toWindow>[0] | null) ?? null;
+  }
+  if (!row) {
+    const { data } = await supabase
+      .from("staff_holidays").select(HOLIDAY_COLS)
+      .eq("user_id", userId).eq("start_date", startDate).eq("end_date", endDate)
+      .order("status", { ascending: true }) // 'approved' before 'pending'
+      .limit(1);
+    row = ((data || [])[0] as Parameters<typeof toWindow>[0] | undefined) ?? null;
+  }
+  if (row) return toWindow(row);
+  // No row yet (a request still pending): derive from the dates alone.
+  return {
+    windowId: `pending:${userId}:${startDate}:${endDate}`, kind: "leave", holidayId: null, userId,
+    start: startDate, end: endDate, noCoverRequired: false, noCoverDates: new Set(),
+  };
+}
+
+/** Handover status for a single staff member's leave window. */
+export async function computeHolidayHandoverStatus(
+  userId: string,
+  startDate: string,
+  endDate: string,
+  opts?: { noCoverRequired?: boolean; noCoverDates?: string[] | null; holidayId?: string | null }
+): Promise<HolidayHandoverStatus> {
+  if (opts?.noCoverRequired) return { status: "not_required", clients: [] };
+  const w = await resolveHolidayWindow(userId, startDate, endDate, opts?.holidayId);
+  if (opts?.noCoverDates) w.noCoverDates = new Set(opts.noCoverDates);
+  const { handovers, hadClients } = await buildHandovers([w]);
+  return statusForWindow(handovers, false, hadClients.get(w.windowId) ?? false);
+}
+
+export interface HolidayForHandoverBatch {
+  /** Caller's own id for the row; also tried as the staff_holidays id. */
+  id: string;
+  userId: string;
+  startDate: string;
+  endDate: string;
+  /** staff_holidays.no_cover_required — no cover means no handover is needed. */
+  noCoverRequired?: boolean;
+  /** staff_holidays.no_cover_dates — per-date no-cover; a client whose every
+   * in-window shift date is listed needs no handover. */
+  noCoverDates?: string[] | null;
+}
+
+/**
+ * Bulk variant for list views (schedule grid, holiday managers) — one pass
+ * over the rota for every leave in the list, keyed by the caller's ids.
+ */
+export async function computeHolidayHandoverStatusBatch(
+  holidays: HolidayForHandoverBatch[]
+): Promise<Map<string, HolidayHandoverStatus>> {
+  const result = new Map<string, HolidayHandoverStatus>();
+  if (holidays.length === 0) return result;
+
+  // Match each input to its staff_holidays row, so stored handovers are found:
+  // by id when the caller passed one, otherwise by person and dates.
+  const userIds = Array.from(new Set(holidays.map(h => h.userId)));
+  const { data: rows } = await supabase
+    .from("staff_holidays").select(HOLIDAY_COLS)
+    .in("user_id", userIds)
+    .eq("status", "approved");
+  const byId = new Map((rows || []).map(r => [r.id, r]));
+  const byUserDates = new Map((rows || []).map(r => [`${r.user_id}|${r.start_date}|${r.end_date}`, r]));
+
+  const windows: LeaveWindow[] = [];
+  const windowIdByInput = new Map<string, string>();
+  for (const h of holidays) {
+    if (h.noCoverRequired) continue;
+    const row = byId.get(h.id) ?? byUserDates.get(`${h.userId}|${h.startDate}|${h.endDate}`);
+    const w: LeaveWindow = row
+      ? toWindow(row as Parameters<typeof toWindow>[0])
+      : { windowId: `pending:${h.id}`, kind: "leave", holidayId: null, userId: h.userId, start: h.startDate, end: h.endDate, noCoverRequired: false, noCoverDates: new Set() };
+    if (h.noCoverDates) w.noCoverDates = new Set(h.noCoverDates);
+    windowIdByInput.set(h.id, w.windowId);
+    if (!windows.some(x => x.windowId === w.windowId)) windows.push(w);
+  }
+
+  const { handovers, hadClients } = await buildHandovers(windows);
+  const byWindow = new Map<string, ClientHandover[]>();
+  for (const hv of handovers) {
+    const wid = hv.holidayId ?? `pending:${hv.from.userId}`;
+    if (!byWindow.has(wid)) byWindow.set(wid, []);
+    byWindow.get(wid)!.push(hv);
+  }
+
+  for (const h of holidays) {
+    if (h.noCoverRequired) { result.set(h.id, { status: "not_required", clients: [] }); continue; }
+    const wid = windowIdByInput.get(h.id)!;
+    result.set(h.id, statusForWindow(byWindow.get(wid) || [], false, hadClients.get(wid) ?? false));
+  }
   return result;
 }
+
+/**
+ * "2 of 3 clients ready" — spelled-out multi-client progress. One holiday can
+ * need several handovers (one per client, one per coverer), so a bare status
+ * label undersells what's outstanding.
+ */
+export function handoverClientsSummary(s: HolidayHandoverStatus): string | null {
+  if (s.clients.length <= 1) return null;
+  const ready = s.clients.filter(c => c.ready || c.notRequired).length;
+  return `${ready} of ${s.clients.length} clients ready`;
+}
+
+// ---------------------------------------------------------------------------
+// Writing
+// ---------------------------------------------------------------------------
+
+/**
+ * The stored row for a handover, created on first use. Nothing is written
+ * for a handover nobody has acted on; the first task or the first decision
+ * creates the row, and the unique index makes two simultaneous first uses
+ * collapse into one.
+ */
+export async function ensureHandoverRow(h: Pick<ClientHandover, "client" | "kind" | "from" | "holidayId" | "to">): Promise<string> {
+  const match = () => supabase
+    .from("client_handovers")
+    .select("id")
+    .eq("client_name", h.client.trim())
+    .eq("kind", h.kind)
+    .eq("from_user_id", h.from.userId)
+    .filter("holiday_id", h.holidayId ? "eq" : "is", h.holidayId ?? null)
+    .filter("to_user_id", h.to ? "eq" : "is", h.to?.userId ?? null)
+    .limit(1);
+  const { data: existing } = await match();
+  if (existing && existing.length > 0) return existing[0].id;
+  const { data: inserted, error } = await supabase
+    .from("client_handovers")
+    .insert({
+      client_name: h.client.trim(),
+      kind: h.kind,
+      from_user_id: h.from.userId,
+      holiday_id: h.holidayId,
+      to_user_id: h.to?.userId ?? null,
+    })
+    .select("id")
+    .single();
+  if (!error && inserted) return inserted.id;
+  // 23505: somebody else created it a moment ago. Read it back.
+  if (error && (error as { code?: string }).code === "23505") {
+    const { data: again } = await match();
+    if (again && again.length > 0) return again[0].id;
+  }
+  throw error ?? new Error("Could not create the handover");
+}
+
+/** Mark a handover required or not required, creating its row if needed. */
+export async function setHandoverRequirement(
+  h: Pick<ClientHandover, "client" | "kind" | "from" | "holidayId" | "to">,
+  requirement: HandoverRequirement,
+  reason: string | null,
+  changedBy: string | null,
+): Promise<void> {
+  const id = await ensureHandoverRow(h);
+  const { error } = await supabase
+    .from("client_handovers")
+    .update({
+      status: requirement,
+      not_required_reason: requirement === "not_required" ? (reason?.trim() || null) : null,
+      status_changed_by: changedBy,
+      status_changed_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * Move a checklist to another handover of the same leave — the case is a
+ * checklist prepared before any cover was assigned, which belongs to the
+ * coverer once there is one. The source row goes; its tasks (and their
+ * comments) keep their ids.
+ */
+export async function moveHandoverTasks(fromHandoverId: string, target: Pick<ClientHandover, "client" | "kind" | "from" | "holidayId" | "to">): Promise<void> {
+  const targetId = await ensureHandoverRow(target);
+  if (targetId === fromHandoverId) return;
+  const { error } = await supabase.from("client_handover_tasks").update({ handover_id: targetId }).eq("handover_id", fromHandoverId);
+  if (error) throw error;
+  const { error: delError } = await supabase.from("client_handovers").delete().eq("id", fromHandoverId);
+  if (delError) throw delError;
+}
+
+// ---------------------------------------------------------------------------
+// Display helpers
+// ---------------------------------------------------------------------------
 
 export const HANDOVER_STATUS_LABEL: Record<HandoverStatus, string> = {
   none: "No handover needed",
@@ -661,3 +951,7 @@ export const HANDOVER_STATUS_TONE: Record<HandoverStatus, "success" | "warning" 
   in_progress: "warning",
   complete: "success",
 };
+
+/** "Funmi Otitoju → Mercy", or "→ cover not assigned yet". */
+export const handoverTitle = (h: Pick<ClientHandover, "from" | "to">) =>
+  `${h.from.name} → ${h.to ? h.to.name : "cover not assigned yet"}`;

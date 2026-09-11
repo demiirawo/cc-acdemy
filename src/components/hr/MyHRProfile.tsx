@@ -35,19 +35,16 @@ import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItemsManager";
 import { allTrainingUpToDate } from "@/lib/trainingStatus";
-import { computeHolidayHandoverStatus, patternDatesInWindow, PATTERN_WINDOW_COLS, type PatternWindow, coverAppliesToClient } from "@/lib/handoverStatus";
+import { getAllHandovers, groupHandoversByLeave, type ClientHandover, type LeaveHandoverGroup } from "@/lib/handoverStatus";
 import { groupByStage, orderStages } from "@/lib/onboardingStages";
 import { annualAllowanceFor, HOLIDAY_ALLOWANCE_FIRST_YEAR } from "@/lib/holidayAllowance";
+import { patternOccursOn, resolveDayKind } from "@/lib/patternSchedule";
+import { computeShiftBonus, missedSummary, type CoverRequest, type ShiftBonusConfig } from "@/lib/shiftBonus";
+import { unpaidDaysInMonth } from "@/lib/unpaidDays";
 interface UserProfile {
   user_id: string;
   display_name: string | null;
   email: string | null;
-}
-interface HandoverClientSummary {
-  client: string;
-  avgProgress: number;
-  taskCount: number;
-  latestTarget: string | null;
 }
 interface MonthlyPayPreview {
   month: Date;
@@ -56,7 +53,7 @@ interface MonthlyPayPreview {
   dailyRate: number;
   bonuses: number;
   deductions: number;
-  bonusItems: Array<{ label: string; amount: number; description: string | null; recurring: boolean }>;
+  bonusItems: Array<{ label: string; amount: number; description: string | null; recurring: boolean; kind?: 'shift' }>;
   deductionItems: Array<{ label: string; amount: number; description: string | null }>;
   overtimeDays: number;
   overtimePay: number;
@@ -83,6 +80,8 @@ interface MonthlyPayPreview {
   };
   unpaidHolidayDeduction: number;
   unpaidHolidayDays: number;
+  /** Of unpaidHolidayDays, the ones that were sickness. */
+  unpaidSickDays: number;
   proRataDeduction: number;
   proRataWorkingDays: number;
   proRataTotalWorkingDays: number;
@@ -92,6 +91,8 @@ interface MonthlyPayPreview {
 }
 interface HRProfile {
   id: string;
+  user_id: string;
+  employment_end_date?: string | null;
   employee_id: string | null;
   job_title: string | null;
   department: string | null;
@@ -142,6 +143,8 @@ interface RecurringShiftPattern {
   end_date: string | null;
   is_overtime: boolean;
   overtime_subtype: string | null;
+  recurrence_interval: string | null;
+  client_name: string;
 }
 interface ShiftPatternException {
   id: string;
@@ -292,6 +295,10 @@ const REQUEST_TYPES: Record<string, {
     label: 'Unpaid Holiday',
     icon: 'calendar'
   },
+  'sickness': {
+    label: 'Sickness Absence',
+    icon: 'calendar'
+  },
   'shift_swap': {
     label: 'Shift Cover',
     icon: 'refresh'
@@ -436,6 +443,10 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   const [staffRequests, setStaffRequests] = useState<StaffRequest[]>([]);
   const [coveredUserPatterns, setCoveredUserPatterns] = useState<RecurringShiftPattern[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
+  const [shiftBonuses, setShiftBonuses] = useState<ShiftBonusConfig[]>([]);
+  // Cover other admins gave this person. Their own requests only show the
+  // cover they gave; the shift bonus needs the cover they received.
+  const [coverOfMe, setCoverOfMe] = useState<CoverRequest[]>([]);
   // This month's actual bonus pot, so the share figures below are the real
   // money rather than a worked example. null = no pot set for the month yet.
   const [bonusPotGbp, setBonusPotGbp] = useState<number | null>(null);
@@ -446,8 +457,10 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   const [trainingRecords, setTrainingRecords] = useState<{ training_item_id: string; completed_date: string }[]>([]);
   const [hasContractorDetails, setHasContractorDetails] = useState(false);
   const [scheduleClients, setScheduleClients] = useState<string[]>([]);
-  const [ownHandovers, setOwnHandovers] = useState<HandoverClientSummary[]>([]);
-  const [coveringHandovers, setCoveringHandovers] = useState<(HandoverClientSummary & { coveredName: string })[]>([]);
+  // This person's own handovers, one group per leave (or their departure), and
+  // the ones they are on the receiving end of as cover or successor.
+  const [ownHandovers, setOwnHandovers] = useState<LeaveHandoverGroup[]>([]);
+  const [coveringHandovers, setCoveringHandovers] = useState<ClientHandover[]>([]);
   const [nextHoliday, setNextHoliday] = useState<{ start_date: string; end_date: string; noCoverRequired: boolean } | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set([format(new Date(), 'yyyy-MM')]));
   const [documentPreview, setDocumentPreview] = useState<{
@@ -787,7 +800,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       // Fetch recurring patterns for this user
       const {
         data: patterns
-      } = await supabase.from('recurring_shift_patterns').select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, is_overtime, overtime_subtype, recurrence_interval').eq('user_id', targetUserId);
+      } = await supabase.from('recurring_shift_patterns').select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, is_overtime, overtime_subtype, recurrence_interval, client_name').eq('user_id', targetUserId);
       setRecurringPatterns(patterns || []);
 
       // Fetch pattern exceptions
@@ -819,7 +832,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       if (coveredUserIds.length > 0) {
         const { data: coveredPatterns } = await supabase
           .from('recurring_shift_patterns')
-          .select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, is_overtime, overtime_subtype')
+          .select('id, user_id, days_of_week, start_time, end_time, start_date, end_date, is_overtime, overtime_subtype, recurrence_interval, client_name')
           .in('user_id', coveredUserIds);
         setCoveredUserPatterns(coveredPatterns || []);
       } else {
@@ -831,6 +844,20 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         data: bonusesData
       } = await supabase.from('recurring_bonuses').select('*').eq('user_id', targetUserId);
       setRecurringBonuses(bonusesData || []);
+
+      // The shift bonus is worked out here exactly as payroll works it out —
+      // staff raise their invoice from this view — so it needs the same inputs:
+      // the bonus itself, and the shifts other admins covered for this person.
+      const { data: shiftBonusData } = await (supabase as any)
+        .from('shift_bonuses').select('*').eq('user_id', targetUserId);
+      setShiftBonuses((shiftBonusData as ShiftBonusConfig[]) || []);
+      const { data: coverOfMeData } = await supabase
+        .from('staff_requests')
+        .select('user_id, request_type, swap_with_user_id, start_date, end_date, coverage_metadata, status')
+        .eq('request_type', 'shift_swap')
+        .eq('status', 'approved')
+        .eq('swap_with_user_id', targetUserId);
+      setCoverOfMe((coverOfMeData as CoverRequest[]) || []);
 
       // Fetch onboarding form data
       const {
@@ -922,127 +949,37 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       ).sort((a, b) => a.localeCompare(b));
       setScheduleClients(clientNames);
 
-      // Handover tracker relevant to this staff member: handover for THEIR next
-      // upcoming/current approved leave (must be complete before it starts —
-      // uses the shared status utility so this matches the definition used on
-      // the request page, schedule, admin lists, and reminder emails), plus any
-      // clients they're currently covering for someone else's approved holiday
-      // (so a covering staff member can jump straight to the tracker for the
-      // person they're covering).
-      const aggregateHandovers = (tasks: { client_name: string; progress: number | null; target_date: string | null }[]) => {
-        const grouped = new Map<string, { sum: number; count: number; latest: string | null }>();
-        for (const t of tasks) {
-          if (!t.client_name) continue;
-          const cur = grouped.get(t.client_name) || { sum: 0, count: 0, latest: null };
-          cur.sum += t.progress ?? 0;
-          cur.count += 1;
-          if (t.target_date && (!cur.latest || t.target_date > cur.latest)) cur.latest = t.target_date;
-          grouped.set(t.client_name, cur);
-        }
-        return grouped;
-      };
+      // Handovers relevant to this staff member, read from the shared lib so
+      // this agrees with the tracker, the request page and the leave lists:
+      // their own — they are the one going on leave, or leaving — grouped per
+      // leave so two holidays are two blocks, plus the ones handed TO them as
+      // cover or successor (so they can jump straight to that checklist). One
+      // pass over the rota gives both directions.
+      const allHandovers = await getAllHandovers();
+      setOwnHandovers(groupHandoversByLeave(allHandovers.filter(h => h.from.userId === targetUserId)));
+      setCoveringHandovers(allHandovers.filter(h => h.to?.userId === targetUserId));
 
+      // Their next approved leave, for the "leave starting X" copy. Sickness
+      // is skipped as the lib skips it: nobody hands over before falling ill.
       const upcomingOrCurrentHoliday = (holidayData || [])
-        .filter(h => h.status === 'approved' && h.end_date >= todayISO)
+        .filter(h => h.status === 'approved' && h.absence_type !== 'sick' && h.end_date >= todayISO)
         .sort((a, b) => a.start_date.localeCompare(b.start_date))[0] || null;
 
       if (upcomingOrCurrentHoliday) {
-        const { status, clients } = await computeHolidayHandoverStatus(
-          targetUserId, upcomingOrCurrentHoliday.start_date, upcomingOrCurrentHoliday.end_date,
-          {
-            noCoverRequired: !!upcomingOrCurrentHoliday.no_cover_required,
-            noCoverDates: upcomingOrCurrentHoliday.no_cover_dates || [],
-          }
-        );
-        // "not_required" covers both the holiday-level flag and every shift
-        // being individually marked no-cover — either way, no handover needed.
+        // No handover is needed when the leave is flagged no-cover (the lib
+        // then derives nothing for it), or when every shift date during it
+        // was individually marked no-cover — which shows as no-cover dates on
+        // the holiday and, again, nothing derived for it.
+        const derivedForLeave = allHandovers.some(h => h.holidayId === upcomingOrCurrentHoliday.id);
         setNextHoliday({
           start_date: upcomingOrCurrentHoliday.start_date,
           end_date: upcomingOrCurrentHoliday.end_date,
-          noCoverRequired: status === 'not_required',
+          noCoverRequired: !!upcomingOrCurrentHoliday.no_cover_required
+            || ((upcomingOrCurrentHoliday.no_cover_dates || []).length > 0 && !derivedForLeave),
         });
-        setOwnHandovers(
-          clients
-            .map(c => ({ client: c.client, avgProgress: c.avgProgress, taskCount: c.taskCount, latestTarget: null }))
-            .sort((a, b) => a.client.localeCompare(b.client))
-        );
       } else {
         setNextHoliday(null);
-        setOwnHandovers([]);
       }
-
-      // Clients covered for someone else (active/upcoming approved shift_swap where
-      // this person is the covering party). Scoped to the clients whose
-      // shifts they ACTUALLY cover: each cover request carries the dates it
-      // covers, and only the covered person's clients with shifts on those
-      // dates are relevant — covering Andrew's Tuesday at client A must not
-      // demand a handover for Andrew's Thursday client B, which someone else
-      // (or no one) covers.
-      const { data: coverRequests } = await supabase
-        .from('staff_requests')
-        .select('swap_with_user_id, start_date, end_date, coverage_metadata')
-        .eq('request_type', 'shift_swap')
-        .eq('status', 'approved')
-        .eq('user_id', targetUserId)
-        .gte('end_date', todayISO);
-
-      const handoverCoveredUserIds = Array.from(new Set((coverRequests || []).map(r => r.swap_with_user_id).filter(Boolean))) as string[];
-      const coveringList: (HandoverClientSummary & { coveredName: string })[] = [];
-      if (handoverCoveredUserIds.length > 0) {
-        const { data: coveredProfiles } = await supabase
-          .from('profiles')
-          .select('user_id, display_name, email')
-          .in('user_id', handoverCoveredUserIds);
-        const coveredNameMap = new Map((coveredProfiles || []).map(p => [p.user_id, p.display_name || p.email || 'Unknown']));
-
-        const { data: coveredPatterns } = await supabase
-          .from('recurring_shift_patterns')
-          .select(PATTERN_WINDOW_COLS)
-          .in('user_id', handoverCoveredUserIds);
-
-        const patternsByCoveredUser = new Map<string, (PatternWindow & { user_id: string })[]>();
-        (((coveredPatterns || []) as unknown) as (PatternWindow & { user_id: string })[]).forEach(p => {
-          if (!p.client_name || p.client_name === 'Care Cuddle') return;
-          if (!patternsByCoveredUser.has(p.user_id)) patternsByCoveredUser.set(p.user_id, []);
-          patternsByCoveredUser.get(p.user_id)!.push(p);
-        });
-
-        const clientsByCoveredUser = new Map<string, Set<string>>();
-        (coverRequests || []).forEach(req => {
-          if (!req.swap_with_user_id) return;
-          for (const p of patternsByCoveredUser.get(req.swap_with_user_id) || []) {
-            const shiftDates = patternDatesInWindow(p, req.start_date, req.end_date);
-            if (shiftDates.length === 0) continue;
-            // Client-scoped: only the clients this cover request actually covers
-            // count — covering Andrew's client A must not surface client B here.
-            if (!coverAppliesToClient(req, p.client_name!, shiftDates)) continue;
-            if (!clientsByCoveredUser.has(req.swap_with_user_id)) clientsByCoveredUser.set(req.swap_with_user_id, new Set());
-            clientsByCoveredUser.get(req.swap_with_user_id)!.add(p.client_name!.trim());
-          }
-        });
-
-        const allCoveringClients = Array.from(new Set(Array.from(clientsByCoveredUser.values()).flatMap(s => Array.from(s))));
-        const { data: coveringTasks } = allCoveringClients.length > 0
-          ? await supabase.from('client_handover_tasks').select('client_name, progress, target_date').in('client_name', allCoveringClients)
-          : { data: [] as { client_name: string; progress: number | null; target_date: string | null }[] };
-        const coveringGrouped = aggregateHandovers(coveringTasks || []);
-
-        for (const [coveredUserId, clients] of clientsByCoveredUser.entries()) {
-          const coveredName = coveredNameMap.get(coveredUserId) || 'Unknown';
-          for (const client of clients) {
-            const agg = coveringGrouped.get(client);
-            coveringList.push({
-              client,
-              coveredName,
-              avgProgress: agg ? Math.round(agg.sum / agg.count) : 0,
-              taskCount: agg ? agg.count : 0,
-              latestTarget: agg ? agg.latest : null,
-            });
-          }
-        }
-        coveringList.sort((a, b) => a.coveredName.localeCompare(b.coveredName) || a.client.localeCompare(b.client));
-      }
-      setCoveringHandovers(coveringList);
 
       // Fetch public holidays for next 12 months (current year + next year if needed)
       await fetchPublicHolidays();
@@ -1135,6 +1072,12 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       const monthStart = startOfMonth(targetMonth);
       const monthEnd = endOfMonth(targetMonth);
       const monthKey = format(targetMonth, 'yyyy-MM');
+      // Was this person employed on a given day? As payroll: everything paid day
+      // by day — uplift, overtime, cover, the shift bonus — stops at the leaving
+      // date, or staff would invoice for days payroll will not pay.
+      const empFrom = hrProfile.start_date;
+      const empUntil = hrProfile.employment_end_date ?? null;
+      const employedOn = (d: string) => (!empFrom || d >= empFrom) && (!empUntil || d <= empUntil);
 
       // Generate virtual schedules from recurring patterns for this month
       const virtualScheduleDates: string[] = [];
@@ -1146,18 +1089,14 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         const dateStr = format(day, 'yyyy-MM-dd');
         const dayOfWeek = getDay(day);
         for (const pattern of recurringPatterns) {
-          const patternStart = parseISO(pattern.start_date);
-          const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-          if (day >= patternStart && (!patternEnd || day <= patternEnd)) {
-            if (pattern.days_of_week.includes(dayOfWeek)) {
-              // Only skip if there's a 'deleted' exception
-              const deletedExs = deletedExceptionsMap.get(pattern.id);
-              if (!deletedExs || !deletedExs.has(dateStr)) {
-                virtualScheduleDates.push(dateStr);
-                break; // Only add date once even if multiple patterns match
-              }
-            }
-          }
+          // Payroll's rule, shared: range, weekday and recurrence.
+          if (!patternOccursOn(pattern, day)) continue;
+          const deletedExs = deletedExceptionsMap.get(pattern.id);
+          if (deletedExs && deletedExs.has(dateStr)) continue;
+          // A bonus shift earns the shift bonus and nothing else, uplift included.
+          if (resolveDayKind(pattern, overtimeExceptionsMap.get(pattern.id)?.get(dateStr)) === 'bonus') continue;
+          virtualScheduleDates.push(dateStr);
+          break; // Only add date once even if multiple patterns match
         }
       }
 
@@ -1168,12 +1107,12 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       });
       const actualScheduleDates = new Set(userSchedulesInMonth.map(s => format(new Date(s.start_datetime), 'yyyy-MM-dd')));
 
-      // Build set of dates the user is on approved leave (paid or unpaid)
-      // Staff on leave should NOT receive public holiday overtime
+      // Build set of dates the user is on approved leave (paid or unpaid) or off sick.
+      // Staff who are off should NOT receive public holiday overtime — as payroll.
       const userLeaveDates = new Set<string>();
       const userLeaveReqs = staffRequests.filter(req => 
         req.status === 'approved' && 
-        (req.request_type === 'holiday_paid' || req.request_type === 'holiday_unpaid')
+        (req.request_type === 'holiday_paid' || req.request_type === 'holiday_unpaid' || req.request_type === 'sickness')
       );
       userLeaveReqs.forEach(req => {
         const leaveStart = parseISO(req.start_date);
@@ -1192,7 +1131,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       // Check actual schedules
       for (const schedule of userSchedulesInMonth) {
         const scheduleDate = format(new Date(schedule.start_datetime), 'yyyy-MM-dd');
-        if (holidayDatesMap.has(scheduleDate) && !countedHolidayDates.has(scheduleDate) && !userLeaveDates.has(scheduleDate)) {
+        if (holidayDatesMap.has(scheduleDate) && employedOn(scheduleDate) && !countedHolidayDates.has(scheduleDate) && !userLeaveDates.has(scheduleDate)) {
           countedHolidayDates.add(scheduleDate);
           holidayShifts.push({
             date: scheduleDate,
@@ -1203,7 +1142,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
 
       // Check virtual schedules
       for (const dateStr of virtualScheduleDates) {
-        if (holidayDatesMap.has(dateStr) && !actualScheduleDates.has(dateStr) && !countedHolidayDates.has(dateStr) && !userLeaveDates.has(dateStr)) {
+        if (holidayDatesMap.has(dateStr) && employedOn(dateStr) && !actualScheduleDates.has(dateStr) && !countedHolidayDates.has(dateStr) && !userLeaveDates.has(dateStr)) {
           countedHolidayDates.add(dateStr);
           holidayShifts.push({
             date: dateStr,
@@ -1222,20 +1161,34 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       coverRequests.forEach(req => {
         const reqStart = parseISO(req.start_date);
         const reqEnd = parseISO(req.end_date);
-        if (reqStart <= monthEnd && reqEnd >= monthStart) {
-          let coverDate = new Date(Math.max(reqStart.getTime(), monthStart.getTime()));
-          const coverEndDate = new Date(Math.min(reqEnd.getTime(), monthEnd.getTime()));
-          while (coverDate <= coverEndDate) {
-            const coverDateStr = format(coverDate, 'yyyy-MM-dd');
-            if (holidayDatesMap.has(coverDateStr) && !countedHolidayDates.has(coverDateStr) && !userLeaveDates.has(coverDateStr)) {
-              countedHolidayDates.add(coverDateStr);
-              holidayShifts.push({
-                date: coverDateStr,
-                holidayName: holidayDatesMap.get(coverDateStr) || 'Public Holiday'
-              });
-            }
-            coverDate.setDate(coverDate.getDate() + 1);
-          }
+        if (reqEnd < monthStart || reqStart > monthEnd) return;
+        const overlapStart = reqStart > monthStart ? reqStart : monthStart;
+        const overlapEnd = reqEnd < monthEnd ? reqEnd : monthEnd;
+        // The dates actually covered, as payroll reads them — not the whole
+        // start-to-end span when the request lists its days.
+        const granularCoveredDates = getCoveredDatesFromRequest({
+          start_date: req.start_date,
+          end_date: req.end_date,
+          coverage_metadata: (req as any).coverage_metadata ?? null,
+        }).filter(d => d >= format(overlapStart, 'yyyy-MM-dd') && d <= format(overlapEnd, 'yyyy-MM-dd'));
+        const coverDates = granularCoveredDates.length > 0
+          ? granularCoveredDates
+          : eachDayOfInterval({ start: overlapStart, end: overlapEnd }).map(d => format(d, 'yyyy-MM-dd'));
+        // Covering someone earns the uplift only for a holiday they actually had a
+        // shift on, by the rota's rule — the test payroll applies.
+        const coveredPatterns = req.request_type === 'shift_swap' && req.swap_with_user_id
+          ? coveredUserPatterns.filter(p => p.user_id === req.swap_with_user_id && !p.is_overtime)
+          : null;
+        for (const coverDateStr of coverDates) {
+          if (!holidayDatesMap.has(coverDateStr) || !employedOn(coverDateStr)
+            || countedHolidayDates.has(coverDateStr) || userLeaveDates.has(coverDateStr)) continue;
+          if (coveredPatterns && !coveredPatterns.some(p =>
+            patternOccursOn(p, parseISO(coverDateStr)) && !deletedExceptionsMap.get(p.id)?.has(coverDateStr))) continue;
+          countedHolidayDates.add(coverDateStr);
+          holidayShifts.push({
+            date: coverDateStr,
+            holidayName: holidayDatesMap.get(coverDateStr) || 'Public Holiday'
+          });
         }
       });
 
@@ -1263,10 +1216,33 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         return bonusStart <= monthEnd && (!bonusEnd || bonusEnd >= monthStart);
       });
       const activeRecurringBonuses = activeRecurringBonusesList.reduce((sum, bonus) => sum + bonus.amount, 0);
-      const bonuses = oneOffBonuses + activeRecurringBonuses;
+
+      // Shift bonus, from the same function payroll uses. Staff raise their
+      // invoice from this view, so it cannot be allowed to be a different number.
+      const monthPaid = monthRecords.some(r => r.record_type === 'salary');
+      const shiftBonus = computeShiftBonus({
+        userId: hrProfile.user_id,
+        monthStart,
+        monthEnd,
+        patterns: recurringPatterns,
+        deleted: deletedExceptionsMap,
+        overrides: overtimeExceptionsMap,
+        employedOn,
+        // Both lists are this person's own, fetched by user_id.
+        leaveRequests: staffRequests
+          .filter(r => r.status === 'approved' && ['holiday_paid', 'holiday_unpaid', 'sickness'].includes(r.request_type))
+          .map(r => ({ user_id: hrProfile.user_id, start_date: r.start_date, end_date: r.end_date, request_type: r.request_type })),
+        absences: holidays.map(h => ({ ...h, user_id: hrProfile.user_id })),
+        coverRequests: coverOfMe,
+        configs: shiftBonuses,
+      });
+      // Once the month is paid, the captured record is already among the bonus
+      // records above; adding the live figure too would count it twice.
+      const shiftBonusLive = monthPaid ? 0 : shiftBonus.amount;
+      const bonuses = oneOffBonuses + activeRecurringBonuses + shiftBonusLive;
       const deductions = deductionRecords.reduce((sum, r) => sum + r.amount, 0);
 
-      const bonusItems = [
+      const bonusItems: MonthlyPayPreview['bonusItems'] = [
         ...oneOffBonusRecords.map(r => ({
           label: r.description || 'Bonus',
           amount: r.amount,
@@ -1280,6 +1256,16 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
           recurring: true,
         })),
       ];
+      if (shiftBonusLive > 0) {
+        const missed = missedSummary(shiftBonus.count);
+        bonusItems.push({
+          label: 'Shift Bonus',
+          amount: shiftBonusLive,
+          description: `${shiftBonus.count.worked.length} of ${shiftBonus.count.scheduled.length} bonus shifts${missed ? ` · missed ${missed}` : ''}`,
+          recurring: false,
+          kind: 'shift',
+        });
+      }
       const deductionItems = deductionRecords.map(r => ({
         label: r.description || 'Deduction',
         amount: r.amount,
@@ -1364,11 +1350,13 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
             const dateStr = format(day, 'yyyy-MM-dd');
             const dayOfWeek = getDay(day);
             
+            // As payroll: no cover pay outside employment, or for cover on a day
+            // this person is themselves off.
+            if (!employedOn(dateStr) || userLeaveDates.has(dateStr)) continue;
+
             const isWorkingDay = targetPatterns.some(pattern => {
-              const patternStart = parseISO(pattern.start_date);
-              const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-              if (day < patternStart || (patternEnd && day > patternEnd)) return false;
-              if (!pattern.days_of_week.includes(dayOfWeek)) return false;
+              // The rota's rule, shared with payroll. This had no recurrence check.
+              if (!patternOccursOn(pattern, day)) return false;
               const deletedExs = deletedExceptionsMap.get(pattern.id);
               if (deletedExs && deletedExs.has(dateStr)) return false;
               return true;
@@ -1395,32 +1383,19 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
 
         // Skip if already covered by a request entry for this date
         if (requestOTDates.has(dateStr)) continue;
+        // As payroll: no overtime outside employment, or on a day off.
+        if (!employedOn(dateStr) || userLeaveDates.has(dateStr)) continue;
 
         for (const pattern of recurringPatterns) {
-          const patternStart = parseISO(pattern.start_date);
-          const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-
-          if (day >= patternStart && (!patternEnd || day <= patternEnd)) {
-            if (pattern.days_of_week.includes(dayOfWeek)) {
-              const deletedExs = deletedExceptionsMap.get(pattern.id);
-              if (deletedExs && deletedExs.has(dateStr)) continue;
-
-              const overtimeExs = overtimeExceptionsMap.get(pattern.id);
-              const dayOverride = overtimeExs?.get(dateStr);
-
-              const isOvertimeForDay = dayOverride?.type === 'overtime' ? true
-                : dayOverride?.type === 'not_overtime' ? false
-                : pattern.is_overtime;
-
-              if (isOvertimeForDay) {
-                const subtype: 'standard' | 'double_up' = dayOverride?.type === 'overtime'
-                  ? ((dayOverride.subtype || 'standard') as 'standard' | 'double_up')
-                  : ((pattern.overtime_subtype || 'standard') as 'standard' | 'double_up');
-
-                upsertOvertimeShift(dateStr, subtype, 'pattern');
-                break;
-              }
-            }
+          if (!patternOccursOn(pattern, day)) continue;
+          const deletedExs = deletedExceptionsMap.get(pattern.id);
+          if (deletedExs && deletedExs.has(dateStr)) continue;
+          const kind = resolveDayKind(pattern, overtimeExceptionsMap.get(pattern.id)?.get(dateStr));
+          // Bonus shifts are paid through the shift bonus, never as overtime, and
+          // must not hide a genuine overtime pattern on the same date.
+          if (kind === 'standard' || kind === 'double_up') {
+            upsertOvertimeShift(dateStr, kind, 'pattern');
+            break;
           }
         }
       }
@@ -1512,21 +1487,19 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         }
       }
 
-      // Calculate unpaid holiday deductions for this month
+      // Calculate unpaid holiday deductions for this month. Sick days are unpaid
+      // too, exactly as payroll deducts them.
       let unpaidHolidayDays = 0;
+      let unpaidSickDays = 0;
       const approvedUnpaidHolidays = staffRequests.filter(req => 
-        req.status === 'approved' && req.request_type === 'holiday_unpaid'
+        req.status === 'approved' && (req.request_type === 'holiday_unpaid' || req.request_type === 'sickness')
       );
       approvedUnpaidHolidays.forEach(req => {
-        const reqStart = parseISO(req.start_date);
-        const reqEnd = parseISO(req.end_date);
-        // Count days that fall within this month
-        if (reqStart <= monthEnd && reqEnd >= monthStart) {
-          const overlapStart = reqStart > monthStart ? reqStart : monthStart;
-          const overlapEnd = reqEnd < monthEnd ? reqEnd : monthEnd;
-          const daysInMonth = Math.ceil((overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-          unpaidHolidayDays += Math.min(daysInMonth, req.days_requested);
-        }
+        // Days that fall within this month, shared out across months by the
+        // same function payroll uses, so the forecast is what gets deducted.
+        const days = unpaidDaysInMonth(req, monthStart, monthEnd);
+        unpaidHolidayDays += days;
+        if (req.request_type === 'sickness') unpaidSickDays += days;
       });
       const unpaidHolidayDeduction = (monthlyBaseSalary / 20) * unpaidHolidayDays;
 
@@ -1591,6 +1564,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         holidayAccrualBreakdown,
         unpaidHolidayDeduction,
         unpaidHolidayDays,
+        unpaidSickDays,
         proRataDeduction,
         proRataWorkingDays,
         proRataTotalWorkingDays,
@@ -1600,7 +1574,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       });
     }
     return previews;
-  }, [hrProfile, staffSchedules, recurringPatterns, coveredUserPatterns, patternExceptions, publicHolidays, payRecords, recurringBonuses, holidays, staffRequests]);
+  }, [hrProfile, staffSchedules, recurringPatterns, coveredUserPatterns, patternExceptions, publicHolidays, payRecords, recurringBonuses, shiftBonuses, coverOfMe, holidays, staffRequests]);
   const toggleMonth = (monthKey: string) => {
     setExpandedMonths(prev => {
       const next = new Set(prev);
@@ -2971,32 +2945,51 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         </AccordionItem>
       </Accordion>
 
-      {/* Handover — this person's own clients' in-progress handovers, plus any
-          clients they're currently covering for someone else's holiday. Also
-          shown when the next leave is marked no-cover-required, to make it
-          explicit that no handover is needed. */}
+      {/* Handover — this person's own handovers, one block per leave (each
+          client, each coverer), plus any handed to them as cover for someone
+          else's leave. Also shown when the next leave is marked
+          no-cover-required, to make it explicit that no handover is needed. */}
       {(ownHandovers.length > 0 || coveringHandovers.length > 0 || nextHoliday?.noCoverRequired) && (() => {
         const progressTone = (pct: number): StatusTone => pct >= 100 ? 'success' : pct > 0 ? 'warning' : 'neutral';
-        const HandoverRow = ({ client, avgProgress, taskCount, latestTarget, subtitle }: HandoverClientSummary & { subtitle?: string }) => (
+        // Complete means required, with tasks, every one at 100% — the lib's
+        // definition, so this never disagrees with the tracker.
+        const handoverDone = (h: ClientHandover) => h.requirement === 'required' && h.taskCount > 0 && h.avgProgress >= 100;
+        const requiredIn = (g: LeaveHandoverGroup) => g.handovers.filter(h => h.requirement === 'required');
+        const groupComplete = (g: LeaveHandoverGroup) => requiredIn(g).length > 0 && requiredIn(g).every(handoverDone);
+        // "22–29 Oct", "28 Sept – 3 Oct", or a single day.
+        const leaveDates = (start: string, end: string) => {
+          const s = parseISO(start), e = parseISO(end);
+          if (start === end) return format(s, 'd MMM');
+          return format(s, 'MMM yyyy') === format(e, 'MMM yyyy')
+            ? `${format(s, 'd')}–${format(e, 'd MMM')}`
+            : `${format(s, 'd MMM')} – ${format(e, 'd MMM')}`;
+        };
+        // The tracker opens on this handover: its stored row's id once it has
+        // one, otherwise its key, which the page resolves the same way.
+        const trackerHref = (h: ClientHandover) =>
+          `/public/schedule/${encodeURIComponent(h.client)}?handover=${encodeURIComponent(h.id ?? h.key)}`;
+        const HandoverRow = ({ handover: h, title, subtitle }: { handover: ClientHandover; title: string; subtitle?: string }) => (
           <div className="flex items-center justify-between gap-3 rounded-lg border bg-muted/30 px-3 py-2.5">
             <div className="flex items-center gap-2 min-w-0">
               <Building2 className="h-4 w-4 text-primary flex-shrink-0" />
               <div className="min-w-0">
-                <span className="text-sm font-medium truncate block">{client}</span>
+                <span className="text-sm font-medium truncate block">{title}</span>
                 {subtitle && <span className="text-xs text-muted-foreground truncate block">{subtitle}</span>}
               </div>
             </div>
             <div className="flex items-center gap-3 flex-shrink-0">
-              {taskCount > 0 ? (
-                <StatusPill tone={progressTone(avgProgress)}>
-                  {avgProgress}% · {taskCount} task{taskCount !== 1 ? 's' : ''}
-                  {latestTarget ? ` · due ${format(parseISO(latestTarget), 'd MMM')}` : ''}
+              {h.requirement === 'not_required' ? (
+                <StatusPill tone="neutral">Not required</StatusPill>
+              ) : h.taskCount > 0 ? (
+                <StatusPill tone={progressTone(h.avgProgress)}>
+                  {h.avgProgress}% · {h.taskCount} task{h.taskCount !== 1 ? 's' : ''}
+                  {h.latestTargetDate ? ` · due ${format(parseISO(h.latestTargetDate), 'd MMM')}` : ''}
                 </StatusPill>
               ) : (
                 <StatusPill tone="neutral">Not started</StatusPill>
               )}
               <a
-                href={`/public/schedule/${encodeURIComponent(client)}`}
+                href={trackerHref(h)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
@@ -3006,13 +2999,19 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
             </div>
           </div>
         );
-        const ownComplete = ownHandovers.length > 0 && ownHandovers.every(h => h.taskCount > 0 && h.avgProgress >= 100);
-        const daysUntilLeave = nextHoliday ? differenceInCalendarDays(parseISO(nextHoliday.start_date), new Date()) : null;
-        const leaveUrgent = daysUntilLeave !== null && !ownComplete && daysUntilLeave <= 3;
+        // Own rows read "Springs of Joy → Mercy": by client, then coverers by
+        // name, with "cover not assigned yet" last.
+        const byClientThenCoverer = (a: ClientHandover, b: ClientHandover) =>
+          a.client.localeCompare(b.client)
+          || (!a.to !== !b.to ? (a.to ? -1 : 1) : (a.to?.name || '').localeCompare(b.to?.name || ''));
+        // Groups come soonest first, so the first outstanding one sets the urgency.
+        const outstanding = ownHandovers.filter(g => requiredIn(g).length > 0 && !groupComplete(g));
+        const leaveUrgent = outstanding.length > 0 && outstanding[0].daysUntil <= 3;
         const overallTone: StatusTone =
-          (ownHandovers.length > 0 && !ownComplete) || coveringHandovers.length > 0
+          outstanding.length > 0 || coveringHandovers.length > 0
             ? (leaveUrgent ? 'danger' : 'warning')
             : 'neutral';
+        const relevantCount = ownHandovers.reduce((n, g) => n + g.handovers.length, 0) + coveringHandovers.length;
         return (
           <Accordion type="single" collapsible className="w-full">
             <AccordionItem value="handover" className="border rounded-lg bg-card">
@@ -3021,7 +3020,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   <Handshake className="h-5 w-5 text-primary flex-shrink-0" />
                   <span className="text-lg font-semibold">Handover</span>
                   <StatusPill tone={overallTone}>
-                    {ownHandovers.length + coveringHandovers.length} relevant
+                    {relevantCount} relevant
                   </StatusPill>
                 </div>
               </AccordionTrigger>
@@ -3043,38 +3042,72 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                     </p>
                     <div className="grid gap-2">
                       {coveringHandovers.map(h => (
-                        <HandoverRow key={`${h.coveredName}-${h.client}`} {...h} subtitle={`Covering ${h.coveredName}`} />
+                        <HandoverRow
+                          key={`${h.client}|${h.key}`}
+                          handover={h}
+                          title={h.client}
+                          subtitle={h.kind === 'departure'
+                            ? `Taking over from ${h.from.name} · last day ${format(parseISO(h.endDate), 'd MMM')}`
+                            : `Covering ${h.from.name} · ${leaveDates(h.startDate, h.endDate)}`}
+                        />
                       ))}
                     </div>
                   </div>
                 )}
-                {ownHandovers.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">Before your leave</p>
-                    <p className={cn(
-                      "text-xs mb-1",
-                      leaveUrgent ? "text-destructive font-medium" : "text-muted-foreground"
-                    )}>
-                      {ownHandovers.length > 1 && (
-                        <span className="block font-medium">
-                          You work with {ownHandovers.length} clients — each one needs its own handover.
-                        </span>
-                      )}
-                      {nextHoliday && daysUntilLeave !== null
-                        ? ownComplete
-                          ? `Your handover${ownHandovers.length > 1 ? 's are' : ' is'} complete for your leave starting ${format(parseISO(nextHoliday.start_date), 'd MMM yyyy')}.`
-                          : daysUntilLeave >= 0
-                            ? `${ownHandovers.length > 1 ? 'All handovers' : 'Handover'} must be completed before your leave starts on ${format(parseISO(nextHoliday.start_date), 'd MMM yyyy')} (${daysUntilLeave} day${daysUntilLeave !== 1 ? 's' : ''} left).`
-                            : `Your leave has already started and handover is not yet complete.`
-                        : "Handover status for the clients you're scheduled for."}
-                    </p>
-                    <div className="grid gap-2">
-                      {ownHandovers.map(h => (
-                        <HandoverRow key={h.client} {...h} />
-                      ))}
+                {ownHandovers.map(g => {
+                  const required = requiredIn(g);
+                  const complete = groupComplete(g);
+                  const urgent = required.length > 0 && !complete && g.daysUntil <= 3;
+                  const clientCount = new Set(g.handovers.map(h => h.client)).size;
+                  const isDeparture = g.kind === 'departure';
+                  const startLabel = format(parseISO(g.startDate), 'd MMM yyyy');
+                  const leaveFrom = isDeparture ? `your last day on ${startLabel}` : `your leave starting ${startLabel}`;
+                  const leaveStarts = isDeparture ? `your last day on ${startLabel}` : `your leave starts on ${startLabel}`;
+                  // A client split between coverers says which dates each takes.
+                  const coverersAt = new Map<string, number>();
+                  g.handovers.forEach(h => coverersAt.set(h.client, (coverersAt.get(h.client) ?? 0) + 1));
+                  return (
+                    <div key={g.key} className="space-y-2">
+                      <p className="text-sm font-medium">
+                        {isDeparture ? 'Before your last day' : 'Before your leave'}
+                        <span className="font-normal text-muted-foreground"> · {leaveDates(g.startDate, g.endDate)}</span>
+                      </p>
+                      <p className={cn(
+                        "text-xs mb-1",
+                        urgent ? "text-destructive font-medium" : "text-muted-foreground"
+                      )}>
+                        {clientCount > 1 && (
+                          <span className="block font-medium">
+                            You work with {clientCount} clients — each one needs its own handover.
+                          </span>
+                        )}
+                        {required.length === 0
+                          ? `No handover is required for ${leaveFrom}.`
+                          : complete
+                            ? `Your handover${g.handovers.length > 1 ? 's are' : ' is'} complete for ${leaveFrom}.`
+                            : g.daysUntil >= 0
+                              ? `${g.handovers.length > 1 ? 'All handovers' : 'Handover'} must be completed before ${leaveStarts} (${g.daysUntil} day${g.daysUntil !== 1 ? 's' : ''} left).`
+                              : isDeparture
+                                ? 'Your last day has passed and handover is not yet complete.'
+                                : 'Your leave has already started and handover is not yet complete.'}
+                      </p>
+                      <div className="grid gap-2">
+                        {[...g.handovers].sort(byClientThenCoverer).map(h => (
+                          <HandoverRow
+                            key={`${h.client}|${h.key}`}
+                            handover={h}
+                            title={`${h.client} → ${h.to ? h.to.name : 'cover not assigned yet'}`}
+                            subtitle={h.requirement === 'not_required'
+                              ? (h.notRequiredReason ?? undefined)
+                              : h.to && (coverersAt.get(h.client) ?? 0) > 1 && h.coveredDates.length > 0
+                                ? `Covers ${h.coveredDates.map(d => format(parseISO(d), 'd MMM')).join(', ')}`
+                                : undefined}
+                          />
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })}
               </AccordionContent>
             </AccordionItem>
           </Accordion>
@@ -3452,7 +3485,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                                     <div key={`b-${idx}`} className="py-2 border-b">
                                       <div className="flex justify-between items-center">
                                         <span className="text-muted-foreground flex items-center gap-2">
-                                          {item.recurring ? 'Recurring Bonus' : 'Bonus'}
+                                          {item.kind === 'shift' ? 'Shift Bonus' : item.recurring ? 'Recurring Bonus' : 'Bonus'}
                                           {item.description && (
                                             <span className="text-xs italic text-muted-foreground/80">— {item.description}</span>
                                           )}
@@ -3522,7 +3555,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                                   
                                   {preview.unpaidHolidayDeduction > 0 && <div className="py-2 border-b">
                                       <div className="flex justify-between items-center">
-                                        <span className="text-muted-foreground">Unpaid Holiday ({preview.unpaidHolidayDays} days)</span>
+                                        <span className="text-muted-foreground">{preview.unpaidSickDays > 0 ? 'Unpaid Days' : 'Unpaid Holiday'} ({preview.unpaidHolidayDays} days{preview.unpaidSickDays > 0 ? `, ${preview.unpaidSickDays} sickness` : ''})</span>
                                         <span className="font-medium text-destructive">-{formatCurrency(preview.unpaidHolidayDeduction, preview.currency)}</span>
                                       </div>
                                       <div className="text-xs text-muted-foreground/70 mt-1">
@@ -3663,7 +3696,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                 date: Date;
                 shiftTime: string;
               }[] => {
-                if (!['holiday', 'holiday_paid', 'holiday_unpaid', 'shift_swap'].includes(request.request_type)) {
+                if (!['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness', 'shift_swap'].includes(request.request_type)) {
                   return [];
                 }
                 const startDate = new Date(request.start_date);

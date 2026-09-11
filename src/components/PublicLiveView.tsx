@@ -129,12 +129,15 @@ export function PublicLiveView() {
     },
   });
 
+  // Through public_staff_absences, not the table: this board is public, and the
+  // table no longer shows anonymous visitors a sick row. The function returns
+  // it as 'absent', so cover linked to a sick colleague's absence still finds
+  // who it is covering.
   const { data: holidays = [] } = useQuery({
     queryKey: ["public-live-holidays", format(today, "yyyy-MM-dd")],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("staff_holidays")
-        .select("id, user_id, start_date, end_date, status")
+        .rpc("public_staff_absences")
         .eq("status", "approved")
         .lte("start_date", format(today, "yyyy-MM-dd"))
         .gte("end_date", format(today, "yyyy-MM-dd"));

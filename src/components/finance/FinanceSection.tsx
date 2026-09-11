@@ -67,7 +67,7 @@ interface Assignment { staff_user_id: string; client_name: string | null; }
 interface Expense { id: string; name: string; amount_gbp: number; category: string; vat_able: boolean | null; recurring: boolean; notes: string | null; active: boolean; }
 interface Settings { vat_rate: number; corporation_tax_rate: number; monthly_growth_pct: number; projection_months: number; }
 interface PayAdjustment { user_id: string; record_type: string; amount: number; currency: string; }
-interface ShiftPattern { user_id: string; client_name: string | null; days_of_week: string[] | null; start_time: string | null; end_time: string | null; recurrence_interval: string | null; is_overtime: boolean | null; }
+interface ShiftPattern { user_id: string; client_name: string | null; days_of_week: string[] | null; start_time: string | null; end_time: string | null; recurrence_interval: string | null; is_overtime: boolean | null; overtime_subtype?: string | null; }
 
 // Overtime hours are weighted heavier than regular hours when allocating cost &
 // revenue, reflecting their premium cost and the extra effort a client demands.
@@ -89,7 +89,9 @@ const patternEffortHours = (p: ShiftPattern): number => {
     : iv === "one_off" ? days              // sporadic overtime — counts once this month
     : days * WEEKS_PER_MONTH;              // weekly (default)
   const hours = dur * occ;
-  return hours * (p.is_overtime ? OVERTIME_WEIGHT : 1);
+  // A bonus shift is extra work, but it carries no overtime premium — its
+  // cost is the shift bonus, which reaches Finance through payroll's totals.
+  return hours * (p.is_overtime && p.overtime_subtype !== 'bonus' ? OVERTIME_WEIGHT : 1);
 };
 
 const monthlyFromFreq = (base: number, freq: string | null) => {
@@ -191,7 +193,7 @@ export function FinanceSection() {
       // Recurring shift patterns active this month — the schedule that tells us how each
       // admin's time is split across clients, so cost & revenue follow the actual work.
       (supabase as any).from("recurring_shift_patterns")
-        .select("user_id, client_name, days_of_week, start_time, end_time, recurrence_interval, is_overtime")
+        .select("user_id, client_name, days_of_week, start_time, end_time, recurrence_interval, is_overtime, overtime_subtype")
         .lte("start_date", monthEnd).or(`end_date.is.null,end_date.gte.${monthStart}`),
       // The real ledger behind the chart. Payment dates matter more than invoice
       // dates here: the chart reports cash received, so a 30-day-terms client lands

@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Check, X, Clock, Palmtree, RefreshCw, Eye, Trash2, ChevronLeft, ChevronRight, Bell, BellOff, UserMinus } from "lucide-react";
+import { Check, X, Clock, Palmtree, RefreshCw, Eye, Trash2, ChevronLeft, ChevronRight, Bell, BellOff, UserMinus, Thermometer } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -20,7 +20,7 @@ import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 import { computeHolidayHandoverStatusBatch, handoverClientsSummary, HANDOVER_STATUS_LABEL } from "@/lib/handoverStatus";
 import { RequestsTimeline } from "./RequestsTimeline";
 
-type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap' | 'departure';
+type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap' | 'departure' | 'sickness';
 
 interface StaffRequest {
   id: string;
@@ -86,6 +86,11 @@ const REQUEST_TYPE_INFO: Record<string, { label: string; icon: typeof Clock; col
     label: "Unpaid Holiday",
     icon: Palmtree,
     color: "text-yellow-600"
+  },
+  sickness: {
+    label: "Sickness absence",
+    icon: Thermometer,
+    color: "text-rose-600"
   },
   shift_swap: {
     label: "Shift Cover",
@@ -175,7 +180,7 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
 
   // Calculate working days for all holiday requests
   const holidayRequests = requests.filter(r => 
-    r.request_type === 'holiday' || r.request_type === 'holiday_paid' || r.request_type === 'holiday_unpaid'
+    r.request_type === 'holiday' || r.request_type === 'holiday_paid' || r.request_type === 'holiday_unpaid' || r.request_type === 'sickness'
   );
   const workingDaysMap = useBatchWorkingDays(holidayRequests);
 
@@ -183,7 +188,8 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
   const getDisplayDays = (req: StaffRequest): number => {
     const isHoliday = req.request_type === 'holiday' || 
                       req.request_type === 'holiday_paid' || 
-                      req.request_type === 'holiday_unpaid';
+                      req.request_type === 'holiday_unpaid' ||
+                      req.request_type === 'sickness';
     
     if (isHoliday) {
       const workingDays = workingDaysMap.get(req.id);
@@ -205,7 +211,7 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
 
   // Helper to check if holiday has no_cover_required set
   const isNoCoverRequired = (request: StaffRequest): boolean => {
-    if (!['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type)) return false;
+    if (!['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(request.request_type)) return false;
     const linkedHoliday = linkedHolidays.find(h => 
       h.user_id === request.user_id && 
       h.start_date === request.start_date && 
@@ -215,7 +221,7 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
   };
 
   const getLinkedHoliday = (request: StaffRequest) => {
-    if (!['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type)) return undefined;
+    if (!['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(request.request_type)) return undefined;
     return linkedHolidays.find(h =>
       h.user_id === request.user_id &&
       h.start_date === request.start_date &&
@@ -253,25 +259,28 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
       // The original shift stays with the covered person; the UI overlays "Covered by X"
       // using the approved request + coverage_metadata.
 
-      // If it's a holiday request being approved, sync to staff_holidays
-      if (status === 'approved' && (request.request_type === 'holiday' || request.request_type === 'holiday_paid' || request.request_type === 'holiday_unpaid')) {
-        const absenceType: 'holiday' | 'unpaid_leave' = request.request_type === 'holiday_unpaid' ? 'unpaid_leave' : 'holiday';
+      // If it's a holiday or sickness request being approved, sync to staff_holidays
+      if (status === 'approved' && (request.request_type === 'holiday' || request.request_type === 'holiday_paid' || request.request_type === 'holiday_unpaid' || request.request_type === 'sickness')) {
+        const absenceType = request.request_type === 'sickness' ? 'sick' : request.request_type === 'holiday_unpaid' ? 'unpaid' : 'holiday';
         const { error: holidayError } = await supabase
           .from("staff_holidays")
           .insert([{
             user_id: request.user_id,
-            absence_type: absenceType as 'holiday' | 'maternity' | 'other' | 'paternity' | 'personal' | 'sick' | 'unpaid',
+            absence_type: absenceType,
             start_date: request.start_date,
             end_date: request.end_date,
             days_taken: request.days_requested,
             status: 'approved',
-            notes: request.details,
+            // staff_holidays can be read without signing in, and what someone
+            // writes about being ill is health data, so it stays on the request.
+            notes: request.request_type === 'sickness' ? null : request.details,
             approved_by: user.id,
             approved_at: new Date().toISOString()
           }]);
 
         if (holidayError) {
           console.error('Failed to sync to staff_holidays:', holidayError);
+          toast.error(`The request was approved, but its absence record could not be created: ${holidayError.message}`);
         }
       }
 
@@ -313,6 +322,12 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
       queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-schedule"] });
       queryClient.invalidateQueries({ queryKey: ["public-staff-requests"] });
       queryClient.invalidateQueries({ queryKey: ["staff-requests-for-dashboard-live"] });
+      // An approved leave is a new set of handovers on the trackers and the
+      // dashboard — and in this list's own Handover column.
+      queryClient.invalidateQueries({ queryKey: ["client-handovers"] });
+      queryClient.invalidateQueries({ queryKey: ["handovers-all"] });
+      queryClient.invalidateQueries({ queryKey: ["linked-holidays-for-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["holiday-handover-status-batch"] });
       toast.success(`Request ${variables.status}`);
       setReviewDialogOpen(false);
       setSelectedRequest(null);
@@ -337,7 +352,7 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
 
       // If it was an approved holiday request, delete the corresponding staff_holidays entry
       if (request.status === 'approved' && 
-          (request.request_type === 'holiday' || request.request_type === 'holiday_paid' || request.request_type === 'holiday_unpaid')) {
+          (request.request_type === 'holiday' || request.request_type === 'holiday_paid' || request.request_type === 'holiday_unpaid' || request.request_type === 'sickness')) {
         // Find and delete the matching holiday entry
         const { error: holidayDeleteError } = await supabase
           .from("staff_holidays")
@@ -366,6 +381,10 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
       queryClient.invalidateQueries({ queryKey: ["staff-requests-for-schedule"] });
       queryClient.invalidateQueries({ queryKey: ["staff-holidays-for-schedule"] });
       queryClient.invalidateQueries({ queryKey: ["linked-holidays-for-requests"] });
+      // The leave (or the cover) is gone, and so are its derived handovers.
+      queryClient.invalidateQueries({ queryKey: ["client-handovers"] });
+      queryClient.invalidateQueries({ queryKey: ["handovers-all"] });
+      queryClient.invalidateQueries({ queryKey: ["holiday-handover-status-batch"] });
       toast.success("Request deleted");
       setReviewDialogOpen(false);
       setSelectedRequest(null);
@@ -436,7 +455,7 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
   const getNestedCoverIds = (): Set<string> => {
     const nestedIds = new Set<string>();
     filteredRequests.forEach(request => {
-      if (['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type)) {
+      if (['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(request.request_type)) {
         const covers = findCoverForHoliday(request);
         covers.forEach(cover => nestedIds.add(cover.id));
       }
@@ -593,7 +612,8 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                           const typeInfo = REQUEST_TYPE_INFO[request.request_type];
                           const Icon = typeInfo?.icon || Clock;
                           const coveredStaff = getCoveredStaffInfo(request.linked_holiday_id);
-                          const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
+                          // Sickness is shown like leave here: its shifts still need cover.
+                          const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(request.request_type);
                           
                           // Find covers for this holiday
                           const nestedCovers = isHolidayRequest ? findCoverForHoliday(request) : [];
@@ -635,6 +655,9 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                             const ReqIcon = reqTypeInfo?.icon || Clock;
                             const reqCoveredStaff = getCoveredStaffInfo(req.linked_holiday_id);
                             const reqIsHoliday = ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(req.request_type);
+                            // A sick person's clients still need telling, but there is no
+                            // handover to chase: nobody can hand over before falling ill.
+                            const reqIsAbsence = reqIsHoliday || req.request_type === 'sickness';
                             
                             const nestedRowClass = isNested 
                               ? 'bg-purple-50 dark:bg-purple-950/20 hover:bg-purple-100 dark:hover:bg-purple-950/40 border-l-4 border-purple-400'
@@ -705,7 +728,7 @@ export function StaffRequestsManager({ onViewRequest }: StaffRequestsManagerProp
                                   )}
                                 </TableCell>
                                 <TableCell className="py-4" onClick={(e) => e.stopPropagation()}>
-                                  {reqIsHoliday ? (
+                                  {reqIsAbsence ? (
                                     <div className="flex items-center gap-2">
                                       <Checkbox
                                         checked={(req as any).client_informed || false}

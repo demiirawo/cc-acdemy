@@ -12,15 +12,16 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Check, X, Clock, Palmtree, RefreshCw, Bell, BellOff, Copy, Calendar, User, FileText, CheckCircle2, AlertCircle, Trash2, Pencil, UserX, Search } from "lucide-react";
+import { ArrowLeft, Check, X, Clock, Palmtree, RefreshCw, Bell, BellOff, Copy, Calendar, User, FileText, CheckCircle2, AlertCircle, Trash2, Pencil, UserX, UserMinus, Search, Thermometer } from "lucide-react";
 import { format, parseISO, differenceInCalendarDays } from "date-fns";
+import { patternOccursOn } from "@/lib/patternSchedule";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification";
 import { invalidateAllCoverageQueries } from "@/lib/coverageUtils";
-import { computeHolidayHandoverStatus, patternDatesInWindow, PATTERN_WINDOW_COLS, type PatternWindow, HANDOVER_STATUS_LABEL, HANDOVER_STATUS_TONE, coverAppliesToClient } from "@/lib/handoverStatus";
-type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
+import { computeHolidayHandoverStatus, handoverClientsSummary, patternDatesInWindow, PATTERN_WINDOW_COLS, type PatternWindow, HANDOVER_STATUS_LABEL, HANDOVER_STATUS_TONE, coverAppliesToClient } from "@/lib/handoverStatus";
+type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap' | 'sickness';
 interface StaffRequest {
   id: string;
   user_id: string;
@@ -83,12 +84,35 @@ const REQUEST_TYPE_INFO: Record<string, {
     icon: Palmtree,
     color: "text-yellow-600"
   },
+  sickness: {
+    label: "Sickness absence",
+    icon: Thermometer,
+    color: "text-rose-600"
+  },
   shift_swap: {
     label: "Shift Cover",
     icon: RefreshCw,
     color: "text-blue-600"
+  },
+  departure: {
+    label: "Leaving",
+    icon: UserMinus,
+    color: "text-red-600"
   }
 };
+// The types a request can be changed between. An absence can only become
+// another kind of absence, and a non-absence only another non-absence. An
+// approved absence has a row on the rota that nothing else would move or
+// remove, so sickness turned into shift cover would leave its 'sick' row
+// behind. Anything in neither set keeps its type: a departure made into shift
+// cover or overtime would be shown to all staff and paid as overtime.
+const ABSENCE_REQUEST_TYPES: string[] = ['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'];
+const NON_ABSENCE_REQUEST_TYPES: string[] = ['overtime', 'overtime_standard', 'overtime_double_up', 'shift_swap'];
+/** The set a request's type can be changed within, or null if it can't be changed. */
+const retypeSetFor = (type: string): string[] | null =>
+  ABSENCE_REQUEST_TYPES.includes(type) ? ABSENCE_REQUEST_TYPES
+    : NON_ABSENCE_REQUEST_TYPES.includes(type) ? NON_ABSENCE_REQUEST_TYPES
+    : null;
 const STATUS_COLORS: Record<string, string> = {
   pending: 'bg-warning/20 text-warning-foreground border-warning',
   approved: 'bg-success/20 text-success border-success',
@@ -220,30 +244,6 @@ export function RequestDetailPage({
     }
   });
 
-  // Helper function to check if a date falls on an active recurrence week
-  const isDateOnRecurrenceSchedule = (currentDate: Date, patternStartDate: string, recurrenceInterval: string): boolean => {
-    if (recurrenceInterval === 'weekly') return true;
-    const patternStart = new Date(patternStartDate);
-    // Calendar days, not elapsed milliseconds: across a clock change the gap
-
-    // between two local midnights is 23 or 25 hours, so dividing by 24 loses a
-
-    // day and flips the odd/even week a biweekly pattern turns on.
-
-    const diffDays = differenceInCalendarDays(currentDate, patternStart);
-    const diffWeeks = Math.floor(diffDays / 7);
-    if (recurrenceInterval === 'biweekly') {
-      // Biweekly: pattern runs on even weeks (0, 2, 4, ...)
-      return diffWeeks % 2 === 0;
-    }
-    if (recurrenceInterval === 'monthly') {
-      // Monthly: only on weeks that are 4 weeks apart (0, 4, 8, ...)
-      return diffWeeks % 4 === 0;
-    }
-
-    // Default to weekly if unknown interval
-    return true;
-  };
 
   // Get day-by-day breakdown of affected shift times
   const getAffectedShiftsByDay = (): {
@@ -317,7 +317,11 @@ export function RequestDetailPage({
     }[] = [];
 
     // Create a set of exception keys for quick lookup (pattern_id + date)
-    const exceptionSet = new Set(shiftExceptions.map(exc => `${exc.pattern_id}:${exc.exception_date}`));
+    // Only cancelled occurrences: per-day overtime overrides are in the same
+    // table, and those shifts still happen.
+    const exceptionSet = new Set(shiftExceptions
+      .filter(exc => exc.exception_type === 'deleted')
+      .map(exc => `${exc.pattern_id}:${exc.exception_date}`));
 
     // Iterate through each day of the request period
     let currentDate = new Date(startDate);
@@ -342,8 +346,8 @@ export function RequestDetailPage({
         // Skip if pattern has ended before current date
         if (patternEndDate && currentDateStr > patternEndDate) return;
 
-        // Skip if this date doesn't fall on the recurrence schedule (biweekly, monthly, etc.)
-        if (!isDateOnRecurrenceSchedule(currentDate, patternStartDate, pattern.recurrence_interval)) return;
+        // Skip if it isn't an occurrence by the rota's rule (biweekly, monthly, etc.)
+        if (!patternOccursOn(pattern, parseISO(currentDateStr))) return;
 
         // Skip if there's an exception for this pattern on this date
         if (exceptionSet.has(`${pattern.id}:${currentDateStr}`)) return;
@@ -407,7 +411,7 @@ export function RequestDetailPage({
 
   // Everyone's shift patterns and approved leave overlapping this request's
   // window — used to work out who is actually FREE on the days needing cover.
-  const isHolidayTypeRequest = !!request && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
+  const isHolidayTypeRequest = !!request && ['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(request.request_type);
   const { data: availabilityPatterns = [] } = useQuery({
     queryKey: ["availability-patterns", request?.id],
     enabled: isHolidayTypeRequest,
@@ -442,7 +446,7 @@ export function RequestDetailPage({
     refetch: refetchCoveringStaff
   } = useQuery({
     queryKey: ["covering-staff", request?.id],
-    enabled: !!request && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type),
+    enabled: !!request && ['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(request.request_type),
     queryFn: async () => {
       // Find shift swap requests that cover this person's dates
       const {
@@ -463,7 +467,7 @@ export function RequestDetailPage({
     refetch: refetchLinkedHoliday
   } = useQuery({
     queryKey: ["linked-holiday", request?.id],
-    enabled: !!request && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type) && request.status === 'approved',
+    enabled: !!request && ['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(request.request_type) && request.status === 'approved',
     queryFn: async () => {
       // Find the staff_holidays record that matches this request
       const {
@@ -484,16 +488,19 @@ export function RequestDetailPage({
   // Handover status for this leave — must be complete before the leave starts,
   // unless the holiday is marked no-cover-required (then none is needed).
   // Per-date no-cover marks count too: a client whose every shift during the
-  // leave is marked no-cover needs no handover.
+  // leave is marked no-cover needs no handover. Sickness gets none at all:
+  // nobody can hand over before falling ill.
   const {
     data: handoverStatus,
     refetch: refetchHandoverStatus
   } = useQuery({
-    queryKey: ["holiday-handover-status", request?.user_id, request?.start_date, request?.end_date, linkedHoliday?.no_cover_required ?? false, (linkedHoliday?.no_cover_dates || []).join(",")],
+    queryKey: ["holiday-handover-status", request?.user_id, request?.start_date, request?.end_date, linkedHoliday?.id ?? null, linkedHoliday?.no_cover_required ?? false, (linkedHoliday?.no_cover_dates || []).join(",")],
     enabled: !!request && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type) && request.status === 'approved',
+    // The holiday id finds the handovers stored against this leave; the lib
+    // falls back to person + dates while the row hasn't loaded yet.
     queryFn: () => computeHolidayHandoverStatus(
       request!.user_id, request!.start_date, request!.end_date,
-      { noCoverRequired: !!linkedHoliday?.no_cover_required, noCoverDates: linkedHoliday?.no_cover_dates || [] }
+      { noCoverRequired: !!linkedHoliday?.no_cover_required, noCoverDates: linkedHoliday?.no_cover_dates || [], holidayId: linkedHoliday?.id }
     ),
   });
   useEffect(() => {
@@ -612,13 +619,18 @@ export function RequestDetailPage({
         start_date: coverStartDate,
         end_date: coverEndDate,
         days_requested: daysRequested,
-        details: `Covering for ${getStaffName(request.user_id)} during their holiday`,
+        // Approved cover requests can be read without signing in, so a sick
+        // colleague's is described only as an absence.
+        details: `Covering for ${getStaffName(request.user_id)} during their ${request.request_type === 'sickness' ? 'absence' : 'holiday'}`,
         status: 'approved',
         reviewed_by: user.id,
         reviewed_at: new Date().toISOString(),
         client_informed: false,
         overtime_type: mappedOvertimeType,
         coverage_metadata: coverageMetadata,
+        // Which leave this cover is for, so its handovers are found by the
+        // leave rather than by matching dates. Same payload for insert and update.
+        linked_holiday_id: linkedHoliday?.id ?? null,
       };
 
       // If a cover request already exists for this exact period, update it instead of inserting a duplicate
@@ -655,6 +667,12 @@ export function RequestDetailPage({
       refetchLinkedHoliday();
       refetchCoveringStaff();
       invalidateAllCoverageQueries(queryClient);
+      // A new coverer is a new handover: refresh this page's per-client rows,
+      // the leave lists, the trackers and the dashboard.
+      queryClient.invalidateQueries({ queryKey: ["holiday-handover-status"] });
+      queryClient.invalidateQueries({ queryKey: ["holiday-handover-status-batch"] });
+      queryClient.invalidateQueries({ queryKey: ["client-handovers"] });
+      queryClient.invalidateQueries({ queryKey: ["handovers-all"] });
       toast.success("Cover assigned successfully");
       // Email the cover person with handover-tracker links + a prompt to reach out.
       if (coverResult && request) {
@@ -720,6 +738,11 @@ export function RequestDetailPage({
     onSuccess: (_data, coverUserId) => {
       refetchCoveringStaff();
       invalidateAllCoverageQueries(queryClient);
+      // The coverer's handover goes (or reverts to "cover not assigned yet").
+      queryClient.invalidateQueries({ queryKey: ["holiday-handover-status"] });
+      queryClient.invalidateQueries({ queryKey: ["holiday-handover-status-batch"] });
+      queryClient.invalidateQueries({ queryKey: ["client-handovers"] });
+      queryClient.invalidateQueries({ queryKey: ["handovers-all"] });
       toast.success("Cover unassigned");
       // Tell the removed cover to stand down, and the person being covered that
       // their cover has gone — silence here is how someone works a shift they're
@@ -761,10 +784,10 @@ export function RequestDetailPage({
       queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
       // Handover surfaces (dashboard trackers + banners) derive from cover
       // requirements — refresh them so no-cover clients drop out immediately.
-      queryClient.invalidateQueries({ queryKey: ["handover-summary-upcoming-leave-all"] });
-      queryClient.invalidateQueries({ queryKey: ["client-upcoming-leave"] });
       queryClient.invalidateQueries({ queryKey: ["holiday-handover-status"] });
       queryClient.invalidateQueries({ queryKey: ["holiday-handover-status-batch"] });
+      queryClient.invalidateQueries({ queryKey: ["client-handovers"] });
+      queryClient.invalidateQueries({ queryKey: ["handovers-all"] });
       toast.success("Cover requirement updated");
     },
     onError: (error) => {
@@ -795,10 +818,10 @@ export function RequestDetailPage({
       queryClient.invalidateQueries({ queryKey: ["all-staff-requests"] });
       // Handover surfaces (dashboard trackers + banners) derive from cover
       // requirements — refresh them so no-cover clients drop out immediately.
-      queryClient.invalidateQueries({ queryKey: ["handover-summary-upcoming-leave-all"] });
-      queryClient.invalidateQueries({ queryKey: ["client-upcoming-leave"] });
       queryClient.invalidateQueries({ queryKey: ["holiday-handover-status"] });
       queryClient.invalidateQueries({ queryKey: ["holiday-handover-status-batch"] });
+      queryClient.invalidateQueries({ queryKey: ["client-handovers"] });
+      queryClient.invalidateQueries({ queryKey: ["handovers-all"] });
       invalidateAllCoverageQueries(queryClient);
       toast.success("Cover requirement updated");
     },
@@ -820,20 +843,63 @@ export function RequestDetailPage({
       }).eq("id", requestId);
       if (error) throw error;
 
-      // If it's a holiday request being approved, sync to staff_holidays
-      if (status === 'approved' && request && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type)) {
-        const absenceType = request.request_type === 'holiday_unpaid' ? 'unpaid' : 'holiday';
-        await supabase.from("staff_holidays").insert([{
-          user_id: request.user_id,
-          absence_type: absenceType,
-          start_date: request.start_date,
-          end_date: request.end_date,
-          days_taken: request.days_requested,
-          status: 'approved',
-          notes: request.details,
-          approved_by: user.id,
-          approved_at: new Date().toISOString()
-        }]);
+      // If it's a holiday or sickness request being approved, sync to staff_holidays
+      if (status === 'approved' && request && ['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(request.request_type)) {
+        const absenceType = request.request_type === 'sickness' ? 'sick' : request.request_type === 'holiday_unpaid' ? 'unpaid' : 'holiday';
+        // This person's absence for these dates, of whatever type, if it is
+        // already on the rota. An approval whose reply was lost can have added
+        // it and still been put back to pending below, and a second row would
+        // count the same days against the allowance twice.
+        const findOnRota = () => supabase.from("staff_holidays").select("id, absence_type")
+          .eq("user_id", request.user_id)
+          .eq("start_date", request.start_date)
+          .eq("end_date", request.end_date)
+          .limit(1);
+        const { data: onRota, error: lookupError } = await findOnRota();
+        const existing = onRota?.[0];
+        let holidayError: { message: string } | null = lookupError;
+        if (!lookupError && !existing) {
+          const { error: insertError } = await supabase.from("staff_holidays").insert([{
+            user_id: request.user_id,
+            absence_type: absenceType,
+            start_date: request.start_date,
+            end_date: request.end_date,
+            days_taken: request.days_requested,
+            status: 'approved',
+            // staff_holidays can be read without signing in, and what someone
+            // writes about being ill is health data, so it stays on the request.
+            notes: request.request_type === 'sickness' ? null : request.details,
+            approved_by: user.id,
+            approved_at: new Date().toISOString()
+          }]);
+          if (insertError) {
+            // The same goes for an insert that reports failure: it may have
+            // landed anyway, so look again before undoing the approval.
+            const { data: afterInsert } = await findOnRota();
+            holidayError = afterInsert?.length ? null : insertError;
+          }
+        } else if (existing && existing.absence_type !== absenceType) {
+          // Pay reads the request's type and the allowance reads the row's, so
+          // the row takes the type being approved, and for sickness drops its
+          // notes, just as a new row would have.
+          const { error: retypeError } = await supabase.from("staff_holidays")
+            .update(absenceType === 'sick' ? { absence_type: absenceType, notes: null } : { absence_type: absenceType })
+            .eq("id", existing.id);
+          holidayError = retypeError;
+        }
+        if (holidayError) {
+          // Put the request back as it was, so it can simply be approved again,
+          // rather than leave it approved with nothing on the rota.
+          const { error: revertError } = await supabase.from("staff_requests").update({
+            status: request.status,
+            reviewed_by: request.reviewed_by,
+            reviewed_at: request.reviewed_at,
+            review_notes: request.review_notes
+          }).eq("id", requestId);
+          throw new Error(revertError
+            ? `it is marked approved, but the absence could not be added to the rota (${holidayError.message})`
+            : `the absence could not be added to the rota, so the request is still pending (${holidayError.message})`);
+        }
       }
 
       // Send email notification to the requester
@@ -880,23 +946,53 @@ export function RequestDetailPage({
   const changeRequestTypeMutation = useMutation({
     mutationFn: async (newType: RequestType) => {
       if (!user || !request) throw new Error("Not authenticated or no request");
-      
+
+      // Only to another type in the same set: see ABSENCE_REQUEST_TYPES. The
+      // select offers only these; this is the backstop.
+      const retypeSet = retypeSetFor(request.request_type);
+      if (!retypeSet) {
+        throw new Error("this kind of request can't be changed to another type");
+      }
+      if (!retypeSet.includes(newType)) {
+        throw new Error("an absence can only be changed to another kind of absence, and other requests can't become one");
+      }
+
+      // Only the person and admins can read a sickness request, but other
+      // staff can read other kinds, so what was written about it is cleared
+      // with the change of type. The admin confirms this at the select.
+      const leavingSickness = request.request_type === 'sickness' && newType !== 'sickness';
+
       // Update the request type
       const { error } = await supabase
         .from("staff_requests")
-        .update({ request_type: newType })
+        .update(leavingSickness ? { request_type: newType, details: null, review_notes: null } : { request_type: newType })
         .eq("id", requestId);
       if (error) throw error;
 
-      // If the request is approved and it's a holiday type, also update the linked staff_holidays record
-      if (request.status === 'approved' && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type)) {
-        const newAbsenceType = newType === 'holiday_unpaid' ? 'unpaid' : 'holiday';
-        await supabase
+      // If the request is approved, also update the linked staff_holidays record.
+      if (request.status === 'approved' && ABSENCE_REQUEST_TYPES.includes(request.request_type)) {
+        const newAbsenceType = newType === 'sickness' ? 'sick' : newType === 'holiday_unpaid' ? 'unpaid' : 'holiday';
+        const { error: holidayError } = await supabase
           .from("staff_holidays")
-          .update({ absence_type: newAbsenceType })
+          // Sickness filed as holiday was usually explained in the notes, which
+          // can be read without signing in, so reclassifying it clears them.
+          .update(newType === 'sickness' ? { absence_type: newAbsenceType, notes: null } : { absence_type: newAbsenceType })
           .eq("user_id", request.user_id)
           .eq("start_date", request.start_date)
           .eq("end_date", request.end_date);
+        if (holidayError) {
+          // Put the type back, and the note with it, so the request and the
+          // rota don't disagree.
+          const { error: revertError } = await supabase.from("staff_requests").update(leavingSickness
+            ? { request_type: request.request_type, details: request.details, review_notes: request.review_notes }
+            : { request_type: request.request_type }).eq("id", requestId);
+          // If that failed as well, the request has changed and the rota hasn't.
+          // Say so, rather than a failure that reads as if nothing changed.
+          if (revertError) {
+            throw new Error(`the request is now ${REQUEST_TYPE_INFO[newType]?.label ?? newType}, but the rota still shows ${REQUEST_TYPE_INFO[request.request_type]?.label ?? request.request_type} (${holidayError.message})`);
+          }
+          throw holidayError;
+        }
       }
     },
     onSuccess: async () => {
@@ -907,6 +1003,10 @@ export function RequestDetailPage({
       toast.success("Request type updated successfully");
     },
     onError: (error) => {
+      // A failed change can still have changed the request (see above), so
+      // show what it holds now rather than what was on screen.
+      queryClient.invalidateQueries({ queryKey: ["staff-request", requestId] });
+      queryClient.invalidateQueries({ queryKey: ["linked-holiday", request?.id] });
       toast.error("Failed to update request type: " + error.message);
     }
   });
@@ -914,7 +1014,7 @@ export function RequestDetailPage({
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      if (request?.status === 'approved' && ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type)) {
+      if (request?.status === 'approved' && ['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(request.request_type)) {
         await supabase.from("staff_holidays").delete().eq("user_id", request.user_id).eq("start_date", request.start_date).eq("end_date", request.end_date);
       }
       const {
@@ -947,11 +1047,13 @@ export function RequestDetailPage({
       coverInfo = "\n\nPlease note that cover arrangements are still being finalised, and we will update you once confirmed.";
     }
     const dateText = isSingleDay ? `on ${startDate}` : `from ${startDate} to ${endDate} (${request.days_requested} day${request.days_requested > 1 ? 's' : ''})`;
+    // Clients are told that someone is away, never why: sickness is health data.
+    const awayText = request.request_type === 'sickness' ? 'unavailable' : 'on approved leave';
     return `Dear Client,
 
 I hope this email finds you well.
 
-I am writing to inform you that ${staffName} will be on approved leave ${dateText}.${coverInfo}
+I am writing to inform you that ${staffName} will be ${awayText} ${dateText}.${coverInfo}
 
 If you have any questions or concerns regarding this, please do not hesitate to contact us.
 
@@ -983,7 +1085,10 @@ Care Cuddle Team`;
   }
   const typeInfo = REQUEST_TYPE_INFO[request.request_type];
   const Icon = typeInfo?.icon || Clock;
-  const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
+  // Sickness is treated as leave on this page: a sick person's shifts still
+  // need cover, and their clients still need telling.
+  const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(request.request_type);
+  const retypeSet = retypeSetFor(request.request_type);
   return <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -1031,8 +1136,18 @@ Care Cuddle Team`;
                   <Label className="text-muted-foreground text-sm">Request Type</Label>
                   <Select
                     value={request.request_type}
-                    onValueChange={(value) => changeRequestTypeMutation.mutate(value as RequestType)}
-                    disabled={changeRequestTypeMutation.isPending}
+                    onValueChange={(value) => {
+                      // Leaving sickness clears what was written on it (see
+                      // changeRequestTypeMutation), so check with the admin first.
+                      if (request.request_type === 'sickness' && value !== 'sickness' && (request.details || request.review_notes)
+                        && !window.confirm(`Changing this from sickness clears ${getStaffName(request.user_id)}'s note and any review notes. Only they and the admins can read a sickness request, but other staff can read other kinds of request. Change it?`)) {
+                        return;
+                      }
+                      changeRequestTypeMutation.mutate(value as RequestType);
+                    }}
+                    // A type in neither set, such as a departure, can't be
+                    // changed at all: see ABSENCE_REQUEST_TYPES.
+                    disabled={!retypeSet || changeRequestTypeMutation.isPending}
                   >
                     <SelectTrigger className="w-full mt-1">
                       <SelectValue>
@@ -1043,6 +1158,9 @@ Care Cuddle Team`;
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
+                      {/* Only the types in this request's own set: see
+                          ABSENCE_REQUEST_TYPES. */}
+                      {retypeSet === ABSENCE_REQUEST_TYPES && <>
                       <SelectItem value="holiday_paid">
                         <div className="flex items-center gap-2">
                           <Palmtree className="h-4 w-4 text-green-600" />
@@ -1055,12 +1173,20 @@ Care Cuddle Team`;
                           Unpaid Holiday
                         </div>
                       </SelectItem>
+                      <SelectItem value="sickness">
+                        <div className="flex items-center gap-2">
+                          <Thermometer className="h-4 w-4 text-rose-600" />
+                          Sickness absence
+                        </div>
+                      </SelectItem>
                       <SelectItem value="holiday">
                         <div className="flex items-center gap-2">
                           <Palmtree className="h-4 w-4 text-green-600" />
                           Holiday / Time Off
                         </div>
                       </SelectItem>
+                      </>}
+                      {retypeSet === NON_ABSENCE_REQUEST_TYPES && <>
                       <SelectItem value="overtime_standard">
                         <div className="flex items-center gap-2">
                           <Clock className="h-4 w-4 text-orange-600" />
@@ -1079,6 +1205,7 @@ Care Cuddle Team`;
                           Shift Cover
                         </div>
                       </SelectItem>
+                      </>}
                     </SelectContent>
                   </Select>
                   {request.overtime_type && <Badge variant="outline" className="mt-1">
@@ -1209,12 +1336,17 @@ Care Cuddle Team`;
                   </Button>
                 </div>
               ) : (() => {
+                // "not_required" with clients means every handover was marked not
+                // required in the tracker — cover exists, the checklists were waived.
+                // Without clients it means no shift during the leave needs cover.
+                const allWaived = !!handoverStatus && handoverStatus.status === 'not_required' && handoverStatus.clients.length > 0;
                 const showHandover = isHolidayRequest && request.status === 'approved' && handoverStatus
-                  && handoverStatus.status !== 'none' && handoverStatus.status !== 'not_required';
+                  && handoverStatus.status !== 'none' && (handoverStatus.status !== 'not_required' || allWaived);
                 const daysUntil = differenceInCalendarDays(parseISO(request.start_date), new Date());
                 const isReady = handoverStatus?.status === 'complete';
-                const urgent = showHandover && !isReady && daysUntil <= 3;
-                const readyCount = (handoverStatus?.clients || []).filter(c => c.taskCount > 0 && c.avgProgress >= 100).length;
+                const urgent = showHandover && !isReady && !allWaived && daysUntil <= 3;
+                // "2 of 3 clients ready" — null when there is only one client.
+                const clientsSummary = handoverStatus ? handoverClientsSummary(handoverStatus) : null;
                 const handoverByClient = new Map((handoverStatus?.clients || []).map(c => [c.client, c]));
 
                 // Shift dates grouped by client, merged with handover clients.
@@ -1259,17 +1391,21 @@ Care Cuddle Team`;
                       )}>
                         {isReady ? (
                           <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0" />
+                        ) : allWaived ? (
+                          <CheckCircle2 className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                         ) : (
                           <AlertCircle className={cn("h-5 w-5 flex-shrink-0", urgent ? "text-destructive" : "text-amber-500")} />
                         )}
                         <div className="text-sm">
                           <span className="font-semibold">
-                            Handover: {HANDOVER_STATUS_LABEL[handoverStatus.status]}
-                            {handoverStatus.clients.length > 1 && ` — ${readyCount} of ${handoverStatus.clients.length} clients ready`}
+                            Handover: {allWaived ? 'Not required' : HANDOVER_STATUS_LABEL[handoverStatus.status]}
+                            {clientsSummary && ` — ${clientsSummary}`}
                           </span>
                           <span className="block text-muted-foreground">
                             {isReady
                               ? "All relevant clients' handovers are complete."
+                              : allWaived
+                                ? "Every handover for this leave has been marked not required in the tracker — the reasons are shown against each coverer below."
                               : daysUntil >= 0
                                 ? `Every client's handover must be completed before leave starts${daysUntil <= 7 ? ` — ${daysUntil} day${daysUntil !== 1 ? 's' : ''} left` : ''}.`
                                 : "This leave has already started and handover is not yet complete."}
@@ -1277,7 +1413,7 @@ Care Cuddle Team`;
                         </div>
                       </div>
                     )}
-                    {isHolidayRequest && request.status === 'approved' && handoverStatus?.status === 'not_required' && (
+                    {isHolidayRequest && request.status === 'approved' && handoverStatus?.status === 'not_required' && !allWaived && (
                       <div className="flex items-center gap-3 p-3 bg-muted/40 border rounded-lg">
                         <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0" />
                         <p className="text-sm"><span className="font-medium">Handover not required</span> — every shift during this leave is marked as not needing cover.</p>
@@ -1318,37 +1454,78 @@ Care Cuddle Team`;
                           <div className="flex items-center justify-between gap-2 flex-wrap px-3 py-2 bg-muted/40 border-b">
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="text-sm font-semibold truncate">{client}</span>
-                              {clientCoverNames.length > 0 && (
+                              {/* The coverer rows below say who, once the handover status is in. */}
+                              {clientCoverNames.length > 0 && !(showHandover && hs) && (
                                 <span className="text-xs text-muted-foreground truncate">
                                   hand over to {clientCoverNames.join(" & ")}
                                 </span>
                               )}
                             </div>
                             {showHandover && hs && (
-                              <div className="flex items-center gap-2 flex-shrink-0">
-                                <Badge
-                                  variant="outline"
-                                  className={cn(
-                                    hs.avgProgress >= 100 && hs.taskCount > 0
-                                      ? "bg-success/20 text-success border-success"
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  hs.ready
+                                    ? "bg-success/20 text-success border-success"
+                                    : hs.notRequired
+                                      ? "bg-muted text-muted-foreground border-muted-foreground/30"
                                       : hs.avgProgress > 0
                                         ? "bg-amber-500/20 text-amber-700 border-amber-500"
                                         : "bg-destructive/20 text-destructive border-destructive"
-                                  )}
-                                >
-                                  {hs.taskCount > 0 ? `Handover ${hs.avgProgress}% · ${hs.taskCount} task${hs.taskCount !== 1 ? 's' : ''}` : 'Handover not started'}
-                                </Badge>
-                                <a
-                                  href={`/public/schedule/${encodeURIComponent(client)}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-sm text-primary hover:underline"
-                                >
-                                  Open tracker
-                                </a>
-                              </div>
+                                )}
+                              >
+                                {hs.notRequired
+                                  ? 'Handover not required'
+                                  : hs.taskCount > 0
+                                    ? `Handover ${hs.avgProgress}% · ${hs.taskCount} task${hs.taskCount !== 1 ? 's' : ''}`
+                                    : 'Handover not started'}
+                              </Badge>
                             )}
                           </div>
+                          {/* One handover per coverer: who this client is handed to, how
+                              far along it is, and a link opening the tracker on that
+                              checklist. Coverers by name, "cover not assigned yet" last. */}
+                          {showHandover && hs && (
+                            <div className="divide-y border-b bg-muted/20">
+                              {[...hs.handovers]
+                                .sort((a, b) => !a.to !== !b.to ? (a.to ? -1 : 1) : (a.to?.name || '').localeCompare(b.to?.name || ''))
+                                .map(h => (
+                                  <div key={h.key} className="flex items-center justify-between gap-2 px-3 py-1.5">
+                                    <p className="text-sm truncate">
+                                      → {h.to ? h.to.name : <span className="text-muted-foreground">cover not assigned yet</span>}
+                                    </p>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <Badge
+                                        variant="outline"
+                                        className={cn(
+                                          h.requirement === 'not_required'
+                                            ? "bg-muted text-muted-foreground border-muted-foreground/30"
+                                            : h.taskCount > 0 && h.avgProgress >= 100
+                                              ? "bg-success/20 text-success border-success"
+                                              : h.avgProgress > 0
+                                                ? "bg-amber-500/20 text-amber-700 border-amber-500"
+                                                : "bg-destructive/20 text-destructive border-destructive"
+                                        )}
+                                      >
+                                        {h.requirement === 'not_required'
+                                          ? 'Not required'
+                                          : h.taskCount > 0
+                                            ? `${h.avgProgress}% · ${h.taskCount} task${h.taskCount !== 1 ? 's' : ''}`
+                                            : 'Not started'}
+                                      </Badge>
+                                      <a
+                                        href={`/public/schedule/${encodeURIComponent(client)}?handover=${encodeURIComponent(h.id ?? h.key)}`}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-sm text-primary hover:underline"
+                                      >
+                                        Open tracker
+                                      </a>
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
                           <div className="divide-y">
                             {dates.map(d => {
                               const cov = coverInfoFor(client, d);

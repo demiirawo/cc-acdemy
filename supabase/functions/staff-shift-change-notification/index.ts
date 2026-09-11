@@ -167,7 +167,16 @@ interface ShiftAuditLog {
   // Set locally when an UPDATE that swapped user_id is split in two: the id of
   // the OTHER person in the swap, so each email can name their counterpart.
   swapOtherId?: string;
+  // Set locally on a one-day override, at send time: how the series it belongs
+  // to is paid. The log row doesn't carry this, and without it the wording has
+  // to guess what the day goes back to — a guess that is wrong on bonus shifts.
+  // Absent when the series can't be found, and the wording guesses as before.
+  seriesKind?: SeriesKind;
 }
+
+// How a series pays a day that nothing overrides: normal, one of the two kinds
+// of overtime, or bonus shifts (never paid at the overtime rate).
+type SeriesKind = "normal" | "standard" | "double_up" | "bonus";
 
 const escapeHtml = (s: unknown): string =>
   String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -241,8 +250,26 @@ const recurrencePhrase = (n: unknown): string => {
 };
 
 /** Overtime described the way a person would say it, never "subtype"/"override". */
-const overtimePhrase = (subtype: unknown): string =>
-  String(subtype ?? "") === "double_up" ? "overtime that falls within your normal hours" : "overtime";
+const overtimePhrase = (subtype: unknown): string => {
+  const s = String(subtype ?? "");
+  if (s === "double_up") return "overtime that falls within your normal hours";
+  if (s === "bonus") return "bonus shifts, paid through your monthly shift bonus rather than as overtime";
+  return "overtime";
+};
+
+/** A series row's pay kind. is_overtime decides; overtime with no subtype is standard. */
+const seriesKindOf = (row: Record<string, unknown>): SeriesKind => {
+  if (!row.is_overtime) return "normal";
+  if (row.overtime_subtype === "bonus") return "bonus";
+  if (row.overtime_subtype === "double_up") return "double_up";
+  return "standard";
+};
+
+/** What a day goes back to when its one-day override is removed: however its series pays. */
+const seriesPayAgain = (kind: SeriesKind): string =>
+  kind === "normal" ? "paid as a normal shift again"
+    : kind === "bonus" ? "a bonus shift again, paid through your monthly shift bonus rather than as overtime"
+    : `paid as ${overtimePhrase(kind)} again`;
 
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -264,19 +291,27 @@ const renderException = (log: ShiftAuditLog, attribution: string): string => {
   const onDay = day ? ` on ${day}` : "";
   const removed = log.action === "DELETE";
   const et = String(d.exception_type ?? "");
+  // How the series itself pays, read at send time. Removing a pay override
+  // puts the day back to that, whichever way the override pointed. Adding one
+  // to a bonus series turns a bonus shift into something else, so say so.
+  const kind = log.seriesKind;
+  const bonusSeries = kind === "bonus";
   let s: string;
   if (et === "deleted") {
     s = removed
       ? `Your shift${at}${onDay} is back on — please attend as normal.`
       : `Your shift${at}${onDay} has been cancelled — you don't need to come in for it.`;
+  } else if ((et === "overtime" || et === "not_overtime") && removed && kind) {
+    s = `Your shift${at}${onDay} will be ${seriesPayAgain(kind)}.`;
   } else if (et === "overtime") {
+    // Removed here means the series couldn't be read, so this is the old guess.
     s = removed
       ? `Your shift${at}${onDay} will no longer be paid as overtime — it will be paid as a normal shift.`
-      : `Your shift${at}${onDay} will now be paid as ${overtimePhrase(d.overtime_subtype)}. This can affect your pay.`;
+      : `Your shift${at}${onDay} will now be paid as ${overtimePhrase(d.overtime_subtype)}${bonusSeries ? " instead of as a bonus shift" : ""}. This can affect your pay.`;
   } else if (et === "not_overtime") {
     s = removed
       ? `Your shift${at}${onDay} will be paid as overtime again.`
-      : `Your shift${at}${onDay} will be paid as a normal shift, not overtime.`;
+      : `Your shift${at}${onDay} will be paid as a normal shift${bonusSeries ? " instead of as a bonus shift" : ", not overtime"}.`;
   } else {
     s = `There has been a change to your shift${at}${onDay} — please check your schedule for the latest details.`;
   }
@@ -349,7 +384,9 @@ const renderUpdate = (log: ShiftAuditLog, attribution: string): string => {
     if (!valuesEqual(o.is_overtime, n.is_overtime)) {
       sentences.push(n.is_overtime
         ? `${S()} now count as ${overtimePhrase(n.overtime_subtype)}. This can affect your pay.`
-        : `${S()} no longer count as overtime — they will be paid as normal shifts.`);
+        : String(o.overtime_subtype ?? "") === "bonus"
+          ? `${S()} no longer count as bonus shifts — they will be paid as normal shifts.`
+          : `${S()} no longer count as overtime — they will be paid as normal shifts.`);
     } else if (n.is_overtime && !valuesEqual(o.overtime_subtype, n.overtime_subtype)) {
       sentences.push(`${S()} now count as ${overtimePhrase(n.overtime_subtype)}. This can affect your pay.`);
     }
@@ -504,11 +541,24 @@ const plainSummary = (log: ShiftAuditLog): string => {
   const at = client ? ` at ${client}` : "";
   if (log.table_name === "shift_pattern_exceptions") {
     const day = d.exception_date ? niceDate(String(d.exception_date)) : "";
+    const onDay = day ? ` on ${day}` : "";
     const et = String(d.exception_type ?? "");
-    if (et === "deleted") return `Shift cancelled${at}${day ? ` on ${day}` : ""}`;
-    if (et === "overtime") return `Shift${at}${day ? ` on ${day}` : ""} marked as overtime`;
-    if (et === "not_overtime") return `Shift${at}${day ? ` on ${day}` : ""} no longer overtime`;
-    return `One-day change${at}${day ? ` on ${day}` : ""}`;
+    if (et === "deleted") return `Shift cancelled${at}${onDay}`;
+    // The pay changes say what renderException says, in fewer words, so the
+    // line someone is asked to acknowledge matches the email they were sent.
+    if (et === "overtime" || et === "not_overtime") {
+      const kind = log.seriesKind;
+      if (log.action === "DELETE") {
+        // With the series unknown, guess as the email does: the opposite of the override.
+        const back = kind ?? (et === "overtime" ? "normal" : "standard");
+        if (back === "normal") return `Shift${at}${onDay} back to being paid as a normal shift`;
+        if (back === "bonus") return `Shift${at}${onDay} back to being a bonus shift`;
+        return `Shift${at}${onDay} back to being paid as overtime`;
+      }
+      if (kind === "bonus") return `Shift${at}${onDay} paid as ${et === "overtime" ? "overtime" : "a normal shift"} instead of as a bonus shift`;
+      return et === "overtime" ? `Shift${at}${onDay} marked as overtime` : `Shift${at}${onDay} no longer overtime`;
+    }
+    return `One-day change${at}${onDay}`;
   }
   if (log.table_name === "staff_schedules") {
     const day = d.start_datetime ? niceDate(String(d.start_datetime)) : "";
@@ -598,6 +648,30 @@ serve(async (req) => {
       });
     }
 
+    // A one-day pay override is worded against how its series pays, which the
+    // log row doesn't record. Read it now rather than trust the moment of the
+    // change: choosing "Entire Series — Bonus" in the editor clears the day's
+    // override before the series itself is saved, so only the settled series
+    // tells the truth. If this read fails the old wording is used — never worth
+    // failing the run over.
+    const exceptionLogs = meaningfulLogs.filter((l) => l.table_name === "shift_pattern_exceptions");
+    const patternIdOf = (l: ShiftAuditLog): string => String((l.new_data || l.old_data)?.pattern_id ?? "");
+    const patternIds = [...new Set(exceptionLogs.map(patternIdOf).filter(Boolean))];
+    if (patternIds.length > 0) {
+      try {
+        const { data: seriesRows, error: seriesError } = await supabase
+          .from("recurring_shift_patterns")
+          .select("id, is_overtime, overtime_subtype")
+          .in("id", patternIds);
+        if (seriesError) throw seriesError;
+        const kindById = new Map<string, SeriesKind>();
+        for (const p of seriesRows ?? []) kindById.set(String(p.id), seriesKindOf(p));
+        for (const l of exceptionLogs) l.seriesKind = kindById.get(patternIdOf(l));
+      } catch (seriesErr) {
+        console.error("Couldn't read how the series pay; one-day overrides keep the old wording:", seriesErr);
+      }
+    }
+
     // Expand logs into per-person events. A "replace" is an UPDATE that changes
     // user_id — split it into a removal for the OLD person and an addition for
     // the NEW person, so BOTH are told (the removed person was previously silent).
@@ -619,9 +693,21 @@ serve(async (req) => {
     type TeamEvent = { client: string; kind: "added" | "removed"; personId: string };
     const teamEvents: TeamEvent[] = [];
 
-    for (const log of meaningfulLogs) {
-      const oldU = log.old_data?.user_id as string | undefined;
-      const newU = log.new_data?.user_id as string | undefined;
+    for (const logged of meaningfulLogs) {
+      const oldU = logged.old_data?.user_id as string | undefined;
+      const newU = logged.new_data?.user_id as string | undefined;
+      // A placeholder series (or unassigned shift) has no user_id, so giving it
+      // to someone is an UPDATE of the same row. For them it is new shifts, not
+      // an edit — as an UPDATE they were only told "some details have been
+      // updated", never that the shifts were now theirs, or that they're bonus
+      // shifts. So route it exactly as the INSERT it is for them, and a row
+      // handed back to a placeholder as a DELETE for whoever had it. A one-day
+      // override's UPDATE logs only its after half, so it can't be mistaken.
+      const bothHalves = logged.action === "UPDATE" && !!logged.old_data && !!logged.new_data;
+      const log: ShiftAuditLog =
+        bothHalves && !oldU && newU ? { ...logged, action: "INSERT", old_data: null }
+        : bothHalves && oldU && !newU ? { ...logged, action: "DELETE", new_data: null }
+        : logged;
       const isReplace = log.action === "UPDATE" && oldU && newU && oldU !== newU;
 
       if (isReplace) {
@@ -638,9 +724,12 @@ serve(async (req) => {
         const uid = data?.user_id as string | undefined;
         pushGrouped(uid, log);
         // Co-workers care about people joining/leaving a client (not edits).
+        // A one-day override's INSERT or DELETE changes how that day is paid,
+        // not who works there, so it must not tell the team someone is joining.
         const client = String(data?.client_name ?? "").trim();
-        if (client && uid && log.action === "INSERT") teamEvents.push({ client, kind: "added", personId: uid });
-        if (client && uid && log.action === "DELETE") teamEvents.push({ client, kind: "removed", personId: uid });
+        const isOverride = log.table_name === "shift_pattern_exceptions";
+        if (client && uid && !isOverride && log.action === "INSERT") teamEvents.push({ client, kind: "added", personId: uid });
+        if (client && uid && !isOverride && log.action === "DELETE") teamEvents.push({ client, kind: "removed", personId: uid });
       }
     }
 
@@ -679,6 +768,9 @@ serve(async (req) => {
       }
       for (const p of pats || []) {
         if (p.end_date && String(p.end_date) < today) continue; // ended pattern
+        // A placeholder series is nobody to tell, and a null id in the profiles
+        // lookup below is rejected outright, failing the whole run.
+        if (!p.user_id) continue;
         const c = String(p.client_name).trim();
         if (!coworkerIdsByClient.has(c)) coworkerIdsByClient.set(c, new Set());
         coworkerIdsByClient.get(c)!.add(p.user_id);

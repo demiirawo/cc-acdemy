@@ -4,11 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Clock, Palmtree, RefreshCw, Calendar, Bell, BellOff } from "lucide-react";
+import { Clock, Palmtree, RefreshCw, Calendar, Bell, BellOff, Thermometer } from "lucide-react";
 import { format, addDays, parseISO } from "date-fns";
 import { useBatchWorkingDays } from "@/hooks/useWorkingDays";
 import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
-type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap';
+type RequestType = 'overtime' | 'overtime_standard' | 'overtime_double_up' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap' | 'sickness';
 interface StaffRequest {
   id: string;
   user_id: string;
@@ -61,6 +61,11 @@ const REQUEST_TYPE_INFO: Record<string, {
     label: "Unpaid Holiday",
     icon: Palmtree,
     color: "text-yellow-600"
+  },
+  sickness: {
+    label: "Sickness absence",
+    icon: Thermometer,
+    color: "text-rose-600"
   },
   shift_swap: {
     label: "Shift Cover",
@@ -131,12 +136,12 @@ export function UpcomingRequestsPreview({
   });
 
   // Calculate working days for all holiday requests
-  const holidayRequests = requests.filter(r => r.request_type === 'holiday' || r.request_type === 'holiday_paid' || r.request_type === 'holiday_unpaid');
+  const holidayRequests = requests.filter(r => r.request_type === 'holiday' || r.request_type === 'holiday_paid' || r.request_type === 'holiday_unpaid' || r.request_type === 'sickness');
   const workingDaysMap = useBatchWorkingDays(holidayRequests);
 
   // Helper to get display days (working days if available, otherwise calendar days)
   const getDisplayDays = (req: StaffRequest): number => {
-    const isHoliday = req.request_type === 'holiday' || req.request_type === 'holiday_paid' || req.request_type === 'holiday_unpaid';
+    const isHoliday = req.request_type === 'holiday' || req.request_type === 'holiday_paid' || req.request_type === 'holiday_unpaid' || req.request_type === 'sickness';
     
     if (isHoliday) {
       const workingDays = workingDaysMap.get(req.id);
@@ -162,7 +167,7 @@ export function UpcomingRequestsPreview({
 
   // Helper to check if holiday has no_cover_required set
   const isNoCoverRequired = (request: StaffRequest): boolean => {
-    if (!['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type)) return false;
+    if (!['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(request.request_type)) return false;
     const linkedHoliday = staffHolidays.find(h => 
       h.user_id === request.user_id && 
       h.start_date === request.start_date && 
@@ -172,7 +177,7 @@ export function UpcomingRequestsPreview({
   };
 
   const getLinkedHoliday = (request: StaffRequest) => {
-    if (!['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type)) return undefined;
+    if (!['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(request.request_type)) return undefined;
     return staffHolidays.find(h =>
       h.user_id === request.user_id &&
       h.start_date === request.start_date &&
@@ -192,7 +197,7 @@ export function UpcomingRequestsPreview({
   const getNestedCoverIds = (): Set<string> => {
     const nestedIds = new Set<string>();
     upcomingRequests.forEach(request => {
-      if (['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type)) {
+      if (['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(request.request_type)) {
         const covers = findCoverForHoliday(request);
         covers.forEach(cover => nestedIds.add(cover.id));
       }
@@ -282,7 +287,8 @@ export function UpcomingRequestsPreview({
                         {monthRequests.map(request => {
                     const typeInfo = REQUEST_TYPE_INFO[request.request_type] || REQUEST_TYPE_INFO.holiday;
                     const TypeIcon = typeInfo.icon;
-                    const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid'].includes(request.request_type);
+                    // Sickness is shown like leave here: its shifts still need cover.
+                    const isHolidayRequest = ['holiday', 'holiday_paid', 'holiday_unpaid', 'sickness'].includes(request.request_type);
                     const covers = isHolidayRequest ? findCoverForHoliday(request) : [];
                     const noCoverRequired = isNoCoverRequired(request);
                     const linkedHoliday = getLinkedHoliday(request);
@@ -355,7 +361,7 @@ export function UpcomingRequestsPreview({
                               
                               {/* Nested cover requests - purple styling like original */}
                               {covers.map(cover => {
-                        const coverTypeInfo = REQUEST_TYPE_INFO[cover.request_type];
+                        const coverTypeInfo = REQUEST_TYPE_INFO[cover.request_type] || REQUEST_TYPE_INFO.shift_swap;
                         const CoverIcon = coverTypeInfo.icon;
                         return <TableRow key={cover.id} className="h-20 cursor-pointer transition-colors bg-purple-50 dark:bg-purple-950/20 hover:bg-purple-100 dark:hover:bg-purple-950/40 border-l-4 border-purple-400" onClick={() => onViewRequest?.(cover.id)}>
                                     <TableCell className="font-medium py-4">
@@ -383,7 +389,7 @@ export function UpcomingRequestsPreview({
                                     </TableCell>
                                     <TableCell className="py-4">{getDisplayDays(cover)}</TableCell>
                                     <TableCell className="max-w-[200px] py-4 text-sm">
-                                      Holiday: {format(parseISO(request.start_date), 'dd MMM yyyy')} – {format(parseISO(request.end_date), 'dd MMM yyyy')} ({getDisplayDays(request)} days)
+                                      {request.request_type === 'sickness' ? 'Sickness' : 'Holiday'}: {format(parseISO(request.start_date), 'dd MMM yyyy')} – {format(parseISO(request.end_date), 'dd MMM yyyy')} ({getDisplayDays(request)} days)
                                     </TableCell>
                                     <TableCell className="py-4">
                                       <span className="text-muted-foreground text-xs">N/A</span>

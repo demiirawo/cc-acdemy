@@ -215,15 +215,23 @@ export function StaffHolidaysManager() {
 
       if (shiftCoverError) throw shiftCoverError;
 
-      // Build map of holiday_id -> cover info
+      // Build map of holiday_id -> cover info. A leave split between two
+      // coverers has two rows; both names are shown, once each.
       const coverMap = new Map<string, ShiftCoverRequest>();
+      const coverUserIdsByHoliday = new Map<string, Set<string>>();
       (shiftCoverData || []).forEach(req => {
         if (req.linked_holiday_id && req.user_id) {
+          const seen = coverUserIdsByHoliday.get(req.linked_holiday_id) ?? new Set<string>();
+          if (seen.has(req.user_id)) return;
+          seen.add(req.user_id);
+          coverUserIdsByHoliday.set(req.linked_holiday_id, seen);
           const coverUser = users?.find(u => u.user_id === req.user_id);
+          const name = coverUser?.display_name || coverUser?.email || 'Unknown';
+          const existing = coverMap.get(req.linked_holiday_id);
           coverMap.set(req.linked_holiday_id, {
             holiday_id: req.linked_holiday_id,
-            cover_user_id: req.user_id,
-            cover_user_name: coverUser?.display_name || coverUser?.email || 'Unknown'
+            cover_user_id: existing?.cover_user_id ?? req.user_id,
+            cover_user_name: existing ? `${existing.cover_user_name} & ${name}` : name
           });
         }
       });

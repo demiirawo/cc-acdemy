@@ -699,6 +699,9 @@ export function UnifiedShiftEditor({
                       <SelectItem value="series_none" className="font-medium">Entire Series — Not Overtime</SelectItem>
                       <SelectItem value="series_standard">Entire Series — Overtime (Outside Normal Hours)</SelectItem>
                       <SelectItem value="series_double_up">Entire Series — Overtime (Inside Normal Hours)</SelectItem>
+                      {/* Series only. A single day cannot be made a bonus shift:
+                          it would have no series to be pro-rated against. */}
+                      <SelectItem value="series_bonus">Entire Series — Bonus shift</SelectItem>
                       <SelectItem value="day_none" className="font-medium border-t mt-1 pt-1">Just {shift ? format(shift.date, "dd MMM") : "This Day"} — Not Overtime</SelectItem>
                       <SelectItem value="day_standard">Just {shift ? format(shift.date, "dd MMM") : "This Day"} — Overtime (Outside Normal Hours)</SelectItem>
                       <SelectItem value="day_double_up">Just {shift ? format(shift.date, "dd MMM") : "This Day"} — Overtime (Inside Normal Hours)</SelectItem>
@@ -722,6 +725,7 @@ export function UnifiedShiftEditor({
                 {isPattern && dayOvertimeValue === 'inherit' && !form.is_overtime && 'Series: Not Overtime'}
                 {isPattern && dayOvertimeValue === 'inherit' && form.is_overtime && form.overtime_subtype === 'standard' && 'Series: OT (Outside Normal Hours) — 1.5× daily rate'}
                 {isPattern && dayOvertimeValue === 'inherit' && form.is_overtime && form.overtime_subtype === 'double_up' && 'Series: OT (Inside Normal Hours) — 0.5× daily rate premium'}
+                {isPattern && dayOvertimeValue === 'inherit' && form.is_overtime && form.overtime_subtype === 'bonus' && 'Series: Bonus shifts — never paid at the overtime rate; the admin\'s monthly shift bonus is paid in proportion to the bonus shifts worked. Every day on this series is a bonus shift.'}
               </p>
             </div>
 

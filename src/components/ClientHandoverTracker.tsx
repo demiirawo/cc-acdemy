@@ -1,663 +1,648 @@
-import { useState, useMemo, useEffect, useRef, Fragment } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { parseISO } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import {
-  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
-} from "@/components/ui/accordion";
-import { Trash2, ExternalLink, Plus, Check, X, ChevronDown, ChevronRight, Type, Link2, BarChart3, Calendar, User, Hash, Plane } from "lucide-react";
-import { HandoverTaskComments } from "@/components/HandoverTaskComments";
-import { Slider } from "@/components/ui/slider";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Ban, Check, ChevronRight, ExternalLink, MoveRight, Plane, RotateCcw, UserMinus, X } from "lucide-react";
 import { toast } from "sonner";
-import { getUpcomingLeaveForClient, type UpcomingClientLeave } from "@/lib/handoverStatus";
-import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
+import {
+  ensureHandoverRow,
+  getClientHandovers,
+  groupHandoversByLeave,
+  handoverKey,
+  handoverTitle,
+  moveHandoverTasks,
+  setHandoverRequirement,
+  type ClientHandover,
+  type HandoverKind,
+  type HandoverRequirement,
+  type LeaveHandoverGroup,
+} from "@/lib/handoverStatus";
+import { HandoverTaskGrid } from "@/components/handover/HandoverTaskGrid";
+import { HandoverTaskLibrary } from "@/components/handover/HandoverTaskLibrary";
+import { newDraft, type DraftRow, type HandoverTask } from "@/components/handover/handoverTasks";
+import { useHandoverTemplates, type HandoverTemplate } from "@/components/handover/useHandoverTemplates";
+import { useHandoverUsers } from "@/components/handover/useHandoverUsers";
+import { useHandoverNotifications } from "@/components/handover/useHandoverNotifications";
 
-// Shared hook: list of staff display names for the user picker
-function useHandoverUsers() {
-  return useQuery({
-    queryKey: ["handover-user-options", "with-employment"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("user_id, display_name, email")
-        .order("display_name", { ascending: true });
-      if (error) throw error;
-
-      // Employment windows, so handover work isn't offered to people who have
-      // gone. `profiles` also holds sign-in accounts that were never staff and
-      // have no HR row at all — those come out as not employed, which is right.
-      const { data: hr } = await supabase
-        .from("hr_profiles")
-        .select("user_id, start_date, employment_end_date");
-      const windows = new Map<string, EmploymentWindow>(
-        (hr || []).map((h: { user_id: string } & EmploymentWindow) => [h.user_id, h]),
-      );
-
-      return (data || [])
-        .map((p) => ({
-          id: p.user_id as string,
-          name: (p.display_name || p.email || "").trim(),
-          email: (p.email || "").trim(),
-          // Flagged rather than dropped here: the picker offers current staff
-          // only, but name→email lookup for change emails about a task a leaver
-          // was already on still has to find them.
-          employed: isCurrentlyEmployed(windows.get(p.user_id as string)),
-        }))
-        .filter((u) => u.name);
-    },
-    staleTime: 5 * 60 * 1000,
-  });
-}
-
-// Searchable user picker — used for handed_over_by / handed_over_to
-function UserPickerCell({
-  value,
-  onCommit,
-  placeholder = "Select…",
-  className = "",
-}: {
-  value: string | null;
-  onCommit: (v: string) => void;
-  placeholder?: string;
-  className?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const { data: allUsers = [] } = useHandoverUsers();
-  // Handover work is being assigned here, so only people still employed are
-  // offered. A name already saved on a row still shows as it was recorded.
-  const users = useMemo(() => allUsers.filter((u) => u.employed), [allUsers]);
-  const display = (value || "").trim();
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={`w-full h-full text-left bg-transparent border-0 px-2 py-1.5 text-sm outline-none hover:bg-background focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset truncate ${className}`}
-        >
-          {display || <span className="text-muted-foreground">{placeholder}</span>}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-64 p-0" align="start">
-        <Command>
-          <CommandInput placeholder="Search staff…" />
-          <CommandList>
-            <CommandEmpty>No staff found.</CommandEmpty>
-            {display && (
-              <CommandGroup>
-                <CommandItem
-                  value="__clear__"
-                  onSelect={() => { onCommit(""); setOpen(false); }}
-                >
-                  <X className="h-3.5 w-3.5 mr-2" />
-                  Clear
-                </CommandItem>
-              </CommandGroup>
-            )}
-            <CommandGroup>
-              {users.map((u) => (
-                <CommandItem
-                  key={u.id}
-                  value={u.name}
-                  onSelect={() => { onCommit(u.name); setOpen(false); }}
-                >
-                  <Check className={`h-3.5 w-3.5 mr-2 ${display === u.name ? "opacity-100" : "opacity-0"}`} />
-                  {u.name}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-interface HandoverTemplate {
-  id: string;
-  name: string;
-  description: string | null;
-  link: string | null;
-  category: string | null;
-}
-
-interface HandoverTask {
-  id: string;
-  client_name: string;
-  template_id: string | null;
-  category: string | null;
-  task_name: string;
-  task_description: string | null;
-  link: string | null;
-  handed_over_by: string | null;
-  handed_over_to: string | null;
-  progress: number;
-  target_date: string | null;
-  sort_order: number | null;
-  created_at: string;
-}
+/**
+ * The client's handover tracker: one checklist per handover — one person
+ * handing this client to one colleague for one leave — grouped by the leave,
+ * so everything Funmi has to hand over here before September AND before
+ * October is on the page at once, each with its own progress and its own
+ * "not required" decision.
+ *
+ * Which handovers exist comes from the rota and the cover requests (see
+ * src/lib/handoverStatus.ts); the checklists and decisions live in
+ * client_handovers / client_handover_tasks and are laid over the top here.
+ */
 
 interface Props {
   clientName: string;
-  /**
-   * The client's nearest upcoming/ongoing approved leave, if already known
-   * by the caller (e.g. a batched fetch across many clients). Pass `null`
-   * explicitly to suppress the banner. Omit entirely to have this component
-   * fetch it itself.
-   */
-  upcomingLeave?: UpcomingClientLeave | null;
+  /** Open (and scroll to) a particular handover or leave instead of the soonest. */
+  focus?: { holidayId?: string | null; departureUserId?: string | null; handoverId?: string | null };
 }
 
-function LeaveBanner({ leave }: { leave: UpcomingClientLeave }) {
-  const fmt = (d: string) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-  const urgent = !leave.ongoing && leave.daysUntil <= 3;
-  const soon = !leave.ongoing && leave.daysUntil <= 7;
-  const tone = leave.ongoing || urgent
+/** The parts of a client_handovers row the handover list doesn't carry. */
+interface StoredHandoverRow {
+  id: string;
+  kind: string;
+  from_user_id: string;
+  holiday_id: string | null;
+  to_user_id: string | null;
+  status_changed_by: string | null;
+  status_changed_at: string | null;
+}
+
+/** A handover as shown here: the lib's handover, with its checklist attached. */
+interface TrackedHandover extends ClientHandover {
+  tasks: HandoverTask[];
+  /** Required, has tasks, and every one of them is at 100%. */
+  complete: boolean;
+  /** Who last decided it was (not) required, when we know. */
+  statusChangedBy: string | null;
+  statusChangedAt: string | null;
+}
+
+interface TrackedGroup extends Omit<LeaveHandoverGroup, "handovers"> {
+  handovers: TrackedHandover[];
+}
+
+/** The leave (or departure) a handover belongs to, among those on the page. */
+const findGroup = (groups: TrackedGroup[], h: TrackedHandover) =>
+  groups.find((g) => g.kind === h.kind && g.from.userId === h.from.userId && g.holidayId === h.holidayId);
+
+/** Everything a section can do, so the sections stay dumb and stable. */
+interface TrackerActions {
+  createTask: (h: TrackedHandover, draft: DraftRow, onDone: () => void) => void;
+  createPending: boolean;
+  updateTask: (id: string, patch: Partial<HandoverTask>) => void;
+  deleteTask: (id: string) => void;
+  reassignTask: (task: HandoverTask, next: string) => void;
+  clearTasks: (h: TrackedHandover) => void;
+  markNotRequired: (h: TrackedHandover) => void;
+  reinstate: (h: TrackedHandover) => void;
+  moveTasks: (from: TrackedHandover, to: TrackedHandover) => void;
+  addTemplate: (h: TrackedHandover, t: HandoverTemplate) => void;
+  /** A decision, clear or move is in flight — hold the other buttons. */
+  busy: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Wording
+// ---------------------------------------------------------------------------
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** "22 Sept 2026" — parsed as a local date, so it never slips a day west of Greenwich. */
+const fmtDate = (iso: string) =>
+  parseISO(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+
+/** "22 Sept–29 Sept 2026"; the year is only repeated when it changes. */
+const fmtRange = (start: string, end: string) => {
+  if (start === end) return fmtDate(start);
+  const s = parseISO(start);
+  const sameYear = s.getFullYear() === parseISO(end).getFullYear();
+  const startLabel = sameYear ? s.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : fmtDate(start);
+  return `${startLabel}–${fmtDate(end)}`;
+};
+
+/** "24, 26 Oct" — a coverer's share of the leave; "30 Sept, 1 Oct" across a month end. */
+const fmtCoveredDates = (dates: string[]) =>
+  dates
+    .map((d, i) => {
+      const day = parseISO(d);
+      const next = dates[i + 1] ? parseISO(dates[i + 1]) : null;
+      const lastOfMonth = !next || next.getMonth() !== day.getMonth() || next.getFullYear() !== day.getFullYear();
+      return lastOfMonth ? day.toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : String(day.getDate());
+    })
+    .join(", ");
+
+const leaveTiming = (g: { kind: HandoverKind; ongoing: boolean; daysUntil: number; endDate: string }) => {
+  if (g.kind === "departure") {
+    return g.daysUntil > 0 ? `in ${plural(g.daysUntil, "day")}` : g.daysUntil === 0 ? "today" : `${plural(-g.daysUntil, "day")} ago`;
+  }
+  if (g.ongoing) return `on leave now — returns ${fmtDate(g.endDate)}`;
+  if (g.daysUntil === 0) return "leave starts today";
+  return `${plural(g.daysUntil, "day")} until leave starts`;
+};
+
+// The tone the leave banner always had: red once the leave is under way or
+// within three days, amber within a week, calm otherwise.
+const leaveTone = (g: { ongoing: boolean; daysUntil: number }) => {
+  const urgent = g.ongoing || g.daysUntil <= 3;
+  const soon = !urgent && g.daysUntil <= 7;
+  return urgent
     ? "bg-destructive/10 text-destructive border-destructive/30"
     : soon
     ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
     : "bg-primary/5 text-primary border-primary/20";
-  const timing = leave.ongoing
-    ? `on leave now — returns ${fmt(leave.endDate)}`
-    : leave.daysUntil === 0
-    ? "leave starts today"
-    : `${leave.daysUntil} day${leave.daysUntil === 1 ? "" : "s"} until leave starts`;
-
-  return (
-    <div className={`flex items-center gap-2 px-4 sm:px-6 py-2 border-b text-xs sm:text-sm font-medium ${tone}`}>
-      <Plane className="h-4 w-4 shrink-0" />
-      <span className="truncate">
-        Linked to <span className="font-semibold">{leave.staffName}</span>'s leave · {fmt(leave.startDate)}–{fmt(leave.endDate)} · {timing}
-        {leave.coverNames && leave.coverNames.length > 0 && (
-          <> · this client covered by <span className="font-semibold">{leave.coverNames.join(" & ")}</span></>
-        )}
-      </span>
-    </div>
-  );
-}
-
-type DraftRow = {
-  key: string;
-  category: string;
-  task_name: string;
-  task_description: string;
-  link: string;
-  handed_over_by: string;
-  handed_over_to: string;
-  progress: number;
-  target_date: string;
-  template_id: string | null;
 };
 
-const newDraft = (category = ""): DraftRow => ({
-  key: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-  category,
-  task_name: "",
-  task_description: "",
-  link: "",
-  handed_over_by: "",
-  handed_over_to: "",
-  progress: 0,
-  target_date: "",
-  template_id: null,
-});
+const chevronClass = (open: boolean) =>
+  `h-4 w-4 shrink-0 transition-transform ${open ? "rotate-90" : ""}`;
 
-const UNCATEGORIZED = "Uncategorized";
+const toName = (h: Pick<ClientHandover, "to">) => (h.to ? h.to.name : "cover not assigned yet");
 
-// Airtable-style column template: row-# gutter + columns
-const GRID_COLS =
-  "grid grid-cols-[44px_minmax(240px,2.4fr)_minmax(120px,1fr)_minmax(120px,1fr)_88px_180px_140px_72px]";
+// The grid order: explicit sort_order first (nulls last), then creation time —
+// what the old single query asked the database for.
+const taskOrder = (a: HandoverTask, b: HandoverTask) => {
+  const ao = a.sort_order ?? Number.MAX_SAFE_INTEGER;
+  const bo = b.sort_order ?? Number.MAX_SAFE_INTEGER;
+  if (ao !== bo) return ao - bo;
+  return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0;
+};
 
-// Progress slider — compact, inline, drag to update (module-scope so it
-// keeps a stable identity across parent re-renders and doesn't remount).
-function ProgressSlider({
-  value,
-  onCommit,
-}: { value: number; onCommit: (v: number) => void }) {
-  const [local, setLocal] = useState(value);
-  useEffect(() => { setLocal(value); }, [value]);
-  const pct = Math.max(0, Math.min(100, local || 0));
-  const pctColor =
-    pct >= 100 ? "text-success"
-    : pct >= 50 ? "text-primary"
-    : pct > 0 ? "text-warning"
-    : "text-muted-foreground";
+// ---------------------------------------------------------------------------
+// Sections
+// ---------------------------------------------------------------------------
+
+/** One leave (or departure): its banner, and its handovers underneath. */
+function LeaveGroupSection({
+  group, open, onOpenChange, children,
+}: { group: TrackedGroup; open: boolean; onOpenChange: (open: boolean) => void; children: ReactNode }) {
+  const Icon = group.kind === "departure" ? UserMinus : Plane;
+  const required = group.handovers.filter((h) => h.requirement === "required");
+  const progress = required.length
+    ? Math.round(required.reduce((s, h) => s + h.avgProgress, 0) / required.length)
+    : 0;
+  const coverers = group.handovers.filter((h) => h.to).length;
+  const who = group.kind === "departure"
+    ? (coverers ? plural(coverers, "successor") : "successor not assigned yet")
+    : (coverers ? plural(coverers, "coverer") : "cover not assigned yet");
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-border bg-background px-2.5 py-1">
-      <div className="w-20 sm:w-24">
-        <Slider
-          value={[pct]}
-          min={0}
-          max={100}
-          step={5}
-          onValueChange={([v]) => setLocal(v)}
-          onValueCommit={([v]) => { if (v !== value) onCommit(v); }}
-          className="[&_[role=slider]]:h-3.5 [&_[role=slider]]:w-3.5 [&_[role=slider]]:border-2 [&_[role=slider]]:border-primary [&_[role=slider]]:bg-background [&_[role=slider]]:ring-0"
-        />
+    <Collapsible open={open} onOpenChange={onOpenChange}>
+      <div className={`flex items-center gap-2 px-4 sm:px-6 py-2 border-b text-xs sm:text-sm font-medium ${leaveTone(group)}`}>
+        <CollapsibleTrigger asChild>
+          <button type="button" className="flex flex-1 items-center gap-2 min-w-0 text-left">
+            <ChevronRight className={chevronClass(open)} />
+            <Icon className="h-4 w-4 shrink-0" />
+            <span className="truncate">
+              {group.kind === "departure" ? (
+                <><span className="font-semibold">{group.from.name}</span> leaves · last day {fmtDate(group.endDate)} · {leaveTiming(group)}</>
+              ) : (
+                <><span className="font-semibold">{group.from.name}</span>'s leave · {fmtRange(group.startDate, group.endDate)} · {leaveTiming(group)}</>
+              )}
+              {" · "}{who}
+            </span>
+          </button>
+        </CollapsibleTrigger>
+        <div className="flex items-center gap-2 shrink-0">
+          {required.length === 0 ? (
+            <Badge variant="outline" className="text-muted-foreground font-medium">Not required</Badge>
+          ) : (
+            <>
+              <Progress value={progress} className="h-1.5 w-20 sm:w-28 bg-background/60" />
+              <span className="text-xs font-semibold tabular-nums w-9 text-right">{progress}%</span>
+            </>
+          )}
+        </div>
       </div>
-      <span className={`text-xs font-semibold min-w-[2.5ch] text-right ${pctColor}`}>
-        {pct}%
-      </span>
-    </div>
+      <CollapsibleContent>{children}</CollapsibleContent>
+    </Collapsible>
   );
 }
 
-// Inline add row — module-scope so opening it and typing isn't wiped out
-// when the parent re-renders (e.g. after a progress mutation refetch).
-function InlineAddRow({
-  defaultCategory,
-  allowCategoryEdit = false,
-  defaultFrom = "",
-  defaultTo = "",
-  onCreate,
-  isPending,
-}: {
-  defaultCategory: string;
-  allowCategoryEdit?: boolean;
-  defaultFrom?: string;
-  defaultTo?: string;
-  onCreate: (d: DraftRow, onDone: () => void) => void;
-  isPending: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [d, setD] = useState<DraftRow>(() => ({
-    ...newDraft(defaultCategory === UNCATEGORIZED ? "" : defaultCategory),
-    handed_over_by: defaultFrom,
-    handed_over_to: defaultTo,
-  }));
-  const rowRef = useRef<HTMLDivElement>(null);
-  const dRef = useRef(d);
-  useEffect(() => { dRef.current = d; }, [d]);
+interface HandoverSectionProps {
+  h: TrackedHandover;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** In the "earlier" list the leave itself has to be named. */
+  showLeave?: boolean;
+  /** "24, 26 Oct" — only when this coverer takes part of the leave. */
+  coveredHint?: string | null;
+  /** Live handovers of the same leave the checklist can be moved to. */
+  moveTargets?: TrackedHandover[];
+  moveHint?: string;
+  /** Leave out and there is no Task Library — a stale checklist only gets moved or cleared. */
+  templates?: HandoverTemplate[];
+  onAddToAll?: (t: HandoverTemplate) => void;
+  usedByAllTemplateIds?: Set<string>;
+  actions: TrackerActions;
+  sectionRef?: (el: HTMLDivElement | null) => void;
+}
 
-  const reset = () => {
-    setD({
-      ...newDraft(defaultCategory === UNCATEGORIZED ? "" : defaultCategory),
-      handed_over_by: defaultFrom,
-      handed_over_to: defaultTo,
-    });
-    setOpen(false);
-  };
+/** One handover: its header line, and (when open) its library and checklist. */
+function HandoverSection({
+  h, open, onOpenChange, showLeave = false, coveredHint, moveTargets, moveHint = "Move these",
+  templates, onAddToAll, usedByAllTemplateIds, actions, sectionRef,
+}: HandoverSectionProps) {
+  const title = showLeave ? handoverTitle(h) : `→ ${toName(h)}`;
+  const leaveLabel = showLeave
+    ? `${h.kind === "departure" ? "departure" : "leave"} ${fmtRange(h.startDate, h.endDate)}`
+    : null;
+  const usedTemplateIds = new Set(h.tasks.map((t) => t.template_id).filter((id): id is string => !!id));
 
-  const save = () => {
-    const cur = dRef.current;
-    if (!cur.task_name.trim()) { reset(); return; }
-    onCreate(cur, reset);
-  };
-
-  // Save when clicking/tapping outside the row
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null;
-      // Ignore clicks inside Radix popovers / dropdowns / dialogs that render
-      // in a portal outside this row (e.g. the user picker).
-      if (target?.closest('[data-radix-popper-content-wrapper],[role="dialog"],[role="listbox"],[cmdk-root]')) {
-        return;
-      }
-      if (rowRef.current && !rowRef.current.contains(target as Node)) {
-        save();
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-
-  if (!open) {
+  if (h.requirement === "not_required") {
+    // Decided against — the header says so and by whom; the checklist is kept
+    // but out of the way until somebody reinstates it.
+    const decided = [
+      h.statusChangedBy ? `by ${h.statusChangedBy}` : null,
+      h.statusChangedAt ? fmtDate(h.statusChangedAt) : null,
+    ].filter(Boolean).join(", ");
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className={`${GRID_COLS} items-center border-b border-border/60 bg-background hover:bg-muted/30 text-left w-full`}
-      >
-        <div className="border-r border-border/60 flex items-center justify-center h-9">
-          <Plus className="h-3.5 w-3.5 text-muted-foreground" />
-        </div>
-        <div className="col-span-7 px-3 py-2 text-xs text-muted-foreground">
-          Add a task…
-        </div>
-      </button>
-    );
-  }
-
-  return (
-    <div ref={rowRef} className={`${GRID_COLS} items-stretch border-b border-border/60 bg-primary/5`}>
-      <div className="border-r border-border/60 flex items-center justify-center text-[11px] text-muted-foreground font-mono">
-        <Plus className="h-3.5 w-3.5" />
-      </div>
-      <div className="border-r border-border/60 px-1 py-1 min-w-0">
-        {allowCategoryEdit && (
-          <input
-            type="text"
-            value={d.category}
-            placeholder="Category"
-            onChange={(e) => setD({ ...d, category: e.target.value })}
-            className="w-full bg-transparent border-0 px-2 py-1 text-xs text-muted-foreground italic outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
-          />
+      <div ref={sectionRef} className="flex items-center gap-2 flex-wrap px-4 sm:px-6 py-2 border-b border-border/60 bg-muted/10 text-sm text-muted-foreground">
+        <Ban className="h-4 w-4 shrink-0" />
+        <span className="font-medium">{title}</span>
+        {leaveLabel && <span className="text-xs">· {leaveLabel}</span>}
+        <Badge variant="outline" className="text-muted-foreground font-medium">Not required</Badge>
+        {(h.notRequiredReason || decided) && (
+          <span className="text-xs truncate min-w-0">
+            {h.notRequiredReason}{h.notRequiredReason && decided ? " · " : ""}{decided}
+          </span>
         )}
-        <input
-          type="text"
-          autoFocus
-          value={d.task_name}
-          placeholder="Task name"
-          onChange={(e) => setD({ ...d, task_name: e.target.value })}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") save();
-            if (e.key === "Escape") reset();
-          }}
-          className="w-full bg-transparent border-0 px-2 py-1 text-sm font-medium outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
-        />
-        <input
-          type="text"
-          value={d.task_description}
-          placeholder="Description (optional)"
-          onChange={(e) => setD({ ...d, task_description: e.target.value })}
-          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") reset(); }}
-          className="w-full bg-transparent border-0 px-2 py-1 text-xs text-muted-foreground outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
-        />
+        <span className="ml-auto flex items-center gap-2 shrink-0">
+          {h.taskCount > 0 && <span className="text-xs">{plural(h.taskCount, "task")} kept</span>}
+          <Button
+            variant="ghost" size="sm" className="h-7 px-2 text-xs text-primary"
+            onClick={() => actions.reinstate(h)} disabled={actions.busy}
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> Reinstate
+          </Button>
+        </span>
       </div>
-      <div className="border-r border-border/60 flex items-center min-w-0 px-1">
-        <UserPickerCell
-          value={d.handed_over_by}
-          placeholder="From"
-          onCommit={(v) => setD({ ...d, handed_over_by: v })}
-        />
-      </div>
-      <div className="border-r border-border/60 flex items-center min-w-0 px-1">
-        <UserPickerCell
-          value={d.handed_over_to}
-          placeholder="To"
-          onCommit={(v) => setD({ ...d, handed_over_to: v })}
-        />
-      </div>
-      <div className="border-r border-border/60 flex items-center px-2">
-        <input
-          type="text"
-          value={d.link}
-          placeholder="https://…"
-          onChange={(e) => setD({ ...d, link: e.target.value })}
-          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") reset(); }}
-          className="w-full bg-transparent border-0 px-1 py-1 text-xs outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset"
-        />
-      </div>
-      <div className="border-r border-border/60 flex items-center justify-center px-2 py-1">
-        <ProgressSlider value={d.progress} onCommit={(v) => setD({ ...d, progress: v })} />
-      </div>
-      <div className="border-r border-border/60 flex items-center justify-center px-2 py-1">
-        <input
-          type="date"
-          value={d.target_date}
-          onChange={(e) => setD({ ...d, target_date: e.target.value })}
-          className="bg-transparent border-0 outline-none text-xs"
-        />
-      </div>
-      <div aria-hidden />
-
-    </div>
-  );
-}
-
-
-// Spreadsheet-style cell (text/date/number/textarea). Saves on blur/Enter.
-function Cell({
-  value, onCommit, type = "text", placeholder, className = "", min, max, multiline,
-}: {
-  value: string | number | null;
-  onCommit: (v: string) => void;
-  type?: "text" | "number" | "date";
-  placeholder?: string;
-  className?: string;
-  min?: number;
-  max?: number;
-  multiline?: boolean;
-}) {
-  const initial = value === null || value === undefined ? "" : String(value);
-  const [local, setLocal] = useState<string>(initial);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => { setLocal(initial); }, [initial]);
-  useEffect(() => {
-    if (multiline && textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
-    }
-  }, [local, multiline]);
-  if (multiline) {
-    return (
-      <textarea
-        ref={textareaRef}
-        value={local}
-        placeholder={placeholder}
-        rows={1}
-        onChange={(e) => setLocal(e.target.value)}
-        onBlur={() => { if (local !== initial) onCommit(local); }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") { setLocal(initial); (e.target as HTMLTextAreaElement).blur(); }
-        }}
-        className={`w-full bg-transparent border-0 px-2 py-1.5 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset resize-none min-h-[36px] ${className}`}
-      />
     );
   }
+
   return (
-    <input
-      type={type}
-      value={local}
-      placeholder={placeholder}
-      min={min}
-      max={max}
-      onChange={(e) => setLocal(e.target.value)}
-      onBlur={() => { if (local !== initial) onCommit(local); }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-        if (e.key === "Escape") { setLocal(initial); (e.target as HTMLInputElement).blur(); }
-      }}
-      className={`w-full h-full bg-transparent border-0 px-2 py-1.5 text-sm outline-none focus:bg-background focus:ring-2 focus:ring-ring focus:ring-inset ${className}`}
-    />
+    <Collapsible open={open} onOpenChange={onOpenChange}>
+      <div ref={sectionRef} className="border-b border-border/60">
+        <div className="flex items-center gap-2 flex-wrap px-4 sm:px-6 py-2">
+          <CollapsibleTrigger asChild>
+            <button type="button" className="flex flex-1 items-center gap-2 min-w-0 text-left text-sm">
+              <ChevronRight className={`${chevronClass(open)} text-muted-foreground`} />
+              <span className="font-semibold truncate">{title}</span>
+              {leaveLabel && <span className="text-xs text-muted-foreground shrink-0">· {leaveLabel}</span>}
+              {coveredHint && <span className="text-xs text-muted-foreground shrink-0">covers {coveredHint}</span>}
+              {h.complete && (
+                <Badge variant="outline" className="gap-1 border-success/40 bg-success/10 text-success font-medium">
+                  <Check className="h-3 w-3" /> Complete
+                </Badge>
+              )}
+              <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground shrink-0">
+                {h.taskCount > 0
+                  ? `${h.completedCount} of ${plural(h.taskCount, "task")} · ${h.avgProgress}%`
+                  : "No tasks yet"}
+                <Progress value={h.avgProgress} className="h-1.5 w-20 sm:w-28" />
+              </span>
+            </button>
+          </CollapsibleTrigger>
+          <div className="flex items-center gap-1 shrink-0">
+            {h.derived && (
+              <Button
+                variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground"
+                onClick={() => actions.markNotRequired(h)} disabled={actions.busy}
+                title="This handover isn't needed — keep it out of the way"
+              >
+                <Ban className="h-3.5 w-3.5" /> Mark not required
+              </Button>
+            )}
+            {h.taskCount > 0 && (
+              <Button
+                variant="ghost" size="sm" className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => actions.clearTasks(h)} disabled={actions.busy}
+                title="Delete every task in this handover"
+              >
+                <X className="h-3.5 w-3.5" /> Clear
+              </Button>
+            )}
+          </div>
+        </div>
+        {moveTargets && moveTargets.length > 0 && h.taskCount > 0 && (
+          <div className="flex items-center gap-2 flex-wrap px-4 sm:px-6 pb-2 text-xs text-muted-foreground">
+            <span>{moveHint} {plural(h.taskCount, "task")} to</span>
+            {moveTargets.map((target) => (
+              <Button
+                key={target.key} variant="outline" size="sm" className="h-7 px-2 text-xs"
+                onClick={() => actions.moveTasks(h, target)} disabled={actions.busy}
+              >
+                <MoveRight className="h-3.5 w-3.5" /> {toName(target)}
+              </Button>
+            ))}
+          </div>
+        )}
+        <CollapsibleContent>
+          {templates && (
+            <HandoverTaskLibrary
+              templates={templates}
+              usedTemplateIds={usedTemplateIds}
+              onAdd={(t) => actions.addTemplate(h, t)}
+              onAddToAll={onAddToAll}
+              usedByAllTemplateIds={usedByAllTemplateIds}
+            />
+          )}
+          <HandoverTaskGrid
+            tasks={h.tasks}
+            onUpdate={actions.updateTask}
+            onDelete={actions.deleteTask}
+            onReassign={actions.reassignTask}
+            // Only a live handover takes new tasks; a stale checklist is history.
+            onCreate={h.derived ? (draft, onDone) => actions.createTask(h, draft, onDone) : undefined}
+            createPending={actions.createPending}
+            defaultFrom={h.from.name}
+            defaultTo={h.to?.name ?? ""}
+          />
+        </CollapsibleContent>
+      </div>
+    </Collapsible>
   );
 }
 
-export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
-  const qc = useQueryClient();
-  const [draft, setDraft] = useState<DraftRow>(newDraft());
+/** A muted, closed-by-default section: earlier handovers, unlinked tasks. */
+function HistorySection({
+  title, hint, open, onOpenChange, actions, children,
+}: { title: string; hint?: string; open: boolean; onOpenChange: (open: boolean) => void; actions?: ReactNode; children: ReactNode }) {
+  return (
+    <Collapsible open={open} onOpenChange={onOpenChange}>
+      <div className="flex items-center gap-2 px-4 sm:px-6 py-2 border-b bg-muted/20 text-sm">
+        <CollapsibleTrigger asChild>
+          <button type="button" className="flex flex-1 items-center gap-2 min-w-0 text-left">
+            <ChevronRight className={`${chevronClass(open)} text-muted-foreground`} />
+            <span className="font-medium text-muted-foreground">{title}</span>
+            {hint && <span className="hidden sm:inline text-xs text-muted-foreground/80 truncate">{hint}</span>}
+          </button>
+        </CollapsibleTrigger>
+        {actions}
+      </div>
+      <CollapsibleContent>{children}</CollapsibleContent>
+    </Collapsible>
+  );
+}
 
-  const { data: fetchedLeave } = useQuery({
-    queryKey: ["client-upcoming-leave", clientName],
-    queryFn: () => getUpcomingLeaveForClient(clientName),
-    enabled: upcomingLeave === undefined,
-    staleTime: 60 * 1000,
+// ---------------------------------------------------------------------------
+// The tracker
+// ---------------------------------------------------------------------------
+
+export function ClientHandoverTracker({ clientName, focus }: Props) {
+  const client = (clientName || "").trim();
+  const qc = useQueryClient();
+  // Null on the client's public page: decisions made there are recorded without a name.
+  const { user } = useAuth();
+  const { notifyAssignment, notifyCoverChange } = useHandoverNotifications(clientName);
+  const { data: users = [] } = useHandoverUsers();
+  const { data: templates = [] } = useHandoverTemplates();
+
+  // Which handovers exist here, from the rota and cover requests — plus stale
+  // stored ones whose leave has passed or whose cover changed.
+  const handoversQuery = useQuery({
+    queryKey: ["client-handovers", clientName],
+    queryFn: () => getClientHandovers(clientName),
   });
-  const leave = upcomingLeave !== undefined ? upcomingLeave : fetchedLeave;
-  const [collapsedCats, setCollapsedCats] = useState<Set<string>>(new Set());
-  const toggleCat = (c: string) =>
-    setCollapsedCats((prev) => {
+
+  // The stored rows at this client: who decided a handover wasn't required,
+  // and when (the handover list doesn't carry that), and the row id of a
+  // handover whose first task was written a moment ago, before the list has
+  // caught up.
+  const rowsQuery = useQuery({
+    queryKey: ["client-handovers", clientName, "rows"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("client_handovers")
+        .select("id, kind, from_user_id, holiday_id, to_user_id, status_changed_by, status_changed_at")
+        .eq("client_name", client);
+      if (error) throw error;
+      return (data || []) as StoredHandoverRow[];
+    },
+  });
+
+  // Every task at this client: those of the handovers stored here, and the
+  // pre-rebuild ones never linked to a leave. The handover ids are looked up
+  // inside the query so it never depends on another query having refreshed.
+  const tasksQuery = useQuery({
+    queryKey: ["client-handover-tasks", clientName],
+    queryFn: async () => {
+      const { data: rows, error: rowsError } = await supabase.from("client_handovers").select("id").eq("client_name", client);
+      if (rowsError) throw rowsError;
+      const ids = (rows || []).map((r) => r.id);
+      const linked = async (): Promise<HandoverTask[]> => {
+        if (ids.length === 0) return [];
+        const { data, error } = await supabase.from("client_handover_tasks").select("*").in("handover_id", ids);
+        if (error) throw error;
+        return (data || []) as HandoverTask[];
+      };
+      const unlinked = async (): Promise<HandoverTask[]> => {
+        const { data, error } = await supabase.from("client_handover_tasks").select("*").eq("client_name", client).is("handover_id", null);
+        if (error) throw error;
+        return (data || []) as HandoverTask[];
+      };
+      const [a, b] = await Promise.all([linked(), unlinked()]);
+      return [...a, ...b].sort(taskOrder);
+    },
+  });
+
+  const handovers = handoversQuery.data;
+  const rows = rowsQuery.data;
+  const tasks = tasksQuery.data;
+  // The stored rows only decorate the list, so they needn't hold the page up.
+  const loading = handoversQuery.isPending || tasksQuery.isPending;
+  const loadError = handoversQuery.error || tasksQuery.error;
+
+  // Lay the checklists over the handover list. Progress is worked out from
+  // the tasks here, so a slider moved a moment ago is reflected as soon as
+  // the tasks come back, not only once the (heavier) handover list has.
+  const tracked = useMemo<TrackedHandover[]>(() => {
+    const rowByKey = new Map((rows ?? []).map((r) => [handoverKey(client, r.kind as HandoverKind, r.from_user_id, r.holiday_id, r.to_user_id), r]));
+    const rowById = new Map((rows ?? []).map((r) => [r.id, r]));
+    const tasksByHandover = new Map<string, HandoverTask[]>();
+    for (const t of tasks ?? []) {
+      if (!t.handover_id) continue;
+      if (!tasksByHandover.has(t.handover_id)) tasksByHandover.set(t.handover_id, []);
+      tasksByHandover.get(t.handover_id)!.push(t);
+    }
+    const nameOf = (userId: string | null | undefined) => (userId ? users.find((u) => u.id === userId)?.name ?? null : null);
+    return (handovers ?? []).map((h) => {
+      const id = h.id ?? rowByKey.get(h.key)?.id ?? null;
+      const row = id ? rowById.get(id) : undefined;
+      const own = id ? tasksByHandover.get(id) ?? [] : [];
+      const taskCount = own.length;
+      const completedCount = own.filter((t) => t.progress >= 100).length;
+      const avgProgress = taskCount ? Math.round(own.reduce((s, t) => s + (t.progress || 0), 0) / taskCount) : 0;
+      return {
+        ...h,
+        id,
+        taskCount,
+        completedCount,
+        avgProgress,
+        latestTargetDate: own.map((t) => t.target_date).filter((d): d is string => !!d).sort().pop() ?? null,
+        tasks: own,
+        complete: h.requirement === "required" && taskCount > 0 && completedCount === taskCount,
+        statusChangedBy: nameOf(row?.status_changed_by),
+        statusChangedAt: row?.status_changed_at ?? null,
+      };
+    });
+  }, [client, handovers, rows, tasks, users]);
+
+  const unlinkedTasks = useMemo(() => (tasks ?? []).filter((t) => !t.handover_id), [tasks]);
+
+  // The page's shape: live handovers by leave; stale ones with a checklist
+  // either back under their leave (a checklist prepared before cover was
+  // assigned, to be moved to whoever covers now) or in the "earlier" list.
+  const { groups, staleInGroup, earlier } = useMemo(() => {
+    const current = tracked.filter((h) => h.derived);
+    // groupHandoversByLeave keeps the objects it is given, so the cast is
+    // safe: these are the TrackedHandovers built above, tasks and all.
+    const groups: TrackedGroup[] = groupHandoversByLeave(current).map((g) => ({ ...g, handovers: g.handovers as TrackedHandover[] }));
+    const staleInGroup = new Map<string, TrackedHandover[]>();
+    const earlier: TrackedHandover[] = [];
+    for (const h of tracked) {
+      if (h.derived || h.taskCount === 0) continue;
+      const g = findGroup(groups, h);
+      if (g && !h.to && g.handovers.some((x) => x.to)) {
+        if (!staleInGroup.has(g.key)) staleInGroup.set(g.key, []);
+        staleInGroup.get(g.key)!.push(h);
+      } else {
+        earlier.push(h);
+      }
+    }
+    return { groups, staleInGroup, earlier };
+  }, [tracked]);
+
+  // Where a stale checklist can go: the live, required handovers of its leave.
+  const moveTargetsFor = (h: TrackedHandover) =>
+    (findGroup(groups, h)?.handovers ?? []).filter((x) => x.requirement === "required" && x.key !== h.key);
+
+  // "covers 24, 26 Oct" — only worth saying when the coverer takes part of the leave.
+  const coveredHintFor = (g: TrackedGroup, h: TrackedHandover) => {
+    if (h.coveredDates.length === 0) return null;
+    const all = new Set(g.handovers.flatMap((x) => x.coveredDates));
+    return h.coveredDates.length < all.size ? fmtCoveredDates(h.coveredDates) : null;
+  };
+
+  // Summary line: the live handovers, and the tasks across the required ones.
+  const current = tracked.filter((h) => h.derived);
+  const currentRequired = current.filter((h) => h.requirement === "required");
+  const summaryTasks = currentRequired.flatMap((h) => h.tasks);
+  const summaryDone = summaryTasks.filter((t) => t.progress >= 100).length;
+  const overallProgress = currentRequired.length
+    ? Math.round(currentRequired.reduce((s, h) => s + h.avgProgress, 0) / currentRequired.length)
+    : 0;
+
+  // -------------------------------------------------------------------------
+  // Open / closed
+  // -------------------------------------------------------------------------
+
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const [openHandovers, setOpenHandovers] = useState<Set<string>>(new Set());
+  const [earlierOpen, setEarlierOpen] = useState(false);
+  const [unlinkedOpen, setUnlinkedOpen] = useState(false);
+  const sectionRefs = useRef(new Map<string, HTMLDivElement>());
+  const toggle = (set: Dispatch<SetStateAction<Set<string>>>, key: string, open: boolean) =>
+    set((prev) => {
       const next = new Set(prev);
-      next.has(c) ? next.delete(c) : next.add(c);
+      if (open) next.add(key); else next.delete(key);
       return next;
     });
 
-  const { data: users = [] } = useHandoverUsers();
+  // ?handover=<client_handovers.id or key> — links from emails and the dashboard.
+  const [urlHandover] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get("handover"); } catch { return null; }
+  });
 
-  // Resolve a display name to a staff record (case-insensitive).
-  const userByName = (name?: string | null) => {
-    const trimmed = (name || "").trim();
-    if (!trimmed) return undefined;
-    return users.find((u) => u.name.toLowerCase() === trimmed.toLowerCase());
-  };
+  // Start with the soonest leave open, or the one we were pointed at.
+  const focusSig = [focus?.handoverId, focus?.holidayId, focus?.departureUserId, urlHandover].map((v) => v ?? "").join("|");
+  const appliedFocus = useRef<string | null>(null);
+  useEffect(() => {
+    if (loading || appliedFocus.current === focusSig) return;
+    appliedFocus.current = focusSig;
 
-  // Tell the previous assignee they've been taken off a handover task, and tell
-  // the person whose leave is being covered that their cover has changed.
-  // Both are silent on failure — the reassignment itself still succeeds.
-  const notifyCoverChange = async (
-    type: "removed" | "cover_changed",
-    recipientName: string,
-    task: { task_name: string; target_date?: string | null },
-    change: { previousAssignee?: string | null; newAssignee?: string | null },
-  ) => {
-    const user = userByName(recipientName);
-    if (!user?.email) return;
-    try {
-      await supabase.functions.invoke("send-handover-change-email", {
-        body: {
-          type,
-          recipientEmail: user.email,
-          recipientName: user.name,
-          clientName,
-          taskName: task.task_name || "Untitled task",
-          previousAssignee: change.previousAssignee ?? null,
-          newAssignee: change.newAssignee ?? null,
-          targetDate: task.target_date ?? null,
-        },
-      });
-    } catch (e) {
-      console.warn("Handover cover-change email failed", e);
-    }
-  };
+    const wanted = focus?.handoverId || urlHandover;
+    const target = wanted ? tracked.find((h) => h.id === wanted || h.key === wanted) : undefined;
+    const nextGroups = new Set<string>();
+    const nextHandovers = new Set<string>();
 
-  // Notify an assignee (by display name) that they have new handover tasks.
-  // Batched per person: assigning a whole template set used to fire one email
-  // per task within seconds — dozens of emails, tripping the mail provider's
-  // rate limit and raising a failure alert for every rejected send. Tasks
-  // assigned to the same person within a few seconds now leave as one email.
-  // Silent on failure — assignment still succeeds.
-  const pendingNotifies = useRef<Map<string, {
-    user: { email: string; name: string };
-    tasks: { task_name: string; task_description?: string | null; link?: string | null; target_date?: string | null; handed_over_by?: string | null }[];
-    timer: ReturnType<typeof setTimeout>;
-  }>>(new Map());
-
-  const notifyAssignment = (
-    assigneeName: string,
-    task: { task_name: string; task_description?: string | null; link?: string | null; target_date?: string | null; handed_over_by?: string | null },
-  ) => {
-    const trimmed = (assigneeName || "").trim();
-    if (!trimmed) return;
-    const user = userByName(trimmed);
-    if (!user?.email) return;
-
-    const key = user.email.toLowerCase();
-    const existing = pendingNotifies.current.get(key);
-    if (existing) {
-      clearTimeout(existing.timer);
-      existing.tasks.push(task);
-    }
-    const entry = existing ?? { user: { email: user.email, name: user.name }, tasks: [task], timer: 0 as unknown as ReturnType<typeof setTimeout> };
-    entry.timer = setTimeout(async () => {
-      pendingNotifies.current.delete(key);
-      const [first, ...rest] = entry.tasks;
-      try {
-        await supabase.functions.invoke("send-handover-assignment-email", {
-          body: {
-            assigneeEmail: entry.user.email,
-            assigneeName: entry.user.name,
-            clientName,
-            taskName: first.task_name,
-            taskDescription: rest.length === 0 ? (first.task_description ?? null) : null,
-            link: rest.length === 0 ? (first.link ?? null) : null,
-            handedOverBy: first.handed_over_by ?? null,
-            targetDate: rest.length === 0 ? (first.target_date ?? null) : null,
-            // Extra task names, so the email reads "and N more" as one message
-            // instead of N separate sends.
-            additionalTaskNames: rest.map((t) => t.task_name),
-          },
-        });
-      } catch (e) {
-        console.warn("Handover assignment email failed", e);
+    if (target && earlier.includes(target)) {
+      setEarlierOpen(true);
+      nextHandovers.add(target.key);
+    } else {
+      let group = target ? findGroup(groups, target) : undefined;
+      if (!group && focus?.holidayId) group = groups.find((g) => g.holidayId === focus.holidayId);
+      if (!group && focus?.departureUserId) group = groups.find((g) => g.kind === "departure" && g.from.userId === focus.departureUserId);
+      if (!group) group = groups[0];
+      if (group) {
+        nextGroups.add(group.key);
+        const shown = target ? [target] : [...group.handovers, ...(staleInGroup.get(group.key) ?? [])];
+        for (const h of shown) if (h.requirement === "required") nextHandovers.add(h.key);
       }
-    }, 4000);
-    pendingNotifies.current.set(key, entry);
+    }
+    setOpenGroups(nextGroups);
+    setOpenHandovers(nextHandovers);
+    if (target) {
+      // After the sections have rendered open.
+      setTimeout(() => sectionRefs.current.get(target.key)?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, focusSig, tracked, groups, staleInGroup, earlier]);
+
+  const refFor = (key: string) => (el: HTMLDivElement | null) => {
+    if (el) sectionRefs.current.set(key, el);
+    else sectionRefs.current.delete(key);
   };
 
+  // -------------------------------------------------------------------------
+  // Writes
+  // -------------------------------------------------------------------------
 
-  const { data: tasks = [] } = useQuery({
-    queryKey: ["client-handover-tasks", clientName],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("client_handover_tasks")
-        .select("*")
-        .eq("client_name", clientName)
-        .order("sort_order", { ascending: true })
-        .order("created_at", { ascending: true });
-      if (error) throw error;
-      return (data || []) as HandoverTask[];
-    },
-  });
+  // Every write can change what the handover list, this client's checklists
+  // and the dashboard say, so all three are refreshed together.
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ["client-handovers"] });
+    qc.invalidateQueries({ queryKey: ["client-handover-tasks", clientName] });
+    qc.invalidateQueries({ queryKey: ["handovers-all"] });
+  };
 
-  const { data: templates = [] } = useQuery({
-    queryKey: ["handover-task-templates"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("handover_task_templates")
-        .select("*")
-        .order("sort_order", { ascending: true })
-        .order("name", { ascending: true });
-      if (error) throw error;
-      return (data || []) as HandoverTemplate[];
-    },
-  });
-
-  // Group tasks by category, preserving first-seen order
-  const groupedTasks = useMemo(() => {
-    const groups = new Map<string, HandoverTask[]>();
-    for (const t of tasks) {
-      const cat = (t.category || "").trim() || UNCATEGORIZED;
-      if (!groups.has(cat)) groups.set(cat, []);
-      groups.get(cat)!.push(t);
-    }
-    return Array.from(groups.entries());
-  }, [tasks]);
-
-  // Group templates by category for the library accordion
-  const groupedTemplates = useMemo(() => {
-    const groups = new Map<string, HandoverTemplate[]>();
-    for (const t of templates) {
-      const cat = (t.category || "").trim() || UNCATEGORIZED;
-      if (!groups.has(cat)) groups.set(cat, []);
-      groups.get(cat)!.push(t);
-    }
-    return Array.from(groups.entries());
-  }, [templates]);
-
-  // Track which templates are already added to this client's tracker
-  const usedTemplateIds = useMemo(() => {
-    const s = new Set<string>();
-    for (const t of tasks) if (t.template_id) s.add(t.template_id);
-    return s;
-  }, [tasks]);
+  // Template ids with an insert currently in flight, per handover. The
+  // "already added" guard reads from the task list, which only refreshes after
+  // a round-trip — every click in that gap used to get through, 34 times in
+  // one recorded case. This ref is synchronous, so the second click is stopped
+  // before it starts. The database enforces the same rule with a unique index
+  // as the last line of defence.
+  const inFlightTemplates = useRef<Set<string>>(new Set());
 
   const createMutation = useMutation({
-    mutationFn: async (d: DraftRow) => {
+    mutationFn: async ({ handover, draft }: { handover: TrackedHandover; draft: DraftRow }) => {
+      // The first task creates the handover's row.
+      const handoverId = handover.id ?? await ensureHandoverRow(handover);
       const payload = {
-        client_name: clientName,
-        template_id: d.template_id,
-        category: d.category.trim() || null,
-        task_name: d.task_name.trim() || "Untitled task",
-        task_description: d.task_description.trim() || null,
-        link: d.link.trim() || null,
-        handed_over_by: d.handed_over_by.trim() || null,
-        handed_over_to: d.handed_over_to.trim() || null,
-        progress: Math.max(0, Math.min(100, Number(d.progress) || 0)),
-        target_date: d.target_date || null,
+        client_name: client,
+        handover_id: handoverId,
+        template_id: draft.template_id,
+        category: draft.category.trim() || null,
+        task_name: draft.task_name.trim() || "Untitled task",
+        task_description: draft.task_description.trim() || null,
+        link: draft.link.trim() || null,
+        handed_over_by: draft.handed_over_by.trim() || null,
+        handed_over_to: draft.handed_over_to.trim() || null,
+        progress: Math.max(0, Math.min(100, Number(draft.progress) || 0)),
+        target_date: draft.target_date || null,
       };
       const { error } = await supabase.from("client_handover_tasks").insert(payload);
       if (error) throw error;
     },
-    onSuccess: (_data, variables) => {
-      qc.invalidateQueries({ queryKey: ["client-handover-tasks", clientName] });
-      setDraft(newDraft());
-      const assignee = variables.handed_over_to?.trim();
+    onSuccess: (_data, { draft }) => {
+      refresh();
+      const assignee = draft.handed_over_to?.trim();
       if (assignee) {
         notifyAssignment(assignee, {
-          task_name: variables.task_name.trim() || "Untitled task",
-          task_description: variables.task_description?.trim() || null,
-          link: variables.link?.trim() || null,
-          target_date: variables.target_date || null,
-          handed_over_by: variables.handed_over_by?.trim() || null,
+          task_name: draft.task_name.trim() || "Untitled task",
+          task_description: draft.task_description?.trim() || null,
+          link: draft.link?.trim() || null,
+          target_date: draft.target_date || null,
+          handed_over_by: draft.handed_over_by?.trim() || null,
         });
       }
     },
-    onError: (e: any) => toast.error(e.message || "Failed to add row"),
+    onError: (e: Error) => toast.error(e.message || "Failed to add row"),
+    // Hook-level, not per call: TanStack only fires the callbacks passed to
+    // mutate() for the LAST call, and "Add to all coverers" fires several
+    // back to back — a per-call onSettled left the earlier guards locked.
+    onSettled: (_d, _e, { handover, draft }) => {
+      if (draft.template_id) inFlightTemplates.current.delete(`${handover.key}|${draft.template_id}`);
+    },
   });
 
   const updateMutation = useMutation({
@@ -665,8 +650,8 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
       const { error } = await supabase.from("client_handover_tasks").update(patch).eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["client-handover-tasks", clientName] }),
-    onError: (e: any) => toast.error(e.message || "Update failed"),
+    onSuccess: refresh,
+    onError: (e: Error) => toast.error(e.message || "Update failed"),
   });
 
   const deleteMutation = useMutation({
@@ -674,383 +659,165 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
       const { error } = await supabase.from("client_handover_tasks").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["client-handover-tasks", clientName] }),
+    onSuccess: refresh,
   });
 
-  const clearAllMutation = useMutation({
+  const clearMutation = useMutation({
+    mutationFn: async (h: TrackedHandover) => {
+      if (!h.id) return;
+      const { error } = await supabase.from("client_handover_tasks").delete().eq("handover_id", h.id);
+      if (error) throw error;
+    },
+    onSuccess: (_data, h) => {
+      refresh();
+      toast.success(`Cleared the handover to ${toName(h)}`);
+    },
+    onError: (e: Error) => toast.error(e.message || "Failed to clear tasks"),
+  });
+
+  const clearUnlinkedMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from("client_handover_tasks").delete().eq("client_name", clientName);
+      const { error } = await supabase.from("client_handover_tasks").delete().eq("client_name", client).is("handover_id", null);
       if (error) throw error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["client-handover-tasks", clientName] });
-      setDraft(newDraft());
-      toast.success("Handover tracker cleared");
+      refresh();
+      toast.success("Cleared the tasks not linked to a leave");
     },
-    onError: (e: any) => toast.error(e.message || "Failed to clear tracker"),
+    onError: (e: Error) => toast.error(e.message || "Failed to clear tasks"),
   });
 
-  const draftHasContent = (d: DraftRow) =>
-    !!(d.task_name.trim() || d.task_description.trim() || d.link.trim() ||
-       d.handed_over_by.trim() || d.handed_over_to.trim() || d.category.trim() ||
-       d.target_date || d.progress > 0 || d.template_id);
+  const requirementMutation = useMutation({
+    mutationFn: ({ handover, requirement, reason }: { handover: TrackedHandover; requirement: HandoverRequirement; reason: string | null }) =>
+      setHandoverRequirement(handover, requirement, reason, user?.id ?? null),
+    onSuccess: (_data, { handover, requirement }) => {
+      refresh();
+      toast.success(requirement === "not_required"
+        ? `Handover to ${toName(handover)} marked not required`
+        : `Handover to ${toName(handover)} reinstated`);
+    },
+    onError: (e: Error) => toast.error(e.message || "Couldn't update the handover"),
+  });
 
-  const commitDraftIfFilled = (next: DraftRow) => {
-    setDraft(next);
-    if (draftHasContent(next) && next.task_name.trim()) {
-      createMutation.mutate(next);
-    }
-  };
+  const moveMutation = useMutation({
+    mutationFn: ({ from, to }: { from: TrackedHandover; to: TrackedHandover }) => moveHandoverTasks(from.id!, to),
+    onSuccess: (_data, { from, to }) => {
+      refresh();
+      toast.success(`Moved ${plural(from.taskCount, "task")} to ${toName(to)}`);
+    },
+    onError: (e: Error) => toast.error(e.message || "Couldn't move the tasks"),
+  });
 
-  function targetDateClasses(targetDate: string | null, progress: number = 0) {
-    if (progress >= 100) return "bg-success/10 text-success";
-    if (!targetDate) return "";
-    const days = Math.ceil((new Date(targetDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    if (days > 14) return "bg-success/10 text-success";
-    if (days >= 5) return "bg-warning/10 text-warning";
-    return "bg-destructive/10 text-destructive";
-  }
 
-  // Template ids with an insert currently in flight. The usedTemplateIds guard
-  // reads from the task list, which only refreshes after a round-trip — every
-  // click in that gap used to get through, 34 times in one recorded case. This
-  // ref is synchronous, so the second click is stopped before it starts. The
-  // database enforces the same rule with a unique index as the last line of
-  // defence.
-  const inFlightTemplateIds = useRef<Set<string>>(new Set());
-
-  const addTemplateAsTask = (t: HandoverTemplate) => {
-    if (usedTemplateIds.has(t.id)) {
-      toast.info(`"${t.name}" is already in this tracker.`);
+  const addTemplate = (h: TrackedHandover, t: HandoverTemplate) => {
+    if (h.tasks.some((x) => x.template_id === t.id)) {
+      toast.info(`"${t.name}" is already in this handover.`);
       return;
     }
-    if (inFlightTemplateIds.current.has(t.id)) return; // already being added
-    inFlightTemplateIds.current.add(t.id);
-    const last = tasks[tasks.length - 1];
+    const flight = `${h.key}|${t.id}`;
+    if (inFlightTemplates.current.has(flight)) return; // already being added
+    inFlightTemplates.current.add(flight);
     createMutation.mutate({
-      ...newDraft(),
-      template_id: t.id,
-      category: t.category || "",
-      task_name: t.name,
-      task_description: t.description || "",
-      link: t.link || "",
-      // When this handover is linked to a holiday, default From to the person on
-      // leave and To to whoever is covering them; otherwise carry over the last row.
-      handed_over_by: leave?.staffName || last?.handed_over_by || "",
-      handed_over_to: leave?.coverNames?.[0] || last?.handed_over_to || "",
-    }, {
-      onSettled: () => { inFlightTemplateIds.current.delete(t.id); },
+      handover: h,
+      draft: {
+        ...newDraft(),
+        template_id: t.id,
+        category: t.category || "",
+        task_name: t.name,
+        task_description: t.description || "",
+        link: t.link || "",
+        // From the person going, to whoever covers this handover.
+        handed_over_by: h.from.name,
+        handed_over_to: h.to?.name ?? "",
+      },
     });
   };
 
-  // Fill blank From/To on existing tasks from the linked leave (person on leave →
-  // From, their cover → To). Only touches empty cells, so manual entries are kept.
-  const [autofilling, setAutofilling] = useState(false);
-  const leaveFrom = (leave?.staffName || "").trim();
-  const leaveTo = (leave?.coverNames?.[0] || "").trim();
-  const tasksMissingParties = tasks.filter(
-    (t) => (leaveFrom && !(t.handed_over_by || "").trim()) || (leaveTo && !(t.handed_over_to || "").trim())
-  );
-  const autofillFromLeave = async () => {
-    if (!leave || tasksMissingParties.length === 0) return;
-    setAutofilling(true);
-    try {
-      for (const t of tasksMissingParties) {
-        const patch: { handed_over_by?: string; handed_over_to?: string } = {};
-        if (leaveFrom && !(t.handed_over_by || "").trim()) patch.handed_over_by = leaveFrom;
-        if (leaveTo && !(t.handed_over_to || "").trim()) patch.handed_over_to = leaveTo;
-        if (Object.keys(patch).length === 0) continue;
-        const { error } = await supabase.from("client_handover_tasks").update(patch).eq("id", t.id);
-        if (error) throw error;
+  // The same template on every required handover of the leave that lacks it.
+  const addTemplateToAll = (g: TrackedGroup, t: HandoverTemplate) => {
+    for (const h of g.handovers) {
+      if (h.requirement !== "required" || h.tasks.some((x) => x.template_id === t.id)) continue;
+      addTemplate(h, t);
+    }
+  };
+
+  // Template ids every required handover of the leave already has.
+  const usedByAllFor = (g: TrackedGroup) => {
+    const required = g.handovers.filter((h) => h.requirement === "required");
+    const ids = new Set<string>();
+    for (const t of templates) {
+      if (required.every((h) => h.tasks.some((x) => x.template_id === t.id))) ids.add(t.id);
+    }
+    return ids;
+  };
+
+  const actions: TrackerActions = {
+    // mutateAsync, for the same reason as the hook-level onSettled above.
+    createTask: (h, draft, onDone) => { createMutation.mutateAsync({ handover: h, draft }).then(onDone).catch(() => undefined); },
+    createPending: createMutation.isPending,
+    updateTask: (id, patch) => updateMutation.mutate({ id, patch }),
+    deleteTask: (id) => deleteMutation.mutate(id),
+    reassignTask: (t, next) => {
+      const prev = (t.handed_over_to || "").trim();
+      updateMutation.mutate({ id: t.id, patch: { handed_over_to: next || null } });
+
+      const notified: string[] = [];
+      // 1. The new assignee — they've picked up the cover.
+      if (next) {
+        notifyAssignment(next, {
+          task_name: t.task_name,
+          task_description: t.task_description,
+          link: t.link,
+          target_date: t.target_date,
+          handed_over_by: t.handed_over_by,
+        });
+        notified.push(next);
       }
-      qc.invalidateQueries({ queryKey: ["client-handover-tasks", clientName] });
-      toast.success(`Filled From/To from ${leaveFrom || "the linked leave"}${leaveTo ? ` → ${leaveTo}` : ""}`);
-    } catch (e: any) {
-      toast.error(e?.message || "Couldn't fill From/To");
-    } finally {
-      setAutofilling(false);
-    }
-  };
-
-  function LinkCell({
-    value,
-    onCommit,
-    compact = false,
-  }: {
-    value: string | null;
-    onCommit: (v: string) => void;
-    compact?: boolean;
-  }) {
-    const [editing, setEditing] = useState(false);
-    const initial = value ?? "";
-    const [local, setLocal] = useState(initial);
-    useEffect(() => { setLocal(initial); }, [initial]);
-
-    if (!editing && value) {
-      return (
-        <a
-          href={value}
-          target="_blank"
-          rel="noopener noreferrer"
-          onDoubleClick={(e) => { e.preventDefault(); setEditing(true); }}
-          onClick={(e) => e.stopPropagation()}
-          className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/80 hover:underline"
-          title={value}
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-          {!compact && <span className="truncate max-w-[140px]">Link</span>}
-        </a>
+      // 2. The previous assignee — they're off it (also fires when cleared).
+      if (prev) {
+        notifyCoverChange("removed", prev, t, { previousAssignee: prev, newAssignee: next || null });
+        notified.push(prev);
+      }
+      // 3. The person whose leave is being covered — their cover changed.
+      const coveredFor = (t.handed_over_by || "").trim();
+      if (coveredFor && coveredFor.toLowerCase() !== next.toLowerCase() && coveredFor.toLowerCase() !== prev.toLowerCase()) {
+        notifyCoverChange("cover_changed", coveredFor, t, { previousAssignee: prev || null, newAssignee: next || null });
+        notified.push(coveredFor);
+      }
+      if (notified.length) toast.success(`Notified ${notified.join(", ")}`);
+    },
+    clearTasks: (h) => {
+      if (!h.id || h.taskCount === 0) return;
+      if (confirm(`Clear all ${plural(h.taskCount, "task")} in the handover to ${toName(h)}? This cannot be undone.`)) {
+        clearMutation.mutate(h);
+      }
+    },
+    markNotRequired: (h) => {
+      const reason = window.prompt(
+        `Mark the handover to ${toName(h)} as not required?\n\nReason (optional):`,
+        h.notRequiredReason ?? "",
       );
-    }
-
-    if (!editing) {
-      return (
-        <button
-          type="button"
-          onClick={() => setEditing(true)}
-          className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
-        >
-          <ExternalLink className="h-3.5 w-3.5" /> Add link
-        </button>
-      );
-    }
-
-    return (
-      <input
-        type="text"
-        value={local}
-        autoFocus
-        placeholder="https://…"
-        onChange={(e) => setLocal(e.target.value)}
-        onBlur={() => { setEditing(false); if (local !== initial) onCommit(local); }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-          if (e.key === "Escape") { setLocal(initial); setEditing(false); }
-        }}
-        className="w-full bg-background border border-input rounded px-2 py-1 text-xs outline-none focus:ring-2 focus:ring-ring"
-      />
-    );
-  }
-
-  function TargetDateChip({
-    value, onCommit,
-  }: { value: string | null; onCommit: (v: string) => void }) {
-    return (
-      <label className="flex w-full items-center justify-center gap-1.5 px-2 py-1 text-xs font-medium cursor-text">
-        <span className="opacity-70">Due</span>
-        <input
-          type="date"
-          value={value ?? ""}
-          onChange={(e) => onCommit(e.target.value)}
-          className="bg-transparent border-0 outline-none text-xs font-medium [color-scheme:light] dark:[color-scheme:dark] min-w-0"
-        />
-      </label>
-    );
-  }
-
-  const targetDateCellTone = (value: string | null, progress: number = 0) =>
-    value ? targetDateClasses(value, progress) : progress >= 100 ? "bg-success/10 text-success" : "";
-
-
-
-  // Deterministic category pill color (Airtable-like soft pastels)
-  const CATEGORY_PALETTE = [
-    "bg-rose-100 text-rose-800",
-    "bg-amber-100 text-amber-800",
-    "bg-emerald-100 text-emerald-800",
-    "bg-sky-100 text-sky-800",
-    "bg-violet-100 text-violet-800",
-    "bg-pink-100 text-pink-800",
-    "bg-teal-100 text-teal-800",
-    "bg-orange-100 text-orange-800",
-  ];
-  const catColor = (cat: string) => {
-    let h = 0;
-    for (let i = 0; i < cat.length; i++) h = (h * 31 + cat.charCodeAt(i)) >>> 0;
-    return CATEGORY_PALETTE[h % CATEGORY_PALETTE.length];
+      if (reason === null) return; // cancelled
+      requirementMutation.mutate({ handover: h, requirement: "not_required", reason });
+    },
+    reinstate: (h) => requirementMutation.mutate({ handover: h, requirement: "required", reason: null }),
+    moveTasks: (from, to) => {
+      if (!from.id || from.taskCount === 0) return;
+      if (confirm(`Move ${plural(from.taskCount, "task")} to the handover to ${toName(to)}?`)) {
+        moveMutation.mutate({ from, to });
+      }
+    },
+    addTemplate,
+    busy: requirementMutation.isPending || clearMutation.isPending || clearUnlinkedMutation.isPending || moveMutation.isPending,
   };
 
-  const renderTaskRow = (t: HandoverTask, rowNumber: number) => (
-    <div
-      key={t.id}
-      className={`group ${GRID_COLS} items-stretch border-b border-border/60 bg-background hover:bg-muted/40 transition-colors`}
-    >
-      {/* Row number gutter */}
-      <div className="border-r border-border/60 flex items-center justify-center text-[11px] text-muted-foreground/70 font-mono select-none">
-        {rowNumber}
-      </div>
-      {/* Task name + description */}
-      <div className="border-r border-border/60 px-1 py-0.5 min-w-0">
-        <Cell
-          value={t.task_name}
-          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_name: v.trim() || t.task_name } })}
-          className="font-medium text-sm text-foreground"
-          multiline
-        />
-        {t.task_description !== null && t.task_description !== "" ? (
-          <Cell
-            value={t.task_description}
-            placeholder="Add description…"
-            onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { task_description: v.trim() || null } })}
-            className="text-xs text-muted-foreground"
-            multiline
-          />
-        ) : (
-          <Cell
-            value=""
-            placeholder="Add description…"
-            onCommit={(v) => v.trim() && updateMutation.mutate({ id: t.id, patch: { task_description: v.trim() } })}
-            className="text-xs text-muted-foreground opacity-0 group-hover:opacity-100 transition"
-            multiline
-          />
-        )}
-      </div>
-      {/* From */}
-      <div className="border-r border-border/60 flex items-center min-w-0">
-        <UserPickerCell
-          value={t.handed_over_by}
-          placeholder="—"
-          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { handed_over_by: v.trim() || null } })}
-        />
-      </div>
-      {/* To */}
-      <div className="border-r border-border/60 flex items-center min-w-0">
-        <UserPickerCell
-          value={t.handed_over_to}
-          placeholder="—"
-          onCommit={(v) => {
-            const next = v.trim();
-            const prev = (t.handed_over_to || "").trim();
-            if (next.toLowerCase() === prev.toLowerCase()) return; // nothing changed
-            updateMutation.mutate({ id: t.id, patch: { handed_over_to: next || null } });
+  // -------------------------------------------------------------------------
+  // Render
+  // -------------------------------------------------------------------------
 
-            const notified: string[] = [];
-            // 1. The new assignee — they've picked up the cover.
-            if (next) {
-              notifyAssignment(next, {
-                task_name: t.task_name,
-                task_description: t.task_description,
-                link: t.link,
-                target_date: t.target_date,
-                handed_over_by: t.handed_over_by,
-              });
-              notified.push(next);
-            }
-            // 2. The previous assignee — they're off it (also fires when cleared).
-            if (prev) {
-              notifyCoverChange("removed", prev, t, { previousAssignee: prev, newAssignee: next || null });
-              notified.push(prev);
-            }
-            // 3. The person whose leave is being covered — their cover changed.
-            const coveredFor = (t.handed_over_by || "").trim();
-            if (coveredFor && coveredFor.toLowerCase() !== next.toLowerCase() && coveredFor.toLowerCase() !== prev.toLowerCase()) {
-              notifyCoverChange("cover_changed", coveredFor, t, { previousAssignee: prev || null, newAssignee: next || null });
-              notified.push(coveredFor);
-            }
-            if (notified.length) toast.success(`Notified ${notified.join(", ")}`);
-          }}
-        />
-      </div>
-      {/* Link */}
-      <div className="border-r border-border/60 flex items-center justify-center px-2">
-        <LinkCell
-          value={t.link}
-          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { link: v.trim() || null } })}
-          compact
-        />
-      </div>
-      {/* Progress */}
-      <div className="border-r border-border/60 flex items-center justify-center px-2 py-1">
-        <ProgressSlider
-          value={t.progress}
-          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { progress: v } })}
-        />
-      </div>
-      {/* Due date */}
-      <div className={`border-r border-border/60 flex items-center justify-center overflow-hidden ${targetDateCellTone(t.target_date, t.progress)}`}>
-        <TargetDateChip
-          value={t.target_date}
-          onCommit={(v) => updateMutation.mutate({ id: t.id, patch: { target_date: v || null } })}
-        />
-      </div>
-
-      {/* Actions: comments + delete */}
-      <div className="flex items-center justify-center gap-0.5">
-        <HandoverTaskComments taskId={t.id} taskName={t.task_name} />
-        <button
-          onClick={() => { if (confirm("Delete this task?")) deleteMutation.mutate(t.id); }}
-          className="opacity-0 group-hover:opacity-100 transition p-1 rounded hover:bg-destructive/10 hover:text-destructive"
-          title="Delete"
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
-      </div>
-    </div>
-  );
-
-  const ColumnHeader = () => (
-    <div className={`${GRID_COLS} bg-muted/40 border-y border-border text-[11px] font-medium text-muted-foreground sticky top-0 z-10`}>
-      <div className="border-r border-border/60" />
-      <div className="px-2 py-2 border-r border-border/60 flex items-center gap-1.5">
-        <Type className="h-3 w-3" /> Task
-      </div>
-      <div className="px-2 py-2 border-r border-border/60 flex items-center gap-1.5">
-        <User className="h-3 w-3" /> From
-      </div>
-      <div className="px-2 py-2 border-r border-border/60 flex items-center gap-1.5">
-        <User className="h-3 w-3" /> To
-      </div>
-      <div className="px-2 py-2 border-r border-border/60 flex items-center justify-center gap-1.5">
-        <Link2 className="h-3 w-3" /> Link
-      </div>
-      <div className="px-2 py-2 border-r border-border/60 flex items-center justify-center gap-1.5">
-        <BarChart3 className="h-3 w-3" /> Progress
-      </div>
-      <div className="px-2 py-2 border-r border-border/60 flex items-center justify-center gap-1.5">
-        <Calendar className="h-3 w-3" /> Due
-      </div>
-      <div />
-    </div>
-  );
-
-  const renderGroupHeader = (category: string, rows: HandoverTask[]) => {
-    const collapsed = collapsedCats.has(category);
-    const completed = rows.filter((r) => r.progress >= 100).length;
-    return (
-      <div
-        className={`${GRID_COLS} bg-muted/20 border-b border-border/60 cursor-pointer hover:bg-muted/30`}
-        onClick={() => toggleCat(category)}
-      >
-        <div className="border-r border-border/60 flex items-center justify-center">
-          {collapsed ? <ChevronRight className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
-        </div>
-        <div className="col-span-7 flex items-center gap-3 px-3 py-2">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            Category
-          </span>
-          <span className={`inline-flex items-center rounded-md px-2.5 py-0.5 text-xs font-medium ${catColor(category)}`}>
-            {category}
-          </span>
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <Hash className="h-3 w-3" /> {rows.length}
-          </span>
-          <span className="text-xs text-muted-foreground ml-auto">
-            {completed}/{rows.length} complete
-          </span>
-        </div>
-      </div>
-    );
-  };
-
-
-
-
-  // Summary stats
-  const totalTasks = tasks.length;
-  const completedTasks = tasks.filter((t) => t.progress >= 100).length;
-  const overallProgress = totalTasks
-    ? Math.round(tasks.reduce((s, t) => s + (t.progress || 0), 0) / totalTasks)
-    : 0;
+  const summary = current.length === 0
+    ? "No upcoming handovers"
+    : `${plural(current.length, "handover")}${summaryTasks.length > 0 ? ` · ${summaryDone} of ${plural(summaryTasks.length, "task")} complete` : ""}`;
 
   return (
     <Card className="mt-4 sm:mt-6">
@@ -1067,175 +834,130 @@ export function ClientHandoverTracker({ clientName, upcomingLeave }: Props) {
               <ExternalLink className="h-3 w-3" />
               Handover Tracker Explained
             </a>
-            {totalTasks > 0 && (
-              <p className="text-xs text-muted-foreground mt-1">
-                {completedTasks} of {totalTasks} tasks complete · {overallProgress}% overall
-              </p>
-            )}
+            {!loading && <p className="text-xs text-muted-foreground mt-1">{summary}</p>}
           </div>
-          <div className="flex items-center gap-2">
-            {totalTasks > 0 && (
-              <div className="hidden sm:flex items-center gap-2 min-w-[180px]">
-                <Progress value={overallProgress} className="h-2 w-32" />
-                <span className="text-xs font-semibold text-muted-foreground">{overallProgress}%</span>
-              </div>
-            )}
-            {tasks.length > 0 && (
-              <button
-                onClick={() => {
-                  if (confirm("Are you sure you want to clear all tasks from this handover tracker?")) {
-                    clearAllMutation.mutate();
-                  }
-                }}
-                disabled={clearAllMutation.isPending}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-destructive hover:bg-destructive/10 rounded-md px-2.5 py-1.5 transition disabled:opacity-50"
-                title="Clear all tasks"
-              >
-                <X className="h-3.5 w-3.5" /> Clear
-              </button>
-            )}
-          </div>
+          {summaryTasks.length > 0 && (
+            <div className="hidden sm:flex items-center gap-2 min-w-[180px]">
+              <Progress value={overallProgress} className="h-2 w-32" />
+              <span className="text-xs font-semibold text-muted-foreground">{overallProgress}%</span>
+            </div>
+          )}
         </div>
       </CardHeader>
 
-      {leave && <LeaveBanner leave={leave} />}
-      {leave && tasksMissingParties.length > 0 && (
-        <div className="flex items-center justify-between gap-3 flex-wrap px-4 sm:px-6 py-2 border-b bg-muted/10 text-xs text-muted-foreground">
-          <span>
-            {tasksMissingParties.length} task{tasksMissingParties.length === 1 ? "" : "s"} without a From/To.
-            {" "}Fill from this leave: <span className="font-medium text-foreground">{leaveFrom || "—"}</span> → <span className="font-medium text-foreground">{leaveTo || "cover not assigned yet"}</span>.
-          </span>
-          <button
-            type="button"
-            onClick={autofillFromLeave}
-            disabled={autofilling}
-            className="inline-flex items-center gap-1.5 font-medium text-primary hover:bg-primary/10 rounded-md px-2.5 py-1.5 transition disabled:opacity-50"
-          >
-            <User className="h-3.5 w-3.5" /> {autofilling ? "Filling…" : "Fill From/To"}
-          </button>
-        </div>
-      )}
-
       <CardContent className="p-0">
-        {/* Task Library */}
-        {groupedTemplates.length > 0 && (
-          <div className="bg-muted/20 px-4 sm:px-6 py-2 border-b">
-            <Accordion type="single" collapsible className="w-full">
-              <AccordionItem value="library" className="border-0">
-                <AccordionTrigger className="py-2 hover:no-underline">
-                  <span className="flex items-center gap-2 text-sm font-semibold">
-                    Task Library
-                    <span className="text-xs font-normal text-muted-foreground">
-                      ({templates.length} tasks · {groupedTemplates.length} categories)
-                    </span>
-                  </span>
-                </AccordionTrigger>
-                <AccordionContent>
-                  <div className="space-y-3 pb-2">
-                    {groupedTemplates.map(([category, items]) => (
-                      <div key={`lib-${category}`} className="rounded-lg border bg-background overflow-hidden">
-                        <div className="px-3 py-2 bg-muted/40 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                          {category}
-                        </div>
-                        <div className="divide-y divide-border">
-                          {items.map((t) => {
-                            const added = usedTemplateIds.has(t.id);
-                            return (
-                              <div
-                                key={t.id}
-                                className={`flex items-center justify-between gap-3 px-3 py-2 ${added ? "bg-success/5" : "hover:bg-muted/30"}`}
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <div className="text-sm font-medium truncate">{t.name}</div>
-                                  {t.description && (
-                                    <div className="text-xs text-muted-foreground line-clamp-2">{t.description}</div>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  {t.link && (
-                                    <a
-                                      href={t.link}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="text-muted-foreground hover:text-primary"
-                                      onClick={(e) => e.stopPropagation()}
-                                      title="Open link"
-                                    >
-                                      <ExternalLink className="h-3.5 w-3.5" />
-                                    </a>
-                                  )}
-                                  {added ? (
-                                    <span className="inline-flex items-center gap-1 text-xs text-success px-2 py-1">
-                                      <Check className="h-3.5 w-3.5" /> Added
-                                    </span>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={() => addTemplateAsTask(t)}
-                                      className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:bg-primary/10 rounded px-2 py-1 transition"
-                                    >
-                                      <Plus className="h-3.5 w-3.5" /> Add
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </div>
-        )}
-
-        {/* Active tasks grouped by category — Airtable-style spreadsheet */}
-        <div className="overflow-x-auto bg-background">
-          <div className="min-w-[960px]">
-            <ColumnHeader />
-            {groupedTasks.length === 0 ? (
+        {loading ? (
+          <p className="px-4 sm:px-6 py-6 text-sm text-muted-foreground">Loading handovers…</p>
+        ) : loadError ? (
+          <p className="px-4 sm:px-6 py-6 text-sm text-destructive">
+            Couldn't load the handovers: {(loadError as Error).message || "unknown error"}
+          </p>
+        ) : (
+          <>
+            {groups.length === 0 && (
               <div className="px-6 py-8 text-center border-b border-border/60">
-                <p className="text-sm font-medium text-foreground">No handover tasks yet</p>
+                <p className="text-sm font-medium text-foreground">No upcoming leave needs handing over here</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Add tasks from the Task Library above, or use the row below.
+                  Handovers appear from approved leave and the rota — one per person going, per colleague covering.
                 </p>
               </div>
-            ) : (
-              (() => {
-                let rowCounter = 0;
-                return groupedTasks.map(([category, rows]) => {
-                  const collapsed = collapsedCats.has(category);
-                  return (
-                    <div key={`grp-${category}`}>
-                      {renderGroupHeader(category, rows)}
-                      {!collapsed && (
-                        <>
-                          {rows.map((r) => {
-                            rowCounter += 1;
-                            return renderTaskRow(r, rowCounter);
-                          })}
-                        </>
-                      )}
-                    </div>
-                  );
-                });
-              })()
             )}
-            {/* Always-available row for creating a task in a new (or any) category */}
-            <InlineAddRow
-              defaultCategory=""
-              allowCategoryEdit
-              defaultFrom={leave?.staffName || tasks[tasks.length - 1]?.handed_over_by || ""}
-              defaultTo={leave?.coverNames?.[0] || tasks[tasks.length - 1]?.handed_over_to || ""}
-              onCreate={(d, onDone) => createMutation.mutate(d, { onSuccess: () => onDone() })}
-              isPending={createMutation.isPending}
-            />
 
+            {groups.map((g) => {
+              const requiredCoverers = g.handovers.filter((h) => h.requirement === "required" && h.to);
+              const onAddToAll = requiredCoverers.length >= 2 ? (t: HandoverTemplate) => addTemplateToAll(g, t) : undefined;
+              const usedByAll = onAddToAll ? usedByAllFor(g) : undefined;
+              return (
+                <LeaveGroupSection
+                  key={g.key}
+                  group={g}
+                  open={openGroups.has(g.key)}
+                  onOpenChange={(open) => toggle(setOpenGroups, g.key, open)}
+                >
+                  {g.handovers.map((h) => (
+                    <HandoverSection
+                      key={h.key}
+                      h={h}
+                      open={openHandovers.has(h.key)}
+                      onOpenChange={(open) => toggle(setOpenHandovers, h.key, open)}
+                      coveredHint={coveredHintFor(g, h)}
+                      templates={templates}
+                      onAddToAll={onAddToAll}
+                      usedByAllTemplateIds={usedByAll}
+                      actions={actions}
+                      sectionRef={refFor(h.key)}
+                    />
+                  ))}
+                  {/* A checklist prepared before anyone was assigned: now there is cover, it belongs with them. */}
+                  {(staleInGroup.get(g.key) ?? []).map((h) => (
+                    <HandoverSection
+                      key={h.key}
+                      h={h}
+                      open={openHandovers.has(h.key)}
+                      onOpenChange={(open) => toggle(setOpenHandovers, h.key, open)}
+                      moveTargets={moveTargetsFor(h)}
+                      moveHint="Cover has been assigned — move these"
+                      actions={actions}
+                      sectionRef={refFor(h.key)}
+                    />
+                  ))}
+                </LeaveGroupSection>
+              );
+            })}
 
-          </div>
-        </div>
+            {earlier.length > 0 && (
+              <HistorySection
+                title={`Earlier handovers (${earlier.length})`}
+                hint="a leave that has passed, or a cover that changed"
+                open={earlierOpen}
+                onOpenChange={setEarlierOpen}
+              >
+                {earlier.map((h) => (
+                  <HandoverSection
+                    key={h.key}
+                    h={h}
+                    open={openHandovers.has(h.key)}
+                    onOpenChange={(open) => toggle(setOpenHandovers, h.key, open)}
+                    showLeave
+                    moveTargets={moveTargetsFor(h)}
+                    moveHint="Move these"
+                    actions={actions}
+                    sectionRef={refFor(h.key)}
+                  />
+                ))}
+              </HistorySection>
+            )}
+
+            {unlinkedTasks.length > 0 && (
+              <HistorySection
+                title={`Tasks not linked to a leave (${unlinkedTasks.length})`}
+                hint="recorded before handovers were tied to a leave"
+                open={unlinkedOpen}
+                onOpenChange={setUnlinkedOpen}
+                actions={
+                  <Button
+                    variant="ghost" size="sm" className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => {
+                      if (confirm(`Clear all ${plural(unlinkedTasks.length, "task")} not linked to a leave? This cannot be undone.`)) {
+                        clearUnlinkedMutation.mutate();
+                      }
+                    }}
+                    disabled={actions.busy}
+                  >
+                    <X className="h-3.5 w-3.5" /> Clear
+                  </Button>
+                }
+              >
+                <HandoverTaskGrid
+                  tasks={unlinkedTasks}
+                  onUpdate={actions.updateTask}
+                  onDelete={actions.deleteTask}
+                  onReassign={actions.reassignTask}
+                />
+              </HistorySection>
+            )}
+          </>
+        )}
       </CardContent>
     </Card>
   );

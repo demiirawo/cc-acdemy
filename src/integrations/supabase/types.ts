@@ -202,6 +202,7 @@ export type Database = {
           created_at: string
           handed_over_by: string | null
           handed_over_to: string | null
+          handover_id: string | null
           id: string
           link: string | null
           progress: number
@@ -218,6 +219,7 @@ export type Database = {
           created_at?: string
           handed_over_by?: string | null
           handed_over_to?: string | null
+          handover_id?: string | null
           id?: string
           link?: string | null
           progress?: number
@@ -234,6 +236,7 @@ export type Database = {
           created_at?: string
           handed_over_by?: string | null
           handed_over_to?: string | null
+          handover_id?: string | null
           id?: string
           link?: string | null
           progress?: number
@@ -246,10 +249,70 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "client_handover_tasks_handover_id_fkey"
+            columns: ["handover_id"]
+            isOneToOne: false
+            referencedRelation: "client_handovers"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "client_handover_tasks_template_id_fkey"
             columns: ["template_id"]
             isOneToOne: false
             referencedRelation: "handover_task_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_handovers: {
+        Row: {
+          client_name: string
+          created_at: string
+          from_user_id: string
+          holiday_id: string | null
+          id: string
+          kind: string
+          not_required_reason: string | null
+          status: string
+          status_changed_at: string | null
+          status_changed_by: string | null
+          to_user_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          client_name: string
+          created_at?: string
+          from_user_id: string
+          holiday_id?: string | null
+          id?: string
+          kind?: string
+          not_required_reason?: string | null
+          status?: string
+          status_changed_at?: string | null
+          status_changed_by?: string | null
+          to_user_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          client_name?: string
+          created_at?: string
+          from_user_id?: string
+          holiday_id?: string | null
+          id?: string
+          kind?: string
+          not_required_reason?: string | null
+          status?: string
+          status_changed_at?: string | null
+          status_changed_by?: string | null
+          to_user_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_handovers_holiday_id_fkey"
+            columns: ["holiday_id"]
+            isOneToOne: false
+            referencedRelation: "staff_holidays"
             referencedColumns: ["id"]
           },
         ]
@@ -3117,6 +3180,25 @@ export type Database = {
         }
       }
       get_current_user_role: { Args: never; Returns: string }
+      pending_sickness: {
+        Args: { p_from: string; p_to: string }
+        Returns: { end_date: string; start_date: string; user_id: string }[]
+      }
+      public_staff_absences: {
+        Args: never
+        Returns: {
+          absence_type: string
+          days_taken: number
+          end_date: string
+          id: string
+          no_cover_dates: string[]
+          no_cover_required: boolean
+          notes: string | null
+          start_date: string
+          status: string
+          user_id: string
+        }[]
+      }
       get_staff_directory: {
         Args: never
         Returns: {
@@ -3284,6 +3366,7 @@ export type Database = {
         | "holiday_unpaid"
         | "overtime"
         | "departure"
+        | "sickness"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -3438,6 +3521,7 @@ export const Constants = {
         "holiday_unpaid",
         "overtime",
         "departure",
+        "sickness",
       ],
     },
   },

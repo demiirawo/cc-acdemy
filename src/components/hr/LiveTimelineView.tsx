@@ -716,6 +716,7 @@ export function LiveTimelineView({
                 {clientHolidays.map((holiday, hIdx) => {
                   const rowIdx = rows.length + hIdx;
                   const absenceLabel = holiday.absenceType === 'sick' ? 'Sick'
+                    : holiday.absenceType === 'absent' ? 'Absent'
                     : holiday.absenceType === 'personal' ? 'Personal'
                     : holiday.absenceType === 'maternity' ? 'Maternity'
                     : holiday.absenceType === 'paternity' ? 'Paternity'

@@ -52,6 +52,9 @@ import { downloadInvoicePdf, type InvoiceData } from "@/lib/invoice/generatePdf"
 import { format, startOfMonth, endOfMonth, addMonths, subMonths, parseISO, eachDayOfInterval, differenceInCalendarDays } from "date-fns";
 import { getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 import { accruedHolidayDays, holidayYearOf } from "@/lib/holidayAllowance";
+import { patternOccursOn, resolveDayKind } from "@/lib/patternSchedule";
+import { computeShiftBonus, shiftBonusLabel, SHIFT_BONUS_TAG, type ShiftBonusConfig } from "@/lib/shiftBonus";
+import { unpaidDaysInMonth } from "@/lib/unpaidDays";
 
 interface PublicHoliday {
   date: string;
@@ -276,11 +279,12 @@ export function StaffPayManager({ onSummaryComputed }: {
   const [recurringPatterns, setRecurringPatterns] = useState<RecurringShiftPattern[]>([]);
   const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
+  const [shiftBonuses, setShiftBonuses] = useState<ShiftBonusConfig[]>([]);
   const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; end_date: string | null; status: string; absence_type: string }[]>([]);
   const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; employment_end_date: string | null; unlimited_holiday: boolean; public_holiday_pay_disabled?: boolean; created_at?: string; performance_rating?: string | null; bonus_pot_eligible?: boolean }[]>([]);
   const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null; swap_with_user_id: string | null; coverage_metadata: Json | null }[]>([]);
-  const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string }[]>([]);
-  const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<{ user_id: string; start_date: string; end_date: string }[]>([]);
+  const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type?: string }[]>([]);
+  const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<{ user_id: string; start_date: string; end_date: string; request_type?: string }[]>([]);
   const { toast } = useToast();
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -641,6 +645,16 @@ export function StaffPayManager({ onSummaryComputed }: {
         setRecurringBonuses(recBonuses || []);
       }
 
+      // Shift bonuses: the monthly amounts paid pro rata across bonus shifts.
+      const { data: shiftBonusData, error: shiftBonusError } = await (supabase as any)
+        .from('shift_bonuses')
+        .select('*');
+      if (shiftBonusError) {
+        console.error('Error fetching shift bonuses:', shiftBonusError);
+      } else {
+        setShiftBonuses((shiftBonusData as ShiftBonusConfig[]) || []);
+      }
+
       // Fetch staff holidays for unused holiday calculation
       const { data: holidaysData, error: holidaysError } = await supabase
         .from('staff_holidays')
@@ -672,12 +686,15 @@ export function StaffPayManager({ onSummaryComputed }: {
         setApprovedOvertimeRequests(overtimeRequestsData || []);
       }
 
-      // Fetch approved unpaid holiday requests for deduction calculation
+      // Fetch approved unpaid days for the deduction: unpaid holiday and sickness.
+      // Sick days are unpaid, as they were when the only way to report one was
+      // as unpaid holiday. Recording them as sickness keeps them out of holiday
+      // allowance and names them for what they are; it does not change the pay.
       const { data: unpaidHolidayData, error: unpaidHolidayError } = await supabase
         .from('staff_requests')
-        .select('user_id, days_requested, start_date, end_date')
+        .select('user_id, days_requested, start_date, end_date, request_type')
         .eq('status', 'approved')
-        .eq('request_type', 'holiday_unpaid');
+        .in('request_type', ['holiday_unpaid', 'sickness']);
       
       if (unpaidHolidayError) {
         console.error('Error fetching unpaid holiday requests:', unpaidHolidayError);
@@ -685,12 +702,13 @@ export function StaffPayManager({ onSummaryComputed }: {
         setUnpaidHolidayRequests(unpaidHolidayData || []);
       }
 
-      // Fetch approved leave requests (paid + unpaid) to exclude from public holiday overtime
+      // Fetch approved leave and sickness: days off earn no public holiday
+      // overtime, and they are the bonus shifts an admin missed.
       const { data: leaveData, error: leaveError } = await supabase
         .from('staff_requests')
-        .select('user_id, start_date, end_date')
+        .select('user_id, start_date, end_date, request_type')
         .eq('status', 'approved')
-        .in('request_type', ['holiday_paid', 'holiday_unpaid']);
+        .in('request_type', ['holiday_paid', 'holiday_unpaid', 'sickness']);
       
       if (leaveError) {
         console.error('Error fetching leave requests:', leaveError);
@@ -765,27 +783,6 @@ export function StaffPayManager({ onSummaryComputed }: {
       return format(date, 'yyyy-MM-dd');
     };
 
-    const isDateOnRecurrenceSchedule = (currentDate: Date, patternStartDate: string, recurrenceInterval: string): boolean => {
-      const start = parseISO(patternStartDate);
-      // Count calendar days, not elapsed milliseconds. Across a clock change the
-      // local-midnight-to-local-midnight gap is 23 or 25 hours, so dividing by 24
-      // loses a day — which flips the odd/even week a biweekly pattern depends on
-      // and silently drops every one of its shifts for half the year.
-      const dayDiff = differenceInCalendarDays(currentDate, start);
-
-      switch (recurrenceInterval) {
-        case 'daily':
-        case 'weekly':
-        case 'one_off':
-          return true;
-        case 'biweekly':
-          return Math.floor(dayDiff / 7) % 2 === 0;
-        case 'monthly':
-          return currentDate.getDate() === start.getDate();
-        default:
-          return true;
-      }
-    };
 
     const getGranularCoveredDates = (request: {
       coverage_metadata: Json | null;
@@ -832,29 +829,26 @@ export function StaffPayManager({ onSummaryComputed }: {
       let currentDate = new Date(monthStart);
       while (currentDate <= monthEnd) {
         const dateStr = format(currentDate, 'yyyy-MM-dd');
-        const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
         
         // Check each pattern
         userPatterns.forEach(pattern => {
-          // Check if pattern is active for this date
-          const patternStart = parseISO(pattern.start_date);
-          const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-          
-          if (currentDate >= patternStart && (!patternEnd || currentDate <= patternEnd)) {
-            // Check if this day of week is in the pattern
-            if (pattern.days_of_week.includes(dayOfWeek)) {
-              // Only skip if there's a 'deleted' exception
-              const deletedExs = deletedExceptionsMap.get(pattern.id);
-              if (!deletedExs || !deletedExs.has(dateStr)) {
-                const hours = calculateHoursFromTime(pattern.start_time, pattern.end_time);
-                virtualSchedules.push({
-                  date: dateStr,
-                  hours,
-                  hourlyRate: pattern.hourly_rate
-                });
-              }
-            }
-          }
+          // Range, weekday AND recurrence, by the rota's rule. This loop checked
+          // only the first two, so a fortnightly series was expanded onto its
+          // off-week as well and earned the public-holiday uplift for Saturdays
+          // nobody worked.
+          if (!patternOccursOn(pattern, currentDate)) return;
+          // Only skip if there's a 'deleted' exception
+          const deletedExs = deletedExceptionsMap.get(pattern.id);
+          if (deletedExs && deletedExs.has(dateStr)) return;
+          // A bonus shift is paid through the shift bonus and nothing else, so
+          // it does not earn the uplift either.
+          if (resolveDayKind(pattern, overtimeExceptionsMap.get(pattern.id)?.get(dateStr)) === 'bonus') return;
+          const hours = calculateHoursFromTime(pattern.start_time, pattern.end_time);
+          virtualSchedules.push({
+            date: dateStr,
+            hours,
+            hourlyRate: pattern.hourly_rate
+          });
         });
         
         // Move to next day
@@ -987,8 +981,18 @@ export function StaffPayManager({ onSummaryComputed }: {
               ? eachDayOfInterval({ start: effectiveStart, end: effectiveEnd }).map(day => format(day, 'yyyy-MM-dd'))
               : []);
 
+        // Covering someone earns the uplift only for a holiday they actually had a
+        // shift on — a pattern occurrence by the rota's rule, or a one-off
+        // schedule — the test the cover overtime below applies. Dates ticked from
+        // a calendar can include the off-week of a fortnightly series.
+        const coveredUserId = req.request_type === 'shift_swap' ? req.swap_with_user_id : null;
+        const coveredHadShift = (dStr: string) => !coveredUserId
+          || staffSchedules.some(s => s.user_id === coveredUserId && getScheduleDate(s.start_datetime) === dStr)
+          || recurringPatterns.some(p => p.user_id === coveredUserId && !p.is_overtime
+            && patternOccursOn(p, parseISO(dStr)) && !deletedExceptionsMap.get(p.id)?.has(dStr));
+
         coverDatesToCheck.forEach(coverDateStr => {
-          if (holidayDatesSet.has(coverDateStr) && employedOn(coverDateStr) && !countedHolidayDates.has(coverDateStr) && !userLeaveDates.has(coverDateStr)) {
+          if (holidayDatesSet.has(coverDateStr) && employedOn(coverDateStr) && !countedHolidayDates.has(coverDateStr) && !userLeaveDates.has(coverDateStr) && coveredHadShift(coverDateStr)) {
             holidayOvertimeDays += 1;
             countedHolidayDates.add(coverDateStr);
             const holiday = publicHolidays.find(h => h.date === coverDateStr);
@@ -1035,6 +1039,30 @@ export function StaffPayManager({ onSummaryComputed }: {
         ...bonusRecords.map(r => ({ amount: r.amount, description: r.description ?? null, recurring: false })),
         ...activeRecurringBonuses.map(rb => ({ amount: rb.amount, description: rb.description ?? null, recurring: true })),
       ];
+
+      // SHIFT BONUS: the monthly amount, pro rata to bonus shifts worked
+      // (src/lib/shiftBonus.ts). Added live only while the month is unpaid.
+      // Once paid, what was owed is the captured 'bonus' record written by
+      // buildPaymentRecords — already inside `bonuses` above — and adding the
+      // live figure as well would pay it twice.
+      const isPaidMonth = salaryRecords.length > 0;
+      const shiftBonus = computeShiftBonus({
+        userId: hr.user_id,
+        monthStart,
+        monthEnd,
+        patterns: recurringPatterns,
+        deleted: deletedExceptionsMap,
+        overrides: overtimeExceptionsMap,
+        employedOn,
+        leaveRequests: approvedLeaveRequests,
+        absences: staffHolidays,
+        coverRequests: approvedOvertimeRequests,
+        configs: shiftBonuses,
+      });
+      if (!isPaidMonth && shiftBonus.amount > 0) {
+        bonuses += shiftBonus.amount;
+        bonusItems.push({ amount: shiftBonus.amount, description: shiftBonusLabel(shiftBonus.count), recurring: false });
+      }
       
       const overtimeManualRecords = overtimeRecords.reduce((sum, r) => sum + r.amount, 0);
       const expenses = expenseRecords.reduce((sum, r) => sum + r.amount, 0);
@@ -1130,11 +1158,10 @@ export function StaffPayManager({ onSummaryComputed }: {
 
           let matchedClientName: string | undefined;
           const hasRecurringShift = targetPatterns.some(pattern => {
-            const patternStart = parseISO(pattern.start_date);
-            const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-            if (day < patternStart || (patternEnd && day > patternEnd)) return false;
-            if (!pattern.days_of_week.includes(dayOfWeek)) return false;
-            if (!isDateOnRecurrenceSchedule(day, pattern.start_date, pattern.recurrence_interval)) return false;
+            // The rota's rule, now shared by every pay path. This was the one
+            // payroll path that checked recurrence at all, and it used its own
+            // biweekly rule, which disagreed with the rota.
+            if (!patternOccursOn(pattern, day)) return false;
             // Check for deleted exceptions
             const deletedExs = deletedExceptionsMap.get(pattern.id);
             if (deletedExs && deletedExs.has(dStr)) return false;
@@ -1198,37 +1225,23 @@ export function StaffPayManager({ onSummaryComputed }: {
       let currentDate = new Date(monthStart);
       while (currentDate <= monthEnd) {
         const dateStr = format(currentDate, 'yyyy-MM-dd');
-        const dayOfWeek = currentDate.getDay();
         
         // A recurring overtime pattern keeps firing through approved leave — the
         // pattern only knows its own weekday rule. Someone on holiday didn't work
         // the shift, so it isn't payable.
         if (!requestOTDates.has(dateStr) && employedOn(dateStr) && !userLeaveDates.has(dateStr)) {
           for (const pattern of userPatterns) {
-            const patternStart = parseISO(pattern.start_date);
-            const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-            
-            if (currentDate >= patternStart && (!patternEnd || currentDate <= patternEnd)) {
-              if (pattern.days_of_week.includes(dayOfWeek)) {
-                const deletedExs = deletedExceptionsMap.get(pattern.id);
-                if (deletedExs && deletedExs.has(dateStr)) continue;
-                
-                const overtimeExs = overtimeExceptionsMap.get(pattern.id);
-                const dayOverride = overtimeExs?.get(dateStr);
-                
-                const isOvertimeForDay = dayOverride?.type === 'overtime' ? true
-                  : dayOverride?.type === 'not_overtime' ? false
-                  : pattern.is_overtime;
-                
-                if (isOvertimeForDay) {
-                  const subtype: 'standard' | 'double_up' = dayOverride?.type === 'overtime'
-                    ? ((dayOverride.subtype || 'standard') as 'standard' | 'double_up')
-                    : ((pattern.overtime_subtype || 'standard') as 'standard' | 'double_up');
-                  
-                  upsertOvertimeShift(dateStr, subtype, 'pattern', pattern.client_name);
-                  break;
-                }
-              }
+            if (!patternOccursOn(pattern, currentDate)) continue;
+            const deletedExs = deletedExceptionsMap.get(pattern.id);
+            if (deletedExs && deletedExs.has(dateStr)) continue;
+            const kind = resolveDayKind(pattern, overtimeExceptionsMap.get(pattern.id)?.get(dateStr));
+            // A bonus shift is paid through the shift bonus, not as overtime. It
+            // must not claim the date either: a genuine overtime pattern on the
+            // same Saturday still has to be found, so this moves on rather than
+            // stopping at the first extra shift the way overtime does.
+            if (kind === 'standard' || kind === 'double_up') {
+              upsertOvertimeShift(dateStr, kind, 'pattern', pattern.client_name);
+              break;
             }
           }
         }
@@ -1385,6 +1398,7 @@ export function StaffPayManager({ onSummaryComputed }: {
       // Formula: (monthly pay / 20) * number of unpaid holiday days
       let unpaidHolidayDeduction = 0;
       let unpaidHolidayDays = 0;
+      let unpaidSickDays = 0; // of which sickness, for the label
       
       const userUnpaidHolidays = unpaidHolidayRequests.filter(r => {
         if (r.user_id !== hr.user_id) return false;
@@ -1395,24 +1409,11 @@ export function StaffPayManager({ onSummaryComputed }: {
       });
       
       userUnpaidHolidays.forEach(req => {
-        const startDate = parseISO(req.start_date);
-        const endDate = parseISO(req.end_date);
-        
-        // Calculate days that fall within this month
-        const effectiveStart = startDate < monthStart ? monthStart : startDate;
-        const effectiveEnd = endDate > monthEnd ? monthEnd : endDate;
-        
-        // Count days in this month
-        let daysInMonth = req.days_requested;
-        
-        // If the request spans multiple months, calculate proportion for this month
-        if (startDate < monthStart || endDate > monthEnd) {
-          const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-          const daysInThisMonth = Math.ceil((effectiveEnd.getTime() - effectiveStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-          daysInMonth = Math.round((daysInThisMonth / totalDays) * req.days_requested);
-        }
-        
+        // Days that fall within this month. The staff member's own pay view
+        // shares a request out across months with the same function.
+        const daysInMonth = unpaidDaysInMonth(req, monthStart, monthEnd);
         unpaidHolidayDays += daysInMonth;
+        if (req.request_type === 'sickness') unpaidSickDays += daysInMonth;
       });
       
       // Unpaid holiday deduction = (monthly salary / 20) * unpaid holiday days
@@ -1485,6 +1486,7 @@ export function StaffPayManager({ onSummaryComputed }: {
         salaryPaid,
         bonuses,
         bonusItems,
+        shiftBonus: isPaidMonth ? null : shiftBonus,
         overtime,
         overtimeDays,
         standardOvertimeDays: totalStandardOTDays,
@@ -1509,6 +1511,7 @@ export function StaffPayManager({ onSummaryComputed }: {
         hasLeaverHolidayDeduction,
         unpaidHolidayDeduction,
         unpaidHolidayDays,
+        unpaidSickDays,
         proRataDeduction,
         proRataWorkingDays,
         proRataTotalWorkingDays,
@@ -1534,11 +1537,11 @@ export function StaffPayManager({ onSummaryComputed }: {
         excessHolidayDeduction: 0, excessHolidayDays: 0,
         leaverHolidayDeduction: 0, leaverHolidayDays: 0,
         leaverHolidayAccrued: 0, leaverHolidayTaken: 0, hasLeaverHolidayDeduction: false,
-        unpaidHolidayDeduction: 0, unpaidHolidayDays: 0,
+        unpaidHolidayDeduction: 0, unpaidHolidayDays: 0, unpaidSickDays: 0,
         proRataDeduction: 0,
       };
     });
-  }, [hrProfiles, userProfiles, monthRecords, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses, staffHolidays, hrProfilesFull, selectedMonth, approvedOvertimeRequests, unpaidHolidayRequests, approvedLeaveRequests]);
+  }, [hrProfiles, userProfiles, monthRecords, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses, shiftBonuses, staffHolidays, hrProfilesFull, selectedMonth, approvedOvertimeRequests, unpaidHolidayRequests, approvedLeaveRequests]);
 
   // Staff for the monthly bonus pot — everyone on this month's payroll. Rank
   // and tenure drive the distribution in most months; in December and January
@@ -1891,9 +1894,17 @@ export function StaffPayManager({ onSummaryComputed }: {
     if (staff.leaverHolidayDeduction > 0 && !staff.hasLeaverHolidayDeduction) rows.push({ ...common, record_type: 'deduction', amount: staff.leaverHolidayDeduction,
       description: `Leaver holiday deduction: ${staff.leaverHolidayDays} days taken above the ${staff.leaverHolidayAccrued} accrued by their last day (${PAY_CAPTURE_TAG})` });
     if (staff.unpaidHolidayDeduction > 0) rows.push({ ...common, record_type: 'deduction' as any, amount: staff.unpaidHolidayDeduction,
-      description: `Unpaid holiday deduction: ${staff.unpaidHolidayDays} days (${PAY_CAPTURE_TAG})` });
+      description: `${staff.unpaidSickDays > 0
+        ? `Unpaid days deduction: ${staff.unpaidHolidayDays} days, ${staff.unpaidSickDays} of them sickness`
+        : `Unpaid holiday deduction: ${staff.unpaidHolidayDays} days`} (${PAY_CAPTURE_TAG})` });
     if (staff.proRataDeduction > 0) rows.push({ ...common, record_type: 'deduction' as any, amount: staff.proRataDeduction,
       description: `Pro-rata deduction for days outside employment (${PAY_CAPTURE_TAG})` });
+    // The shift bonus is captured like overtime, so a paid month is frozen at
+    // what was owed on the day. Recurring bonuses are not captured and keep
+    // moving after payment; this must not. Tagged so a revert removes it, and
+    // it does not start "Bonus pot ·", so a pot resync leaves it alone.
+    if (staff.shiftBonus && staff.shiftBonus.amount > 0) rows.push({ ...common, record_type: 'bonus' as any, amount: staff.shiftBonus.amount,
+      description: `${SHIFT_BONUS_TAG}: ${staff.shiftBonus.count.worked.length} of ${staff.shiftBonus.count.scheduled.length} bonus shifts (${PAY_CAPTURE_TAG})` });
     rows.push({ ...common, record_type: 'salary' as any, amount: staff.baseSalary,
       description: `Monthly salary for ${format(selectedMonth, 'MMMM yyyy')}` });
     return rows;
@@ -2907,7 +2918,15 @@ export function StaffPayManager({ onSummaryComputed }: {
                               })}
                             </div>
                           );
-                        })() : '-'}
+                        })() : (staff.shiftBonus?.unconfigured ? null : '-')}
+                        {staff.shiftBonus?.unconfigured && (
+                          <div
+                            className="text-[10px] font-normal text-amber-600"
+                            title="This admin has bonus shifts on the rota but no shift bonus set. Bonus shifts are never paid as overtime, so until a bonus is set they are paid nothing."
+                          >
+                            {staff.shiftBonus.count.scheduled.length} bonus shift{staff.shiftBonus.count.scheduled.length === 1 ? '' : 's'} · no bonus set
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         {staff.overtime > 0 ? (
@@ -3006,7 +3025,7 @@ export function StaffPayManager({ onSummaryComputed }: {
                               -{formatCurrency(staff.unpaidHolidayDeduction, staff.currency)}
                             </span>
                             <span className="text-[10px] text-muted-foreground">
-                              {staff.unpaidHolidayDays} day{staff.unpaidHolidayDays !== 1 ? 's' : ''} unpaid
+                              {staff.unpaidHolidayDays} day{staff.unpaidHolidayDays !== 1 ? 's' : ''} unpaid{staff.unpaidSickDays > 0 ? ` (${staff.unpaidSickDays} sick)` : ''}
                             </span>
                           </div>
                         ) : '-'}
@@ -3522,6 +3541,17 @@ export function StaffPayManager({ onSummaryComputed }: {
                         && rb.start_date <= monthEndStr
                         && (!rb.end_date || rb.end_date >= monthStartStr))
                       .map(rb => ({ id: rb.id, amount: rb.amount, description: rb.description }));
+                    const shift = shiftBonuses
+                      .filter(sb => sb.user_id === adjustmentEdit.staffId
+                        && sb.start_date <= monthEndStr
+                        && (!sb.end_date || sb.end_date >= monthStartStr))
+                      .map(sb => ({ id: sb.id, amount: Number(sb.monthly_amount), description: sb.description, startDate: sb.start_date }));
+                    // A bonus set from this month runs until stopped, so it would run
+                    // into one this admin has starting later — which the list above,
+                    // being this month's, can't show.
+                    const laterShift = shiftBonuses
+                      .filter(sb => sb.user_id === adjustmentEdit.staffId && sb.start_date > monthEndStr)
+                      .sort((a, b) => a.start_date.localeCompare(b.start_date))[0];
                     return (
                       <StaffBonusEditor
                         staffId={adjustmentEdit.staffId}
@@ -3529,6 +3559,9 @@ export function StaffPayManager({ onSummaryComputed }: {
                         selectedMonth={selectedMonth}
                         oneOffBonuses={oneOff}
                         recurringBonuses={recurring}
+                        shiftBonuses={shift}
+                        laterShiftBonus={laterShift ? { amount: Number(laterShift.monthly_amount), startDate: laterShift.start_date } : null}
+                        shiftBonusThisMonth={staff?.shiftBonus ?? null}
                         onChanged={fetchData}
                       />
                     );

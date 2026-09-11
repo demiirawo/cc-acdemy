@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ChevronLeft, ChevronRight, Palmtree, Check, AlertCircle, ZoomIn, ZoomOut, UserMinus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Palmtree, Check, AlertCircle, ZoomIn, ZoomOut, UserMinus, Thermometer } from "lucide-react";
 import {
   addDays,
   addMonths,
@@ -48,11 +48,13 @@ const ROW_HEIGHT = 48;
 const ROW_GAP = 10;
 const LANE_PADDING = 16;
 const MIN_LANES = 6;
-const HOLIDAY_TYPES = ["holiday", "holiday_paid", "holiday_unpaid"];
+// Sickness is drawn alongside holiday. It is not holiday, but its shifts need
+// cover and its clients need telling in just the same way.
+const ABSENCE_TYPES = ["holiday", "holiday_paid", "holiday_unpaid", "sickness"];
 // A last day belongs on the same chart. It is not a holiday — nobody comes
 // back — but it is the same question for whoever plans the month: who is on,
 // who is not, and has the client been told.
-const TIMELINE_TYPES = [...HOLIDAY_TYPES, "departure"];
+const TIMELINE_TYPES = [...ABSENCE_TYPES, "departure"];
 const ZOOM_STEPS = [0.5, 0.75, 1, 1.5, 2, 3, 4];
 const BASE_DAY_WIDTH = 40; // base px per day at zoom=1
 
@@ -225,7 +227,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
       if (r.status === "rejected" || r.request_type !== "shift_swap") return;
       const holiday = requests.find(
         (h) =>
-          HOLIDAY_TYPES.includes(h.request_type) &&
+          ABSENCE_TYPES.includes(h.request_type) &&
           h.status !== "rejected" &&
           h.user_id === r.swap_with_user_id &&
           h.start_date <= r.end_date &&
@@ -263,10 +265,10 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
         <div className="min-w-0">
           <CardTitle className="text-base flex items-center gap-2">
             <Palmtree className="h-4 w-4 text-primary" />
-            Who's On Holiday
+            Who's Off
           </CardTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            Holidays and last days, one month at a time. Use the arrows to navigate, zoom to fit.
+            Holidays, sickness and last days, one month at a time. Use the arrows to navigate, zoom to fit.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
@@ -375,6 +377,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                     const top = LANE_PADDING + laneIdx * laneHeight;
                     const isPending = req.status === "pending";
                     const isUnpaid = req.request_type === "holiday_unpaid";
+                    const isSickness = req.request_type === "sickness";
                     const covers = coversByHoliday.get(req.id) || [];
                     const name = getName(req.user_id);
 
@@ -518,12 +521,17 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                               } flex items-center gap-2 px-2.5 text-xs font-medium overflow-hidden hover:ring-2 hover:ring-primary hover:z-10 transition`}
                               style={{ left: startOff * DAY_WIDTH + 2, top, width, height: ROW_HEIGHT }}
                             >
-                              <Palmtree className={`h-4 w-4 flex-shrink-0 ${isUnpaid ? "opacity-60" : ""}`} />
+                              {isSickness
+                                ? <Thermometer className="h-4 w-4 flex-shrink-0" />
+                                : <Palmtree className={`h-4 w-4 flex-shrink-0 ${isUnpaid ? "opacity-60" : ""}`} />}
                               {showLabel && (
                                 <span className="truncate flex-1 text-left">{name}</span>
                               )}
                               {showLabel && isUnpaid && (
                                 <span className="text-[9px] uppercase tracking-wider opacity-70 flex-shrink-0">Unpaid</span>
+                              )}
+                              {showLabel && isSickness && (
+                                <span className="text-[9px] uppercase tracking-wider opacity-70 flex-shrink-0">Sickness</span>
                               )}
                             </button>
                           </TooltipTrigger>
@@ -533,7 +541,7 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
                               {format(parseISO(req.start_date), "dd MMM")} → {format(parseISO(req.end_date), "dd MMM yyyy")} ({totalWorkingDays} working day{totalWorkingDays === 1 ? "" : "s"})
                             </div>
                             <div className="capitalize text-muted-foreground">
-                              {isUnpaid ? "Unpaid holiday" : "Holiday"} · {req.status}
+                              {isSickness ? "Sickness absence" : isUnpaid ? "Unpaid holiday" : "Holiday"} · {req.status}
                             </div>
                             <div className="mt-1 pt-1 border-t">
                               {coverage === "covered" && (
@@ -593,6 +601,10 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded border-2 bg-slate-200 border-slate-600" />
             Last day
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Thermometer className="h-3 w-3" />
+            Sickness
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded outline outline-2 outline-offset-1 outline-blue-500" />

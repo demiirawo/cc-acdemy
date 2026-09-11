@@ -15,8 +15,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { format, eachDayOfInterval, getDay, isWithinInterval, parseISO, differenceInCalendarDays } from "date-fns";
-import { CalendarIcon, Clock, Palmtree, RefreshCw, AlertCircle, Send, RotateCcw, Check, X } from "lucide-react";
+import { format, eachDayOfInterval, getDay, isWithinInterval, parseISO, differenceInCalendarDays, startOfDay, subDays } from "date-fns";
+import { patternOccursOn } from "@/lib/patternSchedule";
+import { CalendarIcon, Clock, Palmtree, RefreshCw, AlertCircle, Send, RotateCcw, Check, X, Thermometer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -24,7 +25,7 @@ import { useRequestEmailNotification } from "@/hooks/useRequestEmailNotification
 import { invalidateAllCoverageQueries, buildCoverageMetadata, getCoveredDatesFromRequest } from "@/lib/coverageUtils";
 
 
-type RequestType = 'overtime' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap' | 'overtime_standard' | 'overtime_double_up';
+type RequestType = 'overtime' | 'holiday' | 'holiday_paid' | 'holiday_unpaid' | 'shift_swap' | 'overtime_standard' | 'overtime_double_up' | 'sickness';
 
 interface StaffMember {
   user_id: string;
@@ -60,6 +61,11 @@ interface ApprovedHoliday {
   absence_type: string;
 }
 
+// Absences are read from public_staff_absences, which gives sickness as
+// 'absent'. Either way this form only ever calls it an absence: why a
+// colleague is off is not for the person covering them to see.
+const isUndisclosedAbsence = (absenceType: string) => absenceType === 'absent' || absenceType === 'sick';
+
 const REQUEST_TYPE_INFO = {
   overtime: {
     label: "Overtime",
@@ -79,6 +85,12 @@ const REQUEST_TYPE_INFO = {
     icon: Palmtree,
     color: "text-yellow-600"
   },
+  sickness: {
+    label: "Sickness absence",
+    description: "Off sick? Report it here, on the day if you can. It doesn't use your holiday allowance.",
+    icon: Thermometer,
+    color: "text-rose-600"
+  },
   shift_swap: {
     label: "Shift Cover",
     description: "Request to cover shifts for another staff member.",
@@ -88,7 +100,7 @@ const REQUEST_TYPE_INFO = {
 };
 
 // Types available for new requests
-const SELECTABLE_REQUEST_TYPES = ['holiday_paid', 'holiday_unpaid', 'shift_swap'] as const;
+const SELECTABLE_REQUEST_TYPES = ['holiday_paid', 'holiday_unpaid', 'sickness', 'shift_swap'] as const;
 
 // Legacy type info for displaying old requests
 const LEGACY_REQUEST_TYPE_INFO: Record<string, { label: string; description: string; icon: typeof Clock; color: string }> = {
@@ -211,6 +223,9 @@ export function StaffRequestForm() {
       const { data, error } = await supabase
         .from("shift_pattern_exceptions")
         .select("pattern_id, exception_date")
+        // Only a cancelled occurrence stops a day being a working day. Per-day
+        // overtime overrides live in this table too, and the shift still happens.
+        .eq("exception_type", "deleted")
         .in("pattern_id", ids);
       if (error) throw error;
       return data;
@@ -234,7 +249,11 @@ export function StaffRequestForm() {
     enabled: !!targetUserId
   });
 
-  // Fetch approved holidays for the selected staff member being covered
+  // Fetch approved absences for the selected staff member being covered.
+  // Read through public_staff_absences, which returns only approved ones:
+  // staff_holidays hides a colleague's sickness from ordinary staff, but the
+  // function still lists it, as 'absent' and without its notes. Its ids are
+  // the real staff_holidays ids, so linked_holiday_id still finds the row.
   const { data: approvedHolidays = [] } = useQuery({
     queryKey: ["approved-holidays-for-staff", coveringStaffId],
     queryFn: async () => {
@@ -242,9 +261,7 @@ export function StaffRequestForm() {
       const today = format(new Date(), "yyyy-MM-dd");
 
       const { data, error } = await supabase
-        .from("staff_holidays")
-        .select("id, user_id, start_date, end_date, days_taken, notes, absence_type")
-        .eq("status", "approved")
+        .rpc("public_staff_absences")
         .eq("user_id", coveringStaffId)
         // Only show current/future holidays in dropdowns
         .gte("end_date", today)
@@ -321,11 +338,9 @@ export function StaffRequestForm() {
       // Check non-overtime patterns (standard working days)
       const hasRecurringShift = patterns.some(pattern => {
         if (pattern.is_overtime) return false;
-        const patternStart = parseISO(pattern.start_date);
-        const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-        const inDateRange = day >= patternStart && (!patternEnd || day <= patternEnd);
-        const dayMatches = pattern.days_of_week?.includes(dayOfWeek);
-        return inDateRange && dayMatches;
+        // The rota's rule: range, weekday and recurrence. Without recurrence a
+        // fortnightly series counted its off-weeks as working days too.
+        return patternOccursOn(pattern, day);
       });
       
       // Check individual schedules
@@ -347,7 +362,9 @@ export function StaffRequestForm() {
     return enumerateWorkingDays(userId, rangeStart, rangeEnd).length;
   };
 
-  // Fetch swap partner's approved holidays for holiday cover
+  // Fetch swap partner's approved absences for holiday cover, through
+  // public_staff_absences like approvedHolidays above. Read from
+  // staff_holidays, a sick colleague would have nothing to cover.
   const { data: swapPartnerHolidays = [] } = useQuery({
     queryKey: ["swap-partner-holidays", swapWithUserId],
     queryFn: async () => {
@@ -355,9 +372,7 @@ export function StaffRequestForm() {
       const today = format(new Date(), "yyyy-MM-dd");
 
       const { data, error } = await supabase
-        .from("staff_holidays")
-        .select("id, user_id, start_date, end_date, days_taken, notes, absence_type")
-        .eq("status", "approved")
+        .rpc("public_staff_absences")
         .eq("user_id", swapWithUserId)
         // Only show current/future holidays in dropdowns
         .gte("end_date", today)
@@ -404,18 +419,10 @@ export function StaffRequestForm() {
     // Generate virtual shifts from patterns
     const daysInRange = eachDayOfInterval({ start: swapStartDate, end: swapEndDate });
     swapPartnerPatterns.forEach(pattern => {
-      const patternStart = parseISO(pattern.start_date);
-      const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-      
       daysInRange.forEach(day => {
-        const dayOfWeek = getDay(day);
-        
-        // Check if day is within pattern range
-        if (day < patternStart) return;
-        if (patternEnd && day > patternEnd) return;
-        
-        // Check if this day matches the pattern
-        if (!pattern.days_of_week?.includes(dayOfWeek)) return;
+        // Range, weekday and recurrence, by the rota's rule: a fortnightly
+        // series offers only the shifts it actually has.
+        if (!patternOccursOn(pattern, day)) return;
         
         // Check if there's already an individual schedule for this day/time
         const hasIndividual = swapPartnerSchedules.some(s => 
@@ -456,11 +463,9 @@ export function StaffRequestForm() {
       // Check if this day is part of the current user's standard (non-overtime) recurring shift pattern
       const hasRecurringShift = shiftPatterns.some(pattern => {
         if (pattern.is_overtime) return false; // Exclude overtime patterns
-        const patternStart = parseISO(pattern.start_date);
-        const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-        const inDateRange = day >= patternStart && (!patternEnd || day <= patternEnd);
-        const dayMatches = pattern.days_of_week?.includes(dayOfWeek);
-        return inDateRange && dayMatches;
+        // The rota's rule: range, weekday and recurrence. Without recurrence a
+        // fortnightly series counted its off-weeks as working days too.
+        return patternOccursOn(pattern, day);
       });
       
       if (hasRecurringShift) {
@@ -475,7 +480,14 @@ export function StaffRequestForm() {
   // share a client are usually the only two who cover it, so this is worth
   // saying before the request goes in — but it is a warning, never a block:
   // the decision belongs to whoever approves it.
+  //
+  // Sickness is left out on purpose. Nobody chooses when they are ill, so no
+  // notice rule, peak window or team clash applies to it.
   const isHolidayRequest = requestType === 'holiday_paid' || requestType === 'holiday_unpaid';
+
+  // Sickness is reported on the day or afterwards, so it may start in the
+  // past, up to 30 days back.
+  const earliestSicknessStart = subDays(startOfDay(new Date()), 30);
 
   // Whether these dates break the notice rules in the absence policy. Warned
   // about, never blocked — see LeaveNoticeWarning for why.
@@ -506,9 +518,11 @@ export function StaffRequestForm() {
     ? clashBreakdown(teamClashes, startDate, endDate)
     : { blocked: [], free: [], people: [] };
 
-  // Auto-calculate working days when dates change for holiday requests
+  // Auto-calculate working days when dates change for holiday and sickness
+  // requests. Sick days are counted in working days, like holiday: payroll
+  // reads days_requested for both.
   useEffect(() => {
-    if ((requestType === 'holiday_paid' || requestType === 'holiday_unpaid') && startDate && endDate) {
+    if ((requestType === 'holiday_paid' || requestType === 'holiday_unpaid' || requestType === 'sickness') && startDate && endDate) {
       const daysInRange = eachDayOfInterval({ start: startDate, end: endDate });
       let workingDays = 0;
 
@@ -523,20 +537,10 @@ export function StaffRequestForm() {
         // Only count non-overtime patterns; honor recurrence_interval and exceptions
         const hasRecurringShift = shiftPatterns.some((pattern: any) => {
           if (pattern.is_overtime) return false;
-          const patternStart = parseISO(pattern.start_date);
-          const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-          if (day < patternStart) return false;
-          if (patternEnd && day > patternEnd) return false;
-          if (!pattern.days_of_week?.includes(dayOfWeek)) return false;
-          const interval = pattern.recurrence_interval || 'weekly';
-          if (interval !== 'weekly') {
-            // Calendar days: a clock change makes the local-midnight gap 23 or 25
-            // hours, and dividing by 24 would flip a biweekly pattern's week.
-            const diffDays = differenceInCalendarDays(day, patternStart);
-            const diffWeeks = Math.floor(diffDays / 7);
-            if (interval === 'biweekly' && diffWeeks % 2 !== 0) return false;
-            if (interval === 'monthly' && diffWeeks % 4 !== 0) return false;
-          }
+          // The rota's rule. This block had its own biweekly and monthly rules, and
+          // days_requested, which unpaid leave and sickness deduct, must count
+          // the shifts the rota actually shows.
+          if (!patternOccursOn(pattern, day)) return false;
           if (exceptionSet.has(`${pattern.id}:${dateStr}`)) return false;
           return true;
         });
@@ -611,11 +615,19 @@ export function StaffRequestForm() {
           if (!swapStartDate || !swapEndDate) throw new Error("Please select a date range");
           if (selectedSwapShifts.length === 0) throw new Error("Please select at least one shift to cover");
         } else {
-          if (!selectedCoverHolidayId) throw new Error("Please select an approved holiday to cover");
+          if (!selectedCoverHolidayId) throw new Error("Please select an approved absence to cover");
         }
       } else if (requestType !== 'overtime') {
         if (!startDate) throw new Error("Please select a start date");
         if (!endDate) throw new Error("Please select an end date");
+      }
+
+      // An admin entering it is the way through for sickness older than 30
+      // days, so they are not held to it.
+      if (requestType === 'sickness' && !isAdmin && startDate && startDate < earliestSicknessStart) {
+        throw new Error(
+          "Sickness can be reported up to 30 days after it started. For anything earlier, speak to your supervisor — they can enter it for you."
+        );
       }
 
       // The peak window closes on 30 September. After that the winter rota is
@@ -640,7 +652,7 @@ export function StaffRequestForm() {
       }
       
       if (requestType === 'overtime' && !linkedHolidayId) {
-        throw new Error("Please select the approved holiday you are covering");
+        throw new Error("Please select the approved absence you are covering");
       }
 
       // Calculate overtime type if applicable
@@ -663,7 +675,12 @@ export function StaffRequestForm() {
       let requestDetails = details;
       let requestStartDate = startDate;
       let requestEndDate = endDate;
-      let requestDays = parseFloat(daysRequested) || 1;
+      // Payroll deducts days_requested for sickness, and a report can honestly
+      // cover no working days — a sick Saturday bonus shift, say, which already
+      // costs its share of the shift bonus. So 0 stays 0 for sickness instead of
+      // falling back to a day's pay; other types keep the fallback they had.
+      const parsedDays = parseFloat(daysRequested);
+      let requestDays = requestType === 'sickness' && parsedDays === 0 ? 0 : (parsedDays || 1);
 
       if (requestType === 'shift_swap') {
         if (shiftCoverType === 'shifts' && selectedSwapShifts.length > 0) {
@@ -692,7 +709,9 @@ export function StaffRequestForm() {
             requestDays = selectedCoverDays.length;
             const staffName = staffMembers.find(s => s.user_id === swapWithUserId)?.display_name || 'staff member';
             const daysListStr = sortedDays.map(d => format(parseISO(d), "dd MMM yyyy")).join(", ");
-            const holidayDetails = `Covering for ${staffName} during their holiday\nCovered days: ${daysListStr}`;
+            // All staff can read an approved cover request, so a sick
+            // colleague's is described only as an absence.
+            const holidayDetails = `Covering for ${staffName} during their ${isUndisclosedAbsence(holiday.absence_type) ? 'absence' : 'holiday'}\nCovered days: ${daysListStr}`;
             requestDetails = details ? `${details}\n\n${holidayDetails}` : holidayDetails;
           }
         }
@@ -762,9 +781,9 @@ export function StaffRequestForm() {
 
       if (error) throw error;
 
-      // If admin is submitting an approved holiday request, also create staff_holidays entry
-      if (isAdmin && (requestType === 'holiday_paid' || requestType === 'holiday_unpaid')) {
-        const absenceType = requestType === 'holiday_unpaid' ? 'unpaid' : 'holiday';
+      // If admin is submitting an approved holiday or sickness request, also create staff_holidays entry
+      if (isAdmin && (requestType === 'holiday_paid' || requestType === 'holiday_unpaid' || requestType === 'sickness')) {
+        const absenceType = requestType === 'sickness' ? 'sick' : requestType === 'holiday_unpaid' ? 'unpaid' : 'holiday';
         const { error: holidayError } = await supabase
           .from("staff_holidays")
           .insert({
@@ -774,13 +793,16 @@ export function StaffRequestForm() {
             end_date: format(requestEndDate!, "yyyy-MM-dd"),
             days_taken: requestDays,
             status: 'approved',
-            notes: requestDetails || `Requested by ${user.email} on behalf of staff`,
+            // staff_holidays can be read without signing in, and what someone
+            // writes about being ill is health data, so it stays on the request.
+            notes: requestType === 'sickness' ? null : (requestDetails || `Requested by ${user.email} on behalf of staff`),
             approved_by: user.id,
             approved_at: new Date().toISOString()
           });
 
         if (holidayError) {
           console.error('Failed to sync to staff_holidays:', holidayError);
+          toast.error(`The request was saved, but its absence record could not be created: ${holidayError.message}`);
         }
       }
       // Send email notification to admins for new requests (not when admin submits)
@@ -841,25 +863,28 @@ export function StaffRequestForm() {
 
       if (error) throw error;
 
-      // If it's a holiday request being approved, sync to staff_holidays
-      if (status === 'approved' && (request.request_type === 'holiday_paid' || request.request_type === 'holiday_unpaid' || request.request_type === 'holiday')) {
+      // If it's a holiday or sickness request being approved, sync to staff_holidays
+      if (status === 'approved' && (request.request_type === 'holiday_paid' || request.request_type === 'holiday_unpaid' || request.request_type === 'holiday' || request.request_type === 'sickness')) {
         const { error: holidayError } = await supabase
           .from("staff_holidays")
           .insert({
             user_id: request.user_id,
-            absence_type: request.request_type === 'holiday_unpaid' ? 'unpaid' : 'holiday',
+            absence_type: request.request_type === 'sickness' ? 'sick' : request.request_type === 'holiday_unpaid' ? 'unpaid' : 'holiday',
             start_date: request.start_date,
             end_date: request.end_date,
             days_taken: request.days_requested,
             status: 'approved',
-            notes: request.details,
+            // staff_holidays can be read without signing in, and what someone
+            // writes about being ill is health data, so it stays on the request.
+            notes: request.request_type === 'sickness' ? null : request.details,
             approved_by: user.id,
             approved_at: new Date().toISOString()
           });
 
         if (holidayError) {
           console.error('Failed to sync to staff_holidays:', holidayError);
-          // Don't throw - the request is already approved, just log the sync failure
+          // Don't throw - the request is already approved - but say so, rather than let it look like it worked
+          toast.error(`The request was approved, but its absence record could not be created: ${holidayError.message}`);
         }
       }
       // Send email notification to the requester
@@ -935,7 +960,7 @@ export function StaffRequestForm() {
             Time Off & Overtime Request
           </CardTitle>
           <CardDescription>
-            Submit a request for overtime, holiday, or shift cover
+            Submit a request for overtime, holiday or shift cover, or report sickness
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -957,6 +982,10 @@ export function StaffRequestForm() {
               <li className="flex items-start gap-2">
                 <span className="font-medium text-yellow-600">•</span>
                 <span><strong>Unpaid Holiday:</strong> request unpaid time off from work.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="font-medium text-rose-600">•</span>
+                <span><strong>Sickness absence:</strong> off sick? Report it here, on the day if you can. It doesn't use your holiday allowance.</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="font-medium text-blue-600">•</span>
@@ -1042,18 +1071,18 @@ export function StaffRequestForm() {
                 </Select>
               </div>
 
-              {/* Once staff is selected, show their approved holidays */}
+              {/* Once staff is selected, show their approved absences */}
               {coveringStaffId && (
                 <div className="space-y-2">
-                  <Label>Which of their approved holidays are you covering? <span className="text-destructive">*</span></Label>
+                  <Label>Which of their approved absences are you covering? <span className="text-destructive">*</span></Label>
                   <Select value={linkedHolidayId} onValueChange={setLinkedHolidayId}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select an approved holiday..." />
+                      <SelectValue placeholder="Select an approved absence..." />
                     </SelectTrigger>
                     <SelectContent className="bg-background">
                       {approvedHolidays.length === 0 ? (
                         <div className="p-2 text-sm text-muted-foreground text-center">
-                          No approved holidays for this staff member
+                          No approved absences for this staff member
                         </div>
                       ) : (
                         approvedHolidays.map(holiday => (
@@ -1061,7 +1090,7 @@ export function StaffRequestForm() {
                             <div className="flex flex-col">
                               <span>{format(new Date(holiday.start_date), 'dd MMM yyyy')} – {format(new Date(holiday.end_date), 'dd MMM yyyy')}</span>
                               <span className="text-xs text-muted-foreground">
-                                {holiday.days_taken} days • {holiday.absence_type}
+                                {holiday.days_taken} days • {isUndisclosedAbsence(holiday.absence_type) ? 'absence' : holiday.absence_type}
                               </span>
                             </div>
                           </SelectItem>
@@ -1304,15 +1333,16 @@ export function StaffRequestForm() {
                               >
                                 <div className="font-medium flex items-center gap-2">
                                   {format(shift.date, "EEE, dd MMM yyyy")}
-                                  {swapPartnerHolidays.some(h => {
+                                  {(() => {
                                     const shiftDate = format(shift.date, "yyyy-MM-dd");
-                                    return shiftDate >= h.start_date && shiftDate <= h.end_date;
-                                  }) && (
-                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-orange-300 text-orange-600 bg-orange-50 dark:bg-orange-950/30">
-                                      <Palmtree className="h-3 w-3 mr-0.5" />
-                                      Holiday
-                                    </Badge>
-                                  )}
+                                    const absence = swapPartnerHolidays.find(h => shiftDate >= h.start_date && shiftDate <= h.end_date);
+                                    return absence && (
+                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-orange-300 text-orange-600 bg-orange-50 dark:bg-orange-950/30">
+                                        <Palmtree className="h-3 w-3 mr-0.5" />
+                                        {isUndisclosedAbsence(absence.absence_type) ? 'Absence' : 'Holiday'}
+                                      </Badge>
+                                    );
+                                  })()}
                                 </div>
                                 <div className="text-muted-foreground text-xs">
                                   {shift.startTime} - {shift.endTime} • {shift.clientName}
@@ -1336,10 +1366,10 @@ export function StaffRequestForm() {
               {/* Holiday cover - Select approved holiday */}
               {swapWithUserId && shiftCoverType === 'holidays' && (
                 <div className="space-y-2">
-                  <Label>Select approved holiday to cover <span className="text-destructive">*</span></Label>
+                  <Label>Select approved absence to cover <span className="text-destructive">*</span></Label>
                   {swapPartnerHolidays.length === 0 ? (
                     <div className="p-4 bg-muted rounded-md text-sm text-muted-foreground text-center">
-                      No approved holidays found for {getStaffName(swapWithUserId)}
+                      No approved absences found for {getStaffName(swapWithUserId)}
                     </div>
                   ) : (
                     <Select value={selectedCoverHolidayId} onValueChange={(val) => {
@@ -1347,7 +1377,7 @@ export function StaffRequestForm() {
                       setSelectedCoverDays([]); // Reset, useEffect will repopulate
                     }}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select an approved holiday..." />
+                        <SelectValue placeholder="Select an approved absence..." />
                       </SelectTrigger>
                       <SelectContent className="bg-background">
                         {swapPartnerHolidays.map(holiday => (
@@ -1355,7 +1385,7 @@ export function StaffRequestForm() {
                             <div className="flex flex-col">
                               <span>{format(new Date(holiday.start_date), 'dd MMM yyyy')} – {format(new Date(holiday.end_date), 'dd MMM yyyy')}</span>
                               <span className="text-xs text-muted-foreground">
-                                {holiday.days_taken} days • {holiday.absence_type}
+                                {holiday.days_taken} days • {isUndisclosedAbsence(holiday.absence_type) ? 'absence' : holiday.absence_type}
                               </span>
                             </div>
                           </SelectItem>
@@ -1459,8 +1489,11 @@ export function StaffRequestForm() {
           {/* Details */}
           <div className="space-y-2">
             <Label>Details <span className="text-destructive">*</span></Label>
+            {/* For sickness, ask only for what the rota needs: anything more is health data. */}
             <p className="text-sm text-muted-foreground">
-              Please explain the details of your request, for example the start and end time of your shift or the details of who you will be swapping shifts with and when. Write N/A if no comment is required.
+              {requestType === 'sickness'
+                ? "Anything the team needs to know, for example when you expect to be back. You don't need to say what's wrong. Write N/A if no comment is required."
+                : "Please explain the details of your request, for example the start and end time of your shift or the details of who you will be swapping shifts with and when. Write N/A if no comment is required."}
             </p>
             <Textarea 
               value={details}
@@ -1475,7 +1508,9 @@ export function StaffRequestForm() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Start Date <span className="text-destructive">*</span></Label>
-                <p className="text-sm text-muted-foreground">Please enter start date of request</p>
+                <p className="text-sm text-muted-foreground">
+                  {requestType === 'sickness' && !isAdmin ? "The first day you were off sick, up to 30 days ago" : "Please enter start date of request"}
+                </p>
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button
@@ -1499,6 +1534,7 @@ export function StaffRequestForm() {
                           setEndDate(date);
                         }
                       }}
+                      disabled={(date) => requestType === 'sickness' && !isAdmin && date < earliestSicknessStart}
                       initialFocus
                       className="p-3 pointer-events-auto"
                     />
@@ -1537,8 +1573,8 @@ export function StaffRequestForm() {
             </div>
           )}
 
-          {/* Days Requested - Auto-calculated for holidays */}
-          {(requestType === 'holiday_paid' || requestType === 'holiday_unpaid') && (
+          {/* Days Requested - Auto-calculated for holidays and sickness */}
+          {(requestType === 'holiday_paid' || requestType === 'holiday_unpaid' || requestType === 'sickness') && (
             <div className="space-y-2">
               <Label>Working days in selected period</Label>
               <div className="px-4 py-2 bg-muted rounded-md font-medium min-w-[80px] w-fit">

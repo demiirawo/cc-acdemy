@@ -52,6 +52,16 @@ verify_jwt = false
 [functions.send-request-email]
 verify_jwt = true
 
+# Called by the */5 pg_cron job, not by signed-in users. Live has always had
+# JWT verification off; without this entry a CLI deploy would switch it on.
+[functions.staff-shift-change-notification]
+verify_jwt = false
+
+# Invoked from the dashboard with the user's session, and live has always had
+# JWT verification off; without this entry a CLI deploy would switch it on.
+[functions.send-handover-nudge]
+verify_jwt = false
+
 [functions.send-contract-email]
 verify_jwt = true
 

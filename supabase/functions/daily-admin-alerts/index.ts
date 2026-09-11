@@ -173,6 +173,13 @@ const joinNames = (names: string[]): string => {
 const listHtml = (items: string[]): string =>
   `<ul style="color:#374151;font-size:16px;line-height:1.6;margin:0 0 16px;padding-left:20px;">${items.map(i => `<li style="margin-bottom:8px;">${i}</li>`).join("")}</ul>`;
 
+/** Detail lines nested under one digest item. */
+const subListHtml = (items: string[]): string =>
+  `<ul style="margin:6px 0 0;padding-left:18px;font-size:14px;line-height:1.6;">${items.map(i => `<li style="margin-bottom:4px;">${i}</li>`).join("")}</ul>`;
+
+/** For free text typed by staff (a "not required" reason) going into HTML. */
+const escapeHtml = (s: string): string => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
 /** Send one email to one person through the shared shell. */
 const sendOne = async (
   to: string,
@@ -203,6 +210,284 @@ interface DigestSection {
   itemsHtml: string[];
   summary: string;
 }
+
+// ============================================================================
+// Handovers — a local copy of what src/lib/handoverStatus.ts works out
+// ============================================================================
+// An edge function cannot import from src/, so the parts of the shared lib the
+// digest needs are mirrored here and must be kept in step with it: which dates
+// a shift pattern has inside a leave window, whether an approved cover request
+// covers a given client, and when a handover, a client and a leave count as
+// ready. A handover is one person handing ONE client to ONE colleague for ONE
+// leave — a holiday split between two coverers is two handovers, each with its
+// own checklist and its own "not required" decision. Which handovers exist is
+// worked out from the rota and the covers; a client_handovers row only exists
+// once somebody has acted on one, so a pair with no row is simply not started.
+
+const BENCH_SENTINEL = "Care Cuddle";
+
+interface PatternWindow {
+  client_name: string | null;
+  days_of_week: number[] | null;
+  start_date: string;
+  end_date: string | null;
+  recurrence_interval?: string | null;
+}
+
+/** Monday of the week containing this UTC date. */
+const mondayOfUtc = (d: Date): Date => {
+  const m = new Date(d);
+  m.setUTCDate(m.getUTCDate() - ((m.getUTCDay() + 6) % 7));
+  return m;
+};
+
+/**
+ * ISO dates within [windowStart, windowEnd] on which this pattern has a shift.
+ * Mirrors patternDatesInWindow in the lib; the calendar arithmetic is in UTC
+ * here, which the runtime is in anyway, so nothing drifts across a clock change.
+ */
+function patternDatesInWindow(p: PatternWindow, windowStart: string, windowEnd: string): string[] {
+  const start = p.start_date > windowStart ? p.start_date : windowStart;
+  const end = p.end_date && p.end_date < windowEnd ? p.end_date : windowEnd;
+  if (start > end) return [];
+  const interval = p.recurrence_interval || "weekly";
+  const patternStart = new Date(`${p.start_date}T00:00:00Z`);
+  const patternMonday = mondayOfUtc(patternStart);
+  const last = new Date(`${end}T00:00:00Z`);
+  const dates: string[] = [];
+  for (const day = new Date(`${start}T00:00:00Z`); day <= last; day.setUTCDate(day.getUTCDate() + 1)) {
+    const iso = day.toISOString().slice(0, 10);
+    if (interval === "one_off") {
+      if (iso === p.start_date) dates.push(iso);
+      continue;
+    }
+    if (interval === "monthly") {
+      if (day.getUTCDate() === patternStart.getUTCDate()) dates.push(iso);
+      continue;
+    }
+    if (interval !== "daily" && !(p.days_of_week || []).includes(day.getUTCDay())) continue;
+    if (interval === "biweekly") {
+      const weeksDiff = Math.round((mondayOfUtc(day).getTime() - patternMonday.getTime()) / (7 * 86_400_000));
+      if (weeksDiff % 2 !== 0) continue;
+    }
+    dates.push(iso);
+  }
+  return dates;
+}
+
+/** Group patterns by trimmed client name, dropping bench and blank entries. Mirrors patternsByClient in the lib. */
+function patternsByClient(patterns: PatternWindow[]): Map<string, PatternWindow[]> {
+  const map = new Map<string, PatternWindow[]>();
+  for (const p of patterns) {
+    const client = (p.client_name || "").trim();
+    if (!client || client === BENCH_SENTINEL) continue;
+    if (!map.has(client)) map.set(client, []);
+    map.get(client)!.push(p);
+  }
+  return map;
+}
+
+/**
+ * A client's shift dates during a leave that still need cover: every pattern's
+ * dates in the window, less the holiday's no_cover_dates. Empty means no
+ * handover for that client — mirrors needsCoverInWindow in the lib.
+ */
+function clientDatesNeedingCover(patterns: PatternWindow[], windowStart: string, windowEnd: string, noCoverDates: Set<string>): string[] {
+  return [...new Set(patterns.flatMap(p => patternDatesInWindow(p, windowStart, windowEnd)))]
+    .filter(d => !noCoverDates.has(d))
+    .sort();
+}
+
+/** The subset of a cover (shift_swap) request needed to scope it to a client. */
+interface CoverRequestScope {
+  start_date: string;
+  end_date: string;
+  coverage_metadata: unknown;
+}
+
+/**
+ * Does this cover request cover the given client? Mirrors coverAppliesToClient
+ * in the lib, verbatim.
+ *
+ * Handovers are segregated per client: when one person's leave spans several
+ * clients, each client can have a different cover. Client-scoped requests say
+ * so explicitly in coverage_metadata (covered_clients, or shifts[] entries with
+ * client_name). Legacy requests only carry dates, so for those we fall back to
+ * date overlap with this client's shift dates during the leave.
+ */
+function coverAppliesToClient(
+  req: CoverRequestScope,
+  clientName: string,
+  clientShiftDates: string[]
+): boolean {
+  const meta = req.coverage_metadata as {
+    covered_dates?: string[];
+    covered_clients?: string[];
+    shifts?: { date?: string; client_name?: string }[];
+  } | null;
+  const client = clientName.trim().toLowerCase();
+
+  // Client-scoped metadata wins: explicit covered_clients, or per-shift entries.
+  const scopedClients = new Set<string>();
+  if (Array.isArray(meta?.covered_clients)) {
+    meta!.covered_clients!.forEach(c => { if (c) scopedClients.add(c.trim().toLowerCase()); });
+  }
+  if (Array.isArray(meta?.shifts)) {
+    meta!.shifts!.forEach(s => { if (s?.client_name) scopedClients.add(s.client_name.trim().toLowerCase()); });
+  }
+  if (scopedClients.size > 0) {
+    if (!scopedClients.has(client)) return false;
+    // Scoped to this client — still require a date to actually touch it when
+    // per-shift dates exist for this client (partial covers).
+    if (Array.isArray(meta?.shifts) && meta!.shifts!.some(s => s?.client_name && s?.date)) {
+      return meta!.shifts!.some(s =>
+        (s.client_name || "").trim().toLowerCase() === client && s.date && clientShiftDates.includes(s.date)
+      ) || clientShiftDates.length === 0;
+    }
+    return true;
+  }
+
+  // Legacy date-only requests: covered dates (or the request's date range)
+  // touching this client's shift dates.
+  const coveredDates = Array.isArray(meta?.covered_dates) && meta!.covered_dates!.length > 0
+    ? meta!.covered_dates!
+    : null;
+  return coveredDates
+    ? clientShiftDates.some(d => coveredDates.includes(d))
+    : clientShiftDates.some(d => d >= req.start_date && d <= req.end_date);
+}
+
+/** A client_handovers row, as this function selects it. */
+interface StoredHandoverRow {
+  id: string;
+  client_name: string;
+  kind: string;
+  from_user_id: string;
+  holiday_id: string | null;
+  to_user_id: string | null;
+  status: string;
+  not_required_reason: string | null;
+}
+
+/**
+ * Stable identity of a handover, with or without a stored row. Mirrors
+ * handoverKey in src/lib/handoverStatus.ts exactly — the tracker matches its
+ * ?handover= links against that key — and it starts with the client because
+ * one leave at two clients is two handovers.
+ */
+const handoverKey = (client: string, kind: "leave" | "departure", fromUserId: string, holidayId: string | null, toUserId: string | null): string =>
+  `${client.trim()}|${kind}|${fromUserId}|${holidayId ?? ""}|${toUserId ?? ""}`;
+
+/** One handover as the digest sees it: what the rota says exists, with the stored row (if any) laid over it. */
+interface DigestHandover {
+  /** client_handovers.id once a row exists; null until somebody acts on it. */
+  id: string | null;
+  key: string;
+  client: string;
+  toUserId: string | null;
+  /** Who it is handed to; null = cover not assigned yet. */
+  toName: string | null;
+  requirement: "required" | "not_required";
+  notRequiredReason: string | null;
+  taskCount: number;
+  completedCount: number;
+  avgProgress: number;
+}
+
+interface TaskAgg { count: number; done: number; sum: number }
+
+/** Per-handover task counts. Tasks with no handover are history and are left out. */
+function aggregateHandoverTasks(rows: { handover_id: string | null; progress: number | null }[]): Map<string, TaskAgg> {
+  const agg = new Map<string, TaskAgg>();
+  for (const t of rows) {
+    if (!t.handover_id) continue;
+    const progress = Number(t.progress) || 0;
+    const cur = agg.get(t.handover_id) || { count: 0, done: 0, sum: 0 };
+    cur.count += 1;
+    cur.sum += progress;
+    if (progress >= 100) cur.done += 1;
+    agg.set(t.handover_id, cur);
+  }
+  return agg;
+}
+
+function digestHandover(
+  key: string, client: string, toUserId: string | null, toName: string | null,
+  row: StoredHandoverRow | undefined, tasks: TaskAgg | undefined,
+): DigestHandover {
+  return {
+    id: row?.id ?? null,
+    key,
+    client,
+    toUserId,
+    toName,
+    requirement: row?.status === "not_required" ? "not_required" : "required",
+    notRequiredReason: row?.not_required_reason ?? null,
+    taskCount: tasks?.count ?? 0,
+    completedCount: tasks?.done ?? 0,
+    avgProgress: tasks && tasks.count > 0 ? Math.round(tasks.sum / tasks.count) : 0,
+  };
+}
+
+/** Complete = required, has tasks, and every task is at 100%. */
+const handoverIsComplete = (h: DigestHandover): boolean =>
+  h.requirement === "required" && h.taskCount > 0 && h.completedCount === h.taskCount;
+
+/** "ready" / "about 40% done" / "not started" / "not required (reason)". */
+const handoverLabel = (h: DigestHandover): string => {
+  if (h.requirement === "not_required") return `not required${h.notRequiredReason ? ` (${escapeHtml(h.notRequiredReason)})` : ""}`;
+  if (handoverIsComplete(h)) return "ready";
+  if (h.taskCount > 0 && h.avgProgress > 0) return `about ${h.avgProgress}% done`;
+  return "not started";
+};
+
+/** Where one client of a leave stands. Mirrors ClientHandoverStatus in the lib. */
+interface ClientReadiness {
+  client: string;
+  handovers: DigestHandover[];
+  /** Every required handover here is complete (and at least one is required). */
+  ready: boolean;
+  /** Every handover here is marked not required. */
+  notRequired: boolean;
+}
+
+/**
+ * Per-client readiness from a leave's handovers, clients A–Z and, within a
+ * client, coverers by name with "cover not assigned yet" last. A leave is
+ * ready when every client that isn't marked not required is ready.
+ */
+function clientReadiness(handovers: DigestHandover[]): ClientReadiness[] {
+  const byClient = new Map<string, DigestHandover[]>();
+  for (const h of handovers) {
+    if (!byClient.has(h.client)) byClient.set(h.client, []);
+    byClient.get(h.client)!.push(h);
+  }
+  return [...byClient.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([client, hs]) => {
+      hs.sort((a, b) => (!a.toName !== !b.toName ? (a.toName ? -1 : 1) : (a.toName || "").localeCompare(b.toName || "")));
+      const required = hs.filter(h => h.requirement === "required");
+      const notRequired = required.length === 0;
+      return { client, handovers: hs, ready: !notRequired && required.every(handoverIsComplete), notRequired };
+    });
+}
+
+/** The client's tracker page, opened on one handover when there is exactly one to open. */
+const trackerUrl = (client: string, h?: DigestHandover): string =>
+  `${APP_URL}/public/schedule/${encodeURIComponent(client)}${h ? `?handover=${encodeURIComponent(h.id ?? h.key)}` : ""}`;
+
+/**
+ * "Springs of Joy → Amaka Ezenwanebe: not started; → Sam George: not required."
+ * with a link to the client's tracker. A client with no handover rows at all
+ * reads "not started".
+ */
+const handoverClientLine = (c: ClientReadiness): string => {
+  const standing = c.handovers.length > 0
+    ? ` → ${c.handovers.map(h => `${h.toName ?? "cover not assigned yet"}: ${handoverLabel(h)}`).join("; → ")}`
+    : ": not started";
+  const url = trackerUrl(c.client, c.handovers.length === 1 ? c.handovers[0] : undefined);
+  return `<strong>${c.client}</strong>${standing}. <a href="${url}" style="color:${BRAND_COLOR};font-weight:600;text-decoration:none;">Open the Handover Tracker for ${c.client}</a>`;
+};
 
 const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
@@ -263,6 +548,9 @@ const handler = async (req: Request): Promise<Response> => {
       .from("profiles").select("user_id, display_name, email");
     const profileMap = new Map(profiles?.map(p => [p.user_id, p.display_name]) || []);
     const emailByUser = new Map(profiles?.filter(p => p.email).map(p => [p.user_id, p.email as string]) || []);
+    // "Funmi Otitoju" — falling back to their email, then "Unknown", when the
+    // profile has no name, as the tracker does.
+    const personName = (userId: string): string => profileMap.get(userId) || emailByUser.get(userId) || "Unknown";
 
     const sections: DigestSection[] = [];
     const standaloneResults: Array<{ type: string; emailSent: boolean; error?: string; title: string }> = [];
@@ -506,13 +794,19 @@ const handler = async (req: Request): Promise<Response> => {
       horizon.setMonth(horizon.getMonth() + 3);
       const horizonStr = horizon.toISOString().split("T")[0];
 
-      const { data: upcomingHolidays } = await supabaseClient
+      // Sickness is left out: nobody arranges cover for it in advance. This
+      // query used to ask for a column that doesn't exist (holiday_type) and
+      // swallow the error, so the section was silently empty; a failure is now
+      // said in the digest rather than passed off as "nothing coming up".
+      const { data: upcomingHolidays, error: upcomingHolidaysError } = await supabaseClient
         .from("staff_holidays")
-        .select("id, user_id, start_date, end_date, holiday_type, no_cover_dates, no_cover_required")
+        .select("id, user_id, start_date, end_date, absence_type, no_cover_dates, no_cover_required")
         .eq("status", "approved")
+        .neq("absence_type", "sick")
         .gte("start_date", todayStr)
         .lte("start_date", horizonStr)
         .order("start_date");
+      if (upcomingHolidaysError) console.error("Upcoming holidays query failed:", upcomingHolidaysError.message);
 
       const holidayUserIdsForCovers = [...new Set((upcomingHolidays || []).map(h => h.user_id))];
       const { data: holidayCovers } = holidayUserIdsForCovers.length > 0
@@ -525,7 +819,7 @@ const handler = async (req: Request): Promise<Response> => {
         : { data: [] as any[] };
 
       const has = upcomingHolidays && upcomingHolidays.length > 0;
-      if (has || testType === "upcoming_holidays") {
+      if (has || upcomingHolidaysError || testType === "upcoming_holidays") {
         const enumerateDates = (start: string, end: string): string[] => {
           const out: string[] = [];
           const s = new Date(start); const e = new Date(end);
@@ -560,9 +854,13 @@ const handler = async (req: Request): Promise<Response> => {
               else coverSentence = `<span style="color:#f59e0b;font-weight:600;">Cover is arranged for ${covered} of the ${total} days.</span>`;
               const when = niceDateRange(h.start_date, h.end_date);
               const daysUntil = Math.ceil((new Date(h.start_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-              return { sortKey: h.start_date, html: `<strong>${name}</strong> is on holiday ${when}, starting ${inDays(daysUntil)}. ${coverSentence}` };
+              // "on holiday", or "on unpaid leave", "on maternity leave" — say which.
+              const what = !h.absence_type || h.absence_type === "holiday" ? "holiday" : `${String(h.absence_type).replace(/_/g, " ")} leave`;
+              return { sortKey: h.start_date, html: `<strong>${name}</strong> is on ${what} ${when}, starting ${inDays(daysUntil)}. ${coverSentence}` };
             })
-          : [{ sortKey: "0", html: `<strong>[TEST] John Smith</strong> is on holiday Monday 25 to Thursday 28 January, starting in 5 days. <span style="color:#f59e0b;font-weight:600;">Cover is arranged for 2 of the 4 days.</span>` }];
+          : upcomingHolidaysError
+            ? [{ sortKey: "0", html: `<span style="color:#ef4444;font-weight:600;">The list of upcoming holidays couldn't be loaded today</span> (${upcomingHolidaysError.message}) — please check the schedule directly.` }]
+            : [{ sortKey: "0", html: `<strong>[TEST] John Smith</strong> is on holiday Monday 25 to Thursday 28 January, starting in 5 days. <span style="color:#f59e0b;font-weight:600;">Cover is arranged for 2 of the 4 days.</span>` }];
 
         items.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
@@ -572,7 +870,7 @@ const handler = async (req: Request): Promise<Response> => {
           icon: "📅",
           accentColor: "#3b82f6",
           itemsHtml: items.map(i => i.html),
-          summary: `${items.length === 1 ? "one" : items.length} coming up`,
+          summary: upcomingHolidaysError ? "couldn't be loaded" : `${items.length === 1 ? "one" : items.length} coming up`,
         });
       }
     }
@@ -793,28 +1091,55 @@ const endingSoon = regularPatterns
 
       if (holidays.length > 0) {
         const holidayUserIds = [...new Set(holidays.map(h => h.user_id))];
-        const { data: covers } = await supabaseClient
-          .from("staff_requests")
-          .select("user_id, swap_with_user_id, coverage_metadata, start_date, end_date")
-          .eq("request_type", "shift_swap")
-          .eq("status", "approved")
-          .in("swap_with_user_id", holidayUserIds);
 
-        // Per-day no-cover info from staff_holidays (joined by user_id|start|end).
+        // The staff_holidays row behind each request (joined by user|start|end):
+        // per-day no-cover info, and the id its handovers are stored against.
         const holidayStartDates = [...new Set(holidays.map(h => h.start_date))];
         const { data: holidayRows } = await supabaseClient
           .from("staff_holidays")
-          .select("user_id, start_date, end_date, no_cover_dates, no_cover_required")
+          .select("id, user_id, start_date, end_date, no_cover_dates, no_cover_required")
           .eq("status", "approved")
           .in("user_id", holidayUserIds)
           .in("start_date", holidayStartDates);
-        const noCoverInfoMap = new Map<string, { noCoverDates: Set<string>; noCoverRequired: boolean }>();
+        const holidayInfoMap = new Map<string, { id: string | null; noCoverDates: Set<string>; noCoverRequired: boolean }>();
         for (const r of holidayRows || []) {
-          noCoverInfoMap.set(`${r.user_id}|${r.start_date}|${r.end_date}`, {
+          holidayInfoMap.set(`${r.user_id}|${r.start_date}|${r.end_date}`, {
+            id: r.id as string,
             noCoverDates: new Set<string>((r.no_cover_dates as string[] | null) || []),
             noCoverRequired: r.no_cover_required === true,
           });
         }
+        const holidayIds = (holidayRows || []).map(r => r.id as string);
+
+        // Approved cover for these people — shift cover offered to them, plus
+        // anything explicitly linked to one of these leaves — as the tracker
+        // reads it. A departure or sickness row can name a colleague too, and
+        // neither is somebody covering a holiday.
+        const coverFilter = [`and(request_type.eq.shift_swap,swap_with_user_id.in.(${holidayUserIds.join(",")}))`];
+        if (holidayIds.length > 0) coverFilter.push(`linked_holiday_id.in.(${holidayIds.join(",")})`);
+        const { data: coverRows } = await supabaseClient
+          .from("staff_requests")
+          .select("user_id, request_type, swap_with_user_id, linked_holiday_id, coverage_metadata, start_date, end_date")
+          .eq("status", "approved")
+          .or(coverFilter.join(","));
+        const covers = (coverRows || []).filter(c => c.request_type !== "departure" && c.request_type !== "sickness");
+
+        // The handovers already acted on for these leaves — the checklist and
+        // any "not required" decision — and where their tasks stand.
+        const { data: storedRows } = holidayIds.length > 0
+          ? await supabaseClient
+              .from("client_handovers")
+              .select("id, client_name, kind, from_user_id, holiday_id, to_user_id, status, not_required_reason")
+              .in("holiday_id", holidayIds)
+          : { data: [] as StoredHandoverRow[] };
+        const storedByKey = new Map<string, StoredHandoverRow>(
+          ((storedRows || []) as StoredHandoverRow[]).map(s => [handoverKey(s.client_name, "leave", s.from_user_id, s.holiday_id, s.to_user_id), s])
+        );
+        const storedIds = ((storedRows || []) as StoredHandoverRow[]).map(s => s.id);
+        const { data: storedTaskRows } = storedIds.length > 0
+          ? await supabaseClient.from("client_handover_tasks").select("handover_id, progress").in("handover_id", storedIds)
+          : { data: [] as { handover_id: string | null; progress: number | null }[] };
+        const tasksByHandover = aggregateHandoverTasks(storedTaskRows || []);
 
         const { data: emailProfiles } = await supabaseClient
           .from("profiles").select("user_id, email, display_name");
@@ -833,17 +1158,21 @@ const endingSoon = regularPatterns
           const when = niceDateRange(h.start_date, h.end_date);
           const timePhrase = inDays(daysUntil);
 
-          const noCoverInfo = noCoverInfoMap.get(`${h.user_id}|${h.start_date}|${h.end_date}`)
-            || { noCoverDates: new Set<string>(), noCoverRequired: false };
+          const holidayInfo = holidayInfoMap.get(`${h.user_id}|${h.start_date}|${h.end_date}`)
+            || { id: null, noCoverDates: new Set<string>(), noCoverRequired: false };
           const holidayDates: string[] = [];
           for (const d = new Date(h.start_date); d <= new Date(h.end_date); d.setDate(d.getDate() + 1)) {
             holidayDates.push(d.toISOString().split("T")[0]);
           }
-          const datesNeedingCover = holidayDates.filter(d => !noCoverInfo.noCoverDates.has(d));
-          const coverNotNeeded = noCoverInfo.noCoverRequired || datesNeedingCover.length === 0;
+          const datesNeedingCover = holidayDates.filter(d => !holidayInfo.noCoverDates.has(d));
+          const coverNotNeeded = holidayInfo.noCoverRequired || datesNeedingCover.length === 0;
 
-          const matchingCovers = (covers || []).filter(c => {
-            if (c.swap_with_user_id !== h.user_id) return false;
+          // Cover for this leave: offered to this person, or linked to it — and
+          // never this person covering themselves.
+          const leaveCovers = covers.filter(c =>
+            (c.swap_with_user_id === h.user_id || (holidayInfo.id !== null && c.linked_holiday_id === holidayInfo.id))
+            && c.user_id !== h.user_id);
+          const matchingCovers = leaveCovers.filter(c => {
             const dates: string[] = (c.coverage_metadata as any)?.covered_dates || [];
             if (dates.length === 0) return !(c.end_date < h.start_date || c.start_date > h.end_date);
             return dates.some(d => d >= h.start_date && d <= h.end_date);
@@ -863,75 +1192,48 @@ const endingSoon = regularPatterns
           });
           const coverNames = coverPeople.map(c => c.name).filter(Boolean) as string[];
 
-          // Clients impacted by this person's leave, with REAL handover completion
-          // status (not just links) — this is what "must be complete before annual
-          // leave" is measured against. One holiday can require SEVERAL handovers
-          // (one per client), and every one must be done. A client with zero tasks
-          // counts as not-started, matching the shared status definition used
-          // elsewhere. A no-cover-required holiday needs no handover at all, and
-          // neither does a client whose every in-window shift date is listed in
-          // no_cover_dates (matches src/lib/handoverStatus.ts).
-          type PatternRow = { client_name: string | null; days_of_week: number[] | null; start_date: string; end_date: string | null; recurrence_interval: string | null };
+          // The handovers this leave calls for, as the tracker derives them:
+          // for each client the person has shifts at during the leave (less
+          // any dates marked no-cover), one handover per colleague whose
+          // approved cover touches that client — or one "cover not assigned
+          // yet" handover when nobody's does. A stored row supplies the
+          // checklist and any "not required" decision; a pair with no row is
+          // not started. A no-cover-required holiday needs no handover at all.
           const { data: takerPatterns } = coverNotNeeded
-            ? { data: [] as PatternRow[] }
+            ? { data: [] as PatternWindow[] }
             : await supabaseClient
                 .from("recurring_shift_patterns")
                 .select("client_name, days_of_week, start_date, end_date, recurrence_interval")
                 .eq("user_id", h.user_id)
                 .lte("start_date", h.end_date)
                 .or(`end_date.is.null,end_date.gte.${h.start_date}`);
-          const patternRunsOnDate = (p: PatternRow, dateStr: string): boolean => {
-            if (dateStr < p.start_date || (p.end_date && dateStr > p.end_date)) return false;
-            const interval = p.recurrence_interval || "weekly";
-            if (interval === "one_off") return dateStr === p.start_date;
-            const d = new Date(dateStr);
-            if (interval === "monthly") return d.getUTCDate() === new Date(p.start_date).getUTCDate();
-            if (interval !== "daily" && !(p.days_of_week || []).includes(d.getUTCDay())) return false;
-            if (interval === "biweekly") {
-              const daysDiff = Math.floor((d.getTime() - new Date(p.start_date).getTime()) / (1000 * 60 * 60 * 24));
-              return Math.floor(daysDiff / 7) % 2 === 0;
+          const handovers: DigestHandover[] = [];
+          for (const [client, ps] of patternsByClient((takerPatterns || []) as PatternWindow[]).entries()) {
+            const clientDates = clientDatesNeedingCover(ps, h.start_date, h.end_date, holidayInfo.noCoverDates);
+            if (clientDates.length === 0) continue; // no shifts, or every one marked no-cover
+            const coverers = [...new Set(leaveCovers.filter(c => coverAppliesToClient(c, client, clientDates)).map(c => c.user_id as string))];
+            for (const toUserId of coverers.length > 0 ? coverers : [null]) {
+              const key = handoverKey(client, "leave", h.user_id, holidayInfo.id, toUserId);
+              const row = storedByKey.get(key);
+              handovers.push(digestHandover(key, client, toUserId, toUserId ? personName(toUserId) : null, row, row ? tasksByHandover.get(row.id) : undefined));
             }
-            return true;
-          };
-          const clientNeedsCover = new Map<string, boolean>();
-          for (const p of takerPatterns || []) {
-            const client = (p.client_name || "").trim();
-            if (!client || client === "Care Cuddle") continue;
-            const needs = holidayDates.some(d => !noCoverInfo.noCoverDates.has(d) && patternRunsOnDate(p, d));
-            clientNeedsCover.set(client, (clientNeedsCover.get(client) || false) || needs);
           }
-          const handoverClients = [...clientNeedsCover.entries()].filter(([, needs]) => needs).map(([c]) => c);
 
-          const { data: handoverTasksData } = handoverClients.length > 0
-            ? await supabaseClient.from("client_handover_tasks").select("client_name, progress").in("client_name", handoverClients)
-            : { data: [] as { client_name: string; progress: number | null }[] };
-          const handoverAgg = new Map<string, { sum: number; count: number }>();
-          for (const t of handoverTasksData || []) {
-            if (!t.client_name) continue;
-            const cur = handoverAgg.get(t.client_name) || { sum: 0, count: 0 };
-            cur.sum += t.progress ?? 0;
-            cur.count += 1;
-            handoverAgg.set(t.client_name, cur);
-          }
-          const handoverClientStatuses = handoverClients.map(c => {
-            const agg = handoverAgg.get(c);
-            return { client: c, avgProgress: agg ? Math.round(agg.sum / agg.count) : 0, taskCount: agg ? agg.count : 0 };
-          });
-          const handoverComplete = handoverClientStatuses.length > 0
-            && handoverClientStatuses.every(c => c.taskCount > 0 && c.avgProgress >= 100);
-          const handoverReadyCount = handoverClientStatuses.filter(c => c.taskCount > 0 && c.avgProgress >= 100).length;
-          const multiClient = handoverClientStatuses.length > 1;
-          // Per-client status lines with a link to each client's Handover Tracker.
-          const handoverLinkItems = handoverClientStatuses.map(c => {
-            const label = c.taskCount > 0 && c.avgProgress >= 100
-              ? "ready"
-              : c.taskCount > 0 && c.avgProgress > 0
-                ? `about ${c.avgProgress}% done`
-                : "not started yet";
-            return `<strong>${c.client}</strong> — ${label}. <a href="${APP_URL}/public/schedule/${encodeURIComponent(c.client)}" style="color:${BRAND_COLOR};font-weight:600;text-decoration:none;">Open the Handover Tracker for ${c.client}</a>`;
-          });
+          // Readiness as the tracker measures it: a handover is complete when
+          // it is required, has tasks and every task is at 100%; a client is
+          // ready when all its required handovers are complete; clients marked
+          // not required drop out; the leave is ready when every client left
+          // is ready.
+          const clients = clientReadiness(handovers);
+          const liveClients = clients.filter(c => !c.notRequired);
+          const handoverComplete = liveClients.length > 0 && liveClients.every(c => c.ready);
+          const handoverReadyCount = liveClients.filter(c => c.ready).length;
+          const multiClient = liveClients.length > 1;
+          // Per-client, per-coverer standing, each with a link to the tracker.
+          const handoverLines = clients.map(handoverClientLine);
 
-          // Admin digest line — plain sentences, no field notation.
+          // Admin digest line — plain sentences, no field notation — with where
+          // each handover stands underneath while anything is still outstanding.
           const coverSentence = coverPeople.length > 0
             ? coverNames.length > 0
               ? `${joinNames(coverNames)} ${coverNames.length > 1 ? "are" : "is"} covering.`
@@ -941,25 +1243,32 @@ const endingSoon = regularPatterns
               : `<span style="color:#ef4444;font-weight:600;">No cover has been arranged yet.</span>`;
           const handoverSentence = coverNotNeeded
             ? `No handover is needed.`
-            : handoverClientStatuses.length > 0
-              ? handoverComplete
-                ? `<span style="color:#10b981;font-weight:600;">The handover is ready.</span>`
-                : multiClient
-                  ? `<span style="color:#ef4444;font-weight:600;">The handover is ready for ${handoverReadyCount} of their ${handoverClientStatuses.length} clients.</span>`
-                  : `<span style="color:#ef4444;font-weight:600;">The handover isn't ready yet.</span>`
+            : clients.length > 0
+              ? liveClients.length === 0
+                ? `No handover is needed — it has been marked not required.`
+                : handoverComplete
+                  ? `<span style="color:#10b981;font-weight:600;">The handover is ready.</span>`
+                  : multiClient
+                    ? `<span style="color:#ef4444;font-weight:600;">The handover is ready for ${handoverReadyCount} of their ${liveClients.length} clients.</span>`
+                    : `<span style="color:#ef4444;font-weight:600;">The handover isn't ready yet.</span>`
               : "";
+          const handoverDetail = !coverNotNeeded && liveClients.length > 0 && !handoverComplete ? subListHtml(handoverLines) : "";
           adminCountdownItems.push(
-            `<strong>${takerLabel}</strong> starts holiday ${timePhrase}, ${when}. ${coverSentence}${handoverSentence ? ` ${handoverSentence}` : ""}`
+            `<strong>${takerLabel}</strong> starts holiday ${timePhrase}, ${when}. ${coverSentence}${handoverSentence ? ` ${handoverSentence}` : ""}${handoverDetail}`
           );
 
-          // Escalate to admins when leave is imminent (≤3 days) and handover isn't
-          // done. Never fires for no-cover-required holidays (statuses are empty).
-          if (handoverClientStatuses.length > 0 && !handoverComplete && daysUntil <= 3) {
-            const notStarted = handoverClientStatuses.filter(c => c.taskCount === 0).map(c => c.client);
-            const inProgressList = handoverClientStatuses.filter(c => c.taskCount > 0 && c.avgProgress < 100);
+          // Escalate to admins when leave is imminent (≤3 days) and a handover
+          // isn't done, naming each one. Never fires for a no-cover-required
+          // holiday (no clients) or when every handover is marked not required.
+          if (liveClients.length > 0 && !handoverComplete && daysUntil <= 3) {
+            const outstanding = liveClients.flatMap(c => c.handovers
+              .filter(hv => hv.requirement === "required" && !handoverIsComplete(hv))
+              .map(hv => ({ who: `${c.client}${hv.toName ? ` → ${hv.toName}` : " (cover not assigned yet)"}`, ...hv })));
+            const notStarted = outstanding.filter(hv => hv.avgProgress === 0).map(hv => hv.who);
+            const inProgressList = outstanding.filter(hv => hv.avgProgress > 0);
             const chunks: string[] = [];
-            if (notStarted.length > 0) chunks.push(`the handover for ${joinNames(notStarted)} hasn't been started yet`);
-            for (const c of inProgressList) chunks.push(`the handover for ${c.client} is about ${c.avgProgress}% done`);
+            if (notStarted.length > 0) chunks.push(`the handover${notStarted.length > 1 ? "s" : ""} for ${joinNames(notStarted)} ${notStarted.length > 1 ? "haven't" : "hasn't"} been started yet`);
+            for (const hv of inProgressList) chunks.push(`the handover for ${hv.who} is about ${hv.avgProgress}% done`);
             handoverEscalationItems.push(
               `<strong>${takerLabel}</strong> starts holiday ${timePhrase} (${when}) and ${chunks.length > 0 ? chunks.join(", and ") : "their handover isn't finished"}.`
             );
@@ -989,8 +1298,8 @@ const endingSoon = regularPatterns
           // Personal email to the staff member on holiday: greeting first, the
           // whole story in one sentence, then cover and handover in plain words.
           if (takerInfo?.email) {
-            const anyStarted = handoverClientStatuses.some(c => c.taskCount > 0 && c.avgProgress > 0);
-            const handoverOutstanding = handoverClientStatuses.length > 0 && !handoverComplete && !coverNotNeeded;
+            const anyStarted = liveClients.some(c => c.handovers.some(hv => hv.requirement === "required" && hv.avgProgress > 0));
+            const handoverOutstanding = liveClients.length > 0 && !handoverComplete && !coverNotNeeded;
 
             const bodyParts: string[] = [];
             bodyParts.push(greeting(takerName));
@@ -1010,8 +1319,10 @@ const endingSoon = regularPatterns
 
             if (coverNotNeeded) {
               bodyParts.push(paragraph(`You don't need to prepare a handover for this holiday.`));
-            } else if (handoverClientStatuses.length > 0) {
-              if (handoverComplete) {
+            } else if (clients.length > 0) {
+              if (liveClients.length === 0) {
+                bodyParts.push(paragraph(`Your handover has been marked as not required, so there's nothing to prepare.`));
+              } else if (handoverComplete) {
                 bodyParts.push(paragraph(`Your handover is complete — thank you, you're all set.`));
               } else {
                 bodyParts.push(paragraph(
@@ -1023,10 +1334,16 @@ const endingSoon = regularPatterns
                         : `Your handover hasn't been started yet — please start it today so everything is covered before you go.`
                       : `Please make sure your handover is finished before your holiday starts.`
                 ));
-                if (multiClient) {
-                  bodyParts.push(paragraph(`Each client needs their own handover. Here's where each one stands:`));
+                if (handovers.length > 1) {
+                  // One checklist per client — and per colleague covering it.
+                  const splitCover = clients.some(c => c.handovers.length > 1);
+                  bodyParts.push(paragraph(clients.length > 1 && splitCover
+                    ? `Each client — and each colleague covering you there — needs their own handover. Here's where each one stands:`
+                    : clients.length > 1
+                      ? `Each client needs their own handover. Here's where each one stands:`
+                      : `Each colleague covering you needs their own handover. Here's where each one stands:`));
                 }
-                bodyParts.push(listHtml(handoverLinkItems));
+                bodyParts.push(listHtml(handoverLines));
                 bodyParts.push(mutedParagraph(`Not sure how the Handover Tracker works? <a href="${HANDOVER_VIDEO_URL}" style="color:${BRAND_COLOR};font-weight:600;">Watch this short video guide</a>.`));
               }
             }
@@ -1035,8 +1352,8 @@ const endingSoon = regularPatterns
               bodyParts.push(paragraph(`Have a lovely break! 🌴`));
             }
 
-            const takerButton = handoverOutstanding && handoverClientStatuses.length === 1
-              ? button("Open the Handover Tracker", `${APP_URL}/public/schedule/${encodeURIComponent(handoverClientStatuses[0].client)}`)
+            const takerButton = handoverOutstanding && liveClients.length === 1
+              ? button("Open the Handover Tracker", trackerUrl(liveClients[0].client, liveClients[0].handovers.length === 1 ? liveClients[0].handovers[0] : undefined))
               : button("See your schedule", `${APP_URL}/view/schedule`);
             bodyParts.push(takerButton);
 
@@ -1076,12 +1393,18 @@ const endingSoon = regularPatterns
             if (cover.dates.length > 0) {
               coverBodyParts.push(paragraph(`Your covering days are ${niceDateList(cover.dates)}.`));
             }
-            if (handoverClientStatuses.length > 0) {
-              if (handoverComplete) {
-                coverBodyParts.push(paragraph(`${takerLabel}'s handover is complete — you'll have everything you need.`));
+            // Only the handovers to this person — the clients they are
+            // covering, not every client the taker has.
+            const theirClients = clientReadiness(handovers.filter(hv => hv.toUserId === cover.id));
+            const theirLive = theirClients.filter(c => !c.notRequired);
+            if (theirClients.length > 0) {
+              if (theirLive.length === 0) {
+                coverBodyParts.push(paragraph(`No handover is needed for the shifts you're covering — it has been marked not required.`));
+              } else if (theirLive.every(c => c.ready)) {
+                coverBodyParts.push(paragraph(`${takerLabel}'s handover to you is complete — you'll have everything you need.`));
               } else {
-                coverBodyParts.push(paragraph(`${takerLabel} is still finishing their handover. It's worth checking in with them before the holiday starts, so nothing is missed.`));
-                coverBodyParts.push(listHtml(handoverLinkItems));
+                coverBodyParts.push(paragraph(`${takerLabel} is still finishing their handover to you. It's worth checking in with them before the holiday starts, so nothing is missed.`));
+                coverBodyParts.push(listHtml(theirClients.map(handoverClientLine)));
                 coverBodyParts.push(mutedParagraph(`New to the Handover Tracker? <a href="${HANDOVER_VIDEO_URL}" style="color:${BRAND_COLOR};font-weight:600;">Watch this short video guide</a>.`));
               }
             }
@@ -1233,58 +1556,109 @@ const endingSoon = regularPatterns
       }
     }
 
-    // ===== 8. OUTSTANDING HANDOVERS (high-level per client) =====
+    // ===== 8. OUTSTANDING HANDOVERS (per handover) =====
+    // Open tasks grouped by the handover they belong to — one person handing
+    // one client to one colleague for one leave — for leaves still ahead or
+    // under way, and for departures. Tasks from before handovers were kept per
+    // leave have no handover; they are history, not something to chase.
     if (shouldRun("outstanding_handovers")) {
       const { data: openTasks } = await supabaseClient
         .from("client_handover_tasks")
-        .select("client_name, progress, target_date")
-        .lt("progress", 100);
+        .select("handover_id, progress, target_date")
+        .lt("progress", 100)
+        .not("handover_id", "is", null);
 
-      const tasks = openTasks || [];
-      const isTest = testType === "outstanding_handovers" && tasks.length === 0;
-
-      type ClientAgg = { client: string; avgProgress: number; latestTarget: string | null; count: number };
-      const grouped = new Map<string, { sum: number; count: number; latest: string | null }>();
-      for (const t of tasks) {
-        if (!t.client_name) continue;
-        const cur = grouped.get(t.client_name) || { sum: 0, count: 0, latest: null };
-        cur.sum += t.progress ?? 0;
-        cur.count += 1;
-        if (t.target_date && (!cur.latest || t.target_date > cur.latest)) cur.latest = t.target_date;
-        grouped.set(t.client_name, cur);
+      const openByHandover = new Map<string, { open: number; latestTarget: string | null }>();
+      for (const t of openTasks || []) {
+        if (!t.handover_id) continue;
+        const cur = openByHandover.get(t.handover_id) || { open: 0, latestTarget: null };
+        cur.open += 1;
+        if (t.target_date && (!cur.latestTarget || t.target_date > cur.latestTarget)) cur.latestTarget = t.target_date;
+        openByHandover.set(t.handover_id, cur);
       }
 
-      const clients: ClientAgg[] = isTest
-        ? [
-            { client: "[TEST] Comfort", avgProgress: 40, latestTarget: todayStr, count: 2 },
-            { client: "[TEST] Hope", avgProgress: 70, latestTarget: null, count: 1 },
-          ]
-        : Array.from(grouped.entries()).map(([client, v]) => ({
-            client,
-            avgProgress: Math.round(v.sum / v.count),
-            latestTarget: v.latest,
-            count: v.count,
-          }));
+      const openIds = [...openByHandover.keys()];
+      const { data: handoverRows } = openIds.length > 0
+        ? await supabaseClient
+            .from("client_handovers")
+            .select("id, client_name, kind, from_user_id, holiday_id, to_user_id, status, not_required_reason")
+            .in("id", openIds)
+        : { data: [] as StoredHandoverRow[] };
+      // A handover marked not required has nothing outstanding, whatever its tasks say.
+      const openHandovers = ((handoverRows || []) as StoredHandoverRow[]).filter(r => r.status !== "not_required");
 
-      if (clients.length > 0) {
-        // Sort: ones with target dates first (soonest first), then no-date
-        clients.sort((a, b) => {
-          if (a.latestTarget && b.latestTarget) return a.latestTarget.localeCompare(b.latestTarget);
-          if (a.latestTarget) return -1;
-          if (b.latestTarget) return 1;
-          return 0;
+      // A leave handover matters while its leave is ahead or under way; a
+      // departure handover matters until it is done.
+      const leaveIds = [...new Set(openHandovers.map(r => r.holiday_id).filter((id): id is string => !!id))];
+      const { data: leaveRows } = leaveIds.length > 0
+        ? await supabaseClient.from("staff_holidays").select("id, start_date, end_date").in("id", leaveIds).gte("end_date", todayStr)
+        : { data: [] as { id: string; start_date: string; end_date: string }[] };
+      const leaveById = new Map(((leaveRows || []) as { id: string; start_date: string; end_date: string }[]).map(l => [l.id, l]));
+      const leaverIds = [...new Set(openHandovers.filter(r => r.kind === "departure").map(r => r.from_user_id))];
+      // Only departures still asked for: once the opt-in is unticked (they are
+      // staying, or it was recorded wrongly) the tracker shows the row as
+      // history, and this must not keep chasing it every morning.
+      const { data: leaverRows } = leaverIds.length > 0
+        ? await supabaseClient.from("hr_profiles").select("user_id, employment_end_date").in("user_id", leaverIds)
+            .eq("departure_handover_required", true).not("employment_end_date", "is", null)
+        : { data: [] as { user_id: string; employment_end_date: string | null }[] };
+      const lastDayByLeaver = new Map(((leaverRows || []) as { user_id: string; employment_end_date: string | null }[]).map(l => [l.user_id, l.employment_end_date]));
+
+      type Outstanding = { client: string; from: string; to: string; when: string; leaveDate: string; open: number; latestTarget: string | null };
+      const outstanding: Outstanding[] = [];
+      for (const r of openHandovers) {
+        const counts = openByHandover.get(r.id);
+        if (!counts) continue;
+        let when: string;
+        let leaveDate: string;
+        if (r.kind === "departure") {
+          const lastDay = lastDayByLeaver.get(r.from_user_id) ?? null;
+          if (!lastDay) continue; // the departure handover is no longer asked for: history
+          when = `last day ${niceDate(lastDay)}`;
+          leaveDate = lastDay;
+        } else {
+          const leave = r.holiday_id ? leaveById.get(r.holiday_id) : undefined;
+          if (!leave) continue; // the leave has passed: history
+          when = niceDateRange(leave.start_date, leave.end_date);
+          leaveDate = leave.start_date;
+        }
+        outstanding.push({
+          client: r.client_name,
+          from: personName(r.from_user_id),
+          to: r.to_user_id ? personName(r.to_user_id) : "cover not assigned yet",
+          when,
+          leaveDate,
+          open: counts.open,
+          latestTarget: counts.latestTarget,
+        });
+      }
+
+      const isTest = testType === "outstanding_handovers" && outstanding.length === 0;
+      const rows: Outstanding[] = isTest
+        ? [
+            { client: "[TEST] Comfort", from: "[TEST] John Smith", to: "[TEST] Jane Doe", when: "Monday 25 to Thursday 28 January", leaveDate: "0", open: 2, latestTarget: todayStr },
+            { client: "[TEST] Hope", from: "[TEST] John Smith", to: "cover not assigned yet", when: "Monday 25 to Thursday 28 January", leaveDate: "0", open: 1, latestTarget: null },
+          ]
+        : outstanding;
+
+      if (rows.length > 0) {
+        // Ones with target dates first (soonest first), then by when the leave starts.
+        rows.sort((a, b) => {
+          if (a.latestTarget && b.latestTarget && a.latestTarget !== b.latestTarget) return a.latestTarget.localeCompare(b.latestTarget);
+          if (!!a.latestTarget !== !!b.latestTarget) return a.latestTarget ? -1 : 1;
+          return a.leaveDate.localeCompare(b.leaveDate) || a.client.localeCompare(b.client);
         });
 
-        const items = clients.map(c => {
-          const progressLabel = c.avgProgress > 0 ? `about ${c.avgProgress}% done` : "not started yet";
-          let dueSentence = "";
-          if (c.latestTarget) {
-            const overdue = c.latestTarget <= todayStr;
-            dueSentence = overdue
-              ? ` and <span style="color:#ef4444;font-weight:600;">was due by ${niceDate(c.latestTarget)}</span>`
-              : ` and is due by ${niceDate(c.latestTarget)}`;
+        const items = rows.map(r => {
+          let due = "";
+          if (r.latestTarget) {
+            due = r.latestTarget < todayStr
+              ? `, <span style="color:#ef4444;font-weight:600;">was due by ${niceDate(r.latestTarget)}</span>`
+              : r.latestTarget === todayStr
+                ? `, <span style="color:#ef4444;font-weight:600;">due today</span>`
+                : `, due by ${niceDate(r.latestTarget)}`;
           }
-          return `The handover for <strong>${c.client}</strong> is ${progressLabel}${dueSentence}.`;
+          return `<strong>${r.client}</strong> — ${r.from} → ${r.to} · ${r.when} · ${r.open} open${due}`;
         });
 
         sections.push({
@@ -1293,7 +1667,7 @@ const endingSoon = regularPatterns
           icon: "📋",
           accentColor: "#f59e0b",
           itemsHtml: items,
-          summary: `${clients.length === 1 ? "one client" : `${clients.length} clients`}`,
+          summary: `${rows.length === 1 ? "one handover" : `${rows.length} handovers`}`,
         });
       }
     }
@@ -1628,9 +2002,10 @@ const endingSoon = regularPatterns
     }
 
     // ===== 12. DEPARTURE HANDOVERS =====
-    // Same derivation as the handover card: the clients a leaver still holds,
-    // measured against those clients' shared trackers. No per-leaver tasks
-    // exist — a departure handover is a handover, not a separate object.
+    // A departure handover is the same shape as a leave one: the leaver hands
+    // each client they still hold to whoever takes it on — one handover per
+    // successor, each with its own checklist — kept in client_handovers with
+    // kind 'departure'. A client with no row for this leaver is not started.
     //
     // Only people whose handover was requested. The digest reaches several
     // admins, and a dismissal is not announced by an email.
@@ -1655,38 +2030,51 @@ const endingSoon = regularPatterns
         const clientsByUser = new Map<string, Set<string>>();
         for (const p of (patterns ?? []) as Array<{ user_id: string; client_name: string | null; end_date: string | null }>) {
           const name = (p.client_name || "").trim();
-          if (!name || name === "Care Cuddle") continue;
+          if (!name || name === BENCH_SENTINEL) continue;
           if (p.end_date && p.end_date < todayIso) continue;
           if (!clientsByUser.has(p.user_id)) clientsByUser.set(p.user_id, new Set());
           clientsByUser.get(p.user_id)!.add(name);
         }
 
-        const allClients = [...new Set([...clientsByUser.values()].flatMap(s => [...s]))];
-        const { data: tasks } = allClients.length > 0
-          ? await supabaseClient.from("client_handover_tasks")
-              .select("client_name, progress").in("client_name", allClients)
-          : { data: [] };
-
-        // Per-client average, then the average of those — a client with no
-        // tasks counts as nothing done, matching the card and the holiday view.
-        const pctByClient = new Map<string, number>();
-        for (const c of allClients) {
-          const mine = (tasks ?? []).filter((t: { client_name: string }) => t.client_name === c);
-          pctByClient.set(c, mine.length === 0 ? 0
-            : Math.round(mine.reduce((s: number, t: { progress: number | null }) => s + (Number(t.progress) || 0), 0) / mine.length));
+        // Their departure handovers — per client and successor — and the tasks on them.
+        const { data: departureRows } = await supabaseClient
+          .from("client_handovers")
+          .select("id, client_name, kind, from_user_id, holiday_id, to_user_id, status, not_required_reason")
+          .eq("kind", "departure")
+          .in("from_user_id", ids);
+        const departures = (departureRows ?? []) as StoredHandoverRow[];
+        const { data: departureTasks } = departures.length > 0
+          ? await supabaseClient.from("client_handover_tasks").select("handover_id, progress").in("handover_id", departures.map(d => d.id))
+          : { data: [] as { handover_id: string | null; progress: number | null }[] };
+        const tasksByDeparture = aggregateHandoverTasks(departureTasks ?? []);
+        const handoversByLeaver = new Map<string, DigestHandover[]>();
+        for (const r of departures) {
+          if (!handoversByLeaver.has(r.from_user_id)) handoversByLeaver.set(r.from_user_id, []);
+          handoversByLeaver.get(r.from_user_id)!.push(digestHandover(
+            handoverKey(r.client_name, "departure", r.from_user_id, null, r.to_user_id), r.client_name, r.to_user_id,
+            r.to_user_id ? personName(r.to_user_id) : null, r, tasksByDeparture.get(r.id),
+          ));
         }
 
-        const rows: Array<{ name: string; days: number; pct: number; clients: number; blank: number }> = [];
+        const rows: Array<{ name: string; days: number; ready: number; live: number; lines: string[] }> = [];
         for (const l of pending as Array<{ user_id: string; employment_end_date: string }>) {
-          const cs = [...(clientsByUser.get(l.user_id) ?? [])];
+          const cs = [...(clientsByUser.get(l.user_id) ?? [])].sort((a, b) => a.localeCompare(b));
           if (cs.length === 0) continue;
-          const pcts = cs.map(c => pctByClient.get(c) ?? 0);
-          const pct = Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
-          if (pct >= 100) continue;
+          // Readiness as the tracker measures it, per client the leaver still
+          // holds: a client with no handover row yet is not started; one whose
+          // every handover is marked not required drops out; the leaver is done
+          // when every client left is ready.
+          const known = clientReadiness((handoversByLeaver.get(l.user_id) ?? []).filter(hv => cs.includes(hv.client)));
+          const clients: ClientReadiness[] = cs.map(c =>
+            known.find(k => k.client === c) ?? { client: c, handovers: [], ready: false, notRequired: false });
+          const live = clients.filter(c => !c.notRequired);
+          if (live.length === 0 || live.every(c => c.ready)) continue;
           rows.push({
-            name: profileMap.get(l.user_id) || "Unknown",
+            name: personName(l.user_id),
             days: Math.round((new Date(l.employment_end_date).getTime() - new Date(todayIso).getTime()) / 86_400_000),
-            pct, clients: cs.length, blank: pcts.filter(p => p === 0).length,
+            ready: live.filter(c => c.ready).length,
+            live: live.length,
+            lines: clients.map(handoverClientLine),
           });
         }
 
@@ -1698,8 +2086,8 @@ const endingSoon = regularPatterns
               : r.days === 0 ? '<span style="color:#b91c1c;font-weight:600;">last day today</span>'
               : r.days <= CHASE_WITHIN_DAYS ? `<span style="color:#b45309;font-weight:600;">${r.days} day${r.days === 1 ? "" : "s"} left</span>`
               : `${r.days} days left`;
-            return `<strong>${r.name}</strong> — ${when}, ${r.pct}% across ${r.clients} client${r.clients === 1 ? "" : "s"}` +
-              (r.blank > 0 ? `, ${r.blank} not started` : "");
+            return `<strong>${r.name}</strong> — ${when}, handover ready for ${r.ready} of ${r.live} client${r.live === 1 ? "" : "s"}` +
+              subListHtml(r.lines);
           });
           sections.push({
             type: "departure_handovers",
