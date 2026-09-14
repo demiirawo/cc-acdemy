@@ -22,6 +22,12 @@ import { recalcAllBonusPots } from "@/lib/bonusPot";
 import { useAuth } from "@/hooks/useAuth";
 import { scheduleSalaryChange, describeSalaryEffectiveDate } from "@/lib/pendingSalary";
 import { useUserRole } from "@/hooks/useUserRole";
+import { format, parseISO } from "date-fns";
+import { nextPayChangeDate } from "@/lib/payCalendar";
+import {
+  fetchPendingPaySettingChanges, reconcilePendingPaySettings, decodePaySetting, HELD_PAY_SETTINGS, HELD_PAY_SETTING_LABELS,
+  type HeldPaySetting, type HeldPaySettingValues, type PendingPaySettingChange,
+} from "@/lib/pendingPaySettings";
 
 // Per-staff settings editor, shared between the Staffing Settings roster and
 // the Staff Profile view. Self-contained: give it a userId and it fetches,
@@ -110,6 +116,11 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
   // What they are on now. A salary change is deferred past payday rather than
   // written straight away, so the save needs to know whether it actually moved.
   const [currentSalary, setCurrentSalary] = useState<{ amount: number | null; currency: string } | null>(null);
+  // The pay settings in force today, and any change already waiting for the
+  // 2nd. Like salary, a pay setting doesn't change on save: see
+  // @/lib/pendingPaySettings.
+  const [paySettingsInForce, setPaySettingsInForce] = useState<HeldPaySettingValues | null>(null);
+  const [pendingPaySettings, setPendingPaySettings] = useState<PendingPaySettingChange[]>([]);
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [allClients, setAllClients] = useState<{ id: string; name: string }[]>([]);
   const [staffClients, setStaffClients] = useState<string[]>([]);
@@ -122,15 +133,30 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
     (async () => {
       setLoading(true);
       try {
-        const [{ data: profile }, { data: hr }, { data: assignments }, { data: clients }, { data: salary }] = await Promise.all([
+        const [{ data: profile }, { data: hr }, { data: assignments }, { data: clients }, { data: salary }, pending] = await Promise.all([
           supabase.from('profiles').select('user_id, display_name, email, role').eq('user_id', userId).maybeSingle(),
           supabase.from('hr_profiles').select('*').eq('user_id', userId).maybeSingle(),
           supabase.from('staff_client_assignments').select('client_name').eq('staff_user_id', userId),
           supabase.from('clients').select('id, name').order('name'),
           // Salary lives in the private staff_salaries table (admins/own only).
           (supabase as any).from('staff_salaries').select('base_salary, base_currency').eq('user_id', userId).maybeSingle(),
+          fetchPendingPaySettingChanges(userId).catch(() => [] as PendingPaySettingChange[]),
         ]);
         if (cancelled) return;
+        const inForce: HeldPaySettingValues = {
+          unlimited_holiday: hr?.unlimited_holiday || false,
+          public_holiday_pay_disabled: (hr as any)?.public_holiday_pay_disabled || false,
+          bonus_pot_eligible: (hr as any)?.bonus_pot_eligible !== false,
+          pay_frequency: hr?.pay_frequency || 'monthly',
+        };
+        setPaySettingsInForce(hr ? inForce : null);
+        setPendingPaySettings(pending);
+        // The form shows what has been decided: a change waiting for the 2nd,
+        // or the setting in force when nothing is waiting.
+        const decided = <S extends HeldPaySetting>(setting: S): HeldPaySettingValues[S] => {
+          const waiting = pending.find(p => p.setting === setting);
+          return waiting ? decodePaySetting(setting, waiting.new_value) : inForce[setting];
+        };
         setStaffEmail(profile?.email ?? null);
         // staff_salaries isn't in the generated types, so it is read once here
         // and used typed below rather than cast at each mention.
@@ -150,12 +176,12 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
           employment_end_date: (hr as any)?.employment_end_date || '',
           base_currency: pay?.base_currency || 'GBP',
           base_salary: pay?.base_salary || 0,
-          pay_frequency: hr?.pay_frequency || 'monthly',
+          pay_frequency: decided('pay_frequency'),
           annual_holiday_allowance: hr?.annual_holiday_allowance || 28,
-          unlimited_holiday: hr?.unlimited_holiday || false,
+          unlimited_holiday: decided('unlimited_holiday'),
           departure_handover_required: hr?.departure_handover_required || false,
-          public_holiday_pay_disabled: (hr as any)?.public_holiday_pay_disabled || false,
-          bonus_pot_eligible: (hr as any)?.bonus_pot_eligible !== false,
+          public_holiday_pay_disabled: decided('public_holiday_pay_disabled'),
+          bonus_pot_eligible: decided('bonus_pot_eligible'),
           notes: hr?.notes || '',
           scheduling_role: hr?.scheduling_role || 'viewer',
           employment_status: (hr?.employment_status as EmploymentStatus) || 'onboarding_probation',
@@ -230,9 +256,30 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
         employment_status: formData.employment_status,
       };
 
+      // Pay settings on an existing profile don't change here. A change waits
+      // for the 2nd, so the month being worked is paid on the settings it was
+      // worked under. A new profile has no month to protect and takes them now.
+      let settingsLand: { scheduled: HeldPaySetting[]; effectiveDate: Date } | null = null;
       if (existingHRId) {
-        const { error } = await supabase.from('hr_profiles').update(profileData as any).eq('id', existingHRId);
+        const held = new Set<string>(HELD_PAY_SETTINGS);
+        const unheld = Object.fromEntries(Object.entries(profileData).filter(([key]) => !held.has(key)));
+        const { error } = await supabase.from('hr_profiles').update(unheld as any).eq('id', existingHRId);
         if (error) throw error;
+        if (paySettingsInForce) {
+          const outcome = await reconcilePendingPaySettings({
+            userId,
+            inForce: paySettingsInForce,
+            decided: {
+              unlimited_holiday: formData.unlimited_holiday,
+              public_holiday_pay_disabled: formData.public_holiday_pay_disabled,
+              bonus_pot_eligible: formData.bonus_pot_eligible !== false,
+              pay_frequency: formData.pay_frequency || 'monthly',
+            },
+            pending: pendingPaySettings,
+            byUserId: user?.id ?? null,
+          });
+          if (outcome.scheduled.length > 0) settingsLand = outcome;
+        }
       } else {
         const { error } = await supabase.from('hr_profiles').insert(profileData as any);
         if (error) throw error;
@@ -342,16 +389,23 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
         }
       }
 
-      // The bonus-pot eligibility flag affects pot shares — recompute any pots
-      // already distributed so an opted-out staff member drops out everywhere.
+      // Start and leaving dates affect pot shares, so recompute the pots still
+      // to be paid. Eligibility no longer changes on save: it lands on the 2nd,
+      // and each month is split on the eligibility in force for it.
       // Pay/pots are admin-only (HR can't read salaries to recompute).
       if (isAdmin) recalcAllBonusPots().catch(() => {});
 
+      const waiting = [
+        ...(salaryLands ? ["pay"] : []),
+        ...(settingsLand ? settingsLand.scheduled.map(setting => HELD_PAY_SETTING_LABELS[setting]) : []),
+      ];
+      const waitingList = waiting.length > 1 ? `${waiting.slice(0, -1).join(", ")} and ${waiting[waiting.length - 1]}` : waiting[0];
+      const landsOn = salaryLands ?? settingsLand?.effectiveDate ?? null;
       toast(
-        salaryLands
+        landsOn
           ? {
-              title: `Pay change scheduled for ${describeSalaryEffectiveDate(salaryLands)}`,
-              description: `${formData.display_name || "They"} have been emailed. Their profile and payroll keep the current figure until then, so the next run is unaffected.`,
+              title: `Change to ${waitingList} scheduled for ${describeSalaryEffectiveDate(landsOn)}`,
+              description: `${salaryLands ? `${formData.display_name || "They"} have been emailed about their pay. ` : ""}Payroll and their profile keep what's in force until then, so the next run is unaffected.`,
             }
           : { title: "Success", description: existingHRId ? "Staff settings updated" : "Staff profile created" }
       );
@@ -363,6 +417,28 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
     } finally {
       setSaving(false);
     }
+  };
+
+  // Under a pay setting: when it differs from what's in force, the day it lands.
+  const heldNote = (setting: HeldPaySetting) => {
+    if (!existingHRId || !paySettingsInForce) return null;
+    const inForce = paySettingsInForce[setting];
+    const waitingAny = pendingPaySettings.find(p => p.setting === setting);
+    if (formData[setting] === inForce) {
+      return waitingAny ? (
+        <p className="text-xs text-muted-foreground mt-1">
+          Saving withdraws the change waiting for {format(parseISO(waitingAny.effective_date), "d MMMM")}.
+        </p>
+      ) : null;
+    }
+    const waiting = waitingAny && decodePaySetting(setting, waitingAny.new_value) === formData[setting] ? waitingAny : null;
+    const lands = waiting ? parseISO(waiting.effective_date) : nextPayChangeDate();
+    const now = typeof inForce === "boolean" ? (inForce ? "on" : "off") : inForce;
+    return (
+      <p className="text-xs text-amber-600 mt-1">
+        {waiting ? "Takes effect" : "Takes effect once saved,"} on {format(lands, "d MMMM")}, after payroll. It stays {now} until then.
+      </p>
+    );
   };
 
   return (
@@ -478,6 +554,7 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
                     <p className="text-sm text-muted-foreground">
                       No accrual, no balance tracking, no June refund/deduction
                     </p>
+                    {heldNote('unlimited_holiday')}
                   </div>
                 </div>
                 <Switch
@@ -494,6 +571,7 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
                     <p className="text-sm text-muted-foreground">
                       Exclude this staff member from public holiday overtime (0.5× bonus)
                     </p>
+                    {heldNote('public_holiday_pay_disabled')}
                   </div>
                 </div>
                 <Switch
@@ -510,6 +588,7 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
                     <p className="text-sm text-muted-foreground">
                       When off, this staff member never receives a share of the monthly bonus pot. (A D rating is excluded automatically regardless.)
                     </p>
+                    {heldNote('bonus_pot_eligible')}
                   </div>
                 </div>
                 <Switch
@@ -689,6 +768,7 @@ export function StaffSettingsDialog({ userId, open, onOpenChange, onSaved }: Sta
                       ))}
                     </SelectContent>
                   </Select>
+                  {heldNote('pay_frequency')}
                 </div>
               </div>
               )}

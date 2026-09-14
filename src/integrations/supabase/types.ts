@@ -1620,6 +1620,48 @@ export type Database = {
         }
         Relationships: []
       }
+      pending_pay_setting_changes: {
+        Row: {
+          applied_at: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          created_at: string
+          created_by: string | null
+          effective_date: string
+          id: string
+          new_value: string
+          previous_value: string | null
+          setting: string
+          user_id: string
+        }
+        Insert: {
+          applied_at?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          effective_date: string
+          id?: string
+          new_value: string
+          previous_value?: string | null
+          setting: string
+          user_id: string
+        }
+        Update: {
+          applied_at?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          effective_date?: string
+          id?: string
+          new_value?: string
+          previous_value?: string | null
+          setting?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       pending_rating_changes: {
         Row: {
           applied_at: string | null

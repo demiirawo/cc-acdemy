@@ -190,21 +190,31 @@ export function StaffPayManager({ onSummaryComputed }: {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date());
-  // Salary and rating changes that have landed, each with the value it replaced.
-  // A change lands on the 2nd, but a month isn't always paid by then, and
-  // reverting a payment reopens one; with these a late or reopened month is
-  // still worked out on the salary and rating in force for it, not today's.
+  // Salary, rating and pay-setting changes that have landed, each with the
+  // value it replaced. A change lands on the 2nd, but a month isn't always paid
+  // by then, and reverting a payment reopens one; with these a late or reopened
+  // month is still worked out on the terms in force for it, not today's.
   const [landedSalaryChanges, setLandedSalaryChanges] = useState<{ user_id: string; effective_date: string; previous_salary: number; previous_currency: string }[]>([]);
   const [landedRatingChanges, setLandedRatingChanges] = useState<{ user_id: string; effective_date: string; previous_rating: string | null }[]>([]);
+  const [landedSettingChanges, setLandedSettingChanges] = useState<{ user_id: string; setting: string; effective_date: string; previous_value: string | null }[]>([]);
+  const settingInForce = useCallback(
+    <T,>(userId: string, setting: string, current: T, decode: (stored: string | null) => T): T =>
+      inForceFor(selectedMonth, current, landedSettingChanges
+        .filter(c => c.user_id === userId && c.setting === setting)
+        .map(c => ({ effective_date: c.effective_date, previous: decode(c.previous_value) }))),
+    [landedSettingChanges, selectedMonth],
+  );
   const hrProfiles = useMemo(() => {
-    if (landedSalaryChanges.length === 0) return currentHRProfiles;
+    if (landedSalaryChanges.length === 0 && landedSettingChanges.length === 0) return currentHRProfiles;
     return currentHRProfiles.map(hr => {
       const landed = landedSalaryChanges
         .filter(c => c.user_id === hr.user_id)
         .map(c => ({ effective_date: c.effective_date, previous: { base_salary: c.previous_salary as number | null, base_currency: c.previous_currency } }));
-      return landed.length === 0 ? hr : { ...hr, ...inForceFor(selectedMonth, { base_salary: hr.base_salary, base_currency: hr.base_currency }, landed) };
+      const payFrequency = settingInForce(hr.user_id, 'pay_frequency', hr.pay_frequency, stored => stored);
+      if (landed.length === 0 && payFrequency === hr.pay_frequency) return hr;
+      return { ...hr, ...inForceFor(selectedMonth, { base_salary: hr.base_salary, base_currency: hr.base_currency }, landed), pay_frequency: payFrequency };
     });
-  }, [currentHRProfiles, landedSalaryChanges, selectedMonth]);
+  }, [currentHRProfiles, landedSalaryChanges, landedSettingChanges, selectedMonth, settingInForce]);
   const ratingInForce = useCallback(
     (userId: string, current: string | null | undefined): string | null =>
       inForceFor(selectedMonth, current ?? null, landedChangesFor(landedRatingChanges, userId, "previous_rating")),
@@ -305,7 +315,20 @@ export function StaffPayManager({ onSummaryComputed }: {
   const [recurringDeductions, setRecurringDeductions] = useState<RecurringDeduction[]>([]);
   const [shiftBonuses, setShiftBonuses] = useState<ShiftBonusConfig[]>([]);
   const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; end_date: string | null; status: string; absence_type: string }[]>([]);
-  const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; employment_end_date: string | null; unlimited_holiday: boolean; public_holiday_pay_disabled?: boolean; created_at?: string; performance_rating?: string | null; bonus_pot_eligible?: boolean }[]>([]);
+  // As it stands today; `hrProfilesFull` is this with the pay settings in force
+  // for the month on screen.
+  const [currentHRProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; employment_end_date: string | null; unlimited_holiday: boolean; public_holiday_pay_disabled?: boolean; created_at?: string; performance_rating?: string | null; bonus_pot_eligible?: boolean }[]>([]);
+  const hrProfilesFull = useMemo(() => {
+    if (landedSettingChanges.length === 0) return currentHRProfilesFull;
+    return currentHRProfilesFull.map(h => landedSettingChanges.some(c => c.user_id === h.user_id)
+      ? {
+          ...h,
+          unlimited_holiday: settingInForce(h.user_id, 'unlimited_holiday', h.unlimited_holiday, stored => stored === 'true'),
+          public_holiday_pay_disabled: settingInForce(h.user_id, 'public_holiday_pay_disabled', h.public_holiday_pay_disabled, stored => stored === 'true'),
+          bonus_pot_eligible: settingInForce(h.user_id, 'bonus_pot_eligible', h.bonus_pot_eligible, stored => stored !== 'false'),
+        }
+      : h);
+  }, [currentHRProfilesFull, landedSettingChanges, settingInForce]);
   const [approvedOvertimeRequests, setApprovedOvertimeRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type: string; overtime_type: string | null; swap_with_user_id: string | null; coverage_metadata: Json | null }[]>([]);
   const [unpaidHolidayRequests, setUnpaidHolidayRequests] = useState<{ user_id: string; days_requested: number; start_date: string; end_date: string; request_type?: string }[]>([]);
   const [approvedLeaveRequests, setApprovedLeaveRequests] = useState<{ user_id: string; start_date: string; end_date: string; request_type?: string }[]>([]);
@@ -622,6 +645,12 @@ export function StaffPayManager({ onSummaryComputed }: {
         .filter(c => c.previous_salary != null && Number(c.previous_salary) > 0)
         .map(c => ({ user_id: c.user_id, effective_date: c.effective_date, previous_salary: Number(c.previous_salary), previous_currency: c.previous_currency || 'GBP' })));
       setLandedRatingChanges(ratingLanded ?? []);
+      const { data: settingLanded } = await supabase
+        .from('pending_pay_setting_changes')
+        .select('user_id, setting, effective_date, previous_value')
+        .not('applied_at', 'is', null)
+        .is('cancelled_at', null);
+      setLandedSettingChanges(settingLanded ?? []);
 
       const { data: records, error: recordsError } = await supabase
         .from('staff_pay_records')

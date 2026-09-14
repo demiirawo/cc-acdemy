@@ -33,6 +33,19 @@ export function inForceFrom(payrollMonth: Date): Date {
 }
 
 /**
+ * The 2nd a change decided on `from` lands on: the next one strictly after it.
+ *
+ * Strictly, so a change decided on the 2nd waits for the following month
+ * rather than landing the morning it was decided. The same rule as
+ * nextSalaryEffectiveDate and nextRatingEffectiveDate.
+ */
+export function nextPayChangeDate(from: Date = new Date()): Date {
+  return from.getDate() < PAY_CHANGE_DAY
+    ? new Date(from.getFullYear(), from.getMonth(), PAY_CHANGE_DAY)
+    : new Date(from.getFullYear(), from.getMonth() + 1, PAY_CHANGE_DAY);
+}
+
+/**
  * A change to a pay term that has landed: the 2nd it took effect, and the value
  * it replaced. The applied rows of pending_salary_changes and
  * pending_rating_changes are exactly this, so they double as each term's history.

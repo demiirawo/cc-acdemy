@@ -184,16 +184,18 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
     .filter(p => !lockedMonths.has(format(startOfMonth(parseISO(p.month)), "yyyy-MM-dd")));
   if (!pots.length) return 0;
 
-  const [{ data: hr }, { data: rateRows }, { data: profs }, { data: salaries }, { data: leaves }, { data: ratingsLanded }, { data: salariesLanded }] = await Promise.all([
+  const [{ data: hr }, { data: rateRows }, { data: profs }, { data: salaries }, { data: leaves }, { data: ratingsLanded }, { data: salariesLanded }, { data: eligibilityLanded }] = await Promise.all([
     supabase.from("hr_profiles").select("user_id, performance_rating, start_date, created_at, employment_end_date, bonus_pot_eligible"),
     (supabase as any).from("manual_currency_rates").select("currency_code, rate_to_gbp"),
     supabase.from("profiles").select("user_id"),
     (supabase as any).from("staff_salaries").select("user_id, base_salary, base_currency"),
     supabase.from("staff_holidays").select("user_id, start_date, end_date, status").eq("status", "approved"),
-    // Rating and salary changes that have landed, each with the value it
-    // replaced: a month is split on the rating and currency in force for it.
+    // Rating, salary and eligibility changes that have landed, each with the
+    // value it replaced: a month is split on the rating, currency and
+    // eligibility in force for it.
     supabase.from("pending_rating_changes").select("user_id, effective_date, previous_rating").not("applied_at", "is", null).is("cancelled_at", null),
     supabase.from("pending_salary_changes").select("user_id, effective_date, previous_currency").not("applied_at", "is", null).is("cancelled_at", null),
+    supabase.from("pending_pay_setting_changes").select("user_id, effective_date, previous_value").eq("setting", "bonus_pot_eligible").not("applied_at", "is", null).is("cancelled_at", null),
   ]);
   const peakLeave = (leaves as PeakLeaveRow[]) || [];
 
@@ -234,7 +236,8 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
       const rating = (ratingThen && RANK_ORDER.includes(ratingThen as Rank) ? ratingThen : null) as Rank | null;
       const years = bonusTenureYears(h.start_date || h.created_at, d) ?? 0;
       const worked = employedFraction(h.start_date, h.employment_end_date, d);
-      const flagEligible = h.bonus_pot_eligible !== false;
+      const flagEligible = inForceFor(d, h.bonus_pot_eligible !== false,
+        landedChangesFor(eligibilityLanded, h.user_id, "previous_value").map((c) => ({ ...c, previous: c.previous !== "false" })));
       // Time away over Christmas/new year dilutes the share rather than ending it.
       const cover = peakCover(peakLeave, h.user_id, d);
       const score = { rank: rating, years, worked, peakShare: cover.weight, flagEligible };
