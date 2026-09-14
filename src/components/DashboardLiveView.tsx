@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { format, startOfDay, endOfDay, parseISO, isSameDay, isWithinInterval, getDay, differenceInWeeks, startOfWeek, isBefore, isAfter, differenceInMinutes } from "date-fns";
+import { patternOccursOn } from "@/lib/patternSchedule";
 import { Infinity, UserCheck, Loader2 } from "lucide-react";
 import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
 interface Schedule {
@@ -214,7 +215,8 @@ export function DashboardLiveView() {
         }));
         shouldGenerate = pattern.days_of_week.includes(adjustedDayOfWeek) && weeksDiff % 2 === 0;
       } else if (pattern.recurrence_interval === "one_off") {
-        shouldGenerate = isSameDay(today, patternStartDate);
+        // A one-off runs on each day of its range, not just the first.
+        shouldGenerate = patternOccursOn(pattern, today);
       }
       if (shouldGenerate) {
         const hasManualSchedule = schedules.some(s => s.user_id === pattern.user_id && s.client_name === pattern.client_name && isSameDay(parseISO(s.start_datetime), today));

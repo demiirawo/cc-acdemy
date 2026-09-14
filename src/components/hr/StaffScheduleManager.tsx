@@ -25,6 +25,7 @@ import { invalidateAllCoverageQueries, filterSchedulesByCoverageMetadata, isShif
 import { LiveTimelineView } from "./LiveTimelineView";
 import { PLACEHOLDER, PLACEHOLDER_LABEL, isPlaceholderShift, shiftDisplayName, placeholderSeriesInfo, placeholderInfoFor } from "@/lib/placeholderShift";
 import { patternOccursOn } from "@/lib/patternSchedule";
+import { ukToday, seriesHasStarted, seriesRows } from "@/lib/shiftSeriesSplit";
 import { buildStaffColourMap } from "@/lib/staffColours";
 
 interface Schedule {
@@ -93,6 +94,8 @@ interface RecurringPattern {
   end_date: string | null;
   recurrence_interval: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'one_off';
   shift_type: string | null;
+  /** The row this one carries on after an edit from a date (see @/lib/shiftSeriesSplit). */
+  continues_pattern_id?: string | null;
 }
 
 interface Client {
@@ -899,15 +902,26 @@ export function StaffScheduleManager() {
     return format(endDate, "yyyy-MM-dd");
   };
 
-  // Delete recurring pattern mutation
-  const deletePatternMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("recurring_shift_patterns").delete().eq("id", id);
+  // End a series from a date, so it has no shift on or after it. The database
+  // ends the series as a whole, whichever of its rows the shift is on, keeps the
+  // shifts that happened, and removes a series that hasn't started by then.
+  const endSeriesMutation = useMutation({
+    mutationFn: async ({ patternId, from, kind, opened }: { patternId: string; from: string; kind: 'all' | 'future'; opened?: string }): Promise<string> => {
+      const { data, error } = await supabase.rpc("end_shift_series", { p_pattern_id: patternId, p_from: from });
       if (error) throw error;
+      const mode = (data as { mode?: string } | null)?.mode;
+      if (mode === "unchanged") throw new Error(kind === 'all' ? "This series has already ended." : "This series already ends before then.");
+      if (mode === "deleted") return "Recurring pattern deleted";
+      if (kind === 'all') return "Series ended from today; earlier shifts stay on the record";
+      return from === opened ? "This and all future shifts deleted" : "Shifts from today onwards deleted; earlier shifts stay on the record";
     },
-    onSuccess: () => {
+    onSuccess: (message) => {
       queryClient.invalidateQueries({ queryKey: ["recurring-shift-patterns"] });
-      toast.success("Recurring pattern deleted");
+      queryClient.invalidateQueries({ queryKey: ["public-client-patterns"] });
+      toast.success(message);
+    },
+    onError: (error) => {
+      toast.error("Failed to delete: " + error.message);
     }
   });
 
@@ -931,26 +945,6 @@ export function StaffScheduleManager() {
     },
     onError: (error) => {
       toast.error("Failed to remove shift: " + error.message);
-    }
-  });
-
-  // Delete this and all future shifts from a pattern (set end_date to day before)
-  const deleteFutureShiftsMutation = useMutation({
-    mutationFn: async ({ patternId, exceptionDate }: { patternId: string; exceptionDate: string }) => {
-      const dayBefore = format(subDays(parseISO(exceptionDate), 1), "yyyy-MM-dd");
-      const { error } = await supabase
-        .from("recurring_shift_patterns")
-        .update({ end_date: dayBefore })
-        .eq("id", patternId);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["recurring-shift-patterns"] });
-      queryClient.invalidateQueries({ queryKey: ["public-client-patterns"] });
-      toast.success("This and all future shifts deleted");
-    },
-    onError: (error) => {
-      toast.error("Failed to delete future shifts: " + error.message);
     }
   });
 
@@ -1128,16 +1122,17 @@ export function StaffScheduleManager() {
 
   const handleDeleteConfirm = (deleteType: 'single' | 'future' | 'all') => {
     if (!deleteTarget) return;
-    
+
+    // Shifts that have already happened stay on the record: a series that has
+    // started is ended rather than deleted, and "this & future" never reaches
+    // back before today. The database works on the series as a whole.
+    const today = ukToday();
+
     if (deleteType === 'all' && deleteTarget.patternId) {
-      // Delete the entire pattern
-      deletePatternMutation.mutate(deleteTarget.patternId);
+      endSeriesMutation.mutate({ patternId: deleteTarget.patternId, from: today, kind: 'all' });
     } else if (deleteType === 'future' && deleteTarget.patternId && deleteTarget.exceptionDate) {
-      // Set end_date to day before this occurrence
-      deleteFutureShiftsMutation.mutate({
-        patternId: deleteTarget.patternId,
-        exceptionDate: deleteTarget.exceptionDate
-      });
+      const from = deleteTarget.exceptionDate > today ? deleteTarget.exceptionDate : today;
+      endSeriesMutation.mutate({ patternId: deleteTarget.patternId, from, kind: 'future', opened: deleteTarget.exceptionDate });
     } else if (deleteType === 'single' && deleteTarget.patternId && deleteTarget.exceptionDate) {
       // Create an exception for just this shift
       createExceptionMutation.mutate({
@@ -1149,6 +1144,13 @@ export function StaffScheduleManager() {
     setIsDeleteConfirmOpen(false);
     setDeleteTarget(null);
   };
+
+  // Whether the series behind the delete dialog has started, for its wording.
+  const deleteTargetStarted = (() => {
+    if (!deleteTarget?.patternId) return false;
+    const first = seriesRows(recurringPatterns, deleteTarget.patternId)[0];
+    return !!first && seriesHasStarted(first.start_date);
+  })();
 
   const resetRecurringForm = () => {
     setRecurringForm({
@@ -3277,7 +3279,9 @@ export function StaffScheduleManager() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Recurring Shift</AlertDialogTitle>
             <AlertDialogDescription>
-              This shift is part of a recurring pattern. Would you like to delete just this shift or the entire series?
+              {deleteTargetStarted
+                ? "Shifts that have already happened stay on the record. Remove just this shift, this one and those after it, or end the series from today?"
+                : "This shift is part of a recurring pattern. Would you like to delete just this shift or the entire series?"}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="flex-col gap-2">
@@ -3299,7 +3303,7 @@ export function StaffScheduleManager() {
                 onClick={() => handleDeleteConfirm('all')}
                 className="bg-destructive hover:bg-destructive/90 flex-1"
               >
-                Entire Pattern
+                {deleteTargetStarted ? "End Series" : "Entire Pattern"}
               </AlertDialogAction>
             </div>
           </AlertDialogFooter>

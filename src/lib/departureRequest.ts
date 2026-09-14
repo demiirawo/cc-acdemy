@@ -46,12 +46,15 @@ export async function successorFromRota(userId: string, lastDay: string): Promis
     .filter(Boolean))];
   if (clients.length === 0) return null;
 
+  // A series carried on from a later date (continues_pattern_id) is the same
+  // person's shifts after an edit, not somebody taking the work on.
   const { data: after } = await supabase
     .from("recurring_shift_patterns")
     .select("user_id")
     .in("client_name", clients)
     .gt("start_date", lastDay)
-    .neq("user_id", userId);
+    .neq("user_id", userId)
+    .is("continues_pattern_id", null);
 
   const ids = [...new Set((after ?? []).map(r => r.user_id))];
   // Only when it is unambiguous. Two people picking up different clients is a

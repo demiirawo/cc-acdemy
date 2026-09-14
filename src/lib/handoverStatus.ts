@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
-import { differenceInCalendarDays, differenceInWeeks, eachDayOfInterval, format, getDay, parseISO, startOfWeek } from "date-fns";
+import { differenceInCalendarDays, eachDayOfInterval, format, parseISO } from "date-fns";
+import { patternOccursOn } from "@/lib/patternSchedule";
 
 /**
  * HANDOVERS.
@@ -131,25 +132,18 @@ export function patternDatesInWindow(p: PatternWindow, windowStart: string, wind
   const start = p.start_date > windowStart ? p.start_date : windowStart;
   const end = p.end_date && p.end_date < windowEnd ? p.end_date : windowEnd;
   if (start > end) return [];
-  const interval = p.recurrence_interval || "weekly";
-  const patternStart = parseISO(p.start_date);
+  // The rota's rule: a monthly series runs on its weekdays in the start's week of
+  // the month, not on the start's day of the month, and a one-off runs on each
+  // day of its range.
+  const pattern = {
+    start_date: p.start_date,
+    end_date: p.end_date,
+    days_of_week: p.days_of_week || [],
+    recurrence_interval: p.recurrence_interval ?? null,
+  };
   const dates: string[] = [];
   for (const day of eachDayOfInterval({ start: parseISO(start), end: parseISO(end) })) {
-    const iso = format(day, "yyyy-MM-dd");
-    if (interval === "one_off") {
-      if (iso === p.start_date) dates.push(iso);
-      continue;
-    }
-    if (interval === "monthly") {
-      if (day.getDate() === patternStart.getDate()) dates.push(iso);
-      continue;
-    }
-    if (interval !== "daily" && !(p.days_of_week || []).includes(getDay(day))) continue;
-    if (interval === "biweekly") {
-      const weeksDiff = differenceInWeeks(startOfWeek(day, { weekStartsOn: 1 }), startOfWeek(patternStart, { weekStartsOn: 1 }));
-      if (weeksDiff % 2 !== 0) continue;
-    }
-    dates.push(iso);
+    if (patternOccursOn(pattern, day)) dates.push(format(day, "yyyy-MM-dd"));
   }
   return dates;
 }
@@ -472,6 +466,8 @@ async function buildHandovers(
           .select("user_id, client_name, start_date")
           .in("client_name", leaverClients)
           .gt("start_date", earliestLastDay)
+          // An edited series carried on from a later date isn't a successor.
+          .is("continues_pattern_id", null)
       : { data: [] as { user_id: string | null; client_name: string | null; start_date: string }[] };
     for (const r of successorRows || []) {
       const client = (r.client_name || "").trim();

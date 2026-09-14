@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
 import { supabase } from "@/integrations/supabase/client";
 import { format, startOfDay, endOfDay, parseISO, isSameDay, isWithinInterval, getDay, differenceInWeeks, startOfWeek, isBefore, isAfter, differenceInMinutes } from "date-fns";
+import { patternOccursOn } from "@/lib/patternSchedule";
 import { Clock, Infinity, Users, UserCheck, Loader2 } from "lucide-react";
 
 interface Schedule {
@@ -201,7 +202,8 @@ export function PublicLiveView() {
         const weeksDiff = differenceInWeeks(startOfWeek(today, { weekStartsOn: 1 }), startOfWeek(patternStartDate, { weekStartsOn: 1 }));
         shouldGenerate = pattern.days_of_week.includes(adjustedDayOfWeek) && weeksDiff % 2 === 0;
       } else if (pattern.recurrence_interval === "one_off") {
-        shouldGenerate = isSameDay(today, patternStartDate);
+        // A one-off runs on each day of its range, not just the first.
+        shouldGenerate = patternOccursOn(pattern, today);
       }
 
       if (shouldGenerate) {

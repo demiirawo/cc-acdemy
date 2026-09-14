@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LiveTimelineView } from "./hr/LiveTimelineView";
-import { format, parseISO, startOfWeek, endOfWeek, startOfDay, endOfDay, isWithinInterval, getDay, differenceInWeeks, isBefore, isAfter } from "date-fns";
+import { format, parseISO, startOfWeek, endOfWeek, startOfDay, endOfDay, isWithinInterval } from "date-fns";
+import { patternOccursOn } from "@/lib/patternSchedule";
 import { Clock } from "lucide-react";
 import { isCurrentlyEmployed, type EmploymentWindow } from "@/lib/employment";
 
@@ -207,34 +208,18 @@ export function DashboardLiveViewWrapper() {
     });
 
     for (const pattern of recurringPatterns) {
-      const patternStart = parseISO(pattern.start_date);
-      const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
       const exceptions = deletedExceptions.get(pattern.id) || new Set();
 
       for (const day of weekDays) {
-        const dayOfWeek = getDay(day);
         const dateStr = format(day, "yyyy-MM-dd");
 
-        if (isBefore(day, patternStart)) continue;
-        if (patternEnd && isAfter(day, patternEnd)) continue;
+        // Date range, weekday and recurrence, by the rota's rule. A monthly
+        // series runs in its start's week of the month, not on its day of the
+        // month, and an edited one carries on from a date on any weekday.
+        if (!patternOccursOn(pattern, day)) continue;
 
         // Skip if there's a deletion exception for this date
         if (exceptions.has(dateStr)) continue;
-
-        // Check if pattern applies to this day of week
-        if (!pattern.days_of_week.includes(dayOfWeek)) continue;
-
-        // Check recurrence interval
-        if (pattern.recurrence_interval === 'biweekly') {
-          const weeksDiff = differenceInWeeks(
-            startOfWeek(day, { weekStartsOn: 1 }),
-            startOfWeek(patternStart, { weekStartsOn: 1 })
-          );
-          if (weeksDiff % 2 !== 0) continue;
-        } else if (pattern.recurrence_interval === 'monthly') {
-          const patternStartDayOfMonth = patternStart.getDate();
-          if (day.getDate() !== patternStartDayOfMonth) continue;
-        }
 
         virtualSchedules.push({
           id: `pattern-${pattern.id}-${dateStr}`,

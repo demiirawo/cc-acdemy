@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, differenceInWeeks, getDate, addMonths, startOfDay, endOfDay, differenceInCalendarDays } from "date-fns";
+import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, addMonths, startOfDay, endOfDay, differenceInCalendarDays } from "date-fns";
 import { patternOccursOn } from "@/lib/patternSchedule";
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2, Palmtree, AlertTriangle, Clock, GripVertical } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
@@ -489,37 +489,16 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
   // This is used to determine if a holiday should apply to that day
   const isStandardWorkingDay = (userId: string, day: Date): boolean => {
     const dateStr = format(day, "yyyy-MM-dd");
-    const dayOfWeek = getDay(day);
-    
+
     // Check for non-overtime recurring patterns that apply to this day
     const hasStandardPattern = allPatterns.some(pattern => {
       if (pattern.user_id !== userId) return false;
       if (pattern.is_overtime) return false; // Exclude overtime patterns
-      
-      const patternStart = parseISO(pattern.start_date);
-      const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-      
-      // Check if day is within the pattern's date range
-      if (isBefore(day, patternStart)) return false;
-      if (patternEnd && isAfter(day, patternEnd)) return false;
-      
-      // Check recurrence interval
-      if (pattern.recurrence_interval === 'one_off') {
-        return pattern.days_of_week.includes(dayOfWeek);
-      } else if (pattern.recurrence_interval === 'daily') {
-        return true;
-      } else if (pattern.recurrence_interval === 'weekly') {
-        return pattern.days_of_week.includes(dayOfWeek);
-      } else if (pattern.recurrence_interval === 'biweekly') {
-        if (!pattern.days_of_week.includes(dayOfWeek)) return false;
-        const weeksDiff = differenceInWeeks(day, patternStart);
-        return weeksDiff % 2 === 0;
-      } else if (pattern.recurrence_interval === 'monthly') {
-        if (!pattern.days_of_week.includes(dayOfWeek)) return false;
-        const patternDayOfMonth = getDate(patternStart);
-        return getDate(day) === patternDayOfMonth;
-      }
-      return false;
+
+      // Date range, weekday and recurrence, by the rota's rule. An edited series
+      // carries on in a new row that can start on any weekday, and weeks counted
+      // from that row's own start put its fortnights out of step.
+      return patternOccursOn(pattern, day);
     });
     
     if (hasStandardPattern) return true;
@@ -626,31 +605,12 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
     const virtualSchedules: Schedule[] = [];
     
     patterns.forEach(pattern => {
-      const patternStart = parseISO(pattern.start_date);
-      const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-      
       weekDays.forEach(day => {
-        const dayOfWeek = getDay(day);
-        
-        // Check if day is within pattern date range
-        if (isBefore(day, patternStart)) return;
-        if (patternEnd && isAfter(day, patternEnd)) return;
-        
-        // For one-off patterns, we just need to be within the date range (already checked above)
-        // For recurring patterns, check if this day matches the pattern's days_of_week
-        if (pattern.recurrence_interval !== 'one_off') {
-          if (!pattern.days_of_week.includes(dayOfWeek)) return;
-        }
-        
-        // Check recurrence interval
-        if (pattern.recurrence_interval === 'biweekly') {
-          const weeksDiff = differenceInWeeks(day, patternStart);
-          if (weeksDiff % 2 !== 0) return;
-        } else if (pattern.recurrence_interval === 'monthly') {
-          const patternDayOfMonth = getDate(patternStart);
-          if (getDate(day) !== patternDayOfMonth) return;
-        }
-        
+        // Date range, weekday and recurrence, by the rota's rule. An edited series
+        // carries on in a new row that can start on any weekday, and weeks counted
+        // from that row's own start put its fortnights out of step.
+        if (!patternOccursOn(pattern, day)) return;
+
         // Check if there's already a manual schedule that overlaps
         const dayStr = format(day, 'yyyy-MM-dd');
         const hasManualSchedule = schedules.some(s => {
@@ -694,30 +654,10 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
     const virtualSchedules: Schedule[] = [];
     
     allPatterns.forEach(pattern => {
-      const patternStart = parseISO(pattern.start_date);
-      const patternEnd = pattern.end_date ? parseISO(pattern.end_date) : null;
-      
       weekDays.forEach(day => {
-        const dayOfWeek = getDay(day);
-        
-        // Check if day is within pattern date range
-        if (isBefore(day, patternStart)) return;
-        if (patternEnd && isAfter(day, patternEnd)) return;
-        
-        // For one-off patterns, we just need to be within the date range (already checked above)
-        // For recurring patterns, check if this day matches the pattern's days_of_week
-        if (pattern.recurrence_interval !== 'one_off') {
-          if (!pattern.days_of_week.includes(dayOfWeek)) return;
-        }
-        
-        if (pattern.recurrence_interval === 'biweekly') {
-          const weeksDiff = differenceInWeeks(day, patternStart);
-          if (weeksDiff % 2 !== 0) return;
-        } else if (pattern.recurrence_interval === 'monthly') {
-          const patternDayOfMonth = getDate(patternStart);
-          if (getDate(day) !== patternDayOfMonth) return;
-        }
-        
+        // Date range, weekday and recurrence, by the rota's rule.
+        if (!patternOccursOn(pattern, day)) return;
+
         const dayStr = format(day, 'yyyy-MM-dd');
         const hasManualSchedule = allStaffSchedules.some(s => {
           const scheduleDate = format(parseISO(s.start_datetime), 'yyyy-MM-dd');
@@ -1621,20 +1561,20 @@ const UpcomingHolidaysCard = ({
     const userPatterns = clientPatterns.filter(p => p.user_id === userId);
     if (userPatterns.length === 0) return [];
     
-    // Get all days of the week that fall within the holiday period
-    const holidayDaysOfWeek = new Set<number>();
+    // Every day of the holiday
+    const holidayDays: Date[] = [];
     let currentDate = new Date(startDate);
     while (currentDate <= endDate) {
-      holidayDaysOfWeek.add(currentDate.getDay());
+      holidayDays.push(new Date(currentDate));
       currentDate.setDate(currentDate.getDate() + 1);
     }
-    
-    // Find patterns that match the holiday days and collect unique shift times
+
+    // Times from the rows with a shift on one of those days. Matching weekdays
+    // alone also took rows that end before the holiday or start after it, so an
+    // edited series listed its old times beside its new ones.
     const uniqueShiftTimes = new Set<string>();
     userPatterns.forEach(pattern => {
-      const patternDays = pattern.days_of_week as number[];
-      const hasOverlap = patternDays.some(day => holidayDaysOfWeek.has(day));
-      if (hasOverlap) {
+      if (holidayDays.some(day => patternOccursOn(pattern, day))) {
         const startTime = pattern.start_time.substring(0, 5);
         const endTime = pattern.end_time.substring(0, 5);
         uniqueShiftTimes.add(`${startTime} - ${endTime}`);

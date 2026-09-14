@@ -172,6 +172,16 @@ interface ShiftAuditLog {
   // to guess what the day goes back to — a guess that is wrong on bonus shifts.
   // Absent when the series can't be found, and the wording guesses as before.
   seriesKind?: SeriesKind;
+  // Shared by the rows one edit to a series writes (edit_shift_series), and
+  // the reason an admin gave for correcting shifts that had already happened.
+  change_group?: string | null;
+  change_reason?: string | null;
+  // The edit's summary row: the series before and after as a whole, and the
+  // first day a change applies from when the days before it keep old terms.
+  is_summary?: boolean;
+  effective_from?: string | null;
+  // Set locally from a summary's effective_from.
+  effectiveFrom?: string;
 }
 
 // How a series pays a day that nothing overrides: normal, one of the two kinds
@@ -244,8 +254,15 @@ const isoTime = (v: unknown): string => {
   return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
 };
 
+// recurrence_interval holds a word ("weekly", "biweekly"), which Number() read
+// as "every week" whatever it said.
 const recurrencePhrase = (n: unknown): string => {
-  const i = Number(n ?? 1);
+  const v = String(n ?? "weekly");
+  if (v === "daily") return "every day";
+  if (v === "biweekly") return "every other week";
+  if (v === "monthly") return "once a month";
+  if (v === "one_off") return "just once";
+  const i = Number(v);
   return !i || i <= 1 ? "every week" : `every ${i} weeks`;
 };
 
@@ -408,6 +425,13 @@ const renderUpdate = (log: ShiftAuditLog, attribution: string): string => {
     sentences.push(`Some details of ${fullSubj} have been updated — please check your schedule for the latest picture.`);
   }
 
+  // A series changed from a date: say from when, and that the days before stay as they were.
+  const from = log.effectiveFrom ? niceDate(log.effectiveFrom) : "";
+  if (from) {
+    sentences[0] = `From ${from}, ${sentences[0].charAt(0).toLowerCase()}${sentences[0].slice(1)}`;
+    sentences.push("Your shifts before then are unchanged.");
+  }
+
   return paragraph(`${sentences.join(" ")} ${attribution}`);
 };
 
@@ -433,8 +457,10 @@ const renderAdded = (log: ShiftAuditLog, attribution: string, names: NameLookup)
     const bits: string[] = [];
     if (days) bits.push(`on ${days}`);
     if (a && b) bits.push(`${a} to ${b}`);
-    if (d.start_date) {
-      const sd = niceDate(String(d.start_date));
+    // Taken over from a date, they start on that date, not when the series first did.
+    const startsOn = log.effectiveFrom ?? d.start_date;
+    if (startsOn) {
+      const sd = niceDate(String(startsOn));
       if (sd) bits.push(`starting ${sd}`);
     }
     if (bits.length > 0) sentences.push(`You'll work ${bits.join(", ")}.`);
@@ -442,8 +468,8 @@ const renderAdded = (log: ShiftAuditLog, attribution: string, names: NameLookup)
       const ed = niceDate(String(d.end_date));
       if (ed) sentences.push(`These shifts run until ${ed}.`);
     }
-    const ri = Number(d.recurrence_interval ?? 1);
-    if (ri > 1) sentences.push(`They repeat ${recurrencePhrase(ri)}.`);
+    const ri = String(d.recurrence_interval ?? "weekly");
+    if (ri === "biweekly" || ri === "monthly") sentences.push(`They repeat ${recurrencePhrase(ri)}.`);
     if (d.is_overtime) sentences.push(`They count as ${overtimePhrase(d.overtime_subtype)}. This can affect your pay.`);
     if (String(d.shift_type ?? "") === "Bench") sentences.push("These are bench (standby) shifts.");
   }
@@ -470,7 +496,10 @@ const renderRemoved = (log: ShiftAuditLog, attribution: string, names: NameLooku
     const days = daysPhrase(d.days_of_week);
     const a = t24(d.start_time), b = t24(d.end_time);
     const detail = [days, a && b ? `${a} to ${b}` : ""].filter(Boolean).join(", ");
-    sentences.push(`You've been taken off your regular shifts${clientHtml}${detail ? ` (${detail})` : ""} — you don't need to attend these any more.`);
+    const from = log.effectiveFrom ? niceDate(log.effectiveFrom) : "";
+    sentences.push(from
+      ? `You've been taken off your regular shifts${clientHtml}${detail ? ` (${detail})` : ""} from ${from} onwards. Your shifts before then are unchanged.`
+      : `You've been taken off your regular shifts${clientHtml}${detail ? ` (${detail})` : ""} — you don't need to attend these any more.`);
   }
 
   if (log.swapOtherId) {
@@ -574,7 +603,9 @@ const plainSummary = (log: ShiftAuditLog): string => {
   const from = t24(d.start_time);
   const to = t24(d.end_time);
   const oneOff = String(d.recurrence_interval ?? "") === "one_off";
-  const startDay = d.start_date ? niceDate(String(d.start_date)) : "";
+  // A change made from a date runs from that date.
+  const startsOn = log.effectiveFrom ?? d.start_date;
+  const startDay = startsOn ? niceDate(String(startsOn)) : "";
   const endDay = d.end_date ? niceDate(String(d.end_date)) : "";
 
   // A one-off is a date; a pattern is a set of weekdays that runs between dates.
@@ -595,6 +626,21 @@ const plainSummary = (log: ShiftAuditLog): string => {
   if (log.action === "DELETE") return `${Noun} removed${at}${when}`;
   if (log.action === "INSERT") return `New ${noun}${at}${when}`;
   return `${Noun} changed${at}${when}`;
+};
+
+/**
+ * An edit to a series (edit_shift_series) can write many rows: the row ending
+ * the day before, the row carrying the series on, later rows given the same
+ * change, one-day changes following their shifts, rows removed past a new end
+ * date. They share a change_group, and the edit adds one summary row with the
+ * series before and after as a whole. To the person on the rota it is one
+ * change, so where a group has a summary, the summary speaks for the group.
+ */
+const preferSeriesSummaries = (logs: ShiftAuditLog[]): ShiftAuditLog[] => {
+  const summarised = new Set(logs.filter((l) => l.is_summary && l.change_group).map((l) => l.change_group as string));
+  return logs
+    .filter((l) => l.is_summary || !l.change_group || !summarised.has(l.change_group))
+    .map((l) => (l.is_summary && l.effective_from ? { ...l, effectiveFrom: l.effective_from } : l));
 };
 
 serve(async (req) => {
@@ -640,8 +686,9 @@ serve(async (req) => {
       });
     }
 
-    // Drop cosmetic updates (no schedule-relevant field actually changed).
-    const meaningfulLogs = (auditLogs as ShiftAuditLog[]).filter(isMeaningfulChange);
+    // One edit to a series reads as one change. Then drop cosmetic updates (no
+    // schedule-relevant field actually changed).
+    const meaningfulLogs = preferSeriesSummaries(auditLogs as ShiftAuditLog[]).filter(isMeaningfulChange);
     if (meaningfulLogs.length === 0) {
       return new Response(JSON.stringify({ success: true, message: "Only cosmetic changes — no notifications sent" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1014,7 +1061,11 @@ serve(async (req) => {
         const perPerson = [...grouped.entries()].map(([userId, logs]) => {
           const who = profileMap.get(userId)?.name || "A staff member";
           const awaiting = !hasLeft.has(userId);
-          const lines = logs.map((l) => plainSummary(l)).filter(Boolean);
+          // A correction to shifts that had already happened carries the admin's reason.
+          const lines = logs.map((l) => {
+            const line = plainSummary(l);
+            return line && l.change_reason ? `${line} (correcting shifts already worked: ${l.change_reason})` : line;
+          }).filter(Boolean);
           return { who, lines, awaiting };
         });
 

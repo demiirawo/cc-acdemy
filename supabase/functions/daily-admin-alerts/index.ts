@@ -257,19 +257,16 @@ function patternDatesInWindow(p: PatternWindow, windowStart: string, windowEnd: 
   const dates: string[] = [];
   for (const day = new Date(`${start}T00:00:00Z`); day <= last; day.setUTCDate(day.getUTCDate() + 1)) {
     const iso = day.toISOString().slice(0, 10);
-    if (interval === "one_off") {
-      if (iso === p.start_date) dates.push(iso);
-      continue;
-    }
-    if (interval === "monthly") {
-      if (day.getUTCDate() === patternStart.getUTCDate()) dates.push(iso);
-      continue;
-    }
+    // patternOccursOn's rule. Every interval but daily runs only on its own
+    // weekdays, and a one-off on each day of its range, not just the first.
     if (interval !== "daily" && !(p.days_of_week || []).includes(day.getUTCDay())) continue;
     if (interval === "biweekly") {
       const weeksDiff = Math.round((mondayOfUtc(day).getTime() - patternMonday.getTime()) / (7 * 86_400_000));
       if (weeksDiff % 2 !== 0) continue;
     }
+    // A monthly series runs in its start's week of the month (days 1-7 are week
+    // 1, 8-14 week 2 …), not on the start's day of the month.
+    if (interval === "monthly" && Math.ceil(day.getUTCDate() / 7) !== Math.ceil(patternStart.getUTCDate() / 7)) continue;
     dates.push(iso);
   }
   return dates;
@@ -890,6 +887,16 @@ const handler = async (req: Request): Promise<Response> => {
         .lte("end_date", futureDateStr)
         .order("end_date");
 
+      // A series edited from a date ends and carries on in a new row. That end
+      // isn't the shifts stopping, so it's no reason to warn anyone.
+      const { data: carriedRows } = (expiringPatterns && expiringPatterns.length > 0)
+        ? await supabaseClient
+            .from("recurring_shift_patterns")
+            .select("continues_pattern_id")
+            .in("continues_pattern_id", expiringPatterns.map((p: any) => p.id))
+        : { data: [] as any[] };
+      const carriedOn = new Set((carriedRows || []).map((r: any) => r.continues_pattern_id));
+
       // One-day cancellations, so a deleted final day doesn't get reported as
       // the last shift.
       const { data: delExc } = (expiringPatterns && expiringPatterns.length > 0)
@@ -954,6 +961,7 @@ const handler = async (req: Request): Promise<Response> => {
       const seenPattern = new Set<string>();
       const regularPatterns = (expiringPatterns ?? []).filter((p: any) => {
         if ((p.recurrence_interval || "weekly") === "one_off") return false;
+        if (carriedOn.has(p.id)) return false;
         const key = [
           p.user_id,
           p.client_name ?? "",

@@ -87,6 +87,8 @@ export interface PlaceholderSeries {
   user_id: string | null;
   client_name: string | null;
   start_time?: string | null;
+  /** The row this one carries on from, when the series was edited from a date. */
+  continues_pattern_id?: string | null;
 }
 
 export interface PlaceholderInfo {
@@ -106,33 +108,61 @@ export interface PlaceholderInfo {
  * be showing, so the same series is "Placeholder 2", in the same colour, on the
  * staff rota, on the client's page and on the live timeline. Numbering off the
  * visible shifts would renumber as soon as a day had a gap in it.
+ *
+ * A series can be several rows. Editing one from a date ends its row the day
+ * before and carries it on in a new row whose continues_pattern_id is the old
+ * one, so rows are grouped by the first row of that chain: every row of a series
+ * shares one number and one colour, where numbering rows would show the two
+ * halves of an edited series as two placeholders.
  */
 export function placeholderSeriesInfo(
   patterns: PlaceholderSeries[]
 ): Map<string, PlaceholderInfo> {
-  const byClient = new Map<string, PlaceholderSeries[]>();
+  // Back along continues_pattern_id to the earliest row there is.
+  const byId = new Map(patterns.map((p) => [p.id, p]));
+  const firstRowOf = (row: PlaceholderSeries): PlaceholderSeries => {
+    let first = row;
+    const seen = new Set<string>([first.id]);
+    while (first.continues_pattern_id && byId.has(first.continues_pattern_id) && !seen.has(first.continues_pattern_id)) {
+      first = byId.get(first.continues_pattern_id)!;
+      seen.add(first.id);
+    }
+    return first;
+  };
+
+  // Per client, each series under the id of its first row.
+  const byClient = new Map<string, Map<string, { first: PlaceholderSeries; rows: PlaceholderSeries[] }>>();
   for (const p of patterns) {
     if (!isPlaceholderShift(p.user_id)) continue;
     const key = (p.client_name ?? "").trim().toLowerCase();
-    const list = byClient.get(key);
-    if (list) list.push(p);
-    else byClient.set(key, [p]);
+    let seriesHere = byClient.get(key);
+    if (!seriesHere) {
+      seriesHere = new Map();
+      byClient.set(key, seriesHere);
+    }
+    const first = firstRowOf(p);
+    const series = seriesHere.get(first.id);
+    if (series) series.rows.push(p);
+    else seriesHere.set(first.id, { first, rows: [p] });
   }
 
   const info = new Map<string, PlaceholderInfo>();
-  for (const list of byClient.values()) {
+  for (const seriesHere of byClient.values()) {
     // Earliest start first, so "Placeholder 1" is the first slot of the day.
     // Id as the tie-break: two 09:00 placeholders must keep the same number and
-    // colour between renders rather than swapping depending on fetch order.
-    list.sort(
+    // colour between renders rather than swapping depending on fetch order. A
+    // series goes by its first row, so editing it from a date doesn't renumber it.
+    const list = [...seriesHere.values()].sort(
       (a, b) =>
-        (a.start_time ?? "").localeCompare(b.start_time ?? "") || a.id.localeCompare(b.id)
+        (a.first.start_time ?? "").localeCompare(b.first.start_time ?? "") || a.first.id.localeCompare(b.first.id)
     );
-    list.forEach((p, i) => {
-      info.set(p.id, {
-        label: list.length > 1 ? `${PLACEHOLDER_LABEL} ${i + 1}` : PLACEHOLDER_LABEL,
-        style: PLACEHOLDER_PALETTE[i % PLACEHOLDER_PALETTE.length],
-      });
+    list.forEach((series, i) => {
+      for (const row of series.rows) {
+        info.set(row.id, {
+          label: list.length > 1 ? `${PLACEHOLDER_LABEL} ${i + 1}` : PLACEHOLDER_LABEL,
+          style: PLACEHOLDER_PALETTE[i % PLACEHOLDER_PALETTE.length],
+        });
+      }
     });
   }
   return info;

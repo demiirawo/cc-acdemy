@@ -2376,6 +2376,7 @@ export type Database = {
       recurring_shift_patterns: {
         Row: {
           client_name: string
+          continues_pattern_id: string | null
           created_at: string
           created_by: string
           currency: string
@@ -2396,6 +2397,7 @@ export type Database = {
         }
         Insert: {
           client_name: string
+          continues_pattern_id?: string | null
           created_at?: string
           created_by: string
           currency?: string
@@ -2416,6 +2418,7 @@ export type Database = {
         }
         Update: {
           client_name?: string
+          continues_pattern_id?: string | null
           created_at?: string
           created_by?: string
           currency?: string
@@ -2469,9 +2472,13 @@ export type Database = {
       shift_audit_log: {
         Row: {
           action: string
+          change_group: string | null
+          change_reason: string | null
           changed_at: string
           changed_by: string | null
+          effective_from: string | null
           id: string
+          is_summary: boolean
           new_data: Json | null
           old_data: Json | null
           record_id: string
@@ -2479,9 +2486,13 @@ export type Database = {
         }
         Insert: {
           action: string
+          change_group?: string | null
+          change_reason?: string | null
           changed_at?: string
           changed_by?: string | null
+          effective_from?: string | null
           id?: string
+          is_summary?: boolean
           new_data?: Json | null
           old_data?: Json | null
           record_id: string
@@ -2489,9 +2500,13 @@ export type Database = {
         }
         Update: {
           action?: string
+          change_group?: string | null
+          change_reason?: string | null
           changed_at?: string
           changed_by?: string | null
+          effective_from?: string | null
           id?: string
+          is_summary?: boolean
           new_data?: Json | null
           old_data?: Json | null
           record_id?: string
@@ -3228,6 +3243,59 @@ export type Database = {
       }
       create_page_snapshot: {
         Args: { p_page_id: string; p_snapshot_type?: string }
+        Returns: string
+      }
+      edit_shift_series: {
+        Args: {
+          p_changes?: Json
+          p_correct_past?: boolean
+          p_from: string
+          p_pattern_id: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      end_shift_series: {
+        Args: {
+          p_correct_past?: boolean
+          p_from: string
+          p_pattern_id: string
+          p_reason?: string
+        }
+        Returns: Json
+      }
+      shift_series_lineage: {
+        Args: { p_pattern_id: string }
+        Returns: {
+          client_name: string
+          continues_pattern_id: string | null
+          created_at: string
+          created_by: string
+          currency: string
+          days_of_week: number[]
+          end_date: string | null
+          end_time: string
+          hourly_rate: number | null
+          id: string
+          is_overtime: boolean
+          notes: string | null
+          overtime_subtype: string | null
+          recurrence_interval: string
+          shift_type: string | null
+          start_date: string
+          start_time: string
+          updated_at: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "recurring_shift_patterns"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      shift_series_resume_date: {
+        Args: { p_from: string; p_interval: string; p_start: string }
         Returns: string
       }
       decline_contract: {

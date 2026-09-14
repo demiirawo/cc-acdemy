@@ -17,6 +17,7 @@ import {
   parseISO,
   startOfMonth,
 } from "date-fns";
+import { patternOccursOn } from "@/lib/patternSchedule";
 
 interface TimelineRequest {
   id: string;
@@ -167,17 +168,11 @@ export function RequestsTimeline({ requests, userProfiles, onSelectRequest }: Re
       const patterns = byUser.get(userId);
       if (!patterns || patterns.length === 0) return true; // fallback: treat all days as working
       const dStr = format(date, "yyyy-MM-dd");
-      const dow = date.getDay();
       for (const p of patterns) {
-        if (!p.days_of_week?.includes(dow)) continue;
-        if (dStr < p.start_date) continue;
-        if (p.end_date && dStr > p.end_date) continue;
-        if (p.recurrence_interval !== "weekly") {
-          const ps = parseISO(p.start_date);
-          const diffWeeks = Math.floor(differenceInCalendarDays(date, ps) / 7);
-          if (p.recurrence_interval === "biweekly" && diffWeeks % 2 !== 0) continue;
-          if (p.recurrence_interval === "monthly" && diffWeeks % 4 !== 0) continue;
-        }
+        // Date range, weekday and recurrence, by the rota's rule: fortnights count
+        // from the Monday of the row's start, and a monthly series runs in its
+        // start's week of the month.
+        if (!patternOccursOn(p, date)) continue;
         if (exceptionSet.has(`${p.id}:${dStr}`)) continue;
         return true;
       }

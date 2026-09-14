@@ -28,6 +28,7 @@ interface UpcomingPattern {
   start_date: string | null;
   end_date: string | null;
   recurrence_interval: string | null;
+  continues_pattern_id: string | null;
 }
 
 const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -87,6 +88,8 @@ const TYPE_META: Record<string, { label: string; cls: string }> = {
 export function ScheduleChangesCard({ userId, isSelf }: { userId: string; isSelf: boolean }) {
   const [rows, setRows] = useState<AckRow[]>([]);
   const [upcoming, setUpcoming] = useState<UpcomingPattern[]>([]);
+  // Series that an edit ended and carried on in a new row: that end isn't news.
+  const [carriedOn, setCarriedOn] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [acking, setAcking] = useState<string | null>(null);
 
@@ -105,10 +108,20 @@ export function ScheduleChangesCard({ userId, isSelf }: { userId: string; isSelf
     const horizon = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
     const { data: pats } = await (supabase as any)
       .from("recurring_shift_patterns")
-      .select("id, client_name, days_of_week, start_time, end_time, start_date, end_date, recurrence_interval")
+      .select("id, client_name, days_of_week, start_time, end_time, start_date, end_date, recurrence_interval, continues_pattern_id")
       .eq("user_id", userId)
       .or(`and(start_date.gt.${today},start_date.lte.${horizon}),and(end_date.gte.${today},end_date.lte.${horizon})`);
-    setUpcoming((pats as UpcomingPattern[]) ?? []);
+    const patternRows = (pats as UpcomingPattern[]) ?? [];
+    // An edit made from a date ends the series and carries it on in a new row;
+    // neither half is shifts starting or stopping.
+    const { data: carried } = patternRows.length > 0
+      ? await supabase
+          .from("recurring_shift_patterns")
+          .select("continues_pattern_id")
+          .in("continues_pattern_id", patternRows.map(p => p.id))
+      : { data: [] as { continues_pattern_id: string | null }[] };
+    setCarriedOn(new Set((carried ?? []).flatMap(c => (c.continues_pattern_id ? [c.continues_pattern_id] : []))));
+    setUpcoming(patternRows);
     setLoading(false);
   }, [userId]);
 
@@ -136,11 +149,12 @@ export function ScheduleChangesCard({ userId, isSelf }: { userId: string; isSelf
   // already long profile.
   const today = new Date().toISOString().slice(0, 10);
   const starting = upcoming
-    .filter(p => p.start_date && p.start_date > today)
+    .filter(p => p.start_date && p.start_date > today && !p.continues_pattern_id)
     .sort((a, b) => (a.start_date! < b.start_date! ? -1 : 1));
   const ending = upcoming
     .map(p => ({ p, lastDay: lastRealShift(p) }))
-    .filter(({ p, lastDay }) => !!lastDay && lastDay >= today && !(p.start_date && p.start_date > today))
+    // A series carried on from a later date isn't starting, so its own end is news.
+    .filter(({ p, lastDay }) => !!lastDay && lastDay >= today && !(p.start_date && p.start_date > today && !p.continues_pattern_id) && !carriedOn.has(p.id))
     .sort((a, b) => (a.lastDay! < b.lastDay! ? -1 : 1));
 
   if (!loading && rows.length === 0 && starting.length === 0 && ending.length === 0) return null;

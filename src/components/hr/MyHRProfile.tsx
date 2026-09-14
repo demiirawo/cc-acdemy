@@ -3740,24 +3740,12 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   patternExceptions.map(e => `${e.pattern_id}:${e.exception_date}`)
                 );
                 while (currentDate <= endDate) {
-                  const dayOfWeek = currentDate.getDay();
                   const currentDateStr = format(currentDate, 'yyyy-MM-dd');
                   recurringPatterns.forEach(pattern => {
-                    const patternStart = new Date(pattern.start_date);
-                    const patternEnd = pattern.end_date ? new Date(pattern.end_date) : null;
-                    if (currentDate < patternStart) return;
-                    if (patternEnd && currentDate > patternEnd) return;
-                    if (!pattern.days_of_week.includes(dayOfWeek)) return;
-                    // Honor recurrence interval (weekly/biweekly/monthly)
-                    const interval = (pattern as any).recurrence_interval || 'weekly';
-                    if (interval !== 'weekly') {
-                      // Calendar days — see the note in StaffPayManager; elapsed-ms
-                      // division loses a day across a clock change.
-                      const diffDays = differenceInCalendarDays(currentDate, patternStart);
-                      const diffWeeks = Math.floor(diffDays / 7);
-                      if (interval === 'biweekly' && diffWeeks % 2 !== 0) return;
-                      if (interval === 'monthly' && diffWeeks % 4 !== 0) return;
-                    }
+                    // Date range, weekday and recurrence, by the rota's rule:
+                    // fortnights count from the Monday of the row's start, so a
+                    // series carried on from a date on another weekday keeps step.
+                    if (!patternOccursOn(pattern, currentDate)) return;
                     // Skip exceptions (cancelled shifts)
                     if (exceptionSet.has(`${pattern.id}:${currentDateStr}`)) return;
                     const startTime = pattern.start_time.substring(0, 5);
