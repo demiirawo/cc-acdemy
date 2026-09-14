@@ -40,6 +40,7 @@ import { groupByStage, orderStages } from "@/lib/onboardingStages";
 import { annualAllowanceFor, HOLIDAY_ALLOWANCE_FIRST_YEAR } from "@/lib/holidayAllowance";
 import { patternOccursOn, resolveDayKind } from "@/lib/patternSchedule";
 import { computeShiftBonus, missedSummary, type CoverRequest, type ShiftBonusConfig } from "@/lib/shiftBonus";
+import { activeRecurringDeductions, recurringDeductionLine, type RecurringDeduction } from "@/lib/recurringDeductions";
 import { unpaidDaysInMonth } from "@/lib/unpaidDays";
 interface UserProfile {
   user_id: string;
@@ -54,7 +55,7 @@ interface MonthlyPayPreview {
   bonuses: number;
   deductions: number;
   bonusItems: Array<{ label: string; amount: number; description: string | null; recurring: boolean; kind?: 'shift' }>;
-  deductionItems: Array<{ label: string; amount: number; description: string | null }>;
+  deductionItems: Array<{ label: string; amount: number; description: string | null; recurring?: boolean }>;
   overtimeDays: number;
   overtimePay: number;
   overtimeShifts: Array<{
@@ -444,6 +445,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   const [coveredUserPatterns, setCoveredUserPatterns] = useState<RecurringShiftPattern[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
   const [shiftBonuses, setShiftBonuses] = useState<ShiftBonusConfig[]>([]);
+  const [recurringDeductions, setRecurringDeductions] = useState<RecurringDeduction[]>([]);
   // Cover other admins gave this person. Their own requests only show the
   // cover they gave; the shift bonus needs the cover they received.
   const [coverOfMe, setCoverOfMe] = useState<CoverRequest[]>([]);
@@ -851,6 +853,9 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       const { data: shiftBonusData } = await (supabase as any)
         .from('shift_bonuses').select('*').eq('user_id', targetUserId);
       setShiftBonuses((shiftBonusData as ShiftBonusConfig[]) || []);
+      const { data: recurringDeductionData } = await supabase
+        .from('recurring_deductions').select('*').eq('user_id', targetUserId);
+      setRecurringDeductions((recurringDeductionData as RecurringDeduction[]) || []);
       const { data: coverOfMeData } = await supabase
         .from('staff_requests')
         .select('user_id, request_type, swap_with_user_id, start_date, end_date, coverage_metadata, status')
@@ -1240,7 +1245,12 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       // records above; adding the live figure too would count it twice.
       const shiftBonusLive = monthPaid ? 0 : shiftBonus.amount;
       const bonuses = oneOffBonuses + activeRecurringBonuses + shiftBonusLive;
-      const deductions = deductionRecords.reduce((sum, r) => sum + r.amount, 0);
+      // Recurring deductions, as payroll takes them: the instalment is added
+      // live while the month is unpaid; once paid, the captured record among
+      // deductionRecords is what counts.
+      const recurringDeductionsThisMonth = monthPaid ? [] : activeRecurringDeductions(recurringDeductions, hrProfile.user_id, monthStart, monthEnd);
+      const deductions = deductionRecords.reduce((sum, r) => sum + r.amount, 0)
+        + recurringDeductionsThisMonth.reduce((sum, d) => sum + Number(d.amount), 0);
 
       const bonusItems: MonthlyPayPreview['bonusItems'] = [
         ...oneOffBonusRecords.map(r => ({
@@ -1266,11 +1276,19 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
           kind: 'shift',
         });
       }
-      const deductionItems = deductionRecords.map(r => ({
-        label: r.description || 'Deduction',
-        amount: r.amount,
-        description: r.description,
-      }));
+      const deductionItems: MonthlyPayPreview['deductionItems'] = [
+        ...deductionRecords.map(r => ({
+          label: r.description || 'Deduction',
+          amount: r.amount,
+          description: r.description,
+        })),
+        ...recurringDeductionsThisMonth.map(d => ({
+          label: 'Recurring deduction',
+          amount: Number(d.amount),
+          description: recurringDeductionLine(d, monthStart),
+          recurring: true,
+        })),
+      ];
 
       // Calculate overtime from approved requests and recurring patterns
       // Count by unique date (one overtime day per calendar day)
@@ -1574,7 +1592,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       });
     }
     return previews;
-  }, [hrProfile, staffSchedules, recurringPatterns, coveredUserPatterns, patternExceptions, publicHolidays, payRecords, recurringBonuses, shiftBonuses, coverOfMe, holidays, staffRequests]);
+  }, [hrProfile, staffSchedules, recurringPatterns, coveredUserPatterns, patternExceptions, publicHolidays, payRecords, recurringBonuses, shiftBonuses, recurringDeductions, coverOfMe, holidays, staffRequests]);
   const toggleMonth = (monthKey: string) => {
     setExpandedMonths(prev => {
       const next = new Set(prev);
@@ -3577,7 +3595,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                                     <div key={`d-${idx}`} className="py-2 border-b">
                                       <div className="flex justify-between items-center">
                                         <span className="text-muted-foreground flex items-center gap-2">
-                                          Deduction
+                                          {item.recurring ? 'Recurring deduction' : 'Deduction'}
                                           {item.description && (
                                             <span className="text-xs italic text-muted-foreground/80">— {item.description}</span>
                                           )}

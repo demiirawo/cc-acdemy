@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { StaffBonusEditor } from "./StaffBonusEditor";
+import { StaffDeductionEditor } from "./StaffDeductionEditor";
+import { activeRecurringDeductions, recurringDeductionLine, RECURRING_DEDUCTION_TAG, type RecurringDeduction } from "@/lib/recurringDeductions";
 import { calculateHolidayAllowance } from "./StaffHolidaysManager";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
@@ -168,8 +170,6 @@ interface AdjustmentEditState {
   bonusComment: string;
   bonusRecurring: boolean;
   existingRecurringBonusId: string | null;
-  deductionAmount: number;
-  deductionComment: string;
   overtimeOverrideEnabled: boolean;
   overtimeOverrideAmount: number;
   calculatedOvertime: number;
@@ -279,6 +279,7 @@ export function StaffPayManager({ onSummaryComputed }: {
   const [recurringPatterns, setRecurringPatterns] = useState<RecurringShiftPattern[]>([]);
   const [patternExceptions, setPatternExceptions] = useState<ShiftPatternException[]>([]);
   const [recurringBonuses, setRecurringBonuses] = useState<RecurringBonus[]>([]);
+  const [recurringDeductions, setRecurringDeductions] = useState<RecurringDeduction[]>([]);
   const [shiftBonuses, setShiftBonuses] = useState<ShiftBonusConfig[]>([]);
   const [staffHolidays, setStaffHolidays] = useState<{ user_id: string; days_taken: number; start_date: string; end_date: string | null; status: string; absence_type: string }[]>([]);
   const [hrProfilesFull, setHRProfilesFull] = useState<{ user_id: string; annual_holiday_allowance: number | null; start_date: string | null; employment_end_date: string | null; unlimited_holiday: boolean; public_holiday_pay_disabled?: boolean; created_at?: string; performance_rating?: string | null; bonus_pot_eligible?: boolean }[]>([]);
@@ -653,6 +654,16 @@ export function StaffPayManager({ onSummaryComputed }: {
         console.error('Error fetching shift bonuses:', shiftBonusError);
       } else {
         setShiftBonuses((shiftBonusData as ShiftBonusConfig[]) || []);
+      }
+
+      // Recurring deductions: the same amount every month of a term.
+      const { data: recurringDeductionData, error: recurringDeductionError } = await supabase
+        .from('recurring_deductions')
+        .select('*');
+      if (recurringDeductionError) {
+        console.error('Error fetching recurring deductions:', recurringDeductionError);
+      } else {
+        setRecurringDeductions((recurringDeductionData as RecurringDeduction[]) || []);
       }
 
       // Fetch staff holidays for unused holiday calculation
@@ -1066,7 +1077,17 @@ export function StaffPayManager({ onSummaryComputed }: {
       
       const overtimeManualRecords = overtimeRecords.reduce((sum, r) => sum + r.amount, 0);
       const expenses = expenseRecords.reduce((sum, r) => sum + r.amount, 0);
-      const deductions = deductionRecords.reduce((sum, r) => sum + r.amount, 0);
+      // Deductions: the one-off records, plus each recurring deduction's
+      // instalment while the month is unpaid. Once paid, the instalment is the
+      // captured 'deduction' record written by buildPaymentRecords — already
+      // among the records above — and adding it live too would take it twice.
+      const recurringDeductionsThisMonth = isPaidMonth ? [] : activeRecurringDeductions(recurringDeductions, hr.user_id, monthStart, monthEnd);
+      const deductions = deductionRecords.reduce((sum, r) => sum + r.amount, 0)
+        + recurringDeductionsThisMonth.reduce((sum, d) => sum + Number(d.amount), 0);
+      const deductionItems = [
+        ...deductionRecords.map(r => ({ amount: r.amount, description: r.description ?? null, recurring: false })),
+        ...recurringDeductionsThisMonth.map(d => ({ amount: Number(d.amount), description: recurringDeductionLine(d, monthStart), recurring: true })),
+      ];
       
       // Calculate overtime pay from approved overtime/shift_swap requests
       // Use a date-keyed map to deduplicate: same date from request + pattern = counted once
@@ -1487,6 +1508,8 @@ export function StaffPayManager({ onSummaryComputed }: {
         bonuses,
         bonusItems,
         shiftBonus: isPaidMonth ? null : shiftBonus,
+        deductionItems,
+        recurringDeductionsThisMonth,
         overtime,
         overtimeDays,
         standardOvertimeDays: totalStandardOTDays,
@@ -1541,7 +1564,7 @@ export function StaffPayManager({ onSummaryComputed }: {
         proRataDeduction: 0,
       };
     });
-  }, [hrProfiles, userProfiles, monthRecords, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses, shiftBonuses, staffHolidays, hrProfilesFull, selectedMonth, approvedOvertimeRequests, unpaidHolidayRequests, approvedLeaveRequests]);
+  }, [hrProfiles, userProfiles, monthRecords, manualRates, staffSchedules, publicHolidays, monthStart, monthEnd, recurringPatterns, patternExceptions, recurringBonuses, shiftBonuses, recurringDeductions, staffHolidays, hrProfilesFull, selectedMonth, approvedOvertimeRequests, unpaidHolidayRequests, approvedLeaveRequests]);
 
   // Staff for the monthly bonus pot — everyone on this month's payroll. Rank
   // and tenure drive the distribution in most months; in December and January
@@ -1899,6 +1922,11 @@ export function StaffPayManager({ onSummaryComputed }: {
         : `Unpaid holiday deduction: ${staff.unpaidHolidayDays} days`} (${PAY_CAPTURE_TAG})` });
     if (staff.proRataDeduction > 0) rows.push({ ...common, record_type: 'deduction' as any, amount: staff.proRataDeduction,
       description: `Pro-rata deduction for days outside employment (${PAY_CAPTURE_TAG})` });
+    // Each recurring deduction's instalment is captured, so a paid month is
+    // frozen at what was deducted on the day, and a later change to the
+    // deduction (stopped early, amount corrected) cannot move it.
+    for (const d of staff.recurringDeductionsThisMonth) rows.push({ ...common, record_type: 'deduction' as any, amount: Number(d.amount),
+      description: `${RECURRING_DEDUCTION_TAG}: ${recurringDeductionLine(d, monthStart)} (${PAY_CAPTURE_TAG})` });
     // The shift bonus is captured like overtime, so a paid month is frozen at
     // what was owed on the day. Recurring bonuses are not captured and keep
     // moving after payment; this must not. Tagged so a revert removes it, and
@@ -2209,7 +2237,6 @@ export function StaffPayManager({ onSummaryComputed }: {
   // Open adjustment dialog for a staff row
   const handleOpenAdjustmentDialog = (staff: typeof payrollSummary[0]) => {
     const bonusRecord = staff.records.find(r => r.record_type === 'bonus');
-    const deductionRecord = staff.records.find(r => r.record_type === 'deduction');
     const overtimeRecord = staff.records.find(r => r.record_type === 'overtime');
     
     // Check if overtime was manually overridden (has an overtime record)
@@ -2247,8 +2274,6 @@ export function StaffPayManager({ onSummaryComputed }: {
       bonusComment: existingRecurringBonus?.description || bonusRecord?.description || '',
       bonusRecurring: !!existingRecurringBonus,
       existingRecurringBonusId: existingRecurringBonus?.id || null,
-      deductionAmount: staff.deductions,
-      deductionComment: deductionRecord?.description || '',
       overtimeOverrideEnabled: hasOvertimeOverride,
       overtimeOverrideAmount: hasOvertimeOverride ? staff.overtime : staff.holidayOvertimeBonus,
       calculatedOvertime: staff.holidayOvertimeBonus
@@ -2319,43 +2344,6 @@ export function StaffPayManager({ onSummaryComputed }: {
           .from('staff_pay_records')
           .delete()
           .eq('id', existingOvertimeRecord.id);
-        if (error) throw error;
-      }
-
-      // Handle deduction changes
-      const existingDeductionRecord = staff.records.find(r => r.record_type === 'deduction');
-      
-      if (adjustmentEdit.deductionAmount > 0) {
-        if (existingDeductionRecord) {
-          const { error } = await supabase
-            .from('staff_pay_records')
-            .update({
-              amount: adjustmentEdit.deductionAmount,
-              description: adjustmentEdit.deductionComment || null
-            })
-            .eq('id', existingDeductionRecord.id);
-          if (error) throw error;
-        } else {
-          const { error } = await supabase
-            .from('staff_pay_records')
-            .insert({
-              user_id: adjustmentEdit.staffId,
-              record_type: 'deduction' as any,
-              amount: adjustmentEdit.deductionAmount,
-              currency: staff.currency,
-              description: adjustmentEdit.deductionComment || null,
-              pay_date: payDate,
-              pay_period_start: payPeriodStart,
-              pay_period_end: payPeriodEnd,
-              created_by: user?.id!
-            });
-          if (error) throw error;
-        }
-      } else if (existingDeductionRecord && adjustmentEdit.deductionAmount === 0) {
-        const { error } = await supabase
-          .from('staff_pay_records')
-          .delete()
-          .eq('id', existingDeductionRecord.id);
         if (error) throw error;
       }
 
@@ -3042,7 +3030,12 @@ export function StaffPayManager({ onSummaryComputed }: {
                           </div>
                         ) : '-'}
                       </TableCell>
-                      <TableCell className="text-right text-destructive">
+                      <TableCell
+                        className="text-right text-destructive"
+                        title={staff.deductionItems.length > 0
+                          ? staff.deductionItems.map(d => `${d.recurring ? 'Recurring · ' : ''}${d.description || 'Deduction'}: -${formatCurrency(d.amount, staff.currency)}`).join('\n')
+                          : undefined}
+                      >
                         {staff.deductions > 0 ? `-${formatCurrency(staff.deductions, staff.currency)}` : '-'}
                       </TableCell>
                       <TableCell className="text-right font-bold">{formatCurrency(staff.totalPay, staff.currency)}</TableCell>
@@ -3569,40 +3562,31 @@ export function StaffPayManager({ onSummaryComputed }: {
                 </div>
               </div>
 
-              {/* Deduction Section */}
+              {/* Deduction Section — one-off this month, or recurring for a term */}
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <TrendingDown className="h-4 w-4 text-destructive" />
-                  <Label className="text-base font-medium">Deduction</Label>
+                  <Label className="text-base font-medium">Deductions</Label>
                 </div>
-                <div className="space-y-2 pl-6">
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">
-                      {CURRENCIES.find(c => c.code === adjustmentEdit.currency)?.symbol || '£'}
-                    </span>
-                    <Input
-                      type="number"
-                      value={adjustmentEdit.deductionAmount || ''}
-                      onChange={(e) => setAdjustmentEdit({
-                        ...adjustmentEdit,
-                        deductionAmount: parseFloat(e.target.value) || 0
-                      })}
-                      className="w-32"
-                      step="0.01"
-                      min="0"
-                      placeholder="0.00"
-                    />
-                  </div>
-                  <Textarea
-                    value={adjustmentEdit.deductionComment}
-                    onChange={(e) => setAdjustmentEdit({
-                      ...adjustmentEdit,
-                      deductionComment: e.target.value
-                    })}
-                    placeholder="Reason for deduction (visible to staff)..."
-                    rows={2}
-                    className="text-sm"
-                  />
+                <div className="pl-6 min-w-0">
+                  {(() => {
+                    const staff = payrollSummary.find(s => s.userId === adjustmentEdit.staffId);
+                    const oneOff = (staff?.records || [])
+                      .filter(r => r.record_type === 'deduction')
+                      .map(r => ({ id: r.id, amount: r.amount, description: r.description }));
+                    const recurring = activeRecurringDeductions(recurringDeductions, adjustmentEdit.staffId, monthStart, monthEnd)
+                      .map(d => ({ id: d.id, amount: Number(d.amount), description: d.description, startDate: d.start_date, endDate: d.end_date }));
+                    return (
+                      <StaffDeductionEditor
+                        staffId={adjustmentEdit.staffId}
+                        currency={adjustmentEdit.currency}
+                        selectedMonth={selectedMonth}
+                        oneOffDeductions={oneOff}
+                        recurringDeductions={recurring}
+                        onChanged={fetchData}
+                      />
+                    );
+                  })()}
                 </div>
               </div>
             </div>
