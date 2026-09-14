@@ -42,6 +42,7 @@ import { annualAllowanceFor, HOLIDAY_ALLOWANCE_FIRST_YEAR } from "@/lib/holidayA
 import { patternOccursOn, resolveDayKind } from "@/lib/patternSchedule";
 import { computeShiftBonus, missedSummary, type CoverRequest, type ShiftBonusConfig } from "@/lib/shiftBonus";
 import { activeRecurringDeductions, recurringDeductionLine, type RecurringDeduction } from "@/lib/recurringDeductions";
+import { activeRecurringBonuses as recurringBonusesInMonth } from "@/lib/recurringBonuses";
 import { unpaidDaysInMonth } from "@/lib/unpaidDays";
 interface UserProfile {
   user_id: string;
@@ -174,6 +175,7 @@ interface StaffRequest {
 }
 interface RecurringBonus {
   id: string;
+  user_id: string;
   amount: number;
   currency: string;
   description: string | null;
@@ -1218,17 +1220,15 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       const deductionRecords = monthRecords.filter(r => r.record_type === 'deduction');
       const oneOffBonuses = oneOffBonusRecords.reduce((sum, r) => sum + r.amount, 0);
 
-      // Add recurring bonuses that are active for this month
-      const activeRecurringBonusesList = recurringBonuses.filter(bonus => {
-        const bonusStart = parseISO(bonus.start_date);
-        const bonusEnd = bonus.end_date ? parseISO(bonus.end_date) : null;
-        return bonusStart <= monthEnd && (!bonusEnd || bonusEnd >= monthStart);
-      });
+      // Recurring bonuses, as payroll pays them: added live while the month is
+      // unpaid; once it's paid, the captured record among the bonus records
+      // above is what counts, so a bonus changed afterwards can't move it.
+      const monthPaid = monthRecords.some(r => r.record_type === 'salary');
+      const activeRecurringBonusesList = monthPaid ? [] : recurringBonusesInMonth(recurringBonuses, hrProfile.user_id, monthStart, monthEnd);
       const activeRecurringBonuses = activeRecurringBonusesList.reduce((sum, bonus) => sum + bonus.amount, 0);
 
       // Shift bonus, from the same function payroll uses. Staff raise their
       // invoice from this view, so it cannot be allowed to be a different number.
-      const monthPaid = monthRecords.some(r => r.record_type === 'salary');
       const shiftBonus = computeShiftBonus({
         userId: hrProfile.user_id,
         monthStart,

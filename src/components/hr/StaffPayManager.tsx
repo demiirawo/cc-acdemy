@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { recalcAllBonusPots, POT_DESC_TAG, peakCover, monthlyBonusPoints, potRecordDescription, isPeakMonth } from "@/lib/bonusPot";
 import { schedulePendingRatingChange, describeEffectiveDate } from "@/lib/pendingRating";
 import { inForceFor, landedChangesFor } from "@/lib/payCalendar";
+import { activeRecurringBonuses as recurringBonusesInMonth, recurringBonusLine, RECURRING_BONUS_TAG } from "@/lib/recurringBonuses";
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 
@@ -1096,15 +1097,13 @@ export function StaffPayManager({ onSummaryComputed }: {
       const salaryPaid = salaryRecords.reduce((sum, r) => sum + r.amount, 0);
       let bonuses = bonusRecords.reduce((sum, r) => sum + r.amount, 0);
       
-      // Add recurring bonuses that are active for this month
-      const monthStartStr = format(monthStart, 'yyyy-MM-dd');
-      const monthEndStr = format(monthEnd, 'yyyy-MM-dd');
-      const activeRecurringBonuses = recurringBonuses.filter(rb => {
-        if (rb.user_id !== hr.user_id) return false;
-        if (rb.start_date > monthEndStr) return false; // Starts after this month
-        if (rb.end_date && rb.end_date < monthStartStr) return false; // Ended before this month
-        return true;
-      });
+      // Recurring bonuses, as the pay record will hold them: added live while
+      // the month is unpaid, and once it's paid the captured 'bonus' record
+      // written by buildPaymentRecords — already among the records above — is
+      // what counts. Adding the rows live after payment is what let a paid
+      // month move whenever one was added, backdated or stopped.
+      const isPaidMonth = salaryRecords.length > 0;
+      const activeRecurringBonuses = isPaidMonth ? [] : recurringBonusesInMonth(recurringBonuses, hr.user_id, monthStart, monthEnd);
       
       const recurringBonusTotal = activeRecurringBonuses.reduce((sum, rb) => sum + rb.amount, 0);
       bonuses += recurringBonusTotal;
@@ -1120,7 +1119,6 @@ export function StaffPayManager({ onSummaryComputed }: {
       // Once paid, what was owed is the captured 'bonus' record written by
       // buildPaymentRecords — already inside `bonuses` above — and adding the
       // live figure as well would pay it twice.
-      const isPaidMonth = salaryRecords.length > 0;
       const shiftBonus = computeShiftBonus({
         userId: hr.user_id,
         monthStart,
@@ -1574,6 +1572,7 @@ export function StaffPayManager({ onSummaryComputed }: {
         shiftBonus: isPaidMonth ? null : shiftBonus,
         deductionItems,
         recurringDeductionsThisMonth,
+        recurringBonusesThisMonth: activeRecurringBonuses,
         overtime,
         overtimeDays,
         standardOvertimeDays: totalStandardOTDays,
@@ -1992,10 +1991,13 @@ export function StaffPayManager({ onSummaryComputed }: {
     // deduction (stopped early, amount corrected) cannot move it.
     for (const d of staff.recurringDeductionsThisMonth) rows.push({ ...common, record_type: 'deduction' as any, amount: Number(d.amount),
       description: `${RECURRING_DEDUCTION_TAG}: ${recurringDeductionLine(d, monthStart)} (${PAY_CAPTURE_TAG})` });
+    // Recurring bonuses likewise: each is captured as paid, so one added,
+    // backdated or stopped afterwards cannot move this month.
+    for (const b of staff.recurringBonusesThisMonth) rows.push({ ...common, record_type: 'bonus', amount: Number(b.amount),
+      description: `${RECURRING_BONUS_TAG}: ${recurringBonusLine(b)} (${PAY_CAPTURE_TAG})` });
     // The shift bonus is captured like overtime, so a paid month is frozen at
-    // what was owed on the day. Recurring bonuses are not captured and keep
-    // moving after payment; this must not. Tagged so a revert removes it, and
-    // it does not start "Bonus pot ·", so a pot resync leaves it alone.
+    // what was owed on the day. Tagged so a revert removes it, and it does not
+    // start "Bonus pot ·", so a pot resync leaves it alone.
     if (staff.shiftBonus && staff.shiftBonus.amount > 0) rows.push({ ...common, record_type: 'bonus' as any, amount: staff.shiftBonus.amount,
       description: `${SHIFT_BONUS_TAG}: ${staff.shiftBonus.count.worked.length} of ${staff.shiftBonus.count.scheduled.length} bonus shifts (${PAY_CAPTURE_TAG})` });
     rows.push({ ...common, record_type: 'salary' as any, amount: staff.baseSalary,
