@@ -2221,7 +2221,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         // no figure is shown at all rather than a made-up one.
         const pot = bonusPotGbp;
         // December and January aren't shared on rank or tenure — they're shared
-        // on days worked over 1 Dec – 31 Jan. Showing a rank-derived figure in
+        // on days worked over 15 Dec – 15 Jan. Showing a rank-derived figure in
         // those two months would promise a number nobody is going to be paid,
         // so the estimate gives way to the days themselves. No pound figure:
         // that would need everyone else's leave, which staff can't see.
@@ -2463,7 +2463,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   <p className="text-sm font-medium">How this affects your bonus</p>
                   {peakMonth ? (
                   <p className="text-xs text-muted-foreground">
-                    December and January work differently. Those two pots pay for cover over Christmas and the new year, so they're shared on <strong className="text-foreground">days worked between 1 December and 31 January</strong> — not on your rating or how long you've been here. <strong className="text-foreground">A D rating still gets no bonus.</strong>
+                    December and January work differently. Those two pots pay for cover over Christmas and the new year, so they're shared on <strong className="text-foreground">days worked between 15 December and 15 January</strong> — not on your rating or how long you've been here. <strong className="text-foreground">A D rating still gets no bonus.</strong>
                   </p>
                   ) : (
                   <p className="text-xs text-muted-foreground">
