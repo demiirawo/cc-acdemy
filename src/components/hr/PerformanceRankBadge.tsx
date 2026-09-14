@@ -73,18 +73,22 @@ export function tenureYears(startDate: string | null | undefined, asOf: Date = n
 }
 
 /**
- * The tenure a given payroll month's bonus share is calculated on — measured at
- * the end of the month before it.
+ * The tenure a given payroll month's bonus share is calculated on — completed
+ * years as at the 1st of that month.
  *
- * So an anniversary reached during a month doesn't raise that month's share; it
- * takes effect from the next payroll run. That keeps shares from shifting under
- * everyone else late in the month, as one person crossing a year boundary
- * redistributes the whole pot.
+ * That is the pay calendar (@/lib/payCalendar) applied to anniversaries: a year
+ * of service counts from the 2nd after it is reached, the day a salary or rating
+ * decided on the anniversary would land. So an anniversary on 20 September
+ * counts from October's share, and so does one on 1 October — it lands on
+ * 2 October, before October is paid.
+ *
+ * Measuring at the start of the month also keeps shares still while a month is
+ * paid out. One person crossing a year boundary redistributes the whole pot,
+ * and every anniversary that bears on a month is settled before it begins.
  */
 export function bonusTenureYears(startDate: string | null | undefined, payrollMonth: Date): number | null {
-  // Day 0 of the payroll month = the last day of the month before it.
-  const cutoff = new Date(payrollMonth.getFullYear(), payrollMonth.getMonth(), 0);
-  return tenureYears(startDate, cutoff);
+  const firstOfMonth = new Date(payrollMonth.getFullYear(), payrollMonth.getMonth(), 1);
+  return tenureYears(startDate, firstOfMonth);
 }
 
 /**

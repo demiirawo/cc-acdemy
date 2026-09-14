@@ -25,8 +25,9 @@ import { ScheduleChangesCard } from "./ScheduleChangesCard";
 import { normalizePhotoFile } from "@/lib/photoUpload";
 import { DocumentPreviewDialog } from "./DocumentPreviewDialog";
 import { StaffSettingsDialog } from "./StaffSettingsDialog";
-import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusPoints, rankBonusMult, bonusEligible, LOWEST_ELIGIBLE_RANK, type Rank } from "./PerformanceRankBadge";
+import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusTenureYears, bonusPoints, rankBonusMult, bonusEligible, LOWEST_ELIGIBLE_RANK, type Rank } from "./PerformanceRankBadge";
 import { peakCover, isPeakMonth, type PeakLeaveRow } from "@/lib/bonusPot";
+import { payrollMonthInForce, inForceFrom } from "@/lib/payCalendar";
 import {
   ANSWERED_LABELS, ETIQUETTE_LABELS, NOISE_LABELS, OUTCOME_LABELS, type QaCheck,
 } from "@/lib/qualityAssurance";
@@ -98,6 +99,7 @@ interface HRProfile {
   job_title: string | null;
   department: string | null;
   start_date: string | null;
+  created_at: string;
   base_currency: string;
   base_salary: number | null;
   pay_frequency: string | null;
@@ -489,7 +491,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   const [rankReason, setRankReason] = useState("");
   const [savingRank, setSavingRank] = useState(false);
   // Team-wide performance data (for the "how you compare" + bonus-points views).
-  const [teamPerf, setTeamPerf] = useState<{ rank: Rank | null; years: number }[]>([]);
+  const [teamPerf, setTeamPerf] = useState<{ rank: Rank | null; startDate: string | null }[]>([]);
   // Admin-authored "how to improve your rating" note for the selected staff.
   // Success criteria (team-wide) + feedback entries (per selected staff).
   const [criteria, setCriteria] = useState<PerformanceCriterion[]>([]);
@@ -656,13 +658,13 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     }
   }, [selectedUserId]);
 
-  // The bonus pot for the current month. Readable by any signed-in user, so
-  // everyone sees their own share worked out against the real figure.
+  // The bonus pot for the payroll month in force — this month, except on payday
+  // itself, when it is still the month being paid. Readable by any signed-in
+  // user, so everyone sees their own share worked out against the real figure.
   useEffect(() => {
     let active = true;
     (async () => {
-      const now = new Date();
-      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const monthStart = format(payrollMonthInForce(), 'yyyy-MM-dd');
       const { data } = await (supabase as any)
         .from('monthly_bonus_pots')
         .select('amount_gbp')
@@ -684,7 +686,9 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       const { data } = await (supabase as any).rpc('get_rating_spread');
       setTeamPerf(((data as any[]) || []).map(h => ({
         rank: (h.performance_rating && RANK_ORDER.includes(h.performance_rating as Rank) ? h.performance_rating : null) as Rank | null,
-        years: tenureYears(h.start_date || h.created_at) ?? 0,
+        // A date, not a count: years are counted for the payroll month the
+        // shares below are shown for, the way payroll counts them.
+        startDate: (h.start_date || h.created_at) ?? null,
       })));
     })();
   }, []);
@@ -2206,14 +2210,23 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
       {/* Performance Rating — explainer, team comparison, bonus effect, guidance */}
       {(() => {
         const myRank = (hrProfile.performance_rating && RANK_ORDER.includes(hrProfile.performance_rating as Rank) ? hrProfile.performance_rating : null) as Rank | null;
-        const myYears = tenureYears(hrProfile.start_date) ?? 0;
+        // The payroll month these figures are for, and the years of service it
+        // counts — the same years payroll will pay it on. A year reached during
+        // the month counts from the 2nd after it, so for a few weeks somebody's
+        // service can run a year ahead of their share.
+        const potMonth = payrollMonthInForce();
+        const potMonthName = format(potMonth, 'MMMM');
+        const myStart = hrProfile.start_date || hrProfile.created_at;
+        const myYears = bonusTenureYears(myStart, potMonth) ?? 0;
+        const myServiceYears = tenureYears(myStart) ?? 0;
+        const myYearsCountFrom = myServiceYears > myYears ? format(inForceFrom(addMonths(potMonth, 1)), 'd MMMM') : null;
         const myPoints = bonusPoints(myRank, myYears);
         const myMult = rankBonusMult(myRank);
 
         const dist: Record<string, number> = { S: 0, A: 0, B: 0, C: 0, D: 0, unrated: 0 };
         teamPerf.forEach(t => { dist[t.rank ?? 'unrated']++; });
         const teamSize = teamPerf.length || 1;
-        const teamTotalPoints = teamPerf.reduce((a, t) => a + bonusPoints(t.rank, t.years), 0) || myPoints || 1;
+        const teamTotalPoints = teamPerf.reduce((a, t) => a + bonusPoints(t.rank, bonusTenureYears(t.startDate, potMonth) ?? 0), 0) || myPoints || 1;
         const higher = teamPerf.filter(t => rankBonusMult(t.rank) > myMult).length;
         const sameLevel = Math.max(0, teamPerf.filter(t => rankBonusMult(t.rank) === myMult).length - 1);
 
@@ -2225,7 +2238,6 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
         // those two months would promise a number nobody is going to be paid,
         // so the estimate gives way to the days themselves. No pound figure:
         // that would need everyone else's leave, which staff can't see.
-        const potMonth = startOfMonth(new Date());
         const peakMonth = isPeakMonth(potMonth);
         const myCover = peakCover(
           holidays.map(h => ({ user_id: "me", start_date: h.start_date, end_date: h.end_date, status: h.status })) as PeakLeaveRow[],
@@ -2473,21 +2485,21 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                   {eligible && peakMonth ? (
                   <div className="rounded-lg border bg-muted/20 p-3 space-y-1.5 text-sm">
                     <div className="flex justify-between gap-2">
-                      <span className="text-muted-foreground">Days you're covering this month</span>
+                      <span className="text-muted-foreground">Days you're covering in {potMonthName}</span>
                       <span className="font-medium tabular-nums">{myCover.daysCovered} of {myCover.windowDays}</span>
                     </div>
                     <p className="text-[11px] text-muted-foreground pt-1">
                       {myCover.daysOff === 0
-                        ? "You have no leave booked this month, so you take a full share."
-                        : `You have ${myCover.daysOff} day${myCover.daysOff === 1 ? "" : "s"} of leave booked this month, so your share is smaller — what you don't take goes to whoever covers for you.`}
-                      {pot !== null && ` This month's pot is ${oneValue(pot)}, shared across the team by days worked.`}
+                        ? `You have no leave booked in ${potMonthName}, so you take a full share.`
+                        : `You have ${myCover.daysOff} day${myCover.daysOff === 1 ? "" : "s"} of leave booked in ${potMonthName}, so your share is smaller — what you don't take goes to whoever covers for you.`}
+                      {pot !== null && ` ${potMonthName}'s pot is ${oneValue(pot)}, shared across the team by days worked.`}
                     </p>
                   </div>
                   ) : eligible ? (
                   <div className="rounded-lg border bg-muted/20 p-3 space-y-1.5 text-sm">
                     {myShare === null ? (
                       <p className="text-muted-foreground text-xs">
-                        This month's bonus pot hasn't been set yet, so there's no figure to show.
+                        {potMonthName}'s bonus pot hasn't been set yet, so there's no figure to show.
                       </p>
                     ) : (
                     <>
@@ -2498,9 +2510,9 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                     {ladderRows}
 
                     <p className="text-[11px] text-muted-foreground pt-1">
-                      Worked out from this month's pot of {oneValue(pot)}, shared across the team by rating
-                      and time served — so these move as the team and the pot change. Figures are at your
-                      current {myYears} year{myYears === 1 ? "" : "s"} of service.
+                      Worked out from {potMonthName}'s pot of {oneValue(pot)}, shared across the team by rating
+                      and time served — so these move as the team and the pot change. Figures use {myYears} year{myYears === 1 ? "" : "s"} of
+                      service, as counted for {potMonthName}{myYearsCountFrom && <> — your {myServiceYears} year{myServiceYears === 1 ? "" : "s"} count{myServiceYears === 1 ? "s" : ""} from {myYearsCountFrom}</>}.
                     </p>
                     </>
                     )}
@@ -2544,7 +2556,7 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
                       </div>
                       {ladderRows}
                       <p className="text-[11px] text-muted-foreground pt-1">
-                        Worked out from this month's pot of {oneValue(pot)}, at your current {myYears} year{myYears === 1 ? "" : "s"} of service.
+                        Worked out from {potMonthName}'s pot of {oneValue(pot)}, at {myYears} year{myYears === 1 ? "" : "s"} of service, as counted for {potMonthName}{myYearsCountFrom && <> — your {myServiceYears} year{myServiceYears === 1 ? "" : "s"} count{myServiceYears === 1 ? "s" : ""} from {myYearsCountFrom}</>}.
                       </p>
                     </div>
                   )}

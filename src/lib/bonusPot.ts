@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { format, startOfMonth, endOfMonth, parseISO, eachDayOfInterval } from "date-fns";
 import { RANK_ORDER, bonusPoints, bonusEligible, bonusTenureYears, employedFraction, type Rank } from "@/components/hr/PerformanceRankBadge";
+import { inForceFor, landedChangesFor } from "@/lib/payCalendar";
 
 export const POT_DESC_TAG = "Bonus pot";
 
@@ -158,11 +159,11 @@ const FALLBACK_RATES: Record<string, number> = {
 };
 
 /**
- * Recompute EVERY month that has a bonus pot from the CURRENT ratings, tenure,
- * peak-window cover and eligibility, and rewrite each staff member's "Bonus
- * pot" pay record. This
- * is what makes a rating/eligibility change (e.g. to D) drop someone out of pots
- * that were already distributed and redistribute the amount to eligible staff.
+ * Recompute EVERY month that has a bonus pot — from the rating in force for
+ * that month, tenure, peak-window cover and eligibility — and rewrite each staff
+ * member's "Bonus pot" pay record. This is what carries a rating or eligibility
+ * change (e.g. to D) into pots still to be paid and redistributes the amount to
+ * eligible staff; a rating only from the month it lands.
  *
  * Self-contained (reads everything from the DB) so it can be called from the
  * payroll page, the staff profile, or Edit Settings alike.
@@ -183,12 +184,16 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
     .filter(p => !lockedMonths.has(format(startOfMonth(parseISO(p.month)), "yyyy-MM-dd")));
   if (!pots.length) return 0;
 
-  const [{ data: hr }, { data: rateRows }, { data: profs }, { data: salaries }, { data: leaves }] = await Promise.all([
+  const [{ data: hr }, { data: rateRows }, { data: profs }, { data: salaries }, { data: leaves }, { data: ratingsLanded }, { data: salariesLanded }] = await Promise.all([
     supabase.from("hr_profiles").select("user_id, performance_rating, start_date, created_at, employment_end_date, bonus_pot_eligible"),
     (supabase as any).from("manual_currency_rates").select("currency_code, rate_to_gbp"),
     supabase.from("profiles").select("user_id"),
     (supabase as any).from("staff_salaries").select("user_id, base_salary, base_currency"),
     supabase.from("staff_holidays").select("user_id, start_date, end_date, status").eq("status", "approved"),
+    // Rating and salary changes that have landed, each with the value it
+    // replaced: a month is split on the rating and currency in force for it.
+    supabase.from("pending_rating_changes").select("user_id, effective_date, previous_rating").not("applied_at", "is", null).is("cancelled_at", null),
+    supabase.from("pending_salary_changes").select("user_id, effective_date, previous_currency").not("applied_at", "is", null).is("cancelled_at", null),
   ]);
   const peakLeave = (leaves as PeakLeaveRow[]) || [];
 
@@ -220,11 +225,13 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
     const amt = Number(pot.amount_gbp) || 0;
 
     // Points are worked out per month, not once for all of them: tenure is taken
-    // as at the end of the previous month, and a leaver counts only for the part
-    // of the month they worked. Computing this once from today's date would have
-    // applied today's tenure to a pot from a year ago.
+    // as at the 1st of the month, the rating is the one in force for the month
+    // (a change that landed since doesn't reach it), and a leaver counts only
+    // for the part of the month they worked. Computing this once from today's
+    // date would have applied today's tenure to a pot from a year ago.
     const staff = candidates.map((h) => {
-      const rating = (h.performance_rating && RANK_ORDER.includes(h.performance_rating) ? h.performance_rating : null) as Rank | null;
+      const ratingThen = inForceFor(d, h.performance_rating as string | null, landedChangesFor(ratingsLanded, h.user_id, "previous_rating"));
+      const rating = (ratingThen && RANK_ORDER.includes(ratingThen as Rank) ? ratingThen : null) as Rank | null;
       const years = bonusTenureYears(h.start_date || h.created_at, d) ?? 0;
       const worked = employedFraction(h.start_date, h.employment_end_date, d);
       const flagEligible = h.bonus_pot_eligible !== false;
@@ -233,7 +240,7 @@ export async function recalcAllBonusPots(userId?: string): Promise<number> {
       const score = { rank: rating, years, worked, peakShare: cover.weight, flagEligible };
       return {
         userId: h.user_id as string,
-        currency: (h.base_currency as string) || "GBP",
+        currency: inForceFor(d, (h.base_currency as string) || "GBP", landedChangesFor(salariesLanded, h.user_id, "previous_currency")) || "GBP",
         ...score, cover,
         points: monthlyBonusPoints(score, d),
       };

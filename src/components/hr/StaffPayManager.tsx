@@ -21,6 +21,7 @@ import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusTenure
 import { cn } from "@/lib/utils";
 import { recalcAllBonusPots, POT_DESC_TAG, peakCover, monthlyBonusPoints, potRecordDescription, isPeakMonth } from "@/lib/bonusPot";
 import { schedulePendingRatingChange, describeEffectiveDate } from "@/lib/pendingRating";
+import { inForceFor, landedChangesFor } from "@/lib/payCalendar";
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 
@@ -183,10 +184,32 @@ export function StaffPayManager({ onSummaryComputed }: {
 } = {}) {
   const [payRecords, setPayRecords] = useState<(PayRecord & { user?: UserProfile })[]>([]);
   const [userProfiles, setUserProfiles] = useState<UserProfile[]>([]);
-  const [hrProfiles, setHRProfiles] = useState<HRProfile[]>([]);
+  // Salary as it stands today. Everything below reads `hrProfiles` instead:
+  // the same rows, on the salary in force for the month on screen.
+  const [currentHRProfiles, setHRProfiles] = useState<HRProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date());
+  // Salary and rating changes that have landed, each with the value it replaced.
+  // A change lands on the 2nd, but a month isn't always paid by then, and
+  // reverting a payment reopens one; with these a late or reopened month is
+  // still worked out on the salary and rating in force for it, not today's.
+  const [landedSalaryChanges, setLandedSalaryChanges] = useState<{ user_id: string; effective_date: string; previous_salary: number; previous_currency: string }[]>([]);
+  const [landedRatingChanges, setLandedRatingChanges] = useState<{ user_id: string; effective_date: string; previous_rating: string | null }[]>([]);
+  const hrProfiles = useMemo(() => {
+    if (landedSalaryChanges.length === 0) return currentHRProfiles;
+    return currentHRProfiles.map(hr => {
+      const landed = landedSalaryChanges
+        .filter(c => c.user_id === hr.user_id)
+        .map(c => ({ effective_date: c.effective_date, previous: { base_salary: c.previous_salary as number | null, base_currency: c.previous_currency } }));
+      return landed.length === 0 ? hr : { ...hr, ...inForceFor(selectedMonth, { base_salary: hr.base_salary, base_currency: hr.base_currency }, landed) };
+    });
+  }, [currentHRProfiles, landedSalaryChanges, selectedMonth]);
+  const ratingInForce = useCallback(
+    (userId: string, current: string | null | undefined): string | null =>
+      inForceFor(selectedMonth, current ?? null, landedChangesFor(landedRatingChanges, userId, "previous_rating")),
+    [landedRatingChanges, selectedMonth],
+  );
   const [invoiceDialog, setInvoiceDialog] = useState<{
     open: boolean;
     staffUserId: string;
@@ -587,6 +610,18 @@ export function StaffPayManager({ onSummaryComputed }: {
         base_salary: salaryMap.get(h.user_id)?.base_salary ?? null,
         base_currency: salaryMap.get(h.user_id)?.base_currency ?? 'GBP',
       })));
+
+      // What each landed change replaced, so a month is paid on its own terms
+      // (see landedSalaryChanges). Admin-only tables: anyone else reads none,
+      // and every month falls back to today's figures, as it always did.
+      const [{ data: salaryLanded }, { data: ratingLanded }] = await Promise.all([
+        supabase.from('pending_salary_changes').select('user_id, effective_date, previous_salary, previous_currency').not('applied_at', 'is', null).is('cancelled_at', null),
+        supabase.from('pending_rating_changes').select('user_id, effective_date, previous_rating').not('applied_at', 'is', null).is('cancelled_at', null),
+      ]);
+      setLandedSalaryChanges((salaryLanded ?? [])
+        .filter(c => c.previous_salary != null && Number(c.previous_salary) > 0)
+        .map(c => ({ user_id: c.user_id, effective_date: c.effective_date, previous_salary: Number(c.previous_salary), previous_currency: c.previous_currency || 'GBP' })));
+      setLandedRatingChanges(ratingLanded ?? []);
 
       const { data: records, error: recordsError } = await supabase
         .from('staff_pay_records')
@@ -1572,15 +1607,16 @@ export function StaffPayManager({ onSummaryComputed }: {
   const potStaff = useMemo(() => {
     return payrollSummary.map(s => {
       const hrFull = hrProfilesFull.find(h => h.user_id === s.userId);
-      const rating = (hrFull?.performance_rating ?? null) as Rank | null;
+      // The rating in force for this month: one that landed since doesn't reach it.
+      const rating = ratingInForce(s.userId, hrFull?.performance_rating) as Rank | null;
       const cover = peakCover(staffHolidays, s.userId, selectedMonth);
       return {
         userId: s.userId,
         displayName: s.displayName,
         currency: s.currency,
         rank: rating && RANK_ORDER.includes(rating) ? rating : null,
-        // Tenure as at the end of last month: an anniversary reached during this
-        // month lifts the share from next month's run, not this one.
+        // Tenure as at the 1st of this month: an anniversary reached during it
+        // lifts the share from next month's run, not this one.
         years: bonusTenureYears(hrFull?.start_date || hrFull?.created_at, selectedMonth) ?? 0,
         // Joiners and leavers share only in proportion to the part of the month
         // they were actually here for.
@@ -1594,7 +1630,7 @@ export function StaffPayManager({ onSummaryComputed }: {
         cover,
       };
     }).filter(s => s.worked > 0);
-  }, [payrollSummary, hrProfilesFull, selectedMonth, staffHolidays]);
+  }, [payrollSummary, hrProfilesFull, selectedMonth, staffHolidays, ratingInForce]);
 
   // Monthly bonus pot input state (declared before the allocation memo/effects).
   const [bonusPotInput, setBonusPotInput] = useState("");
@@ -2814,11 +2850,20 @@ export function StaffPayManager({ onSummaryComputed }: {
               ) : (
                 (() => {
                   // Rank badge: performance-rating letter + years of tenure,
-                  // the same badge shown on the staff profile.
-                  const rankBadgeFor = (userId: string): { rank: Rank | null; years: number | null } => {
+                  // the same badge shown on the staff profile. Both are the ones
+                  // this month's bonus share is worked out on, as the pot records
+                  // say: a rating or a year of service counts from the 2nd it
+                  // lands, so today's can run ahead of the month on screen.
+                  const rankBadgeFor = (userId: string): { rank: Rank | null; currentRank: Rank | null; years: number | null; serviceYears: number | null } => {
                     const hrFull = hrProfilesFull.find(h => h.user_id === userId);
-                    const rating = (hrFull?.performance_rating ?? null) as Rank | null;
-                    return { rank: rating && RANK_ORDER.includes(rating) ? rating : null, years: tenureYears(hrFull?.start_date || hrFull?.created_at) };
+                    const asRank = (r: string | null | undefined) => (r && RANK_ORDER.includes(r as Rank) ? r as Rank : null);
+                    const started = hrFull?.start_date || hrFull?.created_at;
+                    return {
+                      rank: asRank(ratingInForce(userId, hrFull?.performance_rating)),
+                      currentRank: asRank(hrFull?.performance_rating),
+                      years: bonusTenureYears(started, selectedMonth),
+                      serviceYears: tenureYears(started),
+                    };
                   };
                   // Group staff by status: Pending -> Ready -> Paid
                   const pendingGroup = payrollSummary.filter(s => !s.hasSalaryRecord && !readyStaff.has(s.userId));
@@ -2870,7 +2915,7 @@ export function StaffPayManager({ onSummaryComputed }: {
                                 years={b.years}
                                 onClick={() => openPayrollRankDialog(staff.userId)}
                                 className="cursor-pointer hover:opacity-80 active:scale-95 transition"
-                                title={`Click to change rating${b.rank ? ` (currently ${b.rank})` : " (unrated)"}`}
+                                title={`Click to change rating${b.currentRank ? ` (currently ${b.currentRank})` : " (unrated)"}${b.rank !== b.currentRank ? ` · ${b.rank ?? "unrated"} for ${monthLabel}` : ""}${b.years != null && b.serviceYears != null && b.serviceYears !== b.years ? ` · ${b.years} yr${b.years === 1 ? "" : "s"} counted for ${monthLabel}, ${b.serviceYears} served` : ""}`}
                               />
                             );
                           })()}
