@@ -27,6 +27,34 @@ interface Props {
 
 const ABANDON_AFTER_MS = 30 * 60 * 1000; // 30 min
 
+// PostgREST caps a response at db-max-rows, 1000 here, and a test can have
+// thousands of attempts, so they are read a page at a time. Paged by
+// created_at, which never changes, so a candidate submitting mid-load cannot
+// move a row between pages the way paging by score could; the ranking is
+// applied once every page is in.
+const ATTEMPT_PAGE = 1000;
+const ATTEMPT_COLUMNS =
+  "id, test_id, candidate_name, email, phone, cv_path, started_at, submitted_at, total_score, max_score, integrity_score, status, created_at";
+
+type AttemptRow = RecruitmentAttempt & { created_at: string };
+
+async function fetchAllAttempts(testId: string) {
+  const rows: AttemptRow[] = [];
+  for (;;) {
+    const { data, error } = await supabase
+      .from("recruitment_attempts")
+      .select(ATTEMPT_COLUMNS)
+      .eq("test_id", testId)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(rows.length, rows.length + ATTEMPT_PAGE - 1);
+    if (error) return { rows, error };
+    const batch = (data ?? []) as AttemptRow[];
+    rows.push(...batch);
+    if (batch.length < ATTEMPT_PAGE) return { rows, error: null };
+  }
+}
+
 export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
   const [test, setTest] = useState<RecruitmentTest | null>(null);
   const [attempts, setAttempts] = useState<RecruitmentAttempt[]>([]);
@@ -39,22 +67,23 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
   const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
 
+  // Only reads. Rejecting stale and low-integrity candidates used to happen
+  // here, from the browser of whoever opened the page; it is now the daily
+  // auto_reject_recruitment_attempts job in the database.
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
     else setRefreshing(true);
     const [
       { data: t, error: testError },
-      { data: a, error: attemptsError },
+      { rows, error: attemptsError },
       { data: qs },
+      { data: counts, error: countsError },
     ] = await Promise.all([
       supabase.from("recruitment_tests").select("*").eq("id", testId).maybeSingle(),
-      supabase
-        .from("recruitment_attempts")
-        .select("*")
-        .eq("test_id", testId)
-        .order("total_score", { ascending: false })
-        .order("created_at", { ascending: false }),
+      fetchAllAttempts(testId),
       supabase.from("recruitment_questions").select("weight").eq("test_id", testId),
+      // Answers per attempt, to tell a completed submission from a partial one.
+      supabase.rpc("recruitment_answer_counts", { p_test_id: testId }),
     ]);
 
     if (testError || attemptsError) {
@@ -66,110 +95,24 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
     }
 
     setTest((t as RecruitmentTest) || null);
-    let attemptsArr = (a as RecruitmentAttempt[]) || [];
+
+    // A page that failed leaves the last complete list on screen, rather than
+    // counts taken from part of it.
+    if (!attemptsError) {
+      // The order the query used to return: best score first, newest first
+      // within a score.
+      rows.sort(
+        (x, y) =>
+          Number(y.total_score) - Number(x.total_score) ||
+          Date.parse(y.created_at) - Date.parse(x.created_at),
+      );
+      setAttempts(rows);
+    }
+    if (!countsError) setAnswerCounts((counts as Record<string, number> | null) ?? {});
 
     const qMax = (qs ?? []).reduce((s: number, q: any) => s + Number(q.weight ?? 0), 0);
-    const pctOf = (attempt: RecruitmentAttempt) => {
-      const max = Number(attempt.max_score) > 0 ? Number(attempt.max_score) : qMax;
-      if (max <= 0) return 0;
-      return Math.min(100, Math.round((Math.min(Number(attempt.total_score), max) / max) * 100));
-    };
-
-    const lowIntegritySubmitted = attemptsArr.filter(
-      (attempt) => attempt.status === "submitted" && Number(attempt.integrity_score) < 85,
-    );
-
-    // Auto-reject candidates scoring under 60% who have sat in pending review
-    // for over a month without being invited to interview.
-    const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
-    const staleLowScore = attemptsArr.filter(
-      (attempt) =>
-        attempt.status === "submitted" &&
-        Number(attempt.integrity_score) >= 85 &&
-        attempt.submitted_at &&
-        Date.now() - new Date(attempt.submitted_at).getTime() > MONTH_MS &&
-        pctOf(attempt) < 60,
-    );
-
-    const autoRejectTargets = [...lowIntegritySubmitted, ...staleLowScore];
-
-    if (autoRejectTargets.length > 0) {
-      const autoRejectResults = await Promise.allSettled(
-        autoRejectTargets.map((attempt) =>
-          supabase.functions.invoke("recruitment-set-stage", {
-            body: { attempt_id: attempt.id, stage: "rejected" },
-          }),
-        ),
-      );
-
-      let autoRejectFailed = false;
-      const rejectedIds = new Set<string>();
-
-      autoRejectResults.forEach((result, index) => {
-        if (
-          result.status === "fulfilled" &&
-          !result.value.error &&
-          !(result.value.data as any)?.error
-        ) {
-          rejectedIds.add(autoRejectTargets[index].id);
-        } else {
-          autoRejectFailed = true;
-        }
-      });
-
-      if (rejectedIds.size > 0) {
-        attemptsArr = attemptsArr.map((attempt) =>
-          rejectedIds.has(attempt.id) ? { ...attempt, status: "rejected" } : attempt,
-        );
-        const staleRejected = staleLowScore.filter((s) => rejectedIds.has(s.id)).length;
-        if (staleRejected > 0) {
-          toast({
-            title: `${staleRejected} candidate${staleRejected !== 1 ? "s" : ""} auto-rejected`,
-            description: "Scored under 60% and sat in pending review for over a month.",
-          });
-        }
-      }
-
-      if (autoRejectFailed) {
-        toast({
-          title: "Some candidates were not auto-rejected",
-          description: "Please refresh and try again.",
-          variant: "destructive",
-        });
-      }
-    }
-
-    setAttempts(attemptsArr);
     setQuestionMaxScore(qMax);
     setQuestionCount((qs ?? []).length);
-
-    // Fetch answer counts per attempt to detect fully completed submissions.
-    // Paginate to avoid Supabase's default 1000-row cap (a single test can
-    // easily have thousands of answer rows across all attempts).
-    const attemptIds = attemptsArr.map((x) => x.id);
-    if (attemptIds.length > 0) {
-      const counts: Record<string, number> = {};
-      const PAGE = 1000;
-      let from = 0;
-      // Cap loop to a safe upper bound (e.g. 100k rows) just in case.
-      for (let i = 0; i < 100; i++) {
-        const { data: ans, error: ansErr } = await supabase
-          .from("recruitment_answers")
-          .select("attempt_id")
-          .in("attempt_id", attemptIds)
-          .range(from, from + PAGE - 1);
-        if (ansErr) break;
-        const batch = ans ?? [];
-        batch.forEach((r: any) => {
-          counts[r.attempt_id] = (counts[r.attempt_id] ?? 0) + 1;
-        });
-        if (batch.length < PAGE) break;
-        from += PAGE;
-      }
-      setAnswerCounts(counts);
-    } else {
-      setAnswerCounts({});
-    }
 
     setLoading(false);
     setRefreshing(false);
@@ -177,7 +120,11 @@ export function ResultsDashboard({ testId, onBack, onOpen }: Props) {
 
   useEffect(() => {
     load();
-    const id = window.setInterval(() => load(true), 30000);
+    // Each refresh reads every attempt again, a few MB for a busy test, so a
+    // tab in the background skips refreshes until it is visible again.
+    const id = window.setInterval(() => {
+      if (!document.hidden) load(true);
+    }, 30000);
     return () => clearInterval(id);
   }, [testId]);
 

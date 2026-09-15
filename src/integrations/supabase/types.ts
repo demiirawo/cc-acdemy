@@ -3348,6 +3348,10 @@ export type Database = {
           user_id: string
         }[]
       }
+      recruitment_answer_counts: {
+        Args: { p_test_id: string }
+        Returns: Json
+      }
       get_staff_directory: {
         Args: never
         Returns: {
