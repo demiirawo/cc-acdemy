@@ -228,7 +228,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Verify caller is an admin
+    // Verify caller is an admin or HR (Recruitment is an HR tab)
     const supabaseAuth = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!,
@@ -253,8 +253,8 @@ Deno.serve(async (req) => {
       .select("role")
       .eq("user_id", userId)
       .maybeSingle();
-    if (profile?.role !== "admin") {
-      return new Response(JSON.stringify({ error: "admin only" }), {
+    if (profile?.role !== "admin" && profile?.role !== "human_resources") {
+      return new Response(JSON.stringify({ error: "admin or HR only" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
