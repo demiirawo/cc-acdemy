@@ -454,8 +454,15 @@ async function buildHandovers(
 
   // Who takes a leaver's clients on: whoever has a pattern there that starts
   // after the last day. The rota records the succession, so nobody types it twice.
+  // Where the rota doesn't say — commonly because the successor starts
+  // shadowing BEFORE the last day, so their pattern begins inside the leaver's
+  // notice rather than after it — the successor named on the approved
+  // departure request stands in. The rota stays authoritative per client,
+  // since it knows who took THIS client on; the request only fills a gap.
   const departures = windows.filter(w => w.kind === "departure");
+  const leaverIds = departures.map(w => w.userId);
   const successorsByClient = new Map<string, Set<string>>();
+  const namedSuccessorByLeaver = new Map<string, string>();
   if (departures.length > 0) {
     const leaverClients = Array.from(new Set(departures.flatMap(w =>
       Array.from(patternsByClient(patternsByUser.get(w.userId) || []).keys()))));
@@ -474,6 +481,21 @@ async function buildHandovers(
       if (!client || !r.user_id) continue;
       if (!successorsByClient.has(client)) successorsByClient.set(client, new Set());
       successorsByClient.get(client)!.add(`${r.user_id}|${r.start_date}`);
+    }
+
+    // The successor HR approved on the departure request itself. Latest
+    // approved request wins, so a change of mind is the one that counts.
+    const { data: namedRows } = await supabase
+      .from("staff_requests")
+      .select("user_id, swap_with_user_id, created_at")
+      .eq("request_type", "departure")
+      .eq("status", "approved")
+      .in("user_id", leaverIds)
+      .not("swap_with_user_id", "is", null)
+      .order("created_at", { ascending: true });
+    for (const r of namedRows || []) {
+      if (!r.swap_with_user_id || r.swap_with_user_id === r.user_id) continue;
+      namedSuccessorByLeaver.set(r.user_id, r.swap_with_user_id);
     }
   }
 
@@ -500,6 +522,10 @@ async function buildHandovers(
           .filter(s => s.userId !== w.userId && s.start > w.end)
           .map(s => s.userId);
         const unique = Array.from(new Set(successors));
+        if (unique.length === 0) {
+          const named = namedSuccessorByLeaver.get(w.userId);
+          if (named) unique.push(named);
+        }
         if (unique.length === 0) derived.push({ window: w, client, toUserId: null, coveredDates: clientDates });
         for (const uid of unique) derived.push({ window: w, client, toUserId: uid, coveredDates: clientDates });
         continue;
@@ -530,7 +556,6 @@ async function buildHandovers(
   if (holidayIds.length > 0) {
     storedQueries.push(supabase.from("client_handovers").select("*").in("holiday_id", holidayIds) as unknown as Promise<{ data: StoredHandover[] | null }>);
   }
-  const leaverIds = departures.map(w => w.userId);
   if (leaverIds.length > 0) {
     storedQueries.push(supabase.from("client_handovers").select("*").eq("kind", "departure").in("from_user_id", leaverIds) as unknown as Promise<{ data: StoredHandover[] | null }>);
   }
