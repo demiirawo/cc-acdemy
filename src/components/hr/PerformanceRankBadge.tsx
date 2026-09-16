@@ -1,3 +1,4 @@
+import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Performance rating tiers (tier-list style). Order defines the click cycle.
@@ -175,6 +176,40 @@ export function PerformanceRankBadge({ rank, years, size = "md", className, onCl
           {years}
         </span>
       )}
+    </div>
+  );
+}
+
+/**
+ * Two badges for a rating that has moved this month: "A → B".
+ *
+ * A rating changes the day it is decided, but a month's bonus pot is shared
+ * out on the rating that month was worked under. Showing both says which is
+ * which — the faded badge is what the money is worked out on, the solid one is
+ * the rating they hold now.
+ */
+export function RankTransitionBadges({
+  from,
+  to,
+  years,
+  size = "md",
+  className,
+  onClick,
+  title,
+}: {
+  from: Rank | null;
+  to: Rank | null;
+  years?: number | null;
+  size?: "sm" | "md";
+  className?: string;
+  onClick?: () => void;
+  title?: string;
+}) {
+  return (
+    <div className={cn("flex items-center gap-0.5", className)} onClick={onClick}>
+      <PerformanceRankBadge rank={from} years={years ?? null} size={size} title={title} className="opacity-60" />
+      <ChevronRight className={cn("flex-shrink-0 text-muted-foreground", size === "sm" ? "h-3 w-3" : "h-4 w-4")} />
+      <PerformanceRankBadge rank={to} years={null} size={size} title={title} />
     </div>
   );
 }

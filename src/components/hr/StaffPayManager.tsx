@@ -17,10 +17,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PerformanceRankBadge, RANK_ORDER, RANK_STYLES, tenureYears, bonusTenureYears, employedFraction, type Rank } from "./PerformanceRankBadge";
+import { PerformanceRankBadge, RankTransitionBadges, RANK_ORDER, RANK_STYLES, tenureYears, bonusTenureYears, employedFraction, type Rank } from "./PerformanceRankBadge";
 import { cn } from "@/lib/utils";
 import { recalcAllBonusPots, POT_DESC_TAG, peakCover, monthlyBonusPoints, potRecordDescription, isPeakMonth } from "@/lib/bonusPot";
-import { schedulePendingRatingChange, describeEffectiveDate } from "@/lib/pendingRating";
+import { applyRatingChange } from "@/lib/pendingRating";
 import { inForceFor, landedChangesFor } from "@/lib/payCalendar";
 import { activeRecurringBonuses as recurringBonusesInMonth, recurringBonusLine, RECURRING_BONUS_TAG } from "@/lib/recurringBonuses";
 
@@ -579,8 +579,8 @@ export function StaffPayManager({ onSummaryComputed }: {
     setRankDialogOpen(true);
   };
 
-  // Ratings are decided now and applied on the 2nd of next month, after
-  // payroll. Nothing moves today — see @/lib/pendingRating for why.
+  // A rating takes effect the moment it is set, and the person is told the
+  // same day — see @/lib/pendingRating.
   const savePayrollRankChange = async () => {
     if (!rankUserId || !rankChoice || !rankReason.trim()) return;
     const userId = rankUserId;
@@ -592,22 +592,24 @@ export function StaffPayManager({ onSummaryComputed }: {
     }
     setSavingRank(true);
     try {
-      const { effectiveDate } = await schedulePendingRatingChange({
+      const person = userProfiles.find(u => u.user_id === userId);
+      const { emailSent, potFrom } = await applyRatingChange({
         userId,
-        previousRating: cur,
         newRating: rankChoice,
         reason: rankReason.trim(),
-        createdBy: user?.id ?? null,
+        recipient: person ? { email: person.email, name: person.display_name } : null,
       });
       setSavingRank(false);
       setRankDialogOpen(false);
+      await fetchData();
       toast({
-        title: `Rating change scheduled for ${describeEffectiveDate(effectiveDate)}`,
-        description: "Nothing changes until then — they will not see it, and the email goes out on the day.",
+        title: `Rating changed to ${rankChoice}`,
+        description: `${emailSent ? "They have been emailed the reason." : "The email could not be sent — tell them yourself."} `
+          + `It applies from today; the bonus pot counts it from ${format(potFrom, "MMMM")}.`,
       });
     } catch (e) {
       setSavingRank(false);
-      toast({ title: "Couldn't schedule the rating change", description: String((e as Error).message), variant: "destructive" });
+      toast({ title: "Couldn't change the rating", description: String((e as Error).message), variant: "destructive" });
     }
   };
 
@@ -2641,7 +2643,20 @@ export function StaffPayManager({ onSummaryComputed }: {
                     <tr key={s.userId} className={cn("border-t", !eligible && "opacity-60")}>
                       <td className="px-4 py-2">
                         <div className="flex items-center gap-2">
-                          <PerformanceRankBadge rank={s.rank} years={s.years} size="sm" />
+                          {(() => {
+                            const held = (hrProfilesFull.find(h => h.user_id === s.userId)?.performance_rating ?? null) as Rank | null;
+                            return held !== s.rank ? (
+                              <RankTransitionBadges
+                                from={s.rank}
+                                to={held}
+                                years={s.years}
+                                size="sm"
+                                title={`${s.rank ?? "Unrated"} for ${monthLabel}; now rated ${held ?? "unrated"}`}
+                              />
+                            ) : (
+                              <PerformanceRankBadge rank={s.rank} years={s.years} size="sm" />
+                            );
+                          })()}
                           <span className="font-medium truncate">{s.displayName}</span>
                         </div>
                       </td>
@@ -2940,13 +2955,25 @@ export function StaffPayManager({ onSummaryComputed }: {
                         <div className="flex items-center gap-3">
                           {(() => {
                             const b = rankBadgeFor(staff.userId);
-                            return (
+                            const badgeTitle = `Click to change rating${b.currentRank ? ` (currently ${b.currentRank})` : " (unrated)"}${b.rank !== b.currentRank ? ` · ${b.rank ?? "unrated"} for ${monthLabel}` : ""}${b.years != null && b.serviceYears != null && b.serviceYears !== b.years ? ` · ${b.years} yr${b.years === 1 ? "" : "s"} counted for ${monthLabel}, ${b.serviceYears} served` : ""}`;
+                            // Mid-change: this month is still worked out on the
+                            // rating they were on, so both are shown.
+                            return b.rank !== b.currentRank ? (
+                              <RankTransitionBadges
+                                from={b.rank}
+                                to={b.currentRank}
+                                years={b.years}
+                                onClick={() => openPayrollRankDialog(staff.userId)}
+                                className="cursor-pointer hover:opacity-80 active:scale-95 transition"
+                                title={badgeTitle}
+                              />
+                            ) : (
                               <PerformanceRankBadge
                                 rank={b.rank}
                                 years={b.years}
                                 onClick={() => openPayrollRankDialog(staff.userId)}
                                 className="cursor-pointer hover:opacity-80 active:scale-95 transition"
-                                title={`Click to change rating${b.currentRank ? ` (currently ${b.currentRank})` : " (unrated)"}${b.rank !== b.currentRank ? ` · ${b.rank ?? "unrated"} for ${monthLabel}` : ""}${b.years != null && b.serviceYears != null && b.serviceYears !== b.years ? ` · ${b.years} yr${b.years === 1 ? "" : "s"} counted for ${monthLabel}, ${b.serviceYears} served` : ""}`}
+                                title={badgeTitle}
                               />
                             );
                           })()}

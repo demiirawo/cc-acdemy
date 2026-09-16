@@ -31,7 +31,7 @@ import { payrollMonthInForce, inForceFrom } from "@/lib/payCalendar";
 import {
   ANSWERED_LABELS, ETIQUETTE_LABELS, NOISE_LABELS, OUTCOME_LABELS, type QaCheck,
 } from "@/lib/qualityAssurance";
-import { schedulePendingRatingChange, describeEffectiveDate } from "@/lib/pendingRating";
+import { applyRatingChange } from "@/lib/pendingRating";
 import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItemsManager";
@@ -1617,10 +1617,10 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     setRankDialogOpen(true);
   };
 
-  // Record a rating change to take effect on the 2nd of next month, once
-  // payroll has run. Nothing changes today: not the profile, not the bonus
-  // pot, not the staff member's view of it, and no email goes out until the
-  // apply-pending-ratings job moves it on the day. See @/lib/pendingRating.
+  // A rating takes effect the moment it is set: the profile, the bonus pot
+  // from this month on, what the staff member sees, and the email explaining
+  // it. Months already paid keep the rating they were paid on.
+  // See @/lib/pendingRating.
   const saveRankChange = async () => {
     if (!hrProfile || !isAdmin || !rankChoice || !rankReason.trim()) return;
     const cur = hrProfile.performance_rating as Rank | null;
@@ -1630,22 +1630,24 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     }
     setSavingRank(true);
     try {
-      const { effectiveDate } = await schedulePendingRatingChange({
+      const person = allStaff.find(s => s.user_id === selectedUserId);
+      const { emailSent, potFrom } = await applyRatingChange({
         userId: selectedUserId!,
-        previousRating: cur,
         newRating: rankChoice,
         reason: rankReason.trim(),
-        createdBy: user?.id ?? null,
+        recipient: person ? { email: person.email, name: person.display_name } : null,
       });
+      setHRProfile(prev => (prev ? { ...prev, performance_rating: rankChoice } : prev));
       setSavingRank(false);
       setRankDialogOpen(false);
       toast({
-        title: `Rating change scheduled for ${describeEffectiveDate(effectiveDate)}`,
-        description: "Nothing changes until then — they will not see it, and the email goes out on the day.",
+        title: `Rating changed to ${rankChoice}`,
+        description: `${emailSent ? "They have been emailed the reason." : "The email could not be sent — tell them yourself."} `
+          + `It applies from today; the bonus pot counts it from ${format(potFrom, "MMMM")}.`,
       });
     } catch (e) {
       setSavingRank(false);
-      toast({ title: "Couldn't schedule the rating change", description: String((e as Error).message), variant: "destructive" });
+      toast({ title: "Couldn't change the rating", description: String((e as Error).message), variant: "destructive" });
     }
   };
 

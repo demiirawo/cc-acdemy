@@ -1,18 +1,25 @@
 import { supabase } from "@/integrations/supabase/client";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import type { Rank } from "@/components/hr/PerformanceRankBadge";
 
 /**
- * Rating changes are decided now and take effect on the 2nd of the month.
+ * A rating changes today; the bonus pot counts it from next month.
  *
- * A rating that moves the day after a hard conversation reads as a reaction to
- * that conversation. The same rating landing on the 2nd, once payroll has run,
- * reads as what it is meant to be — an assessment of the month just finished.
+ * Ratings used to wait for the 2nd of the following month, so that one landed
+ * after payroll rather than in the middle of the month it was assessing. The
+ * owner's rule (16 September 2026) separates the two things that date was
+ * doing: the rating a person holds is true the moment it is decided, and they
+ * are told the same day; the rating a month's pot is shared out on is the one
+ * they worked that month under.
  *
- * So nothing here writes to hr_profiles. The change is recorded, and the
- * apply-pending-ratings function moves it and sends the email on the day. Until
- * then the staff member sees their old rating, the bonus pot uses their old
- * rating, and no email has gone out.
+ * So the profile is written now, and the row in pending_rating_changes — which
+ * is how every month's pot knows the rating in force for it — is dated the 1st
+ * of next month. This month is shared out on the old rating, next month on the
+ * new one, and a month already paid is untouchable either way.
+ *
+ * Changes queued under the old scheme still sit in that table waiting for
+ * apply-pending-ratings. Setting a new rating for the same person withdraws
+ * theirs, so it cannot land later and overwrite this one.
  */
 
 export interface PendingRatingChange {
@@ -59,40 +66,46 @@ export async function fetchPendingRatingChanges(userIds?: string[]): Promise<Pen
 }
 
 /**
- * Record a rating change to take effect on the 2nd.
+ * Apply a rating change now: the profile, the history row and the email.
  *
- * Replaces any change already waiting for the same person, so a second thought
- * during the month overwrites the first rather than queueing two moves for the
- * same morning.
+ * The first two happen in one statement in the database, so a rating never
+ * moves without the record that says what it replaced. The email follows, and
+ * a failure to send it is reported without pretending the rating didn't change
+ * — the rating is the record, the email is the courtesy.
  */
-export async function schedulePendingRatingChange(opts: {
+export async function applyRatingChange(opts: {
   userId: string;
-  previousRating: Rank | null;
   newRating: Rank;
   reason: string;
-  createdBy?: string | null;
-}): Promise<{ effectiveDate: Date }> {
-  const effective = nextRatingEffectiveDate();
-
-  const { error: clearError } = await supabase
-    .from("pending_rating_changes")
-    .update({ cancelled_at: new Date().toISOString(), cancelled_by: opts.createdBy ?? null })
-    .eq("user_id", opts.userId)
-    .is("applied_at", null)
-    .is("cancelled_at", null);
-  if (clearError) throw clearError;
-
-  const { error } = await supabase.from("pending_rating_changes").insert({
-    user_id: opts.userId,
-    previous_rating: opts.previousRating,
-    new_rating: opts.newRating,
-    reason: opts.reason,
-    effective_date: format(effective, "yyyy-MM-dd"),
-    created_by: opts.createdBy ?? null,
+  recipient?: { email: string | null; name: string | null } | null;
+}): Promise<{ previousRating: string | null; potFrom: Date; emailSent: boolean }> {
+  const { data, error } = await (supabase as any).rpc("apply_rating_change", {
+    p_user_id: opts.userId,
+    p_new_rating: opts.newRating,
+    p_reason: opts.reason,
   });
   if (error) throw error;
 
-  return { effectiveDate: effective };
+  const previousRating = (data?.[0]?.previous_rating ?? null) as string | null;
+  // The month from which this rating counts towards the bonus pot.
+  const potFrom = parseISO(String(data?.[0]?.effective_date));
+
+  let emailSent = false;
+  if (opts.recipient?.email) {
+    const { error: mailError } = await supabase.functions.invoke("send-rank-change-email", {
+      body: {
+        recipientEmail: opts.recipient.email,
+        recipientName: opts.recipient.name,
+        oldRank: previousRating,
+        newRank: opts.newRating,
+        reason: opts.reason,
+        potFrom: format(potFrom, "yyyy-MM-dd"),
+      },
+    });
+    emailSent = !mailError;
+  }
+
+  return { previousRating, potFrom, emailSent };
 }
 
 /** Withdraw a change that has not landed yet. */

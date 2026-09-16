@@ -177,6 +177,8 @@ interface RankChangeEmailRequest {
   oldRank?: string | null;
   newRank: string;
   reason?: string | null;
+  /** First day of the month this rating starts counting towards the pot. */
+  potFrom?: string | null;
   // Optional: the admin who made the change, so the email can name them.
   changedByName?: string | null;
 }
@@ -188,7 +190,7 @@ serve(async (req) => {
 
   try {
     const body: RankChangeEmailRequest = await req.json();
-    const { recipientEmail, recipientName, oldRank, newRank, reason, changedByName } = body;
+    const { recipientEmail, recipientName, oldRank, newRank, reason, changedByName, potFrom } = body;
 
     const newWord = RANK_WORDS[newRank] ?? null;
     const oldWord = oldRank ? (RANK_WORDS[oldRank] ?? null) : null;
@@ -264,7 +266,23 @@ serve(async (req) => {
       </div>`;
     }
 
-    content += paragraph(`Your rating helps decide your share of the monthly bonus.`);
+    // A rating changes the day it is decided, but the month it was decided in
+    // is still shared out on the rating that month was worked under. Saying so
+    // here saves the question, and saves it being read as a mistake.
+    const now = new Date();
+    const potFromDate = potFrom
+      ? new Date(`${potFrom}T00:00:00Z`)
+      : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    const monthLabel = (d: Date) =>
+      d.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+    const potFromLabel = monthLabel(potFromDate);
+    const monthBeforeLabel = monthLabel(
+      new Date(Date.UTC(potFromDate.getUTCFullYear(), potFromDate.getUTCMonth() - 1, 1)),
+    );
+
+    content += paragraph(
+      `Your rating helps decide your share of the monthly bonus. This change counts towards the bonus from <strong>${potFromLabel}</strong> — ${monthBeforeLabel}'s share is still worked out on the rating you were on for that month.`,
+    );
     content += button("See your rating and bonus", `${APP_URL}/view/hr`);
     content += mutedParagraph(
       `If you'd like to talk about your rating, or how to improve it, please speak to your manager.`,
