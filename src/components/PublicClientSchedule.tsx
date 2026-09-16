@@ -23,6 +23,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { toast } from "sonner";
 import { UnifiedShiftEditor, ShiftToEdit } from "@/components/hr/UnifiedShiftEditor";
 import { ClientHandoverTracker } from "@/components/ClientHandoverTracker";
+import { ClientTeamCard, clientPagePasswordKey, type ClientTeamMember } from "@/components/ClientTeamCard";
 
 
 interface ClientWhiteboard {
@@ -217,6 +218,10 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
       if (error) throw error;
       if (data?.valid) {
         sessionStorage.setItem(`cc-client-page-unlock:${decodedClientName}`, "1");
+        // Kept for this tab so the team's photographs can be asked for: they
+        // live in a private bucket, and this password is the only thing a
+        // client has to show for who they are.
+        sessionStorage.setItem(clientPagePasswordKey(decodedClientName), gatePassword);
         setPageUnlocked(true);
       } else {
         setGateError("That password isn't right. Please check with your Care Cuddle contact.");
@@ -830,6 +835,107 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
     getStaffName
   );
 
+  // Today's shifts, fetched apart from the week on screen: the team card says
+  // who is on shift at this moment, and paging forward a week must not take
+  // that away. Yesterday is included because a shift can run past midnight.
+  const { data: todayShifts = [] } = useQuery({
+    queryKey: ["public-client-today-shifts", decodedClientName],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("staff_schedules")
+        .select("id, user_id, client_name, start_datetime, end_datetime, notes, shift_type")
+        .eq("client_name", decodedClientName)
+        .gte("start_datetime", startOfDay(addDays(new Date(), -1)).toISOString())
+        .lte("start_datetime", endOfDay(new Date()).toISOString());
+
+      if (error) throw error;
+      return (data || []) as Schedule[];
+    },
+    enabled: !!decodedClientName,
+  });
+
+  // The clock the ring follows. A minute is close enough for a shift boundary,
+  // and it keeps the card honest on a page left open all day.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const tick = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(tick);
+  }, []);
+
+  const onShiftNow = useMemo(() => {
+    const windows: { userId: string; start: number; end: number }[] = [];
+
+    for (const shift of todayShifts) {
+      if (!shift.user_id) continue;
+      windows.push({
+        userId: shift.user_id,
+        start: parseISO(shift.start_datetime).getTime(),
+        end: parseISO(shift.end_datetime).getTime(),
+      });
+    }
+
+    for (const day of [addDays(now, -1), now]) {
+      const dayStr = format(day, "yyyy-MM-dd");
+      for (const pattern of patterns) {
+        if (!pattern.user_id) continue;
+        if (!patternOccursOn(pattern, parseISO(dayStr))) continue;
+        // A shift entered by hand replaces the series for that day, the same
+        // rule the week grid follows.
+        const overridden = todayShifts.some(s =>
+          s.user_id === pattern.user_id && format(parseISO(s.start_datetime), "yyyy-MM-dd") === dayStr
+        );
+        if (overridden) continue;
+
+        const start = parse(`${dayStr} ${pattern.start_time}`, "yyyy-MM-dd HH:mm:ss", new Date());
+        let end = parse(`${dayStr} ${pattern.end_time}`, "yyyy-MM-dd HH:mm:ss", new Date());
+        if (end.getTime() <= start.getTime()) end = addDays(end, 1);
+        windows.push({ userId: pattern.user_id, start: start.getTime(), end: end.getTime() });
+      }
+    }
+
+    const nowMs = now.getTime();
+    const on = new Set<string>();
+    for (const window of windows) {
+      if (nowMs >= window.start && nowMs < window.end && isEmployedOn(window.userId, now)) {
+        on.add(window.userId);
+      }
+    }
+    return on;
+  }, [todayShifts, patterns, now, isEmployedOn]);
+
+  // The people this client sees: whoever has a live series here, plus anyone
+  // rostered in the week on screen. The same set the rota colours are built
+  // from, so a face on the card is the colour of the name on the grid.
+  const teamMembers = useMemo<ClientTeamMember[]>(() => {
+    const todayISO = format(now, "yyyy-MM-dd");
+    const ids = new Set<string>();
+    for (const pattern of patterns) {
+      if (!pattern.user_id) continue;
+      if (pattern.end_date && pattern.end_date < todayISO) continue;
+      ids.add(pattern.user_id);
+    }
+    for (const schedule of allSchedules) {
+      // Bench rows are generated for anyone without a client this week, so on
+      // the Care Cuddle page they would list the whole company as its team.
+      if (schedule.id.startsWith("bench-")) continue;
+      if (schedule.user_id) ids.add(schedule.user_id);
+    }
+
+    return [...ids]
+      .filter(id => isEmployedOn(id, now))
+      .map(id => {
+        const staff = staffMembers.find(s => s.user_id === id);
+        return {
+          user_id: id,
+          name: getStaffName(id),
+          email: staff?.email ?? null,
+          phone: staff?.work_phone ?? null,
+          colour: staffColours.get(id),
+          onShift: onShiftNow.has(id),
+        };
+      });
+  }, [patterns, allSchedules, staffMembers, staffColours, onShiftNow, isEmployedOn, now, getStaffName]);
+
   const isLoading = schedulesLoading || patternsLoading || staffLoading;
 
   if (!decodedClientName) {
@@ -1186,6 +1292,9 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
 
         {/* Updates Section - at the top */}
         <ClientNoticeboard clientName={decodedClientName} />
+
+        {/* Who the client deals with, between the updates and the rota */}
+        <ClientTeamCard clientName={decodedClientName} members={teamMembers} />
 
         <Card className="mt-4 sm:mt-6">
           <CardHeader className="pb-3 px-3 sm:px-6">

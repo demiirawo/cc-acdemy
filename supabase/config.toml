@@ -109,3 +109,7 @@ verify_jwt = false
 
 [functions.send-profile-welcome-email]
 verify_jwt = true
+
+# The client page calls this signed-out, with the page password.
+[functions.client-team-photos]
+verify_jwt = false
