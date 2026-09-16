@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useUserRole } from "@/hooks/useUserRole";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -88,10 +89,16 @@ export function StaffOnboardingView({ userId, personName }: StaffOnboardingViewP
   const [acknowledgements, setAcknowledgements] = useState<PageAcknowledgement[]>([]);
   const [trainingComplete, setTrainingComplete] = useState(false);
   const [requesting, setRequesting] = useState(false);
-  const [offerRequested, setOfferRequested] = useState(false);
+  // The offer and the contract are separate sends, and one can go without the
+  // other. Treating either as "both sent" locked the button on a starter whose
+  // contract was never issued, and told them to go and sign it.
+  const [offerSent, setOfferSent] = useState(false);
+  const [hasContract, setHasContract] = useState(false);
+  const [contractAutomation, setContractAutomation] = useState(true);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState<string | null>(null);
   const { user } = useAuth();
+  const { isAdmin } = useUserRole();
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -164,13 +171,31 @@ export function StaffOnboardingView({ userId, personName }: StaffOnboardingViewP
       const dateByItem = new Map((tRecords || []).map(r => [r.training_item_id, r.completed_date]));
       setTrainingComplete(allTrainingUpToDate(tItems || [], dateByItem));
 
-      // Has the offer/contract already been requested?
-      const { data: hrSelf } = await supabase
-        .from('hr_profiles')
-        .select('offer_email_sent_at, onboarding_contract_id')
-        .eq('user_id', subjectId)
-        .maybeSingle();
-      setOfferRequested(!!(hrSelf?.offer_email_sent_at || hrSelf?.onboarding_contract_id));
+      // What has actually gone out: the offer email, and whether there is a
+      // contract to sign. A contract counts however it was issued — by
+      // onboarding or from Contracts — unless it was withdrawn. Contracts are
+      // visible only to admins and the person themselves, so anyone else sees
+      // only the one onboarding issued.
+      const [{ data: hrSelf }, { count: contractCount }, { data: onboardingSettings }] = await Promise.all([
+        supabase
+          .from('hr_profiles')
+          .select('offer_email_sent_at, onboarding_contract_id')
+          .eq('user_id', subjectId)
+          .maybeSingle(),
+        supabase
+          .from('contracts')
+          .select('id', { count: 'exact', head: true })
+          .eq('recipient_user_id', subjectId)
+          .neq('status', 'cancelled'),
+        supabase
+          .from('onboarding_settings')
+          .select('contract_enabled')
+          .limit(1)
+          .maybeSingle(),
+      ]);
+      setOfferSent(!!hrSelf?.offer_email_sent_at);
+      setHasContract(!!hrSelf?.onboarding_contract_id || (contractCount ?? 0) > 0);
+      setContractAutomation(onboardingSettings?.contract_enabled ?? true);
 
       setSteps(stepsData || []);
       setCompletions(completionsData || []);
@@ -212,13 +237,32 @@ export function StaffOnboardingView({ userId, personName }: StaffOnboardingViewP
       if (error) throw error;
       if (data?.alreadyStarted) {
         toast({ title: "Already sent", description: "Your offer and contract have already been emailed to you." });
-      } else {
+      } else if (data?.offerSent && data?.contractCreated) {
         toast({ title: "On its way!", description: "We've emailed your offer letter and employment contract — check your inbox." });
+      } else if (data?.contractCreated) {
+        toast({ title: "Your contract is ready", description: "Read and sign it under My Contracts — we've emailed you too." });
+      } else {
+        toast({ title: "On its way!", description: "We've emailed your offer letter — check your inbox." });
       }
-      setOfferRequested(true);
+      if (data?.offerSent) setOfferSent(true);
+      if (data?.contractCreated) setHasContract(true);
       fetchData();
-    } catch (e: any) {
-      toast({ title: "Couldn't send", description: e.message ?? String(e), variant: "destructive" });
+    } catch (e) {
+      // A refusal arrives as a non-2xx whose body says why ("the contract
+      // template configured for onboarding has been archived"); the error's own
+      // message is only "Edge Function returned a non-2xx status code".
+      const err = e as { message?: string; context?: Response };
+      let description = err.message ?? String(e);
+      try {
+        const body = await err.context?.json();
+        if (body?.error) description = body.error;
+      } catch {
+        // No readable body — the generic message will have to do.
+      }
+      toast({ title: "Couldn't send", description, variant: "destructive" });
+      // The offer can go out even when the contract doesn't, so refresh either
+      // way — otherwise the button keeps offering a first send that happened.
+      fetchData();
     } finally {
       setRequesting(false);
     }
@@ -301,6 +345,54 @@ export function StaffOnboardingView({ userId, personName }: StaffOnboardingViewP
     );
   }
 
+  // Where the offer and the contract stand, as two facts rather than one. The
+  // state that used to be invisible is contract_missing: the offer went out,
+  // onboarding couldn't issue the contract (an archived template, say) and the
+  // admins were alerted — so the starter is told that, and can try again.
+  // Contracts are readable only by admins and the person themselves, so for
+  // anyone else (HR) not seeing one proves nothing: contract_unseen says so.
+  const canSeeContracts = isSelf || isAdmin;
+  const offerCard: "not_started" | "done" | "contract_missing" | "offer_only" | "contract_unseen" = hasContract
+    ? "done"
+    : !offerSent
+      ? "not_started"
+      : !canSeeContracts
+        ? "contract_unseen"
+        : contractAutomation
+          ? "contract_missing"
+          : "offer_only";
+
+  const offerCopy = {
+    contract_unseen: {
+      title: "Offer letter sent",
+      detail: "They've been emailed their offer. Whether their contract has gone out is visible to admins only.",
+    },
+    not_started: {
+      title: isSelf ? "Get your offer letter & contract" : "Offer letter & contract not requested yet",
+      detail: isSelf
+        ? "Click to receive your offer letter and employment contract by email to begin."
+        : "They start this themselves from their own profile.",
+    },
+    done: {
+      title: "Offer letter & contract sent",
+      detail: isSelf
+        ? "Check your inbox, then review and sign your contract under My Contracts."
+        : "They've been emailed their offer and contract.",
+    },
+    contract_missing: {
+      title: isSelf ? "Your contract isn't ready yet" : "Offer sent, but no contract from onboarding",
+      detail: isSelf
+        ? "Your offer letter has been emailed, but your contract couldn't be issued. The admin team has been told — try again later, or it will appear under My Contracts once they send it."
+        : "Onboarding couldn't issue their contract. Send one from Contracts, and check Onboarding Automation so the next starter gets theirs.",
+    },
+    offer_only: {
+      title: "Offer letter sent",
+      detail: isSelf
+        ? "Check your inbox. Your contract will be sent separately and will appear under My Contracts."
+        : "Onboarding doesn't issue contracts at the moment — send theirs from Contracts.",
+    },
+  }[offerCard];
+
   return (
     <div className="space-y-6">
       {/* Progress Overview */}
@@ -333,26 +425,22 @@ export function StaffOnboardingView({ userId, personName }: StaffOnboardingViewP
           <div className="flex items-start gap-3">
             <Rocket className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
             <div>
-              <p className="font-medium">
-                {isSelf
-                  ? (offerRequested ? "Offer letter & contract sent" : "Get your offer letter & contract")
-                  : (offerRequested ? "Offer letter & contract sent" : "Offer letter & contract not requested yet")}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {isSelf
-                  ? (offerRequested
-                      ? "Check your inbox, then review and sign your contract under My Contracts."
-                      : "Click to receive your offer letter and employment contract by email to begin.")
-                  : (offerRequested
-                      ? "They've been emailed their offer and contract."
-                      : "They start this themselves from their own profile.")}
-              </p>
+              <p className="font-medium">{offerCopy.title}</p>
+              <p className="text-sm text-muted-foreground">{offerCopy.detail}</p>
             </div>
           </div>
           {isSelf && (
-            <Button onClick={handleRequestOffer} disabled={requesting || offerRequested} className="flex-shrink-0">
+            <Button
+              onClick={handleRequestOffer}
+              disabled={requesting || offerCard === "done" || offerCard === "offer_only"}
+              className="flex-shrink-0"
+            >
               {requesting && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-              {offerRequested ? "Sent ✓" : "Receive my offer & contract"}
+              {offerCard === "not_started"
+                ? "Receive my offer & contract"
+                : offerCard === "contract_missing"
+                  ? "Try again"
+                  : "Sent ✓"}
             </Button>
           )}
         </CardContent>

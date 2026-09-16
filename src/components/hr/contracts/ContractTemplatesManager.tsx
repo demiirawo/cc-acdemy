@@ -63,6 +63,8 @@ export function ContractTemplatesManager() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<ContractTemplate | null>(null);
+  // Set when the template about to be archived is the one onboarding issues.
+  const [archiveBlocked, setArchiveBlocked] = useState(false);
 
   const [editing, setEditing] = useState<ContractTemplate | null>(null);
   const [name, setName] = useState("");
@@ -131,6 +133,21 @@ export function ContractTemplatesManager() {
     toast({ title: editing ? "Template updated" : "Template created" });
     setEditorOpen(false);
     load();
+  };
+
+  // Archiving the template Onboarding Automation issues quietly stops new
+  // starters' contracts: start-onboarding refuses an archived template and
+  // sends the offer on its own, so the starter is told to sign a contract that
+  // doesn't exist. The dialog says so, and won't archive it until onboarding
+  // points somewhere else.
+  const askToArchive = async (t: ContractTemplate) => {
+    const { data } = await supabase
+      .from("onboarding_settings")
+      .select("contract_template_id")
+      .limit(1)
+      .maybeSingle();
+    setArchiveBlocked(data?.contract_template_id === t.id);
+    setArchiveTarget(t);
   };
 
   const archive = async () => {
@@ -208,7 +225,7 @@ export function ContractTemplatesManager() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => setArchiveTarget(t)}
+                      onClick={() => askToArchive(t)}
                       title="Archive"
                     >
                       <Archive className="h-4 w-4" />
@@ -272,15 +289,27 @@ export function ContractTemplatesManager() {
       <AlertDialog open={!!archiveTarget} onOpenChange={(o) => !o && setArchiveTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Archive this template?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {archiveBlocked ? "Onboarding still uses this template" : "Archive this template?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              "{archiveTarget?.name}" will be hidden from the template list. Contracts already sent
-              are unaffected.
+              {archiveBlocked ? (
+                <>
+                  New starters are issued "{archiveTarget?.name}" when they start onboarding. If it
+                  were archived they would get their offer and no contract. Choose a different
+                  template under Configuration → Onboarding Automation first, then archive this one.
+                </>
+              ) : (
+                <>
+                  "{archiveTarget?.name}" will be hidden from the template list. Contracts already sent
+                  are unaffected.
+                </>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={archive}>Archive</AlertDialogAction>
+            <AlertDialogCancel>{archiveBlocked ? "Close" : "Cancel"}</AlertDialogCancel>
+            {!archiveBlocked && <AlertDialogAction onClick={archive}>Archive</AlertDialogAction>}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

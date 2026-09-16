@@ -23,6 +23,7 @@ interface OnboardingSettings {
 interface TemplateOption {
   id: string;
   name: string;
+  is_archived: boolean;
 }
 
 export function OnboardingAutomationSettings() {
@@ -41,10 +42,11 @@ export function OnboardingAutomationSettings() {
         .select("id, offer_email_enabled, offer_email_subject, offer_email_body_html, contract_enabled, contract_template_id")
         .limit(1)
         .maybeSingle(),
+      // Archived templates too — never to offer them, but so a setting still
+      // pointing at one can be named and flagged instead of showing as a blank.
       supabase
         .from("contract_templates")
-        .select("id, name")
-        .eq("is_archived", false)
+        .select("id, name, is_archived")
         .order("name"),
     ]);
     setSettings((s as OnboardingSettings) ?? null);
@@ -91,6 +93,22 @@ export function OnboardingAutomationSettings() {
   }
 
   const set = (patch: Partial<OnboardingSettings>) => setSettings({ ...settings, ...patch });
+
+  const liveTemplates = templates.filter((t) => !t.is_archived);
+  const chosen = templates.find((t) => t.id === settings.contract_template_id);
+  // start-onboarding won't issue from a missing or archived template, so each of
+  // these means new starters get their offer and nothing to sign. It has to be
+  // said in words: an archived template isn't one of the options, so the
+  // dropdown alone used to show an empty box and look like nothing was wrong.
+  const templateProblem = !settings.contract_enabled
+    ? null
+    : !settings.contract_template_id
+      ? "No template is chosen, so new starters are sent their offer but no contract."
+      : !chosen
+        ? "The template chosen here no longer exists, so new starters are sent their offer but no contract."
+        : chosen.is_archived
+          ? `"${chosen.name}" has been archived, so new starters are sent their offer but no contract.`
+          : null;
 
   return (
     <div className="space-y-6">
@@ -171,12 +189,21 @@ export function OnboardingAutomationSettings() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">No template selected</SelectItem>
-                  {templates.map((t) => (
+                  {chosen?.is_archived && (
+                    <SelectItem value={chosen.id} disabled>{chosen.name} (archived)</SelectItem>
+                  )}
+                  {liveTemplates.map((t) => (
                     <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {templates.length === 0 && (
+              {templateProblem && (
+                <div className="max-w-md rounded-lg border border-destructive/50 bg-destructive/10 p-3 space-y-1">
+                  <p className="text-sm font-medium text-destructive">New starters aren't getting a contract</p>
+                  <p className="text-sm text-foreground">{templateProblem} Choose a current template and save.</p>
+                </div>
+              )}
+              {liveTemplates.length === 0 && (
                 <p className="text-xs text-muted-foreground">
                   No contract templates yet — create one under Configuration → Contracts → Templates.
                 </p>
