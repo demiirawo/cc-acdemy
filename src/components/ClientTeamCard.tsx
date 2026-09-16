@@ -63,7 +63,12 @@ export function ClientTeamCard({
 
   if (members.length === 0) return null;
 
-  const sorted = [...members].sort((a, b) => COLLATOR.compare(a.name, b.name));
+  // Whoever is working right now comes first, so the person a client can
+  // reach today is the first card rather than wherever the alphabet puts them.
+  const sorted = [...members].sort((a, b) => {
+    if (a.onShift !== b.onShift) return a.onShift ? -1 : 1;
+    return COLLATOR.compare(a.name, b.name);
+  });
 
   return (
     <Card className="mt-4 sm:mt-6">
