@@ -361,9 +361,12 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
     },
   });
 
-  // Fetch clients for the editor
+  // Fetch clients for the editor. Only signed-in users can read the client
+  // list, so a signed-out visitor doesn't ask for it: the request would only be
+  // refused, and retried.
   const { data: clients = [] } = useQuery({
     queryKey: ["clients-list"],
+    enabled: hasSession === true,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("clients")
