@@ -59,7 +59,9 @@ const stageMeta = (v: string | null) => SALES_STAGES.find(s => s.value === (v ||
 
 interface ClientRow { id: string; name: string; mrr: number | null; software: string | null; status: string | null; contract_start_date: string | null; contract_end_date: string | null; service_line: string | null; }
 interface PriceChange { id: string; client_id: string; previous_mrr: number | null; new_mrr: number; effective_date: string; reason: string | null; created_at?: string; }
-interface ClientChange { id: string; client_id: string; field: "status" | "contract_end_date"; previous_value: string | null; new_value: string | null; effective_date: string; reason: string | null; }
+// field "uplift" is an annual-uplift flag cleared without a fee change: a date and
+// a reason, no values, and nothing that moves revenue.
+interface ClientChange { id: string; client_id: string; field: "status" | "contract_end_date" | "uplift"; previous_value: string | null; new_value: string | null; effective_date: string; reason: string | null; }
 interface StaffPay { user_id: string; base_salary: number; base_currency: string; }
 interface HrRow { user_id: string; pay_frequency: string | null; employment_end_date: string | null; start_date: string | null; created_at: string | null; }
 interface Profile { user_id: string; display_name: string | null; email: string | null; }
@@ -870,6 +872,44 @@ export function FinanceSection() {
     await load();
   };
 
+  // Stand a client's "Uplift due" flag down without changing their fee — the
+  // rise was held, waived, or is already on an invoice raised elsewhere. Logged
+  // beside stage and contract-end changes rather than stored on the client, so
+  // who cleared it, when and why sits with the rest of the commercial history,
+  // which only admins and HR can read; the clients row is open to every
+  // signed-in user.
+  const clearUplift = async (client: ClientTableRow, clearedOn: string, reason: string) => {
+    const { data, error } = await (supabase as any).from("client_change_log").insert({
+      client_id: client.id,
+      field: "uplift",
+      new_value: "cleared",
+      effective_date: clearedOn,
+      reason: reason || null,
+      created_by: (await supabase.auth.getUser()).data.user?.id ?? null,
+    }).select("id, client_id, field, previous_value, new_value, effective_date, reason").single();
+    if (error) {
+      toast({ title: "Couldn't clear the uplift flag", description: error.message, variant: "destructive" });
+      return;
+    }
+    // Patched in rather than reloaded: a clear moves no revenue, and a reload
+    // would throw away the table's sorting and collapsed groups for one badge.
+    setChangeLog(prev => [...prev, data as ClientChange]);
+    toast({
+      title: "Uplift flag cleared",
+      description: `${client.name} is flagged again on ${yearAfter(clearedOn).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}.`,
+    });
+  };
+
+  const undoUpliftClear = async (client: ClientTableRow, clear: ClientChange) => {
+    const { error } = await (supabase as any).from("client_change_log").delete().eq("id", clear.id);
+    if (error) {
+      toast({ title: "Couldn't undo the clear", description: error.message, variant: "destructive" });
+      return;
+    }
+    setChangeLog(prev => prev.filter(l => l.id !== clear.id));
+    toast({ title: "Uplift clear undone", description: `${client.name}'s uplift clock is back on their last fee change or contract start.` });
+  };
+
   const saveSetting = async (patch: Partial<Settings>) => {
     setSettings(s => ({ ...s, ...patch }));
     await (supabase as any).from("finance_settings").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", true);
@@ -1083,7 +1123,7 @@ export function FinanceSection() {
           {/* ---- Clients ---- */}
           <TabsContent value="clients" className="mt-0">
             <ClientsTable rows={model.clientRows} onPatch={patchClient} onPriceChange={applyPriceChange} onSetInitialPrice={setInitialPrice} onRemovePriceChange={removePriceChange} onEditPriceChange={editPriceChange}
-              onFieldChange={applyFieldChange} priceChanges={priceChanges} changeLog={changeLog} />
+              onFieldChange={applyFieldChange} onClearUplift={clearUplift} onUndoUpliftClear={undoUpliftClear} priceChanges={priceChanges} changeLog={changeLog} />
           </TabsContent>
 
           {/* ---- Staff ---- */}
@@ -1388,7 +1428,9 @@ const PROCESSOR_META: Record<string, { label: string; cls: string; bar: string }
  *
  * "Due" is measured from the last fee change rather than the contract start —
  * once someone has had a rise, the next one is a year after that, not a year
- * after they joined. With no recorded change, the contract start is the clock.
+ * after they joined. Clearing the flag without a fee change — a rise held,
+ * waived, or billed elsewhere — restarts the clock the same way. With neither,
+ * the contract start is the clock.
  */
 function clientTenure(contractStart: string | null, lastUplift: string | null) {
   if (!contractStart) return null;
@@ -1407,9 +1449,19 @@ function clientTenure(contractStart: string | null, lastUplift: string | null) {
   return { label, upliftDue: monthsSince >= 12 };
 }
 
+/**
+ * The day a clock started on `date` (yyyy-mm-dd) makes the uplift due again:
+ * the same day next year, which is where clientTenure's month count reaches 12
+ * (a 29 February rolls to 1 March in both).
+ */
+function yearAfter(date: string) {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(y + 1, m - 1, d);
+}
+
 type ClientTableRow = ClientRow & { mrr: number; netRevenue: number | null; processor: "zoho" | "freeagent" | "other"; service: ServiceKey; profit: number | null; margin: number | null };
 
-function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemovePriceChange, onEditPriceChange, onFieldChange, priceChanges, changeLog }: {
+function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemovePriceChange, onEditPriceChange, onFieldChange, onClearUplift, onUndoUpliftClear, priceChanges, changeLog }: {
   rows: ClientTableRow[];
   onPatch: (id: string, patch: Partial<ClientRow>) => void;
   onSetInitialPrice: (client: ClientTableRow, mrr: number) => Promise<void>;
@@ -1418,6 +1470,8 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemov
     patch: { new_mrr?: number; effective_date?: string; reason?: string | null; previous_mrr?: number }) => Promise<void>;
   onPriceChange: (client: ClientTableRow, newMrr: number, effectiveDate: string, reason: string) => Promise<void>;
   onFieldChange: (client: ClientTableRow, field: "status" | "contract_end_date", newValue: string | null, effectiveDate: string, reason: string) => Promise<void>;
+  onClearUplift: (client: ClientTableRow, clearedOn: string, reason: string) => Promise<void>;
+  onUndoUpliftClear: (client: ClientTableRow, clear: ClientChange) => Promise<void>;
   priceChanges: PriceChange[];
   changeLog: ClientChange[];
 }) {
@@ -1427,6 +1481,16 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemov
   const lastUpliftOf = (clientId: string) =>
     priceChanges.filter(p => p.client_id === clientId && p.effective_date <= today)
       .map(p => p.effective_date).sort().pop() ?? null;
+  // The latest time the flag was cleared by hand, without a fee change. Held to
+  // the same rule: it restarts the clock once its date has arrived.
+  const upliftClearOf = (clientId: string) =>
+    changeLog.filter(l => l.client_id === clientId && l.field === "uplift" && l.effective_date <= today)
+      .sort((a, b) => a.effective_date.localeCompare(b.effective_date)).pop() ?? null;
+  // Whichever came last starts the clock: a fee change or a clear.
+  const upliftClockOf = (clientId: string) => {
+    const changed = lastUpliftOf(clientId), cleared = upliftClearOf(clientId)?.effective_date ?? null;
+    return changed && cleared ? (changed > cleared ? changed : cleared) : (changed ?? cleared);
+  };
   const lastChangeOf = (clientId: string, field: "status" | "contract_end_date") =>
     changeLog.filter(l => l.client_id === clientId && l.field === field)
       .sort((a, b) => a.effective_date.localeCompare(b.effective_date)).pop() ?? null;
@@ -1454,6 +1518,25 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemov
   const [priceDate, setPriceDate] = useState("");
   const [priceReason, setPriceReason] = useState("");
   const [savingPrice, setSavingPrice] = useState(false);
+
+  // Clearing "Uplift due" without a fee change, or undoing the clear that is
+  // holding it off. The target is kept after closing, so the dialog doesn't
+  // switch to the other view while it animates shut.
+  const [upliftTarget, setUpliftTarget] = useState<{ client: ClientTableRow; clear: ClientChange | null } | null>(null);
+  const [upliftOpen, setUpliftOpen] = useState(false);
+  const [upliftDate, setUpliftDate] = useState("");
+  const [upliftReason, setUpliftReason] = useState("");
+  const [savingUplift, setSavingUplift] = useState(false);
+  const openUpliftDialog = (client: ClientTableRow, clear: ClientChange | null) => {
+    setUpliftTarget({ client, clear });
+    setUpliftDate(today);
+    setUpliftReason("");
+    setUpliftOpen(true);
+  };
+  // A clear has to have happened, and be recent enough to hold the flag off —
+  // one dated over a year back would save and change nothing.
+  const upliftDateOk = !!upliftDate && upliftDate <= today
+    && yearAfter(upliftDate).getTime() > new Date().setHours(0, 0, 0, 0);
 
   // Stage and contract-end changes carry a date the field itself can't hold —
   // when it took effect, which is what revenue needs — so both go through a
@@ -1705,17 +1788,40 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemov
                       </td>
                       <td className="px-4 py-3">
                         {(() => {
-                          const t = clientTenure(c.contract_start_date, lastUpliftOf(c.id));
+                          const clock = upliftClockOf(c.id);
+                          const t = clientTenure(c.contract_start_date, clock);
                           if (!t) return <span className="text-muted-foreground">—</span>;
+                          // A churned client has no uplift to chase: no flag, and no note
+                          // about clearing one.
+                          const churned = isChurned(c);
+                          const showFlag = t.upliftDue && !churned;
+                          // The note shows only while a clear is what's holding the flag off.
+                          // Once a fee change lands after it, the fee history explains itself.
+                          const latestClear = t.upliftDue || churned ? null : upliftClearOf(c.id);
+                          const heldBy = latestClear?.effective_date === clock ? latestClear : null;
                           return (
-                            <div className="flex items-center gap-2">
-                              <span className="text-muted-foreground">{t.label}</span>
-                              {t.upliftDue && (
-                                <Badge variant="outline" className="text-[10px] border-amber-300 text-amber-600 whitespace-nowrap">
-                                  Uplift due
-                                </Badge>
+                            <>
+                              <div className="flex items-center gap-2">
+                                <span className="text-muted-foreground">{t.label}</span>
+                                {showFlag && (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] border-amber-300 text-amber-600 whitespace-nowrap cursor-pointer"
+                                    onClick={() => openUpliftDialog(c, null)}
+                                    title="Held, waived or billed elsewhere? Click to clear the flag"
+                                  >
+                                    Uplift due
+                                  </Badge>
+                                )}
+                              </div>
+                              {heldBy && (
+                                <button type="button" onClick={() => openUpliftDialog(c, heldBy)}
+                                  title={heldBy.reason ?? "Cleared without a fee change — click to undo"}
+                                  className="block text-[10px] text-muted-foreground hover:text-primary hover:underline mt-0.5">
+                                  uplift cleared {new Date(heldBy.effective_date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "2-digit" })}
+                                </button>
                               )}
-                            </div>
+                            </>
                           );
                         })()}
                       </td>
@@ -1769,7 +1875,7 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemov
           })}
         </table>
         <p className="px-4 py-2 text-[11px] text-muted-foreground border-t bg-muted/20">
-          Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the month it falls in, in both the history and the projection. Inactive clients are grouped separately whichever way you group. Use “Group by” to read the book by billing system or by service line — each group sum is that group’s active monthly revenue. Click a fee to set or change it — an existing fee asks when the new price takes effect and is logged on the chart; a first fee is just recorded. Click "fee history" to see the full timeline, where a change can be edited, removed, or added at any date — including backdated ones for contracts that pre-date the Academy. The fee shown in the table is always whatever the timeline says is in force today. Click the billing pill to say whether Zoho or FreeAgent invoices them · click the service pill to say whether they buy admin + compliance or CCFORMS · double-click either contract date to edit · click the stage pill to change it · click a group header to collapse it.
+          Pending and Inactive clients are listed (dimmed) but only "Active" stage clients count toward revenue, profit and the group sums. Profit is ex-VAT revenue minus total monthly cost allocated pro-rata. Contract start and end dates feed the revenue trend chart above — an end date stops that client counting from the month it falls in, in both the history and the projection. Inactive clients are grouped separately whichever way you group. Use “Group by” to read the book by billing system or by service line — each group sum is that group’s active monthly revenue. Click a fee to set or change it — an existing fee asks when the new price takes effect and is logged on the chart; a first fee is just recorded. Click "fee history" to see the full timeline, where a change can be edited, removed, or added at any date — including backdated ones for contracts that pre-date the Academy. The fee shown in the table is always whatever the timeline says is in force today. Click the billing pill to say whether Zoho or FreeAgent invoices them · click the service pill to say whether they buy admin + compliance or CCFORMS · double-click either contract date to edit · click the stage pill to change it · click “Uplift due” to clear it when a rise has been held, waived or billed elsewhere (it comes back a year on; click “uplift cleared” to undo; inactive clients never show it) · click a group header to collapse it.
         </p>
 
         {/* Fee history — where a scheduled change is cancelled and an applied one
@@ -2057,6 +2163,82 @@ function ClientsTable({ rows, onPatch, onPriceChange, onSetInitialPrice, onRemov
               <Button variant="outline" onClick={() => setChangeEdit(null)} disabled={savingChange}>Cancel</Button>
               <Button onClick={saveChange} disabled={savingChange}>{savingChange ? "Saving…" : "Save change"}</Button>
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Uplift due, cleared without a fee change — or a clear undone. Only the
+            flag moves: the fee, its timeline and the revenue chart are untouched. */}
+        <Dialog open={upliftOpen} onOpenChange={o => { if (!o && !savingUplift) setUpliftOpen(false); }}>
+          <DialogContent className="sm:max-w-md">
+            {upliftTarget?.clear ? (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Uplift cleared — {upliftTarget.client.name}</DialogTitle>
+                  <DialogDescription>
+                    Cleared without a fee change on{" "}
+                    {new Date(upliftTarget.clear.effective_date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}.
+                    The flag comes back on{" "}
+                    {yearAfter(upliftTarget.clear.effective_date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })},
+                    or straight away if you undo this and the uplift is still due.
+                  </DialogDescription>
+                </DialogHeader>
+                {upliftTarget.clear.reason && (
+                  <p className="rounded-lg border px-3 py-2 text-sm">{upliftTarget.clear.reason}</p>
+                )}
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setUpliftOpen(false)} disabled={savingUplift}>Close</Button>
+                  <Button disabled={savingUplift} onClick={async () => {
+                    if (!upliftTarget?.clear) return;
+                    setSavingUplift(true);
+                    await onUndoUpliftClear(upliftTarget.client, upliftTarget.clear);
+                    setSavingUplift(false);
+                    setUpliftOpen(false);
+                  }}>{savingUplift ? "Undoing…" : "Undo clear"}</Button>
+                </DialogFooter>
+              </>
+            ) : (
+              <>
+                <DialogHeader>
+                  <DialogTitle>Clear uplift due — {upliftTarget?.client.name}</DialogTitle>
+                  <DialogDescription>
+                    For a rise that's been held, waived, or already billed elsewhere. The flag comes back a year after the date you set.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-3 py-1">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="uplift-date">Cleared on</Label>
+                    <Input id="uplift-date" type="date" max={today} value={upliftDate}
+                      onChange={e => setUpliftDate(e.target.value)} />
+                    {upliftDate && (
+                      <p className={cn("text-[11px]", upliftDateOk ? "text-muted-foreground" : "text-amber-600")}>
+                        {upliftDate > today ? "A clear can't be dated in the future."
+                          : !upliftDateOk ? "That's over a year ago, so the flag would still be due."
+                          : `The flag comes back on ${yearAfter(upliftDate).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}.`}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="uplift-reason">Reason</Label>
+                    <Textarea id="uplift-reason" rows={2} value={upliftReason} onChange={e => setUpliftReason(e.target.value)}
+                      placeholder="e.g. holding the fee another year, uplift already on the FreeAgent invoice" />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Putting their fee up? Click the fee and record the change instead — the flag clears once the new
+                    fee takes effect, and the rise shows on the revenue chart.
+                  </p>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setUpliftOpen(false)} disabled={savingUplift}>Cancel</Button>
+                  <Button disabled={savingUplift || !upliftDateOk} onClick={async () => {
+                    if (!upliftTarget) return;
+                    setSavingUplift(true);
+                    await onClearUplift(upliftTarget.client, upliftDate, upliftReason.trim());
+                    setSavingUplift(false);
+                    setUpliftOpen(false);
+                  }}>{savingUplift ? "Clearing…" : "Clear flag"}</Button>
+                </DialogFooter>
+              </>
+            )}
           </DialogContent>
         </Dialog>
 
