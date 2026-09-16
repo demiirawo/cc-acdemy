@@ -171,18 +171,22 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
         return;
       }
       setAttempt(a);
+      // The dashboard hands over the ids it is showing, in its own order, and
+      // they are taken as-is below — re-reading them only put every id back in
+      // a query string. Past a few hundred candidates that URL is longer than
+      // the API gateway accepts: it drops the connection rather than answering,
+      // which also kills the answers, events and snapshots reads sharing it and
+      // leaves this page on "Loading..." for good. So the lookup only runs when
+      // we arrived without a list.
       const sibFetch = siblingIds && siblingIds.length > 0
-        ? supabase
-            .from("recruitment_attempts")
-            .select("id,status")
-            .in("id", siblingIds)
+        ? null
         : supabase
             .from("recruitment_attempts")
             .select("id,status")
             .eq("test_id", a.test_id)
             .order("total_score", { ascending: false })
             .order("created_at", { ascending: false });
-      const [{ data: t }, { data: ans }, { data: ev }, { data: sn }, { data: sib }] =
+      const [{ data: t }, { data: ans }, { data: ev }, { data: sn }, sibRes] =
         await Promise.all([
           supabase.from("recruitment_tests").select("*").eq("id", a.test_id).maybeSingle(),
           supabase.from("recruitment_answers").select("*").eq("attempt_id", attemptId),
@@ -205,7 +209,7 @@ export function ResultDetail({ attemptId, onBack, onNavigate, siblingIds }: Prop
       if (siblingIds && siblingIds.length > 0) {
         setSiblings(siblingIds);
       } else {
-        const sibRows = (sib as { id: string; status: string }[]) || [];
+        const sibRows = (sibRes?.data as { id: string; status: string }[]) || [];
         setSiblings(sibRows.filter((r) => r.status === "submitted").map((r) => r.id));
       }
 

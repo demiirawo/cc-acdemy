@@ -686,7 +686,10 @@ export function KnowledgeBaseApp() {
       setBreadcrumbs([]);
       navigate('/view/schedule');
     } else if (item.id === 'recruitment') {
-      if (!isAdmin) return;
+      // Recruitment is an HR responsibility, not an admin-only one — the HR tab
+      // and the recruitment tables both let human_resources in, and this older
+      // standalone route (still live in bookmarks) has to agree with them.
+      if (!canManageHR) return;
       setCurrentView('recruitment');
       setCurrentPage(null);
       setBreadcrumbs([]);
@@ -1222,8 +1225,8 @@ export function KnowledgeBaseApp() {
             navigate('/view/hr');
           }}
         />}
-        {currentView === 'recruitment' && isAdmin && <RecruitmentSection />}
-        {currentView === 'recruitment' && !isAdmin && (
+        {currentView === 'recruitment' && canManageHR && <RecruitmentSection />}
+        {currentView === 'recruitment' && !canManageHR && (
           <div className="p-8 text-center text-muted-foreground">
             You do not have permission to view this page.
           </div>
