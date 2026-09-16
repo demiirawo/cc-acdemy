@@ -172,7 +172,7 @@ function esc(s?: string | null): string {
     .replace(/"/g, "&quot;");
 }
 
-const INTERVIEW_LINK = "https://calendar.app.google/ChJ2sXR7vfN9FopQ8";
+const INTERVIEW_LINK = "https://calendar.google.com/calendar/u/0/appointments/schedules/AcZssZ0ewU-xY2f3LXEca591gg2LOsROxjTcRxH0tIh90n2QUh12ousccyG57SPvZub-YZyDLSQ6tqwq";
 
 type Stage = "rejected" | "interview" | "success";
 
