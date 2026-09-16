@@ -108,6 +108,40 @@ export async function applyRatingChange(opts: {
   return { previousRating, potFrom, emailSent };
 }
 
+/** A change already made that the pot has not started counting, if there is one. */
+export async function fetchUndoableRatingChange(
+  userId: string,
+): Promise<{ previous_rating: string | null; new_rating: string; effective_date: string } | null> {
+  const { data, error } = await supabase
+    .from("pending_rating_changes")
+    .select("previous_rating, new_rating, effective_date")
+    .eq("user_id", userId)
+    .not("applied_at", "is", null)
+    .is("cancelled_at", null)
+    .gt("effective_date", format(new Date(), "yyyy-MM-dd"))
+    .order("applied_at", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  return (data?.[0] as { previous_rating: string | null; new_rating: string; effective_date: string } | undefined) ?? null;
+}
+
+/**
+ * Undo a rating change while the bonus pot has not started counting it.
+ *
+ * The rating goes back to what it was and the history row is cancelled, so no
+ * month's pot ever reads it. Once next month arrives the change is part of how
+ * that month was shared out, and the database refuses: from then on the answer
+ * is a new rating, not an undo.
+ */
+export async function cancelRatingChange(userId: string): Promise<{ restoredRating: string | null; undoneRating: string | null }> {
+  const { data, error } = await (supabase as any).rpc("cancel_rating_change", { p_user_id: userId });
+  if (error) throw error;
+  return {
+    restoredRating: (data?.[0]?.restored_rating ?? null) as string | null,
+    undoneRating: (data?.[0]?.undone_rating ?? null) as string | null,
+  };
+}
+
 /** Withdraw a change that has not landed yet. */
 export async function cancelPendingRatingChange(id: string, byUserId?: string | null): Promise<void> {
   const { error } = await supabase

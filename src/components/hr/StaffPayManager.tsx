@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { PerformanceRankBadge, RankTransitionBadges, RANK_ORDER, RANK_STYLES, tenureYears, bonusTenureYears, employedFraction, type Rank } from "./PerformanceRankBadge";
 import { cn } from "@/lib/utils";
 import { recalcAllBonusPots, POT_DESC_TAG, peakCover, monthlyBonusPoints, potRecordDescription, isPeakMonth } from "@/lib/bonusPot";
-import { applyRatingChange } from "@/lib/pendingRating";
+import { applyRatingChange, cancelRatingChange } from "@/lib/pendingRating";
 import { inForceFor, landedChangesFor } from "@/lib/payCalendar";
 import { activeRecurringBonuses as recurringBonusesInMonth, recurringBonusLine, RECURRING_BONUS_TAG } from "@/lib/recurringBonuses";
 
@@ -251,6 +251,7 @@ export function StaffPayManager({ onSummaryComputed }: {
   const [lockedAt, setLockedAt] = useState<string | null>(null);
   // Rating changes need a written reason — see openPayrollRankDialog.
   const [rankDialogOpen, setRankDialogOpen] = useState(false);
+  const [undoingRank, setUndoingRank] = useState(false);
   const [rankUserId, setRankUserId] = useState<string | null>(null);
   const [rankChoice, setRankChoice] = useState<Rank | null>(null);
   const [rankReason, setRankReason] = useState("");
@@ -610,6 +611,27 @@ export function StaffPayManager({ onSummaryComputed }: {
     } catch (e) {
       setSavingRank(false);
       toast({ title: "Couldn't change the rating", description: String((e as Error).message), variant: "destructive" });
+    }
+  };
+
+  // A change the pot has not started counting can be taken back whole: the
+  // rating returns to what it was and the record of it goes. After that the
+  // database refuses, because a month has been shared out on it.
+  const undoPayrollRankChange = async () => {
+    if (!rankUserId) return;
+    setUndoingRank(true);
+    try {
+      const { restoredRating, undoneRating } = await cancelRatingChange(rankUserId);
+      setRankDialogOpen(false);
+      await fetchData();
+      toast({
+        title: `Rating put back to ${restoredRating ?? "unrated"}`,
+        description: `The change to ${undoneRating ?? "the new rating"} is gone, and no month's bonus pot will count it. They were emailed when it changed — let them know.`,
+      });
+    } catch (e) {
+      toast({ title: "Couldn't undo the change", description: String((e as Error).message), variant: "destructive" });
+    } finally {
+      setUndoingRank(false);
     }
   };
 
@@ -3859,6 +3881,38 @@ export function StaffPayManager({ onSummaryComputed }: {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-1">
+            {(() => {
+              // A change already made, which the pot has not started counting.
+              const todayISO = format(new Date(), "yyyy-MM-dd");
+              const pending = landedRatingChanges.find(c => c.user_id === rankUserId && c.effective_date > todayISO);
+              if (!pending) return null;
+              const held = (hrProfilesFull.find(h => h.user_id === rankUserId)?.performance_rating ?? null) as Rank | null;
+              return (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 text-sm">
+                      <span className="font-medium">
+                        Changed to {held ?? "unrated"} from {pending.previous_rating ?? "unrated"}
+                      </span>
+                      <div className="text-xs text-amber-800">
+                        The bonus pot counts it from {format(parseISO(pending.effective_date), "MMMM")} — until then it can be undone.
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={undoPayrollRankChange}
+                      disabled={undoingRank || savingRank}
+                      className="flex-shrink-0 bg-white"
+                    >
+                      {undoingRank ? "Undoing…" : "Undo"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="space-y-2">
               <p className="text-sm font-medium">New rating</p>
               <div className="grid grid-cols-5 gap-2">
@@ -3893,7 +3947,8 @@ export function StaffPayManager({ onSummaryComputed }: {
                 placeholder="Explain why the rating is changing — this is sent to the staff member."
               />
               <p className="text-[11px] text-muted-foreground">
-                This also changes their share of the bonus pot, and any pots already distributed are recalculated.
+                The rating changes today and they are emailed. Their share of the bonus pot changes from next
+                month — this month stays on the rating they worked it under.
               </p>
             </div>
           </div>

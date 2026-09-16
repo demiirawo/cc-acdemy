@@ -31,7 +31,7 @@ import { payrollMonthInForce, inForceFrom } from "@/lib/payCalendar";
 import {
   ANSWERED_LABELS, ETIQUETTE_LABELS, NOISE_LABELS, OUTCOME_LABELS, type QaCheck,
 } from "@/lib/qualityAssurance";
-import { applyRatingChange } from "@/lib/pendingRating";
+import { applyRatingChange, cancelRatingChange, fetchUndoableRatingChange } from "@/lib/pendingRating";
 import { ContractorInvoiceDetailsForm } from "./ContractorInvoiceDetailsForm";
 import { InvoiceGeneratorDialog } from "./InvoiceGeneratorDialog";
 import { TRAINING_CATEGORIES, type TrainingItem } from "./training/TrainingItemsManager";
@@ -492,6 +492,10 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
   const [rankChoice, setRankChoice] = useState<Rank | null>(null);
   const [rankReason, setRankReason] = useState("");
   const [savingRank, setSavingRank] = useState(false);
+  // A change already made that the bonus pot has not started counting, so it
+  // can still be taken back whole.
+  const [undoableRank, setUndoableRank] = useState<{ previous_rating: string | null; new_rating: string; effective_date: string } | null>(null);
+  const [undoingRank, setUndoingRank] = useState(false);
   // Team-wide performance data (for the "how you compare" + bonus-points views).
   const [teamPerf, setTeamPerf] = useState<{ rank: Rank | null; startDate: string | null }[]>([]);
   // Admin-authored "how to improve your rating" note for the selected staff.
@@ -1614,7 +1618,30 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
     if (!hrProfile || !isAdmin) return;
     setRankChoice(hrProfile.performance_rating as Rank | null);
     setRankReason("");
+    setUndoableRank(null);
+    if (selectedUserId) {
+      fetchUndoableRatingChange(selectedUserId).then(setUndoableRank).catch(() => setUndoableRank(null));
+    }
     setRankDialogOpen(true);
+  };
+
+  const undoRankChange = async () => {
+    if (!selectedUserId) return;
+    setUndoingRank(true);
+    try {
+      const { restoredRating, undoneRating } = await cancelRatingChange(selectedUserId);
+      setHRProfile(prev => (prev ? { ...prev, performance_rating: restoredRating } : prev));
+      setUndoableRank(null);
+      setRankDialogOpen(false);
+      toast({
+        title: `Rating put back to ${restoredRating ?? "unrated"}`,
+        description: `The change to ${undoneRating ?? "the new rating"} is gone, and no month's bonus pot will count it. They were emailed when it changed — let them know.`,
+      });
+    } catch (e) {
+      toast({ title: "Couldn't undo the change", description: String((e as Error).message), variant: "destructive" });
+    } finally {
+      setUndoingRank(false);
+    }
   };
 
   // A rating takes effect the moment it is set: the profile, the bonus pot
@@ -2163,6 +2190,31 @@ export function MyHRProfile({ initialUserId }: { initialUserId?: string | null }
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-1">
+            {undoableRank && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 text-sm">
+                    <span className="font-medium">
+                      Changed to {undoableRank.new_rating} from {undoableRank.previous_rating ?? "unrated"}
+                    </span>
+                    <div className="text-xs text-amber-800">
+                      The bonus pot counts it from {format(parseISO(undoableRank.effective_date), "MMMM")} — until then it can be undone.
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={undoRankChange}
+                    disabled={undoingRank || savingRank}
+                    className="flex-shrink-0 bg-white"
+                  >
+                    {undoingRank ? "Undoing…" : "Undo"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2">
               <p className="text-sm font-medium">New rating</p>
               <div className="grid grid-cols-5 gap-2">
