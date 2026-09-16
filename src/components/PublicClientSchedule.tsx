@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { PLACEHOLDER_LABEL, isPlaceholderShift, shiftDisplayName, placeholderSeriesInfo, placeholderInfoFor } from "@/lib/placeholderShift";
 import { buildStaffColourMap } from "@/lib/staffColours";
 import { isShiftCoveredByRequest } from "@/lib/coverageUtils";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -16,14 +16,17 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format, addDays, startOfWeek, endOfWeek, eachDayOfInterval, isWithinInterval, parseISO, differenceInHours, getDay, addWeeks, parse, isBefore, isAfter, addMonths, startOfDay, endOfDay, differenceInCalendarDays } from "date-fns";
 import { patternOccursOn } from "@/lib/patternSchedule";
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2, Palmtree, AlertTriangle, Clock, GripVertical } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Calendar, Loader2, MessageSquare, Key, Plus, Eye, EyeOff, Copy, Check, ExternalLink, Link, Pencil, Trash2, Palmtree, AlertTriangle, Clock, GripVertical, UserMinus, CalendarPlus, CalendarX } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { cn } from "@/lib/utils";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
 import { UnifiedShiftEditor, ShiftToEdit } from "@/components/hr/UnifiedShiftEditor";
 import { ClientHandoverTracker } from "@/components/ClientHandoverTracker";
-import { ClientTeamCard, clientPagePasswordKey, type ClientTeamMember } from "@/components/ClientTeamCard";
+import { ClientTeamCard, clientPagePasswordKey, type ClientTeamMember, type ClientTeamDetail } from "@/components/ClientTeamCard";
 
 
 interface ClientWhiteboard {
@@ -186,7 +189,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
   // and anonymous public viewers) can view the details read-only. This prevents
   // staff shrinking/removing their approved holidays to inflate their unused-holiday
   // refund; the database also enforces this via RLS + the protect trigger.
-  const { isAdmin } = useUserRole();
+  const { isAdmin, canManageHR } = useUserRole();
 
   // The full "all info" page is password-protected for outside visitors: it
   // carries handover details, contact numbers and the credentials vault, and
@@ -232,6 +235,11 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
       setGateChecking(false);
     }
   };
+
+  // Jumping between clients: an admin or HR looking after fifty-four of these
+  // pages should not have to go back out and in again to reach the next one.
+  const navigate = useNavigate();
+  const [clientPickerOpen, setClientPickerOpen] = useState(false);
 
   const [weekOffset, setWeekOffset] = useState(0);
   
@@ -903,6 +911,43 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
     return on;
   }, [todayShifts, patterns, now, isEmployedOn]);
 
+  // Photograph, work number and last day for this client's team.
+  //
+  // hr_profiles is closed to anyone signed out, so a client can read none of
+  // it directly. This one endpoint asks who is looking — a staff session, or
+  // the page password — and answers for that client's team only. A viewer it
+  // won't vouch for is never asked to be: the open schedule-only link would
+  // otherwise be refused on every load.
+  const photosAllowed = hasSession === true || !!sessionStorage.getItem(clientPagePasswordKey(decodedClientName));
+
+  const { data: teamDetails } = useQuery({
+    queryKey: ["client-team-details", decodedClientName, photosAllowed],
+    enabled: photosAllowed && !!decodedClientName,
+    // The photograph URLs are signed for an hour; ask again just before then.
+    staleTime: 50 * 60 * 1000,
+    queryFn: async () => {
+      const password = sessionStorage.getItem(clientPagePasswordKey(decodedClientName)) || undefined;
+      const { data, error } = await supabase.functions.invoke("client-team-photos", {
+        body: { clientName: decodedClientName, password },
+      });
+      const details = new Map<string, ClientTeamDetail>();
+      // Refused or unreachable: the team still shows, without faces.
+      if (error) return details;
+      for (const member of (data?.members ?? []) as ClientTeamDetail[]) {
+        details.set(member.user_id, member);
+      }
+      return details;
+    },
+  });
+
+  // Who is leaving, for the upcoming card below.
+  const upcomingDepartures = useMemo(() => {
+    const todayISO = format(now, "yyyy-MM-dd");
+    return [...(teamDetails?.values() ?? [])]
+      .filter(d => d.employment_end_date && d.employment_end_date >= todayISO)
+      .map(d => ({ user_id: d.user_id, employment_end_date: d.employment_end_date as string }));
+  }, [teamDetails, now]);
+
   // The people this client sees: whoever has a live series here, plus anyone
   // rostered in the week on screen. The same set the rota colours are built
   // from, so a face on the card is the colour of the name on the grid.
@@ -925,16 +970,18 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
       .filter(id => isEmployedOn(id, now))
       .map(id => {
         const staff = staffMembers.find(s => s.user_id === id);
+        const detail = teamDetails?.get(id);
         return {
           user_id: id,
           name: getStaffName(id),
           email: staff?.email ?? null,
-          phone: staff?.work_phone ?? null,
+          phone: detail?.work_phone ?? staff?.work_phone ?? null,
+          photoUrl: detail?.photo_url ?? null,
           colour: staffColours.get(id),
           onShift: onShiftNow.has(id),
         };
       });
-  }, [patterns, allSchedules, staffMembers, staffColours, onShiftNow, isEmployedOn, now, getStaffName]);
+  }, [patterns, allSchedules, staffMembers, staffColours, onShiftNow, isEmployedOn, now, getStaffName, teamDetails]);
 
   const isLoading = schedulesLoading || patternsLoading || staffLoading;
 
@@ -1287,6 +1334,48 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
   return (
     <div className="min-h-screen bg-gray-50 p-2 sm:p-4 md:p-8">
       <div className="max-w-6xl mx-auto">
+        {canManageHR && clients.length > 0 && (
+          <div className="mb-3 flex justify-center">
+            <Popover open={clientPickerOpen} onOpenChange={setClientPickerOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={clientPickerOpen}
+                  className="w-full max-w-sm justify-between bg-white"
+                >
+                  <span className="truncate">{decodedClientName}</span>
+                  <ChevronDown className="h-4 w-4 flex-shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[min(24rem,calc(100vw-2rem))] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search clients..." />
+                  <CommandList>
+                    <CommandEmpty>No client of that name.</CommandEmpty>
+                    <CommandGroup>
+                      {clients.map((client) => (
+                        <CommandItem
+                          key={client.id}
+                          value={client.name}
+                          onSelect={() => {
+                            setClientPickerOpen(false);
+                            if (client.name === decodedClientName) return;
+                            navigate(`/public/schedule${scheduleOnly ? "-only" : ""}/${encodeURIComponent(client.name)}`);
+                          }}
+                        >
+                          <Check className={cn("mr-2 h-4 w-4", client.name === decodedClientName ? "opacity-100" : "opacity-0")} />
+                          <span className="truncate">{client.name}</span>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
+        )}
+
         {/* Page Title - Client Name */}
         <h1 className="text-2xl sm:text-3xl font-bold text-center mb-4 sm:mb-6">{decodedClientName}</h1>
 
@@ -1294,7 +1383,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
         <ClientNoticeboard clientName={decodedClientName} />
 
         {/* Who the client deals with, between the updates and the rota */}
-        <ClientTeamCard clientName={decodedClientName} members={teamMembers} />
+        <ClientTeamCard members={teamMembers} />
 
         <Card className="mt-4 sm:mt-6">
           <CardHeader className="pb-3 px-3 sm:px-6">
@@ -1354,6 +1443,7 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
         <UpcomingHolidaysCard 
           clientName={decodedClientName}
           getStaffName={getStaffName} 
+          departures={upcomingDepartures}
         />
 
         {/* Handover Tracker */}
@@ -1564,10 +1654,13 @@ export const PublicClientSchedule = ({ scheduleOnly = false }: { scheduleOnly?: 
 // Upcoming Holidays Card Component
 const UpcomingHolidaysCard = ({ 
   clientName,
-  getStaffName 
+  getStaffName,
+  departures,
 }: { 
   clientName: string;
   getStaffName: (userId: string) => string;
+  /** Leaving dates, from the one endpoint that will say them to a client. */
+  departures: { user_id: string; employment_end_date: string }[];
 }) => {
   const today = new Date();
   
@@ -1663,6 +1756,72 @@ const UpcomingHolidaysCard = ({
     },
     enabled: !!clientName && upcomingHolidays.length > 0,
   });
+
+  // Who is leaving, and what else is changing on this rota.
+  //
+  // A client watching for holidays needs the same warning about a departure,
+  // or a shift series starting or stopping: each of them changes who turns up.
+  // These are read from what is already recorded — an end date on someone's
+  // profile, a series with a date in the future, a cancelled day — and not
+  // from requests still awaiting a decision, which a client cannot read at all.
+  const todayISO = format(today, "yyyy-MM-dd");
+
+  const upcomingChanges = useMemo(() => {
+    const nameOf = (userId: string | null) => (userId ? getStaffName(userId) : PLACEHOLDER_LABEL);
+    type Change = { key: string; date: string; kind: "leaving" | "joins" | "ends" | "cancelled"; who: string };
+    const changes: Change[] = [];
+
+    const lastDayOf = new Map<string, string>();
+    for (const row of departures) {
+      lastDayOf.set(row.user_id, row.employment_end_date);
+      changes.push({
+        key: `leaving-${row.user_id}`,
+        date: row.employment_end_date,
+        kind: "leaving",
+        who: nameOf(row.user_id),
+      });
+    }
+
+    for (const pattern of clientPatterns) {
+      if (pattern.start_date > todayISO) {
+        changes.push({
+          key: `joins-${pattern.user_id ?? "placeholder"}-${pattern.start_date}`,
+          date: pattern.start_date,
+          kind: "joins",
+          who: nameOf(pattern.user_id),
+        });
+      }
+      // A leaver's series ends on their last day, which the departure row
+      // already says, and says better.
+      const endsWithThem = pattern.user_id && lastDayOf.get(pattern.user_id) === pattern.end_date;
+      if (pattern.end_date && pattern.end_date >= todayISO && !endsWithThem) {
+        changes.push({
+          key: `ends-${pattern.user_id ?? "placeholder"}-${pattern.end_date}`,
+          date: pattern.end_date,
+          kind: "ends",
+          who: nameOf(pattern.user_id),
+        });
+      }
+    }
+
+    for (const exception of patternExceptions) {
+      if (!exception.exception_date || exception.exception_date < todayISO) continue;
+      const pattern = clientPatterns.find(p => p.id === exception.pattern_id);
+      changes.push({
+        key: `cancelled-${exception.pattern_id}-${exception.exception_date}`,
+        date: exception.exception_date,
+        kind: "cancelled",
+        who: nameOf(pattern?.user_id ?? null),
+      });
+    }
+
+    // Several series can change on the same day for the same person; that is
+    // one thing happening, so it is one row, and they read in date order.
+    const seen = new Set<string>();
+    return changes
+      .filter(change => (seen.has(change.key) ? false : (seen.add(change.key), true)))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [departures, clientPatterns, patternExceptions, todayISO, getStaffName]);
 
   // Get shift times for a user during a holiday period
   // Returns an array of unique shift times that would be affected
@@ -1780,7 +1939,7 @@ const UpcomingHolidaysCard = ({
       <Card className="mt-4 sm:mt-6">
         <CardHeader className="pb-2 px-3 sm:px-6">
           <CardTitle className="text-lg sm:text-xl">
-            Upcoming Holidays
+            Upcoming Holidays &amp; Changes
           </CardTitle>
         </CardHeader>
         <CardContent className="px-3 sm:px-6">
@@ -1792,17 +1951,17 @@ const UpcomingHolidaysCard = ({
     );
   }
 
-  if (upcomingHolidays.length === 0) {
+  if (upcomingHolidays.length === 0 && upcomingChanges.length === 0) {
     return (
       <Card className="mt-4 sm:mt-6">
         <CardHeader className="pb-2 px-3 sm:px-6">
           <CardTitle className="text-lg sm:text-xl">
-            Upcoming Holidays
+            Upcoming Holidays &amp; Changes
           </CardTitle>
         </CardHeader>
         <CardContent className="px-3 sm:px-6">
           <p className="text-sm text-muted-foreground text-center py-4">
-            No upcoming approved holidays
+            Nothing coming up — no approved holidays and no changes to the rota
           </p>
         </CardContent>
       </Card>
@@ -1813,10 +1972,41 @@ const UpcomingHolidaysCard = ({
     <Card className="mt-4 sm:mt-6">
       <CardHeader className="pb-2 px-3 sm:px-6">
         <CardTitle className="text-lg sm:text-xl">
-          Upcoming Holidays
+          Upcoming Holidays &amp; Changes
         </CardTitle>
       </CardHeader>
       <CardContent className="px-3 sm:px-6">
+        {upcomingChanges.length > 0 && (
+          <div className="space-y-2 mb-3">
+            {upcomingChanges.map((change) => {
+              const label = change.kind === "leaving"
+                ? "last day with Care Cuddle"
+                : change.kind === "joins"
+                ? "joins this rota"
+                : change.kind === "ends"
+                ? "shifts here end"
+                : "shift cancelled";
+              const Icon = change.kind === "joins" ? CalendarPlus : change.kind === "leaving" ? UserMinus : CalendarX;
+              return (
+                <div
+                  key={change.key}
+                  className={cn(
+                    "flex items-center gap-2 rounded-lg border px-3 py-2",
+                    change.kind === "leaving" ? "border-amber-200 bg-amber-50" : "bg-muted/30",
+                  )}
+                >
+                  <Icon className={cn("h-4 w-4 flex-shrink-0", change.kind === "leaving" ? "text-amber-700" : "text-muted-foreground")} />
+                  <div className="min-w-0 text-sm">
+                    <span className="font-medium">{change.who}</span>
+                    <span className="text-muted-foreground"> — {label}</span>
+                    <div className="text-xs text-muted-foreground">{format(parseISO(change.date), "EEE, d MMM")}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <Accordion type="multiple" className="space-y-2 sm:space-y-3">
           {upcomingHolidays.map((holiday) => {
             const startDate = parseISO(holiday.start_date);

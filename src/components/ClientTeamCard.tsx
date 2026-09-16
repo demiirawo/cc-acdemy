@@ -1,7 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Mail, Phone } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { StaffColour } from "@/lib/staffColours";
@@ -17,11 +15,21 @@ import type { StaffColour } from "@/lib/staffColours";
  */
 export const clientPagePasswordKey = (clientName: string) => `cc-client-page-pw:${clientName}`;
 
+/** What the gated endpoint returns for one member of a client's team. */
+export interface ClientTeamDetail {
+  user_id: string;
+  photo_url: string | null;
+  work_phone: string | null;
+  employment_end_date: string | null;
+}
+
 export interface ClientTeamMember {
   user_id: string;
   name: string;
   email: string | null;
   phone: string | null;
+  /** Signed for the hour by the endpoint; absent for a viewer it won't vouch for. */
+  photoUrl: string | null;
   /** Their colour on this client's rota, so a face matches a name on the grid. */
   colour?: StaffColour;
   onShift: boolean;
@@ -30,36 +38,10 @@ export interface ClientTeamMember {
 // The same collation the rota colours use, so the order matches the legend.
 const COLLATOR = new Intl.Collator("en", { sensitivity: "base" });
 
-export function ClientTeamCard({
-  clientName,
-  members,
-}: {
-  clientName: string;
-  members: ClientTeamMember[];
-}) {
+export function ClientTeamCard({ members }: { members: ClientTeamMember[] }) {
   // A signed URL can expire or a file can go missing; either way the card
   // falls back to initials rather than showing a broken image.
   const [broken, setBroken] = useState<Record<string, boolean>>({});
-
-  const { data: photos } = useQuery({
-    queryKey: ["client-team-photos", clientName],
-    // Signed for an hour by the function; ask again just before they expire.
-    staleTime: 50 * 60 * 1000,
-    enabled: members.length > 0,
-    queryFn: async () => {
-      const password = sessionStorage.getItem(clientPagePasswordKey(clientName)) || undefined;
-      const { data, error } = await supabase.functions.invoke("client-team-photos", {
-        body: { clientName, password },
-      });
-      const map = new Map<string, string>();
-      // A visitor who can't be vouched for still gets the team, with initials.
-      if (error) return map;
-      for (const photo of (data?.photos ?? []) as { user_id: string; url: string }[]) {
-        map.set(photo.user_id, photo.url);
-      }
-      return map;
-    },
-  });
 
   if (members.length === 0) return null;
 
@@ -78,7 +60,7 @@ export function ClientTeamCard({
       <CardContent className="px-3 sm:px-6">
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
           {sorted.map((member) => {
-            const photo = broken[member.user_id] ? undefined : photos?.get(member.user_id);
+            const photo = broken[member.user_id] ? null : member.photoUrl;
             return (
               <div
                 key={member.user_id}
@@ -86,16 +68,18 @@ export function ClientTeamCard({
                   "group relative aspect-[3/4] overflow-hidden rounded-2xl bg-gray-100",
                   "shadow-sm ring-1 ring-black/5 transition-all duration-200",
                   "hover:shadow-lg hover:-translate-y-0.5",
-                  member.onShift && "ring-2 ring-green-500 shadow-green-100",
+                  member.onShift && "ring-[3px] ring-green-600 shadow-green-100",
                 )}
               >
+                {/* Black and white, so photographs taken in fifty different
+                    rooms, at fifty different times of day, read as one team. */}
                 {photo ? (
                   <img
                     src={photo}
                     alt={member.name}
                     loading="lazy"
                     onError={() => setBroken((b) => ({ ...b, [member.user_id]: true }))}
-                    className="absolute inset-0 h-full w-full object-cover object-top"
+                    className="absolute inset-0 h-full w-full object-cover object-top grayscale"
                   />
                 ) : (
                   <div className="absolute inset-0 bg-gradient-to-br from-gray-50 to-gray-200" />

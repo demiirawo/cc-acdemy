@@ -1,13 +1,18 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
-// Photographs for the team on a client's page.
+// The team on a client's page: photograph, work number, last day.
 //
 // The pictures are the ones staff supplied when they onboarded, and they live
 // in a private bucket with everything else from that form — proof of ID, proof
 // of address, bank details. So the browser never gets a path or a key: it asks
 // for a client's team, and gets back short-lived signed URLs for those people's
 // photographs and nothing else.
+//
+// Work numbers and leaving dates come back the same way. hr_profiles is closed
+// to anyone signed out, which is right — but a client does need to know who to
+// ring and who is about to leave them, and this is already the one place that
+// asks who the caller is before answering.
 //
 // Who may ask: a signed-in member of staff, or a visitor who knows the client
 // page password — the same gate the page itself uses, checked the same way.
@@ -26,7 +31,7 @@ serve(async (req) => {
   try {
     const { clientName, password } = await req.json().catch(() => ({}));
     if (typeof clientName !== "string" || !clientName.trim()) {
-      return new Response(JSON.stringify({ photos: [] }), { headers: corsHeaders });
+      return new Response(JSON.stringify({ members: [] }), { headers: corsHeaders });
     }
     const client = clientName.trim();
 
@@ -46,7 +51,7 @@ serve(async (req) => {
     }
     if (!allowed) {
       if (typeof password !== "string" || !password.trim()) {
-        return new Response(JSON.stringify({ photos: [] }), { status: 401, headers: corsHeaders });
+        return new Response(JSON.stringify({ members: [] }), { status: 401, headers: corsHeaders });
       }
       // Asked of verify-client-page-password rather than checked here, so the
       // gate keeps one definition — including what a client with no password
@@ -61,7 +66,7 @@ serve(async (req) => {
       });
       const verdict = await gate.json().catch(() => ({ valid: false }));
       if (!verdict?.valid) {
-        return new Response(JSON.stringify({ photos: [] }), { status: 401, headers: corsHeaders });
+        return new Response(JSON.stringify({ members: [] }), { status: 401, headers: corsHeaders });
       }
       allowed = true;
     }
@@ -85,20 +90,25 @@ serve(async (req) => {
       if (row.staff_user_id) ids.add(row.staff_user_id);
     }
     if (ids.size === 0) {
-      return new Response(JSON.stringify({ photos: [] }), { headers: corsHeaders });
+      return new Response(JSON.stringify({ members: [] }), { headers: corsHeaders });
     }
 
     // A leaver's picture comes down with the rest of them.
     const { data: hr } = await admin
       .from("hr_profiles")
-      .select("user_id, start_date, employment_end_date")
+      .select("user_id, work_phone, start_date, employment_end_date")
       .in("user_id", [...ids]);
 
     const employed = new Set<string>();
+    const details = new Map<string, { work_phone: string | null; employment_end_date: string | null }>();
     for (const row of hr ?? []) {
       if (row.start_date && row.start_date > today) continue;
       if (row.employment_end_date && row.employment_end_date < today) continue;
       employed.add(row.user_id);
+      details.set(row.user_id, {
+        work_phone: row.work_phone ?? null,
+        employment_end_date: row.employment_end_date ?? null,
+      });
     }
 
     const { data: docs } = await admin
@@ -115,17 +125,24 @@ serve(async (req) => {
       latest.set(row.user_id, path);
     }
 
-    const photos: { user_id: string; url: string }[] = [];
+    const signedUrls = new Map<string, string>();
     for (const [userId, path] of latest) {
       const { data: signed } = await admin.storage
         .from("onboarding-documents")
         .createSignedUrl(path, SIGNED_URL_SECONDS);
-      if (signed?.signedUrl) photos.push({ user_id: userId, url: signed.signedUrl });
+      if (signed?.signedUrl) signedUrls.set(userId, signed.signedUrl);
     }
 
-    return new Response(JSON.stringify({ photos, expiresIn: SIGNED_URL_SECONDS }), { headers: corsHeaders });
+    const members = [...employed].map((userId) => ({
+      user_id: userId,
+      photo_url: signedUrls.get(userId) ?? null,
+      work_phone: details.get(userId)?.work_phone ?? null,
+      employment_end_date: details.get(userId)?.employment_end_date ?? null,
+    }));
+
+    return new Response(JSON.stringify({ members, expiresIn: SIGNED_URL_SECONDS }), { headers: corsHeaders });
   } catch (err) {
     console.error("client-team-photos error:", err);
-    return new Response(JSON.stringify({ photos: [] }), { status: 500, headers: corsHeaders });
+    return new Response(JSON.stringify({ members: [] }), { status: 500, headers: corsHeaders });
   }
 });
