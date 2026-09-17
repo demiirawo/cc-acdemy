@@ -20,7 +20,8 @@ import { format, eachDayOfInterval, differenceInCalendarDays, startOfDay } from 
  * The ordinary month is a warning only. Short notice is usually a life event,
  * the reason it is late is often exactly the reason to allow it, and that
  * judgement belongs to whoever approves it. What the form owes people there is
- * simply that nobody is surprised later by a deduction they did not see coming.
+ * that nobody is surprised later: not by a deduction, and not by a rating that
+ * has gone down for a reason they were never told at the time.
  */
 
 /** The peak window a date falls in, and the day requests for that window close. */
@@ -117,6 +118,11 @@ export function LeaveNoticeWarning({ breach, paid }: { breach: NoticeBreach | nu
                     ? `${Math.abs(breach.daysAhead!)} days ago`
                     : `in ${breach.daysAhead} days`}
             </span>.
+          </p>
+          <p className="text-sm text-foreground">
+            <span className="font-medium">Your performance rating will be brought down for it.</span>{" "}
+            Your rating also sets your share of the monthly bonus, so this affects what you are paid.
+            If there is a reason the notice is short, put it in the request and your manager will see it.
           </p>
         </>
       )}
