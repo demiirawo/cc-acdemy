@@ -113,3 +113,7 @@ verify_jwt = true
 # The client page calls this signed-out, with the page password.
 [functions.client-team-photos]
 verify_jwt = false
+
+# Fired by the cron job on the 17th of every other month.
+[functions.staff-catch-up-invite]
+verify_jwt = false
